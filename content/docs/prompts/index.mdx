@@ -1,0 +1,78 @@
+---
+title: Prompt System
+description: How Nenjo constructs and delivers prompts to agents using XML structure, template variables, and context injection.
+---
+
+Nenjo uses a layered prompt system to give each agent its identity, task instructions, and runtime context. Prompts are constructed from multiple sources, rendered with template variables, and delivered as structured XML to the LLM provider.
+
+## Prompt Architecture
+
+Every agent execution assembles a prompt from these layers, in order:
+
+1. **System prompt** -- The role's core identity and behavioral instructions
+2. **Developer prompt** -- Application-level context: task template, mode overlays, skill instructions, and memory profile
+3. **User message** -- The actual task input (task details, chat message, or gate evaluation criteria)
+
+For providers that support the `developer` message role (e.g., OpenAI), the system and developer prompts are sent as separate messages. For other providers, they are combined into a single system message.
+
+## How Prompts Compose
+
+The developer prompt is assembled by concatenating several sources:
+
+```
+developer_prompt (from PromptConfig)
+  + mode system_addon (if a mode session is active)
+  + task template (task_task, chat_task, gate_eval, or cron_task)
+  + memory_profile instructions (if configured)
+  + mode context XML (guidelines, artifact schema, exit commands)
+```
+
+Template variables (`{{ variable }}`) are then substituted across both the system and developer prompts using the `RenderContext`.
+
+## XML Structure
+
+Context blocks injected via template variables use XML for structured data. This is built using the `XmlBuilder` library, which provides a chainable API for constructing XML:
+
+```xml
+<available_roles>
+  <role id="uuid" name="developer" description="Writes code" agent="dev-agent" model="claude-sonnet-4-20250514" />
+  <role id="uuid" name="reviewer" description="Reviews code" agent="review-agent" model="gpt-4o" />
+</available_roles>
+```
+
+The key XML blocks are:
+
+| Block | Variable | Contents |
+|-------|----------|----------|
+| `<available_roles>` | `{{ context.roles }}` | All roles with descriptions, assigned agents, and models |
+| `<available_routines>` | `{{ context.routines }}` | Active routines with names and descriptions |
+| `<project_documents>` | `{{ context.documents }}` | Project document listing with file names and sizes |
+| `<skill_context>` | `{{ context.skills }}` | Skill instructions, guidelines, and reference docs |
+| `<mode_context>` | `{{ context.modes }}` | Active mode session context (auto-appended when in a mode) |
+| `<memory-profile>` | `{{ context.memory }}` | Retrieved memories relevant to the current task |
+
+Context blocks are only injected where the template author placed the corresponding `{{ context.* }}` variable. They are not automatically added. The exception is mode context, which is auto-appended to the developer prompt whenever a mode session is active.
+
+## Prompt Flow
+
+```
+PromptConfig (stored in role's JSONB column)
+  |
+  +-- system_prompt        --> rendered --> system message
+  |
+  +-- developer_prompt     --+
+  +-- templates.*          --+--> concatenated --> rendered --> developer message
+  +-- mode overlay         --+
+  +-- memory_profile       --+
+  |
+  +-- output_templates.*   --> used by routine for result parsing
+```
+
+The `RenderContext` struct carries all scalar values (task fields, project info, agent metadata) and pre-built XML strings (context blocks). The `render_template()` function performs `{{ variable }}` substitution across the entire prompt.
+
+## Next Steps
+
+- [Prompt Config](/docs/prompts/prompt-config) -- Deep dive into the PromptConfig structure
+- [Template Variables](/docs/prompts/template-variables) -- Full reference of all available variables
+- [Context Blocks](/docs/prompts/context-blocks) -- How context blocks expand into XML
+- [Prompt Preview](/docs/prompts/prompt-preview) -- Test your prompts before deployment

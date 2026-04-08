@@ -1,0 +1,125 @@
+---
+title: Bootstrap and Hot-Swap
+description: How the worker bootstraps from the backend, caches data locally, and reconfigures on the fly via atomic snapshot swaps.
+---
+
+## Bootstrap process
+
+When the worker starts, it fetches all platform data from a single backend endpoint:
+
+```
+GET /api/v1/agents/bootstrap
+```
+
+This returns a `BootstrapSnapshot` containing every resource the worker needs to build agents and execute routines. The worker does not query the database directly -- all data flows through this API.
+
+### BootstrapSnapshot contents
+
+The snapshot includes the following resource collections:
+
+| Resource | Description |
+|----------|-------------|
+| `projects` | All user projects with settings, repo URLs, and git config |
+| `routines` | Routine definitions with steps, edges, and metadata |
+| `agents` | Agent configurations (model provider, model name, temperature) |
+| `agent_roles` | Role definitions with prompt configs, skill assignments, platform scopes, and MCP server IDs |
+| `councils` | Multi-agent collaboration groups with delegation strategies and member weights |
+| `skills` | Skill manifests with tool definitions and auth requirements |
+| `modes` | Mode definitions (authoring/analysis) with tool configs and session rules |
+| `lambdas` | Lambda scripts (path and body) for deterministic routine steps |
+| `mcp_servers` | External MCP server configurations (stdio/HTTP transport) |
+| `routine_assignments` | Which routines are assigned to which projects |
+
+### Local caching
+
+After fetching, the worker writes each resource type as a separate JSON file under `~/.nenjo/data/`:
+
+```
+~/.nenjo/data/
+  projects.json
+  routines.json
+  agents.json
+  agent_roles.json
+  councils.json
+  skills.json
+  modes.json
+  lambdas.json
+  mcp_servers.json
+  routine_assignments.json
+```
+
+Each file is written atomically: the worker writes to a temporary file (`.projects.json.tmp`) and then renames it to the final path. This prevents readers from ever seeing a partial write.
+
+### Soft failure on network errors
+
+If the backend is unreachable at startup, the worker logs a warning and continues with whatever cached data exists on disk. This allows the worker to survive transient network issues and restarts of the backend.
+
+### Additional sync
+
+Beyond the JSON cache, bootstrap also:
+
+- **Syncs lambda scripts** to `{workspace_dir}/../lambdas/{path}` with executable permissions, so lambda routine steps can run scripts directly.
+- **Syncs project documents** by downloading them from S3 and writing them to the workspace.
+
+## RouterContext
+
+After bootstrap, the worker builds a `RouterContext` that holds the in-memory snapshot along with all shared resources:
+
+```rust
+RouterContext {
+    config: Config,
+    bootstrap: RwLock<Arc<BootstrapSnapshot>>,  // the swappable data
+    provider_registry: Arc<ProviderRegistry>,
+    memory: Arc<dyn AgentMemory>,
+    security: Arc<SecurityPolicy>,
+    chat_history: Arc<ChatHistory>,
+    api: Arc<NenjoClient>,
+    external_mcp: Arc<ExternalMcpPool>,
+}
+```
+
+The `bootstrap` field is wrapped in a `parking_lot::RwLock` around an `Arc<BootstrapSnapshot>`. Reading the snapshot is an O(1) `Arc` clone. Swapping it is a single pointer-width atomic write.
+
+## Hot-swap via bootstrap.changed
+
+When a user modifies any platform resource in the frontend (roles, routines, agents, skills, modes, etc.), the backend publishes a `bootstrap.changed` WebSocket event to the worker. The event optionally includes the `resource_type` and `resource_id` of the changed resource for logging, but the worker always performs a full re-fetch.
+
+### The reconciliation process
+
+1. **Re-fetch** -- The worker calls `GET /api/v1/agents/bootstrap` to get a fresh snapshot.
+2. **Atomic swap** -- The new `BootstrapSnapshot` is wrapped in an `Arc` and swapped into the `RwLock`. Any in-flight operations that hold a reference to the old snapshot continue using it until they complete; they will not see partial data.
+3. **Persist to disk** -- The new snapshot is written to `~/.nenjo/data/` so that subsequent worker restarts pick up the latest data without a network round-trip.
+4. **Sync lambdas** -- Lambda script files are re-synced to disk.
+5. **Reconcile external MCP pool** -- The `ExternalMcpPool` compares the new MCP server list against its active connections, starting new ones and stopping removed ones.
+6. **Update cron executor** -- If a `CronManager` is active, its `ExecutorResources` are rebuilt from the new snapshot so that future cron fires use the updated data.
+
+### What this means in practice
+
+- You can edit a role's system prompt in the frontend and the change takes effect on the next chat message or routine execution -- no worker restart needed.
+- Adding or removing a skill assignment, MCP server, or mode is reflected immediately.
+- Routine DAG changes (adding steps, changing edges) are picked up before the next execution.
+- Agent model or provider changes take effect on the next agent build.
+
+### Concurrency safety
+
+The swap is safe because:
+
+- **Readers** call `ctx.snapshot()` which clones the `Arc`. They hold their own reference and are unaffected by swaps.
+- **Writers** (only the bootstrap handler) acquire the write lock briefly to swap the pointer. There is no data copying -- the old snapshot is dropped when its last reader finishes.
+- **In-flight executions** continue with the snapshot they started with. They do not pick up mid-execution changes, which prevents inconsistencies in routine runs.
+
+## Startup sequence summary
+
+```
+1. Load ~/.nenjo/config.toml
+2. GET /api/v1/agents/bootstrap
+3. Cache to ~/.nenjo/data/*.json
+4. Sync lambda scripts and project documents
+5. Build RouterContext:
+   a. Load cached data into BootstrapSnapshot
+   b. Initialize ProviderRegistry from API keys
+   c. Open SQLite memory DB at ~/.nenjo/memory/brain.db
+   d. Build SecurityPolicy from autonomy config
+6. Connect WebSocket to backend
+7. Enter event loop
+```

@@ -1,0 +1,227 @@
+---
+title: Worker
+description: Worker architecture, configuration, model routing, agent building, and the understanding filter.
+---
+
+## Overview
+
+The worker is an event-driven Rust process that executes LLM-backed agents. It has no HTTP server of its own -- all communication flows through a WebSocket connection to the backend, which relays events from the frontend via Redis pub/sub.
+
+On startup, the worker:
+
+1. Loads configuration from `~/.nenjo/config.toml`.
+2. Bootstraps by fetching all platform data from `GET /api/v1/agents/bootstrap`.
+3. Caches the bootstrap data to `~/.nenjo/data/` as individual JSON files.
+4. Builds a `RouterContext` containing the in-memory snapshot, provider registry, memory store, and security policy.
+5. Connects to the backend WebSocket and waits for events.
+
+Once running, the worker processes events like `chat.message`, `task.execute`, `chat.mode_enter`, `bootstrap.changed`, and `cron.fire`, dispatching each to the appropriate handler.
+
+## Configuration
+
+The worker reads its configuration from `~/.nenjo/config.toml`. The file is organized into several sections:
+
+### Core connection settings
+
+```toml
+backend_api_url = "http://localhost:8080"
+backend_ws_url = "ws://localhost:8080/ws"
+backend_api_key = "your-api-key"
+nats_url = "nats://localhost:4222"
+
+[model_provider_api_keys]
+openai = "sk-..."
+anthropic = "sk-ant-..."
+google = "..."
+```
+
+### Autonomy and security
+
+Controls what agents are allowed to do. See [Security](/docs/system/security) for full details.
+
+```toml
+[autonomy]
+workspace_only = true
+max_actions_per_hour = 1000
+max_cost_per_day_cents = 500
+require_approval_for_medium_risk = true
+block_high_risk_commands = true
+blocked_commands = ["rm", "sudo", "curl", "ssh"]
+forbidden_paths = ["/etc", "/root", "~/.ssh", "~/.aws"]
+```
+
+### Runtime
+
+Choose between native execution or Docker-sandboxed execution:
+
+```toml
+[runtime]
+kind = "native"  # or "docker"
+
+[runtime.docker]
+image = "alpine:3.20"
+network = "none"
+memory_limit_mb = 512
+cpu_limit = 1.0
+read_only_rootfs = true
+mount_workspace = true
+```
+
+### Agent behavior
+
+```toml
+[agent]
+max_tool_iterations = 100
+max_history_messages = 50
+parallel_tools = false
+tool_dispatcher = "auto"
+max_delegation_depth = 3
+compact_context = false        # true for small models (13B or less)
+```
+
+### Memory
+
+```toml
+[memory]
+backend = "sqlite"             # or "none"
+auto_inject = true
+injection_token_budget = 5000
+fallback_model = "gpt-4o-mini"
+fallback_provider = "openai"
+time_decay_half_life_days = 7.0
+embedding_provider = "none"    # "openai" or "custom:URL"
+embedding_model = "text-embedding-3-small"
+embedding_dimensions = 1536
+vector_weight = 0.7
+keyword_weight = 0.3
+```
+
+### Reliability
+
+```toml
+[reliability]
+provider_retries = 2
+provider_backoff_ms = 500
+fallback_providers = ["anthropic", "openai"]
+model_fallbacks = { "claude-opus-4-20250514" = ["claude-sonnet-4-20250514", "gpt-4o"] }
+```
+
+### Cost tracking
+
+```toml
+[cost]
+enabled = false
+daily_limit_usd = 10.0
+monthly_limit_usd = 100.0
+warn_at_percent = 80
+```
+
+### Model routing
+
+Route task hints to specific provider and model combinations:
+
+```toml
+[[model_routes]]
+hint = "reasoning"
+provider = "openrouter"
+model = "anthropic/claude-opus-4-20250514"
+
+[[model_routes]]
+hint = "fast"
+provider = "groq"
+model = "llama-3.3-70b-versatile"
+```
+
+Usage: set `hint:reasoning` as the model parameter on an agent to route through the configured provider.
+
+### Web search and fetch
+
+```toml
+[web_search]
+enabled = true
+provider = "duckduckgo"    # or "brave"
+max_results = 5
+
+[web_fetch]
+enabled = true
+allowed_domains = ["*"]    # or specific domains
+blocked_domains = []
+max_response_size = 500000
+```
+
+## Agent building
+
+The `build_agent` function is the core assembly point. It is called every time a routine step needs to execute or a chat message needs to be handled. Here is what it does, in order:
+
+### 1. Resolve provider and model
+
+Looks up the agent's `model_provider` and `model_name` in the `ProviderRegistry`. The registry creates provider instances lazily -- the first time a provider/model combination is needed, it is initialized from the configured API keys.
+
+### 2. Resolve role
+
+The role is determined by priority:
+1. Explicit `override_role_id` (set by the routine step's `role_id`).
+2. First role assigned to the agent via `role_assignments`.
+
+The role's `prompt_config` provides the system prompt, developer prompt, templates, output templates, and memory profile.
+
+### 3. Build core tools
+
+All agents start with the full set of built-in tools: `shell`, `file_read`, `file_write`, `file_edit`, `web_search`, `web_fetch`, `git_operations`, `memory_store`, `memory_query`, and `delegation`.
+
+### 4. Apply understanding filter
+
+Immediately after building the tool set, the worker applies the **understanding filter**. This filter removes all `Write`-category tools, keeping only `Read` and `ReadWrite` tools. The result is that agents in their default state can observe and analyze but cannot make changes.
+
+Write tools are re-added when a mode is activated that explicitly includes them in its allow list or additional tools configuration.
+
+### 5. Add delegation tool
+
+If the agent has a `DelegationContext` and has not exceeded `max_delegation_depth`, a `DelegateToTool` is added. This allows the agent to delegate subtasks to other roles in the routine.
+
+### 6. Resolve skill tools
+
+For each skill assigned to the agent's role:
+- `nenjo-read` and `nenjo-write` skills are skipped (replaced by MCP platform tools).
+- Skills that require credentials (`auth_type != "none"`) are only registered as tools if credentials are resolved. Skills without credentials are still included for prompt injection (instructions and guidelines).
+
+Credential resolution follows a chain: local file (`~/.nenjo/credentials.toml`) -> environment variables (`NENJO_SKILL_{NAME}_{FIELD}`) -> backend API.
+
+### 7. Register MCP platform tools
+
+If the role has `platform_scopes` (e.g., `["tasks:read", "routines:write"]`), the worker calls the backend's MCP endpoint to fetch available tools, then filters them by the role's scopes. This gives the agent access to Nenjo platform operations (listing projects, creating routines, etc.).
+
+### 8. Register external MCP tools
+
+If the role has external MCP server assignments (via `role_mcp_assignments`), the worker connects to those servers through the `ExternalMcpPool` and registers their tools.
+
+### 9. Build memory context
+
+A `MemoryContext` is created with the project ID, role name, and agent ID. This scopes all memory operations to the correct namespace, ensuring that memories are isolated per project and role.
+
+### 10. Assemble the agent instance
+
+Finally, an `AgentBuilder` assembles the agent with:
+- Agent ID, name, model, and temperature
+- LLM provider
+- All resolved tools
+- Memory store and memory context
+- Prompt config (system prompt, developer prompt, templates)
+- Stream sender for real-time token streaming
+
+## Event handling
+
+The `RouterContext` dispatches incoming WebSocket events to specialized handlers:
+
+| Event | Handler |
+|-------|---------|
+| `chat.message` | Direct chat or routine-routed chat |
+| `chat.mode_enter` | Activate a mode session for a role |
+| `chat.mode_exit` | Deactivate a mode session |
+| `chat.cancel` | Cancel an in-progress chat |
+| `task.execute` | Run a routine for a task |
+| `bootstrap.changed` | Re-fetch and swap bootstrap data |
+| `cron.fire` | Execute a cron-triggered routine |
+| `tools.registry` | Return available tools for a project |
+
+See [Bootstrap and Hot-Swap](/docs/system/bootstrap-and-hot-swap) for how `bootstrap.changed` events trigger live reconfiguration.

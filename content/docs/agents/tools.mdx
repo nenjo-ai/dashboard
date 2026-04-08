@@ -1,0 +1,154 @@
+---
+title: Built-in Tools
+description: All worker tools by category, the understanding filter, and the Tool trait interface.
+---
+
+The Nenjo worker provides a set of built-in tools that agents use to interact with files, the shell, the web, and agent memory. Tools are classified by category, which determines whether they are available by default or require mode activation.
+
+## Tool Categories
+
+Every tool has a `ToolCategory` that classifies its side-effect profile:
+
+| Category | Description | Default access |
+|----------|-------------|---------------|
+| `Read` | Pure read/search with no side effects | Always available |
+| `ReadWrite` | Both read and write sub-operations (e.g., shell, git) | Always available |
+| `Write` | Mutates files, state, or external systems | Requires mode activation |
+
+## Understanding Filter
+
+By default, all agents start with the **understanding** (read-only) tool profile. This means only `Read` and `ReadWrite` tools are available. `Write` tools are excluded until a [mode](/docs/agents/modes) explicitly includes them via `tools.allow`.
+
+This design ensures agents are safe by default -- they can read and analyze but cannot modify files or make external requests unless explicitly authorized.
+
+## Built-in Tools Reference
+
+### File System
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `file_read` | Read | Read file contents from the workspace |
+| `file_write` | Write | Write content to a file |
+| `file_edit` | Write | Edit a file with search-and-replace operations |
+| `glob_search` | Read | Search for files by glob pattern |
+| `content_search` | Read | Search file contents with regex patterns |
+
+### Shell and Git
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `shell` | ReadWrite | Execute shell commands in the workspace |
+| `git_operations` | ReadWrite | Git operations (status, diff, commit, branch, etc.) |
+
+### Memory
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `memory_recall` | Read | Retrieve stored memories by query, with scope support |
+| `memory_store` | ReadWrite | Store new memories with categories and metadata |
+| `memory_forget` | ReadWrite | Delete stored memories by ID |
+
+Memory tools support a `scope` parameter to target different namespaces: the role's private namespace, a shared project namespace, or a core role namespace.
+
+### Web
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `web_search_tool` | Read | Search the web and return results |
+| `web_fetch` | Read | Fetch and extract content from a URL |
+| `http_request` | Write | Make arbitrary HTTP requests (configurable) |
+
+`web_fetch` and `http_request` support domain allow/block lists configured in the worker.
+
+### Browser
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `browser_open` | ReadWrite | Open a URL in a browser and capture the page |
+| `browser` | ReadWrite | Full browser automation (pluggable backend) |
+
+Browser tools are only available when `browser.enabled` is `true` in the worker config.
+
+### Vision
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `screenshot` | Read | Capture a screenshot of the current display |
+
+### Agent Collaboration
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `delegate_to` | Write | Delegate a task to another agent in a council |
+
+### Artifacts
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `artifact_draft` | Read | Update the current mode session's artifact draft |
+
+### Skill API Tools
+
+| Tool | Category | Description |
+|------|----------|-------------|
+| `skill_api` (dynamic) | Write | HTTP API tools defined by skill manifests |
+
+Skill API tools are dynamically generated from [skill manifests](/docs/agents/skills). Each tool in the manifest's `tools` array becomes a separate tool instance with its own name, schema, and endpoint.
+
+## Tool Trait Interface
+
+All tools implement the `Tool` trait:
+
+```rust
+#[async_trait]
+pub trait Tool: Send + Sync {
+    /// Tool name (used in LLM function calling)
+    fn name(&self) -> &str;
+
+    /// Human-readable description
+    fn description(&self) -> &str;
+
+    /// JSON Schema for parameters
+    fn parameters_schema(&self) -> serde_json::Value;
+
+    /// Execute the tool with given arguments
+    async fn execute(&self, args: serde_json::Value) -> anyhow::Result<ToolResult>;
+
+    /// Tool category for profile-based filtering (defaults to Write)
+    fn category(&self) -> ToolCategory {
+        ToolCategory::Write
+    }
+}
+```
+
+The `ToolResult` struct:
+
+```rust
+pub struct ToolResult {
+    pub success: bool,
+    pub output: String,
+    pub error: Option<String>,
+}
+```
+
+## Tool Registration
+
+The worker builds the tool registry at agent startup:
+
+1. **Built-in tools** are created based on the worker configuration (browser enabled, HTTP enabled, etc.)
+2. **Understanding filter** is applied to keep only `Read` and `ReadWrite` tools by default
+3. **Skill API tools** are generated from assigned skills with resolved credentials
+4. **MCP tools** from the Nenjo backend are filtered by the role's `platform_scopes`
+5. **External MCP tools** from assigned MCP servers are added
+6. **Mode overrides** apply `allow`/`deny` lists from the active mode
+
+## How Mode Tool Filtering Works
+
+When a mode is active, its `tools` configuration modifies the tool set:
+
+1. If `tools.allow` is non-empty, only listed tools pass through
+2. If `tools.deny` is non-empty, listed tools are removed
+3. `tools.additional_scopes` are merged with the role's `platform_scopes`, making additional MCP tools available
+4. `tools.activate_mcp` connects additional external MCP servers
+
+This layering means a mode can unlock write tools (like `file_write`) that the understanding filter would otherwise exclude, while also restricting which other tools remain available.

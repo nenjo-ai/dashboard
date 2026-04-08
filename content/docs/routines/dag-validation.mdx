@@ -1,0 +1,132 @@
+---
+title: DAG validation
+description: Validation rules that every routine must satisfy before it can be saved or executed.
+---
+
+Routines are validated as directed acyclic graphs (DAGs) before execution. The `validate_routine_graph` function checks all rules and returns the first violation found.
+
+## Validation rules
+
+### Rule 1: Routine must not be empty
+
+The routine must contain at least one step.
+
+**Error:** `Routine must contain at least one step`
+
+### Rule 2: Single entry point
+
+Exactly one step must have no incoming edges. This step is the entry point where execution begins.
+
+- **Zero entry points** means every step has an incoming edge, which implies a cycle.
+- **Multiple entry points** means the graph has disconnected branches.
+
+**Error (none):** `Routine has no entry point (every step has an incoming edge -- likely a cycle)`
+
+**Error (multiple):** `Routine must have exactly one entry point, but found N: [id1, id2, ...]`
+
+### Rule 3: At least one terminal step
+
+Every routine must include at least one step with `step_type = terminal`.
+
+**Error:** `Routine must have at least one terminal step`
+
+### Rule 4: All steps reachable
+
+Every step must be reachable from the entry point via a breadth-first traversal of edges. Disconnected steps are flagged.
+
+**Error:** `The following steps are not reachable from the entry point: 'StepName' (id), ...`
+
+### Rule 5: Agent steps must have an agent or role
+
+Every step with `step_type = agent` must have either `agent_id` or `role_id` set (or both).
+
+**Error:** `Agent step 'StepName' (id=...) must have an agent_id or role_id`
+
+### Rule 6: Terminal steps have no outgoing edges
+
+Terminal steps are sinks in the graph. They must not connect to any downstream step.
+
+**Error:** `Terminal step 'StepName' (id=...) must not have outgoing edges`
+
+### Rule 7: Non-terminal steps must have outgoing edges
+
+Every step that is not a terminal must connect to at least one downstream step. This prevents dangling steps that cannot lead to completion.
+
+This rule is skipped for single-step routines (a lone terminal step is valid).
+
+**Error:** `Non-terminal step 'StepName' (id=...) must have at least one outgoing edge`
+
+### Rule 8: Council steps must have a council
+
+Every step with `step_type = council` must have a non-null `council_id`.
+
+**Error:** `Council step 'StepName' (id=...) must have a council_id`
+
+### Rule 9: Cron steps must have a function reference
+
+Every step with `step_type = cron` must have at least one of `role_id`, `lambda_id`, or `council_id` set.
+
+**Error:** `Cron step 'StepName' (id=...) must have a role_id, lambda_id, or council_id`
+
+### Rule 10: Lambda steps must have a lambda
+
+Every step with `step_type = lambda` must have a non-null `lambda_id`.
+
+**Error:** `Lambda step 'StepName' (id=...) must have a lambda_id`
+
+### Rule 11: No cycles
+
+The graph must be acyclic. Cycle detection uses Kahn's algorithm (BFS topological sort). If the algorithm cannot consume all nodes, a cycle exists.
+
+**Error:** `Routine graph contains a cycle`
+
+## Validation order
+
+Rules are checked in this order:
+
+1. Not empty
+2. Agent steps have agent/role
+3. Council steps have council
+4. Cron steps have function reference
+5. Lambda steps have lambda
+6. At least one terminal
+7. Terminal steps have no outgoing edges
+8. Non-terminal steps have outgoing edges
+9. Single entry point
+10. No cycles
+11. All steps reachable
+
+The validator short-circuits on the first failure, so you will only see one error at a time.
+
+## Valid edge cases
+
+### Single terminal step
+
+A routine with only one terminal step and no edges is valid. The terminal step serves as both the entry point and the endpoint.
+
+### Agent step with role only
+
+Agent steps can specify a `role_id` instead of an `agent_id`. The role's `assigned_agent_id` is resolved at execution time.
+
+### Gate and terminal steps without agents
+
+Gate steps resolve their agent the same way as agent steps, but if no `agent_id` or `role_id` is set, they fall back to the first available agent. Terminal steps never need an agent reference.
+
+## Example: valid routine
+
+```
+Entry (agent, role_id=R1)
+  --on_pass--> Reviewer (agent, role_id=R2)
+    --on_pass--> Done (terminal)
+    --on_fail--> Failed (terminal)
+  --on_fail--> Failed (terminal)
+```
+
+This routine satisfies all rules:
+- One entry point (Entry)
+- Two terminal steps (Done, Failed)
+- All steps reachable from Entry
+- No cycles
+- Agent steps have role references
+- Terminal steps have no outgoing edges
+- Non-terminal steps have at least one outgoing edge

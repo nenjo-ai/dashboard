@@ -1,0 +1,166 @@
+---
+title: Councils
+description: Multi-agent councils, delegation strategies, and council members.
+---
+
+A council is a multi-agent group where a leader agent coordinates work among member agents. Councils enable structured collaboration patterns like task decomposition, parallel execution, and consensus-based decision making.
+
+## Data Model
+
+### CouncilRow
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Unique identifier |
+| `name` | string | Council name |
+| `description` | string or null | Human-readable description |
+| `leader_role_assignment_id` | UUID | Role assignment of the leader agent |
+| `delegation_strategy` | string | How work is distributed to members |
+| `config` | JSONB | Additional council configuration |
+| `created_by` | UUID | User who created the council |
+| `created_at` | timestamp | Creation time |
+| `updated_at` | timestamp | Last update time |
+
+### CouncilMemberRow
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Member record ID |
+| `council_id` | UUID | Parent council |
+| `role_assignment_id` | UUID | Role assignment for this member |
+| `priority` | integer | Priority order (lower = higher priority) |
+| `config` | JSONB | Member-specific configuration |
+| `created_at` | timestamp | Creation time |
+
+### Role Assignment Summary
+
+Each leader and member includes a `RoleAssignmentSummary` with:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Assignment ID |
+| `role_id` | UUID | The role |
+| `role_name` | string | Role name |
+| `role_description` | string or null | Role description |
+| `agent_id` | UUID | The agent |
+| `agent_name` | string | Agent name |
+| `agent_model` | string | LLM model identifier |
+| `agent_model_provider` | string | Model provider |
+
+## Delegation Strategies
+
+The `delegation_strategy` determines how the leader distributes work to members:
+
+| Strategy | Description |
+|----------|-------------|
+| `dynamic` | Leader decides at runtime which member(s) to delegate to based on the task |
+| `broadcast` | All members receive the same task and work in parallel |
+| `decompose` | Leader breaks the task into subtasks and assigns each to a specific member |
+| `round_robin` | Tasks are distributed to members in rotation |
+| `vote` | Members each provide a response; the leader synthesizes or selects the best |
+
+The default strategy is `decompose`.
+
+## Constraints
+
+- A council must have at least one member
+- The leader cannot also be a member
+- Each role assignment can appear at most once in a council's member list
+- All role assignments (leader and members) must exist and be valid
+- Deleting a council cascades to its members
+
+## Council Steps in Routines
+
+Councils can be used as steps in [routines](/docs/routines). A routine step with `step_type: "council"` delegates execution to a council, where the leader coordinates the members according to the delegation strategy. The council step completes when the leader produces a final result.
+
+## API Endpoints
+
+All endpoints are under `/api/v1/councils` and require authentication.
+
+### Council CRUD
+
+```bash
+# List all councils
+curl -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/councils
+
+# Get a council with leader and member details
+curl -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/councils/:id
+
+# Create a council
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Code Review Board",
+    "description": "Reviews PRs with multiple perspectives",
+    "leader_role_assignment_id": "...",
+    "delegation_strategy": "vote",
+    "members": [
+      {"role_assignment_id": "...", "priority": 1},
+      {"role_assignment_id": "...", "priority": 2}
+    ]
+  }' \
+  https://your-instance.com/api/v1/councils
+
+# Update a council
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"delegation_strategy": "broadcast"}' \
+  https://your-instance.com/api/v1/councils/:id
+
+# Delete a council
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/councils/:id
+```
+
+### Member Management
+
+```bash
+# Add a member to a council
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"role_assignment_id": "...", "priority": 3}' \
+  https://your-instance.com/api/v1/councils/:id/members
+
+# Update a member
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"priority": 1}' \
+  https://your-instance.com/api/v1/councils/:id/members/:member_id
+
+# Remove a member
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/councils/:id/members/:member_id
+```
+
+## Example: Task Decomposition Council
+
+A `decompose` strategy council where a lead architect breaks work into subtasks:
+
+```json
+{
+  "name": "Feature Team",
+  "delegation_strategy": "decompose",
+  "leader_role_assignment_id": "architect-assignment-id",
+  "members": [
+    {
+      "role_assignment_id": "frontend-dev-assignment-id",
+      "priority": 1,
+      "config": {}
+    },
+    {
+      "role_assignment_id": "backend-dev-assignment-id",
+      "priority": 1,
+      "config": {}
+    },
+    {
+      "role_assignment_id": "qa-engineer-assignment-id",
+      "priority": 2,
+      "config": {}
+    }
+  ]
+}
+```
+
+The architect leader receives the task, decomposes it into frontend, backend, and QA subtasks, then delegates each to the appropriate member. Members work on their subtasks and report back. The leader synthesizes the results.

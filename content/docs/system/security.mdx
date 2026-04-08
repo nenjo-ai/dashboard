@@ -1,0 +1,154 @@
+---
+title: Security
+description: SecurityPolicy, workspace sandboxing, command risk classification, path validation, and credential encryption.
+---
+
+## Overview
+
+The worker enforces a multi-layered security model that controls what agents can do. Security is configured through the `[autonomy]` and `[runtime]` sections of `~/.nenjo/config.toml` and enforced at runtime by the `SecurityPolicy` struct.
+
+## SecurityPolicy
+
+Every tool invocation passes through the `SecurityPolicy` before execution. The policy is built once at startup from the worker configuration and shared (via `Arc`) across all agent executions.
+
+```rust
+SecurityPolicy {
+    autonomy: AutonomyLevel,       // ReadOnly | Supervised | Full
+    workspace_dir: PathBuf,        // ~/.nenjo/workspace
+    workspace_only: bool,          // true by default
+    blocked_commands: Vec<String>,  // high-risk command blocklist
+    forbidden_paths: Vec<String>,  // system directories and sensitive dotfiles
+    max_actions_per_hour: u32,     // rate limit (default: 1000)
+    max_cost_per_day_cents: u32,   // cost cap (default: 500)
+    require_approval_for_medium_risk: bool,
+    block_high_risk_commands: bool,
+}
+```
+
+## Autonomy levels
+
+The `autonomy` field controls the agent's freedom to act:
+
+| Level | Behavior |
+|-------|----------|
+| `read_only` | Agents can observe but cannot execute any commands. All shell, file_write, and file_edit operations are rejected. |
+| `supervised` (default) | Agents can execute commands, but medium-risk operations require explicit approval and high-risk commands are blocked. |
+| `full` | Agents execute autonomously within policy bounds. Risk classification still applies, but approval gates are skipped. |
+
+## Command risk classification
+
+Every shell command is classified into one of three risk levels before execution. The classification is applied to the entire command string, including piped commands, `&&` chains, and `;`-separated sequences.
+
+### High risk (blocked by default)
+
+Commands that could damage the system, exfiltrate data, or escalate privileges:
+
+- **Destructive**: `rm`, `mkfs`, `dd`
+- **System power**: `shutdown`, `reboot`, `halt`, `poweroff`
+- **Privilege escalation**: `sudo`, `su`
+- **Permissions**: `chown`, `chmod`, `useradd`, `userdel`, `passwd`
+- **Mount/unmount**: `mount`, `umount`
+- **Firewall**: `iptables`, `ufw`, `firewall-cmd`
+- **Network/exfiltration**: `curl`, `wget`, `nc`, `ncat`, `netcat`, `scp`, `ssh`, `ftp`, `telnet`
+- **Process management**: `killall`, `kill`, `pkill`, `crontab`, `systemctl`, `service`
+
+When `block_high_risk_commands` is `true` (default), these commands are rejected outright. When `false`, they require explicit approval in supervised mode.
+
+### Medium risk (approval required in supervised mode)
+
+State-changing commands that are not inherently destructive:
+
+- **Git mutations**: `git commit`, `git push`, `git reset`, `git rebase`, `git merge`, `git cherry-pick`
+- **Package management**: `npm install`, `cargo add`, `pip install`, `go get`
+- **GitHub CLI**: `gh pr`, `gh issue`, `gh release`
+- **Build tools**: `make`, `cmake`
+- **File operations**: `touch`, `mkdir`, `mv`, `cp`, `ln`
+
+When `require_approval_for_medium_risk` is `true` (default), these commands are only executed if the tool call includes `approved: true`.
+
+### Low risk
+
+All other commands (e.g., `ls`, `cat`, `grep`, `git status`, `git diff`, `cargo build`, `npm test`) are executed without additional gates.
+
+## Workspace sandboxing
+
+When `workspace_only` is `true` (the default), the worker enforces strict path containment:
+
+### Path validation
+
+- All file operations (`file_read`, `file_write`, `file_edit`) are validated to ensure they target paths within the workspace directory (`~/.nenjo/workspace`).
+- Shell command arguments are scanned for absolute paths and `..` traversal patterns. Any reference to a path outside the workspace is rejected.
+- Output redirections (`>`, `>>`) are blocked in shell commands because they could write to arbitrary paths outside the workspace.
+- Subshell operators (backticks, `$(...)`) are blocked because they could hide arbitrary command execution.
+
+### Forbidden paths
+
+Even when `workspace_only` is `false`, certain paths are always forbidden:
+
+- System directories: `/etc`, `/root`, `/usr`, `/bin`, `/sbin`, `/lib`, `/opt`, `/boot`, `/dev`, `/proc`, `/sys`, `/var`, `/tmp`, `/home`
+- Sensitive dotfiles: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config`
+
+## Project-scoped vs chat-scoped contexts
+
+Agents operate in isolated contexts based on the project they are working in:
+
+- **Project-scoped**: Routine executions and task processing use the project's git worktree. Each project gets its own directory under the workspace, and all file operations are sandboxed to that directory.
+- **Chat-scoped**: Interactive chat sessions are scoped to a session ID. Chat history is maintained per session and is separate from routine execution state.
+
+Memory isolation is enforced through namespace scoping. Each project-role combination has its own memory namespace in the shared SQLite database at `~/.nenjo/memory/brain.db`. This means a dev role's memories for Project A are completely separate from the same role's memories for Project B.
+
+## Runtime sandboxing
+
+Beyond the policy-level controls, the worker supports runtime-level sandboxing through the `[runtime]` configuration:
+
+### Native runtime
+
+The default mode. Shell commands run directly on the host, constrained only by the `SecurityPolicy` (command blocklist, path validation, workspace containment).
+
+### Docker runtime
+
+When `kind = "docker"`, shell commands are executed inside ephemeral Docker containers:
+
+```toml
+[runtime]
+kind = "docker"
+
+[runtime.docker]
+image = "alpine:3.20"
+network = "none"           # no network access
+memory_limit_mb = 512
+cpu_limit = 1.0
+read_only_rootfs = true    # container filesystem is read-only
+mount_workspace = true     # workspace mounted at /workspace
+```
+
+Key properties:
+- **Network isolation**: `network = "none"` prevents containers from making any network connections.
+- **Read-only root**: The container's filesystem is mounted read-only, preventing writes outside the mounted workspace.
+- **Resource limits**: Memory and CPU limits prevent runaway processes.
+- **Workspace mount validation**: An optional `allowed_workspace_roots` list restricts which host directories can be mounted.
+
+### Firejail (Linux)
+
+On Linux systems, the worker can use Firejail for lightweight process-level sandboxing without the overhead of Docker containers.
+
+## Credential encryption
+
+Skill credentials stored in the backend database are encrypted at rest using AES-256-GCM:
+
+- The encryption key is loaded from the `NEN_SKILL_ENCRYPTION_KEY` environment variable (32 bytes, base64-encoded).
+- Each credential is encrypted with a unique nonce, and both the ciphertext and nonce are stored together.
+- When the key is not set, backend credential storage is disabled and the worker falls back to the local credential resolution chain: `~/.nenjo/credentials.toml` -> environment variables (`NENJO_SKILL_{NAME}_{FIELD}`) -> plaintext backend fallback.
+
+See [Worker](/docs/system/worker) for the full credential resolution chain and how skills are registered during agent building.
+
+## Environment forwarding
+
+The security policy selectively forwards environment variables to shell subprocesses. This is used for tool-specific credentials that agents need at runtime:
+
+- **GitHub tokens**: `GITHUB_TOKEN` and `GH_TOKEN` are forwarded for `gh` CLI and git credential helpers. If only one is set, the other is populated automatically.
+- **Git config**: `GIT_CONFIG_GLOBAL` is set to the user's `~/.gitconfig` and `GIT_CONFIG_SYSTEM` is set to `/dev/null` to ensure consistent git behavior in worktrees.
+
+## Rate limiting
+
+The `ActionTracker` enforces a sliding-window rate limit on tool executions. It tracks timestamps of recent actions within a one-hour window and rejects new actions when `max_actions_per_hour` is exceeded. The tracker is shared across all concurrent agent executions.

@@ -1,0 +1,149 @@
+---
+title: MCP Server
+description: Nenjo's built-in MCP server -- Streamable HTTP transport, JSON-RPC protocol, and resource-family platform tools.
+---
+
+# MCP Server
+
+Nenjo includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) server that exposes platform resources through a small set of resource-family tools.
+
+## Connection Details
+
+| Property | Value |
+|----------|-------|
+| Endpoint | `POST /mcp` |
+| Transport | Streamable HTTP |
+| Protocol | JSON-RPC 2.0 |
+| Auth | API key (`Authorization: Bearer` or `X-API-Key`) |
+| Protocol Version | `2025-03-26` |
+
+## Tool Surface
+
+Nenjo exposes these built-in MCP tools:
+
+| Tool | Description |
+|------|-------------|
+| `app.nenjo.platform/agents` | Agents plus prompt, scopes, abilities, context blocks, and assigned MCP servers |
+| `app.nenjo.platform/projects` | Projects plus project-scoped tasks, documents, executions, and dependency graph queries |
+| `app.nenjo.platform/routines` | Routines plus steps, edges, and councils |
+| `app.nenjo.platform/mcp_servers` | External MCP server configurations |
+| `app.nenjo.platform/chat` | Chat sessions, messages, and notifications |
+| `app.nenjo.platform/models` | Model configurations |
+
+The key's [scopes](/docs/api/scopes) determine which of these tools appear in `tools/list`.
+
+## Call Shape
+
+Each tool takes:
+
+| Field | Description |
+|-------|-------------|
+| `action` | The operation to perform |
+| `subresource` | Optional child surface within the tool family |
+| `id` | The actual target resource id |
+| `project_id` | Project scope selector for the `projects` tool |
+| `filters` | Optional object for list-style queries |
+| `data` | Optional object for writes |
+
+Two rules matter:
+
+- `id` is always the actual resource id being acted on
+- `project_id` is only a scope selector, not a parent resource id
+
+## Examples
+
+### List Project Tasks
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 10,
+  "method": "tools/call",
+  "params": {
+    "name": "app.nenjo.platform/projects",
+    "arguments": {
+      "subresource": "tasks",
+      "action": "list",
+      "project_id": "550e8400-e29b-41d4-a716-446655440000",
+      "filters": {
+        "status": "open"
+      }
+    }
+  }
+}
+```
+
+### Read an Agent Prompt
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 11,
+  "method": "tools/call",
+  "params": {
+    "name": "app.nenjo.platform/agents",
+    "arguments": {
+      "subresource": "prompt",
+      "action": "get",
+      "id": "6d0a8f92-0b2e-4ab4-8f95-2b4d9866c5f4"
+    }
+  }
+}
+```
+
+### Update Agent Scopes
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 12,
+  "method": "tools/call",
+  "params": {
+    "name": "app.nenjo.platform/agents",
+    "arguments": {
+      "subresource": "scopes",
+      "action": "update",
+      "id": "6d0a8f92-0b2e-4ab4-8f95-2b4d9866c5f4",
+      "data": {
+        "scopes": ["projects:read", "agents:read"]
+      }
+    }
+  }
+}
+```
+
+### List Global Executions
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 13,
+  "method": "tools/call",
+  "params": {
+    "name": "app.nenjo.platform/projects",
+    "arguments": {
+      "subresource": "executions",
+      "action": "list",
+      "project_id": null
+    }
+  }
+}
+```
+
+### Query Project Dependency Graph
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 14,
+  "method": "tools/call",
+  "params": {
+    "name": "app.nenjo.platform/projects",
+    "arguments": {
+      "subresource": "graph",
+      "action": "dependencies",
+      "project_id": "550e8400-e29b-41d4-a716-446655440000"
+    }
+  }
+}
+```

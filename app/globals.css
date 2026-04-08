@@ -1,0 +1,387 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-deep-space-blue-50: #e6e9f0;
+  --color-deep-space-blue-100: #c0c8da;
+  --color-deep-space-blue-200: #96a3c1;
+  --color-deep-space-blue-300: #6c7ea8;
+  --color-deep-space-blue-400: #4d6295;
+  --color-deep-space-blue-500: #2d4682;
+  --color-deep-space-blue-600: #283f7a;
+  --color-deep-space-blue-700: #22376f;
+  --color-deep-space-blue-800: #1c2f65;
+  --color-deep-space-blue-900: #112052;
+  --color-deep-space-blue: #2d4682;
+
+  --color-flag-red-50: #ffebeb;
+  --color-flag-red-100: #ffcccc;
+  --color-flag-red-200: #ffaaaa;
+  --color-flag-red-300: #ff8888;
+  --color-flag-red-400: #ff6e6e;
+  --color-flag-red-500: #ff5555;
+  --color-flag-red-600: #ff4d4d;
+  --color-flag-red-700: #ff4343;
+  --color-flag-red-800: #ff3a3a;
+  --color-flag-red-900: #ff2828;
+  --color-flag-red: #ff5555;
+
+  --color-vivid-tangerine-50: #fff4e6;
+  --color-vivid-tangerine-100: #ffe4bf;
+  --color-vivid-tangerine-200: #ffd295;
+  --color-vivid-tangerine-300: #ffbf6b;
+  --color-vivid-tangerine-400: #ffb24c;
+  --color-vivid-tangerine-500: #ffa52d;
+  --color-vivid-tangerine-600: #ff9d28;
+  --color-vivid-tangerine-700: #ff9322;
+  --color-vivid-tangerine-800: #ff891c;
+  --color-vivid-tangerine-900: #ff7711;
+  --color-vivid-tangerine: #ffa52d;
+
+  --color-sunflower-gold-50: #fffbeb;
+  --color-sunflower-gold-100: #fff4cc;
+  --color-sunflower-gold-200: #ffecaa;
+  --color-sunflower-gold-300: #ffe488;
+  --color-sunflower-gold-400: #ffde6e;
+  --color-sunflower-gold-500: #ffd855;
+  --color-sunflower-gold-600: #ffd34d;
+  --color-sunflower-gold-700: #ffcd43;
+  --color-sunflower-gold-800: #ffc73a;
+  --color-sunflower-gold-900: #ffbc28;
+  --color-sunflower-gold: #ffd855;
+
+  --color-vanilla-custard-50: #fffef5;
+  --color-vanilla-custard-100: #fffde6;
+  --color-vanilla-custard-200: #fffcd5;
+  --color-vanilla-custard-300: #fffbc4;
+  --color-vanilla-custard-400: #fffab8;
+  --color-vanilla-custard-500: #fff9ac;
+  --color-vanilla-custard-600: #fff8a4;
+  --color-vanilla-custard-700: #fff79a;
+  --color-vanilla-custard-800: #fff690;
+  --color-vanilla-custard-900: #fff47e;
+  --color-vanilla-custard: #fff9ac;
+
+  --font-sans: Inter, system-ui, sans-serif;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
+@plugin '@tailwindcss/typography';
+
+/* Fumadocs dark mode overrides — match deep-space-blue dark bg */
+.dark {
+  --color-fd-background: #0a1023 !important;
+  --color-fd-foreground: #e5e7eb !important;
+  --color-fd-muted: #111d35 !important;
+  --color-fd-muted-foreground: #d1d5db !important;
+  --color-fd-card: #111d35 !important;
+  --color-fd-border: rgba(75, 95, 140, 0.4) !important;
+  --color-fd-ring: #4d6295 !important;
+  --color-fd-primary: #93c5fd !important;
+  --color-fd-primary-foreground: #0a1023 !important;
+  --color-fd-secondary: #111d35 !important;
+  --color-fd-secondary-foreground: #e5e7eb !important;
+  --color-fd-accent: #162040 !important;
+  --color-fd-accent-foreground: #f3f4f6 !important;
+  --color-fd-popover: #111d35 !important;
+  --color-fd-popover-foreground: #f3f4f6 !important;
+}
+
+/* Force readable text/highlights in docs content for dark mode */
+.dark [class*="DocsBody"],
+.dark [data-docs-body],
+.dark .prose {
+  color: #e5e7eb !important;
+}
+
+.dark [class*="DocsBody"] strong,
+.dark [data-docs-body] strong,
+.dark .prose strong {
+  color: #f9fafb !important;
+}
+
+.dark [class*="DocsBody"] code:not(pre code),
+.dark [data-docs-body] code:not(pre code),
+.dark .prose code:not(pre code) {
+  color: #93c5fd !important;
+  background: rgba(59, 130, 246, 0.15) !important;
+}
+
+.dark [class*="DocsBody"] a,
+.dark [data-docs-body] a,
+.dark .prose a {
+  color: #93c5fd !important;
+}
+
+.dark [class*="DocsBody"] li,
+.dark [data-docs-body] li,
+.dark .prose li {
+  color: #e5e7eb !important;
+}
+
+.dark [class*="DocsBody"] li::marker,
+.dark [data-docs-body] li::marker,
+.dark .prose li::marker {
+  color: #9ca3af !important;
+}
+
+.dark [class*="DocsBody"] h2,
+.dark [class*="DocsBody"] h3,
+.dark [class*="DocsBody"] h4,
+.dark [data-docs-body] h2,
+.dark [data-docs-body] h3,
+.dark [data-docs-body] h4,
+.dark .prose h2,
+.dark .prose h3,
+.dark .prose h4 {
+  color: #f9fafb !important;
+}
+
+.dark [class*="DocsBody"] td,
+.dark [class*="DocsBody"] th,
+.dark .prose td,
+.dark .prose th {
+  color: #e5e7eb !important;
+  border-color: rgba(75, 95, 140, 0.4) !important;
+}
+
+.dark [class*="DocsBody"] th {
+  background: rgba(75, 95, 140, 0.2) !important;
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 222.2 84% 4.9%;
+    --border: 220 13% 91%;
+  }
+
+  .dark {
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
+    --border: 217 33% 17%;
+  }
+
+  * {
+    @apply border-gray-200 dark:border-gray-700;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased dark:bg-gray-900 dark:text-gray-100;
+  }
+}
+
+/* Blinking cursor for typing indicator */
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-blink-cursor {
+  animation: blink-cursor 0.8s step-end infinite;
+}
+
+/* Hold-to-cancel ring progress */
+@keyframes hold-arc {
+  from { stroke-dashoffset: 100; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* Message delivery status animations */
+@keyframes status-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes check-draw {
+  from { stroke-dashoffset: 12; }
+  to   { stroke-dashoffset: 0; }
+}
+
+@keyframes sending-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1; }
+}
+
+.animate-status-in {
+  animation: status-fade-in 200ms ease-out forwards;
+}
+
+.animate-check-draw {
+  stroke-dasharray: 12;
+  stroke-dashoffset: 12;
+  animation: check-draw 300ms ease-out forwards;
+}
+
+.animate-check-draw-delayed {
+  stroke-dasharray: 12;
+  stroke-dashoffset: 12;
+  animation: check-draw 300ms ease-out 150ms forwards;
+}
+
+.animate-sending-pulse {
+  animation: sending-pulse 1.5s ease-in-out infinite;
+}
+
+/* Idle pulse ring on cancel button */
+@keyframes cancel-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%      { opacity: 0; transform: scale(1.35); }
+}
+
+.animate-cancel-pulse {
+  animation: cancel-pulse 2s ease-in-out infinite;
+}
+
+/* Onboarding step transition */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 350ms ease-out both;
+}
+
+/* Hide scrollbar but keep scroll functionality */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Shimmer skeleton animation */
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.25);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.35);
+}
+
+/* ── ReactFlow Controls — dark mode ────────────────────────────────────────── */
+.dark .react-flow__controls {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.dark .react-flow__controls-button {
+  background: #1f2937;
+  border-color: #374151;
+}
+.dark .react-flow__controls-button svg {
+  fill: #d1d5db;
+}
+.dark .react-flow__controls-button:hover {
+  background: #374151;
+}
+.dark .react-flow__controls-button:hover svg {
+  fill: #f9fafb;
+}
+
+/* ── Landing page animations ───────────────────────────────────────────── */
+@keyframes landing-orb-pulse {
+  0%, 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  50%      { opacity: 0.6; transform: translate(-50%, -50%) scale(1.08); }
+}
+
+.landing-orb-pulse {
+  animation: landing-orb-pulse 4s ease-in-out infinite;
+}
+
+/* ── Mode border animations ──────────────────────────────────────────── */
+
+@property --border-angle {
+  syntax: "<angle>";
+  initial-value: 45deg;
+  inherits: false;
+}
+
+/* Entry: starts at bottom-left (45deg), orbits smoothly to top (180deg) */
+@keyframes domain-border-enter {
+  0%   { --border-angle: 45deg; opacity: 0; }
+  8%   { opacity: 1; }
+  100% { --border-angle: 180deg; opacity: 1; }
+}
+
+/* Idle: gentle sway around the top (180deg), ±10deg — smooth sine wave */
+@keyframes domain-border-idle {
+  0%   { --border-angle: 180deg; }
+  16%  { --border-angle: 189deg; }
+  33%  { --border-angle: 190deg; }
+  50%  { --border-angle: 180deg; }
+  66%  { --border-angle: 170deg; }
+  83%  { --border-angle: 171deg; }
+  100% { --border-angle: 180deg; }
+}
+
+/* Exit: from top (180deg) orbits back to bottom-left (45deg) and fades */
+@keyframes domain-border-exit {
+  0%   { --border-angle: 180deg; opacity: 1; }
+  80%  { opacity: 0.5; }
+  100% { --border-angle: 45deg; opacity: 0; }
+}
+
+/* ── Domain input border animations ────────────────────────────────────── */
+
+@property --input-border-pos {
+  syntax: "<percentage>";
+  initial-value: 0%;
+  inherits: false;
+}
+
+/* Entry: sweeps left to right, then tapers into resting shape */
+@keyframes input-border-enter {
+  0%   { --input-border-pos: 0%; --input-idle-spread: 0%; opacity: 0; }
+  5%   { opacity: 1; }
+  70%  { --input-border-pos: 100%; --input-idle-spread: 0%; }
+  100% { --input-border-pos: 100%; --input-idle-spread: 30%; opacity: 1; }
+}
+
+@property --input-idle-spread {
+  syntax: "<percentage>";
+  initial-value: 30%;
+  inherits: false;
+}
+
+/* Idle: center mass breathes — the bright middle portion expands and contracts */
+@keyframes input-border-idle {
+  0%, 100% { --input-idle-spread: 30%; }
+  50%      { --input-idle-spread: 15%; }
+}
+
+/* Exit: tapered border recedes from right back to left */
+@keyframes input-border-exit {
+  0%   { --input-border-pos: 100%; --input-idle-spread: 30%; opacity: 1; }
+  100% { --input-border-pos: 0%; --input-idle-spread: 0%; opacity: 0; }
+}

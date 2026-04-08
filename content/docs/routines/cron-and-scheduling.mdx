@@ -1,0 +1,206 @@
+---
+title: Cron and scheduling
+description: Schedule recurring routine executions with cron expressions and interval-based timers.
+---
+
+Nenjo supports two forms of scheduled execution: **cron steps** within a routine (polling loops) and **cron-triggered routines** (recurring whole-routine runs via the CronManager).
+
+## Cron steps
+
+A cron step is a routine step that repeatedly executes a function (agent or lambda) at a fixed interval until it signals completion or times out. This is useful for polling external systems -- for example, waiting for a PR to be merged or a deployment to finish.
+
+### Configuration
+
+```json
+{
+  "step_type": "cron",
+  "role_id": "ROLE_UUID",
+  "config": {
+    "interval": "30s",
+    "timeout": "2h"
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `interval` | string | `"60s"` | How often to run the function |
+| `timeout` | string | `"24h"` | Maximum total time before the step aborts |
+| `role_id` | UUID | -- | Agent role to run (agent mode) |
+| `lambda_id` | UUID | -- | Lambda script to run (lambda mode) |
+
+The `role_id` and `lambda_id` can be set either as top-level step fields or inside the `config` JSON. When both are present, lambda takes precedence.
+
+### Execution modes
+
+**Agent mode** -- An LLM agent runs on each polling cycle using the specified role. The agent should include a `cron_status` JSON signal in its output to indicate completion.
+
+**Lambda mode** -- A script runs on each polling cycle. The script communicates its status via stdout.
+
+### Signaling
+
+On each cycle, the function's output is parsed for a status signal:
+
+```json
+{"cron_status": "pass", "reason": "PR #42 was merged successfully"}
+```
+
+| Status | Effect |
+|---|---|
+| `pass` | Stop the loop, take the `on_pass` edge |
+| `fail` | Stop the loop, take the `on_fail` edge |
+| `wait` | Sleep for `interval` and run again |
+| `abort` | Abort the routine immediately with an error |
+
+If no signal is found in the output, the step behaves as `wait` and runs again on the next cycle.
+
+**Legacy format:** For backward compatibility, `CRON_DONE:PASS` and `CRON_DONE:FAIL` markers in the output text are also recognized.
+
+### Example: wait for PR merge
+
+```json
+{
+  "name": "Wait for PR Merge",
+  "step_type": "cron",
+  "lambda_id": "LAMBDA_UUID",
+  "config": {
+    "interval": "5m",
+    "timeout": "12h"
+  }
+}
+```
+
+The lambda script checks the PR status and outputs:
+```bash
+#!/bin/bash
+PR_STATE=$(gh pr view "$NENJO_PR_NUMBER" --json state -q '.state')
+if [ "$PR_STATE" = "MERGED" ]; then
+  echo '{"cron_status": "pass", "reason": "PR merged"}'
+elif [ "$PR_STATE" = "CLOSED" ]; then
+  echo '{"cron_status": "fail", "reason": "PR was closed without merging"}'
+else
+  echo '{"cron_status": "wait"}'
+fi
+```
+
+## Cron-triggered routines
+
+Separately from cron steps, entire routines can be triggered on a recurring schedule. This is managed by the **CronManager** on the worker.
+
+### Routine configuration
+
+Set the routine's `trigger` to `cron` and add a `schedule` to the metadata:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Daily Code Audit",
+    "trigger": "cron",
+    "metadata": {
+      "schedule": "0 9 * * *"
+    }
+  }' \
+  https://your-instance.com/api/v1/routines
+```
+
+### Schedule format
+
+The `schedule` field supports two formats:
+
+**Cron expressions** -- Standard 5-field cron syntax (minute, hour, day-of-month, month, day-of-week):
+
+| Expression | Meaning |
+|---|---|
+| `0 9 * * *` | Every day at 9:00 AM |
+| `*/30 * * * *` | Every 30 minutes |
+| `0 0 * * 1` | Every Monday at midnight |
+
+**Interval strings** -- Simple duration strings for fixed-interval scheduling:
+
+| Interval | Meaning |
+|---|---|
+| `30s` | Every 30 seconds |
+| `5m` | Every 5 minutes |
+| `1h` | Every hour |
+| `2d` | Every 2 days |
+
+The format is auto-detected: if the string contains spaces, it is treated as a cron expression; otherwise, as an interval.
+
+## CronManager
+
+The CronManager runs on the worker and manages the lifecycle of all cron-triggered routine schedules.
+
+### Bootstrap
+
+On worker startup, the CronManager:
+
+1. Reads all active cron **assignments** (routine-to-project mappings with trigger type `cron`) and starts a timer for each.
+2. Reads all active cron **routines** that have a `schedule` in their metadata but no active assignment, and starts standalone timers for those.
+
+### Operations
+
+| Operation | Event | Description |
+|---|---|---|
+| Enable | `cron.enable` | Start a new schedule timer. Cancels any existing timer for the same assignment. |
+| Disable | `cron.disable` | Cancel the timer for an assignment. |
+| Trigger now | `cron.trigger` | Fire a one-off execution immediately without affecting the regular schedule. |
+
+### Router events
+
+The backend pushes events to the worker via WebSocket when schedule state changes:
+
+```json
+{"type": "cron.enable", "assignment_id": "...", "routine_id": "...", "project_id": "...", "schedule": "0 9 * * *"}
+```
+
+```json
+{"type": "cron.disable", "assignment_id": "..."}
+```
+
+```json
+{"type": "cron.trigger", "routine_id": "...", "project_id": "..."}
+```
+
+### Manual trigger
+
+You can manually trigger a cron routine via the API:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/routines/$ROUTINE_ID/trigger
+```
+
+This returns `202 Accepted` and pushes a `cron.trigger` event to the worker. Only routines with `trigger: "cron"` can be manually triggered.
+
+### Cron execution flow
+
+When a cron timer fires:
+
+1. An execution run record is created with `status: "running"`.
+2. The routine is loaded from cached bootstrap data.
+3. The routine executes with `is_cron_trigger: true` (agent steps use `cron_task` templates).
+4. On completion, a `task_completed` WebSocket message is sent so the backend can update the execution status.
+
+### Heartbeat and status
+
+The CronManager tracks:
+
+| Field | Description |
+|---|---|
+| `assignment_id` | The assignment or routine ID this schedule belongs to |
+| `routine_id` | The routine being scheduled |
+| `last_run_at` | Timestamp of the last execution (ISO 8601) |
+| `next_fire_at` | Computed next fire time (ISO 8601) |
+
+## Cron steps vs. cron routines
+
+| Feature | Cron step | Cron routine |
+|---|---|---|
+| Scope | Single step within a routine | Entire routine |
+| Trigger | Runs as part of routine execution | Runs on its own schedule |
+| Use case | Polling/waiting within a workflow | Recurring autonomous tasks |
+| Signal | Function signals pass/fail/wait/abort | Routine completes normally |
+| Manager | Executor loop | CronManager on worker |
