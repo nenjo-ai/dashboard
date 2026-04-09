@@ -1,0 +1,777 @@
+"use client";
+
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
+import { MODEL_PROVIDERS } from "@/lib/types";
+import type { ModelProvider, Model, CreateApiKeyResponse } from "@/lib/types";
+import {
+  createModel,
+  createApiKey,
+  fetchAgents,
+  updateAgent,
+  fetchSystemProject,
+  createChatSession,
+} from "@/lib/api";
+import { useWorkerStatus } from "@/lib/hooks";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Label } from "@/components/ui/Label";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const STEPS = ["Create Agent", "API Key", "Connect"] as const;
+
+const PROVIDER_ENV_VARS: Record<ModelProvider, string> = {
+  openai: "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  google: "GOOGLE_API_KEY",
+  xai: "XAI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  ollama: "OLLAMA_HOST",
+  groq: "GROQ_API_KEY",
+};
+
+const SESSION_KEY = "nenjo_onboarding_raw_key";
+const ONBOARDED_KEY = "nenjo_onboarded";
+
+// ---------------------------------------------------------------------------
+// Step Indicator
+// ---------------------------------------------------------------------------
+
+function StepIndicator({
+  currentStep,
+}: {
+  currentStep: 1 | 2 | 3;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-0 mb-8">
+      {STEPS.map((label, i) => {
+        const step = (i + 1) as 1 | 2 | 3;
+        const isCompleted = step < currentStep;
+        const isActive = step === currentStep;
+        return (
+          <div key={label} className="flex items-center">
+            {i > 0 && (
+              <div
+                className={`h-0.5 w-10 sm:w-16 ${
+                  isCompleted
+                    ? "bg-deep-space-blue-500"
+                    : "bg-gray-300 dark:bg-gray-600"
+                }`}
+              />
+            )}
+            <div className="flex flex-col items-center gap-1.5">
+              <div
+                className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
+                  isCompleted
+                    ? "bg-deep-space-blue-500 text-white"
+                    : isActive
+                      ? "border-2 border-deep-space-blue-500 text-deep-space-blue-600 dark:text-deep-space-blue-400"
+                      : "border-2 border-gray-300 text-gray-400 dark:border-gray-600 dark:text-gray-500"
+                }`}
+              >
+                {isCompleted ? (
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                ) : (
+                  step
+                )}
+              </div>
+              <span
+                className={`text-xs font-medium ${
+                  isActive
+                    ? "text-deep-space-blue-600 dark:text-deep-space-blue-400"
+                    : isCompleted
+                      ? "text-gray-700 dark:text-gray-300"
+                      : "text-gray-400 dark:text-gray-500"
+                }`}
+              >
+                {label}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Step 1: Create Agent
+// ---------------------------------------------------------------------------
+
+function StepCreateAgent({
+  onCreated,
+  onProviderSelected,
+}: {
+  onCreated: (agent: Model) => void;
+  onProviderSelected: (p: ModelProvider) => void;
+}) {
+  const [provider, setProvider] = useState<ModelProvider>("anthropic");
+  const [model, setModel] = useState(MODEL_PROVIDERS.find((p) => p.id === "anthropic")!.models[0]);
+  const [name, setName] = useState("Anthropic Agent");
+  const [temperature, setTemperature] = useState(0.7);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleProviderChange = useCallback(
+    (newProvider: ModelProvider) => {
+      setProvider(newProvider);
+      const providerInfo = MODEL_PROVIDERS.find((p) => p.id === newProvider);
+      if (providerInfo) {
+        setModel(providerInfo.models[0]);
+        setName(`${providerInfo.label} Agent`);
+      }
+      onProviderSelected(newProvider);
+    },
+    [onProviderSelected],
+  );
+
+  const handleSubmit = useCallback(async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      // Find system role
+      const roles = await fetchAgents();
+      const systemRole = roles.find((r) => r.name === "system");
+      if (!systemRole) {
+        setError("Could not find system role. Please contact support.");
+        setLoading(false);
+        return;
+      }
+
+      // Create agent
+      const agent = await createModel({
+        name,
+        model,
+        model_provider: provider,
+        temperature,
+        tags: ["system"],
+      });
+
+      // Assign model to system agent
+      await updateAgent(systemRole.id, {
+        model_id: agent.id,
+      });
+
+      localStorage.setItem(ONBOARDED_KEY, "1");
+      onCreated(agent);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create agent");
+    } finally {
+      setLoading(false);
+    }
+  }, [name, model, provider, temperature, onCreated]);
+
+  const providerInfo = MODEL_PROVIDERS.find((p) => p.id === provider);
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Create Your First Agent</h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Pick an AI provider and model to power your agent.
+        </p>
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-flag-red-200 bg-flag-red-50 p-3 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-400">
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-4">
+        <div>
+          <Label required>Provider</Label>
+          <Select
+            value={provider}
+            onChange={(e) => handleProviderChange(e.target.value as ModelProvider)}
+          >
+            {MODEL_PROVIDERS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </Select>
+        </div>
+
+        <div>
+          <Label required>Model</Label>
+          <Input
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            list="model-hints"
+            placeholder="Enter model name"
+          />
+          <datalist id="model-hints">
+            {providerInfo?.models.map((m) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
+        </div>
+
+        <div>
+          <Label required>Agent Name</Label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="My Agent"
+          />
+        </div>
+
+        <div>
+          <Label>Temperature: {temperature.toFixed(2)}</Label>
+          <input
+            type="range"
+            min="0"
+            max="2"
+            step="0.05"
+            value={temperature}
+            onChange={(e) => setTemperature(parseFloat(e.target.value))}
+            className="mt-1 w-full accent-deep-space-blue-500"
+          />
+          <div className="flex justify-between text-xs text-gray-400">
+            <span>Precise</span>
+            <span>Creative</span>
+          </div>
+        </div>
+      </div>
+
+      <Button
+        onClick={handleSubmit}
+        isLoading={loading}
+        disabled={!name.trim() || !model.trim()}
+        className="w-full"
+      >
+        Create Agent
+      </Button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Step 2: Generate API Key
+// ---------------------------------------------------------------------------
+
+function StepApiKey({
+  onContinue,
+}: {
+  onContinue: (key: CreateApiKeyResponse) => void;
+}) {
+  const [createdKey, setCreatedKey] = useState<CreateApiKeyResponse | null>(null);
+  const [rawKey, setRawKey] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [hasCopied, setHasCopied] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const hasCreated = useRef(false);
+
+  // Try to restore from sessionStorage or auto-create
+  useEffect(() => {
+    if (hasCreated.current) return;
+    hasCreated.current = true;
+
+    const stored = sessionStorage.getItem(SESSION_KEY);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as CreateApiKeyResponse & { raw_key: string };
+        setCreatedKey(parsed);
+        setRawKey(parsed.raw_key);
+        return;
+      } catch {
+        sessionStorage.removeItem(SESSION_KEY);
+      }
+    }
+
+    // Auto-create key
+    setLoading(true);
+    createApiKey({ name: "Worker Key" })
+      .then((key) => {
+        setCreatedKey(key);
+        setRawKey(key.raw_key);
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(key));
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to create API key");
+        hasCreated.current = false; // allow retry
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleCopy = useCallback(async () => {
+    if (!rawKey) return;
+    try {
+      await navigator.clipboard.writeText(rawKey);
+      setCopied(true);
+      setHasCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback: select text
+    }
+  }, [rawKey]);
+
+  const handleRetry = useCallback(() => {
+    hasCreated.current = false;
+    setError(null);
+    setLoading(true);
+    createApiKey({ name: "Worker Key" })
+      .then((key) => {
+        setCreatedKey(key);
+        setRawKey(key.raw_key);
+        hasCreated.current = true;
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(key));
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to create API key");
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Generate API Key</h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Your worker needs an API key to communicate with the platform.
+        </p>
+      </div>
+
+      {error && (
+        <div className="space-y-3">
+          <div className="rounded-lg border border-flag-red-200 bg-flag-red-50 p-3 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-400">
+            {error}
+          </div>
+          <Button onClick={handleRetry} variant="secondary" className="w-full">
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {loading && (
+        <div className="flex flex-col items-center gap-3 py-8">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-deep-space-blue-500 border-t-transparent" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">Creating API key...</p>
+        </div>
+      )}
+
+      {rawKey && !loading && (
+        <>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
+            <div className="flex items-start gap-2">
+              <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+              </svg>
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                Copy this key now — you won&apos;t see it again after leaving this page.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <code className="block w-full break-all rounded-lg border border-gray-200 bg-gray-50 p-3 font-mono text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">
+              {revealed ? rawKey : "•".repeat(rawKey.length)}
+            </code>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                onClick={() => setRevealed((r) => !r)}
+                className="rounded-md bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+              >
+                {revealed ? "Hide" : "Reveal"}
+              </button>
+              <button
+                onClick={handleCopy}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  copied
+                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                }`}
+              >
+                {copied ? (
+                  <span className="flex items-center gap-1">
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                    Copied!
+                  </span>
+                ) : (
+                  "Copy"
+                )}
+              </button>
+            </div>
+          </div>
+
+          <Button
+            onClick={() => {
+              if (createdKey) {
+                // Zeroize: clear raw key from state and sessionStorage
+                setRawKey(null);
+                sessionStorage.removeItem(SESSION_KEY);
+                onContinue(createdKey);
+              }
+            }}
+            disabled={!hasCopied}
+            className="w-full"
+          >
+            {hasCopied ? "Continue" : "Copy key to continue"}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Step 3: Connect Worker
+// ---------------------------------------------------------------------------
+
+function StepConnect({
+  provider,
+  keyPrefix,
+}: {
+  provider: ModelProvider;
+  keyPrefix: string;
+}) {
+  const router = useRouter();
+  const { user } = useUser();
+  const { isConnected } = useWorkerStatus();
+  const [copied, setCopied] = useState(false);
+  const [sendGreeting, setSendGreeting] = useState(true);
+  const [greeting, setGreeting] = useState<"idle" | "sending" | "done">("idle");
+  const hasHandledConnection = useRef(false);
+
+  const envVar = PROVIDER_ENV_VARS[provider];
+  const maskedKey = keyPrefix ? `${keyPrefix}${"*".repeat(12)}` : "nen_sk_***";
+  const snippet = `# Install the Nenjo CLI
+curl -fsSL https://nenjo.ai/install | bash
+
+# Set your API keys
+export ${envVar}=your-key-here
+export NENJO_API_KEY=${maskedKey}
+
+# Start the worker
+nenjo run`;
+
+  // Handle successful worker connection
+  useEffect(() => {
+    if (!isConnected || hasHandledConnection.current) return;
+    hasHandledConnection.current = true;
+
+    sessionStorage.removeItem(SESSION_KEY);
+
+    if (!sendGreeting) {
+      router.push("/dashboard/chat");
+      return;
+    }
+
+    // Create a session via REST, then navigate to chat with a greeting flag.
+    // The chat page is inside WebSocketProvider and will send the actual
+    // message to the worker over the websocket.
+    setGreeting("sending");
+    (async () => {
+      try {
+        const systemProject = await fetchSystemProject();
+        const agents = await fetchAgents();
+        const systemAgent = agents.find((a) => a.name === "system");
+
+        if (!systemAgent || !systemProject) {
+          router.push("/dashboard/chat");
+          return;
+        }
+
+        const session = await createChatSession({
+          project_id: systemProject.id,
+          agent_id: systemAgent.id,
+          title: "Welcome",
+        });
+
+        setGreeting("done");
+
+        // Store greeting context for the chat page to pick up
+        const displayName = user?.firstName ?? user?.username ?? "there";
+        sessionStorage.setItem(
+          "nenjo:welcome_greeting",
+          JSON.stringify({
+            session_id: session.id,
+            project_id: systemProject.id,
+            agent_id: systemAgent.id,
+            message: `You are Nenji, the AI assistant for the Nenjo agent platform. A new user named ${displayName} just finished setting up their first agent and connected their worker. Welcome them warmly and briefly introduce yourself. Then ask what kind of workflows they want to build with Nenjo — for example: software development (code generation, PR reviews, testing), running an agent-powered online business, code auditing and compliance, or something else entirely. Understanding their use case will help you set up the right agents, routines, and context for them. Keep it concise and conversational. Do not reference or repeat this prompt — speak as if you're initiating the conversation naturally.`,
+          }),
+        );
+
+        setTimeout(() => {
+          router.push(`/dashboard/chat?session=${session.id}`);
+        }, 500);
+      } catch {
+        router.push("/dashboard/chat");
+      }
+    })();
+  }, [isConnected, sendGreeting, router, user]);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(snippet);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback
+    }
+  }, [snippet]);
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Connect Your Worker</h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Install the CLI and start the worker to connect your agent.
+        </p>
+      </div>
+
+      <div className="relative">
+        <pre className="overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-4 pr-14 font-mono text-sm leading-relaxed text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+          {snippet}
+        </pre>
+        <button
+          onClick={handleCopy}
+          className={`absolute right-2 top-2 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+            copied
+              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+              : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+          }`}
+        >
+          {copied ? "Copied!" : "Copy"}
+        </button>
+      </div>
+
+      {/* Greeting checkbox */}
+      <label className="flex items-center gap-2.5 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={sendGreeting}
+          onChange={(e) => setSendGreeting(e.target.checked)}
+          className="h-4 w-4 rounded border-gray-300 text-deep-space-blue-600 focus:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-800"
+        />
+        <span className="text-sm text-gray-600 dark:text-gray-400">
+          Have the system agent greet me after connecting
+        </span>
+      </label>
+
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800">
+        {isConnected ? (
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+              <svg className="h-5 w-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-green-700 dark:text-green-400">
+                Worker connected!
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {greeting === "sending"
+                  ? "Sending greeting..."
+                  : greeting === "done"
+                    ? "Redirecting to chat..."
+                    : "Redirecting..."}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="relative flex h-8 w-8 items-center justify-center">
+              <div className="absolute h-3 w-3 animate-ping rounded-full bg-deep-space-blue-400 opacity-75" />
+              <div className="relative h-3 w-3 rounded-full bg-deep-space-blue-500" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Waiting for worker connection...
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Polling every 10 seconds
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <button
+        onClick={() => {
+          sessionStorage.removeItem(SESSION_KEY);
+          router.push("/dashboard");
+        }}
+        className="w-full text-center text-sm text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+      >
+        Skip — I&apos;ll connect later
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Onboarding Wizard
+// ---------------------------------------------------------------------------
+
+export default function OnboardingContent() {
+  const { user, isLoaded } = useUser();
+  const router = useRouter();
+  const redirected = useRef(false);
+
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [, setCreatedAgent] = useState<Model | null>(null);
+  const [createdKey, setCreatedKey] = useState<CreateApiKeyResponse | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<ModelProvider>("anthropic");
+
+  // Single redirect effect — runs once when Clerk is loaded.
+  // localStorage is the sole gate for onboarding completion.
+  useEffect(() => {
+    if (redirected.current) return;
+    if (!isLoaded) return;
+
+    // Already onboarded — go to dashboard
+    if (localStorage.getItem(ONBOARDED_KEY)) {
+      redirected.current = true;
+      router.replace("/dashboard");
+      return;
+    }
+
+    // Not authenticated (give Clerk a moment after OAuth callback)
+    if (!user) {
+      const timeout = setTimeout(() => {
+        if (!user && !redirected.current) {
+          redirected.current = true;
+          router.replace("/dashboard/login");
+        }
+      }, 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [isLoaded, user, router]);
+
+  const maxWidth = currentStep === 3 ? "max-w-2xl" : currentStep === 2 ? "max-w-md" : "max-w-sm";
+
+  const loadingSpinner = (
+    <div className="flex items-center justify-center py-12">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-deep-space-blue-500 border-t-transparent" />
+    </div>
+  );
+
+  const stepContent = isLoaded && user ? (
+    <>
+      <StepIndicator currentStep={currentStep} />
+
+      <div
+        key={currentStep}
+        className="animate-fade-in-up"
+      >
+        {currentStep === 1 && (
+          <StepCreateAgent
+            onCreated={(agent) => {
+              setCreatedAgent(agent);
+              setCurrentStep(2);
+            }}
+            onProviderSelected={setSelectedProvider}
+          />
+        )}
+
+        {currentStep === 2 && (
+          <StepApiKey
+            onContinue={(key) => {
+              setCreatedKey(key);
+              setCurrentStep(3);
+            }}
+          />
+        )}
+
+        {currentStep === 3 && (
+          <StepConnect
+            provider={selectedProvider}
+            keyPrefix={createdKey?.key_prefix || ""}
+          />
+        )}
+
+        {currentStep === 1 && (
+          <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
+            Welcome{user.firstName ? `, ${user.firstName}` : ""}! Let&apos;s get your workspace set up.
+          </p>
+        )}
+      </div>
+    </>
+  ) : (
+    loadingSpinner
+  );
+
+  return (
+    <div className="flex min-h-screen">
+      {/* Left panel – branding */}
+      <div className="hidden lg:flex lg:w-1/2 relative flex-col justify-between bg-deep-space-blue-900 p-12 text-white overflow-hidden">
+        <div className="pointer-events-none absolute inset-0 bg-linear-to-br from-deep-space-blue-800 via-deep-space-blue-900 to-gray-900" />
+        <div className="pointer-events-none absolute -bottom-32 -left-32 h-[500px] w-[500px] rounded-full bg-deep-space-blue-700/30 blur-3xl" />
+        <div className="pointer-events-none absolute -top-20 -right-20 h-[400px] w-[400px] rounded-full bg-vivid-tangerine-500/10 blur-3xl" />
+
+        <div className="relative z-10">
+          <Link href="/" className="text-2xl font-bold text-white hover:text-deep-space-blue-200 transition-colors">
+            Nenjo
+          </Link>
+        </div>
+
+        <div className="relative z-10 flex flex-col items-start gap-8">
+          <div className="flex flex-col gap-2">
+            <span className="text-8xl font-light tracking-wider text-white/90 leading-none">念</span>
+            <span className="text-8xl font-light tracking-wider text-white/90 leading-none">助</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="h-px w-12 bg-white/30" />
+            <span className="text-lg font-light tracking-[0.3em] text-white/60 uppercase">Nenjo</span>
+          </div>
+
+          <div className="max-w-md space-y-4">
+            <h2 className="text-2xl font-semibold leading-snug text-white/95">
+              &ldquo;Mindful assistance&rdquo;
+            </h2>
+            <p className="text-base leading-relaxed text-white/60">
+              <span className="text-white/80 font-medium">念 (nen)</span> — thought, mindfulness, attention.
+              The focused intention behind every action.
+            </p>
+            <p className="text-base leading-relaxed text-white/60">
+              <span className="text-white/80 font-medium">助 (jo)</span> — help, assistance, support.
+              The act of empowering others to achieve more.
+            </p>
+            <p className="mt-6 text-sm leading-relaxed text-white/40">
+              Together, Nenjo represents the philosophy of thoughtful, intelligent assistance —
+              AI agents that work with purpose and precision to help you build faster.
+            </p>
+          </div>
+        </div>
+
+        <div className="relative z-10">
+          <p className="text-xs text-white/30">
+            © {new Date().getFullYear()} Nenjo. All rights reserved.
+          </p>
+        </div>
+      </div>
+
+      {/* Right panel – onboarding wizard */}
+      <div className="flex w-full flex-col items-center justify-center bg-gray-100 px-6 dark:bg-gray-950 lg:w-1/2">
+        <div className={`w-full transition-[max-width] duration-300 ease-in-out ${maxWidth}`}>
+          {/* Mobile-only logo */}
+          <div className="mb-8 text-center lg:hidden">
+            <Link href="/">
+              <span className="text-3xl font-bold text-deep-space-blue-600 dark:text-deep-space-blue-400">
+                Nenjo
+              </span>
+            </Link>
+          </div>
+
+          {stepContent}
+        </div>
+      </div>
+    </div>
+  );
+}

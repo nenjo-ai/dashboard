@@ -1,0 +1,133 @@
+---
+title: Edges and conditions
+description: How edge conditions control routine flow based on step results.
+---
+
+Edges connect steps in a routine and define the execution order. Each edge has a **condition** that determines whether it should be followed based on the result of the source step.
+
+## Edge conditions
+
+There are five edge conditions, stored as a `routine_edge_condition` enum in the database:
+
+| Condition | DB value | Follows when |
+|---|---|---|
+| Always | `always` | Always follows, regardless of pass/fail |
+| On Pass | `on_pass` | Source step returned `passed: true` |
+| On Fail | `on_fail` | Source step returned `passed: false` |
+| On Review Pass | `on_review_pass` | Source step returned `passed: true` (review context) |
+| On Review Fail | `on_review_fail` | Source step returned `passed: false` (review context) |
+
+### Condition evaluation
+
+The executor evaluates conditions using a simple boolean check:
+
+- `always` -- always satisfied
+- `on_pass` and `on_review_pass` -- satisfied when `passed == true`
+- `on_fail` and `on_review_fail` -- satisfied when `passed == false`
+
+When a step completes, the executor filters outgoing edges to those whose condition is satisfied and follows the **first matching edge**. If no edge matches, execution ends.
+
+```
+// Pseudocode
+for edge in outgoing_edges(current_step):
+    if edge.condition.is_satisfied(result.passed):
+        next_step = edge.target_step
+        break
+```
+
+### Default condition
+
+When creating an edge via the API, the `condition` field defaults to `always` if omitted.
+
+## Gate feedback flow
+
+Gate steps play a special role in edge condition evaluation. When a gate step fails:
+
+1. The gate's evaluation output is stored as `gate_feedback` in the routine context.
+2. The `task_source` is updated to the gate's role name (e.g., `"reviewer"`).
+3. The `on_fail` edge is followed to the next step.
+4. If the next step is an agent, it receives the gate feedback so it knows what to fix.
+
+This pattern enables review-and-revise loops without creating actual graph cycles (which are forbidden). Instead of looping back, you chain multiple agent-gate pairs:
+
+```
+Developer --> Gate --> (on_fail) --> Developer2 --> Gate2 --> Terminal
+                      (on_pass) --> Terminal
+```
+
+The same feedback mechanism applies to **cron** and **lambda** steps: when they fail, their output is stored as `gate_feedback` for the next step.
+
+## Common DAG patterns
+
+### Linear routine
+
+The simplest pattern. Steps execute in sequence.
+
+```
+Agent A --always--> Agent B --always--> Terminal
+```
+
+### Pass/fail branching
+
+Route to different paths based on step results.
+
+```
+Developer --on_pass--> Reviewer --on_pass--> Terminal (Done)
+           --on_fail--> Terminal (Failed)
+                        --on_fail--> Terminal (Failed)
+```
+
+### Diamond (fan-out / fan-in)
+
+Split work across parallel paths that converge.
+
+```
+Entry --always--> Left Path  --always--> Done
+      --always--> Right Path --always--> Done
+```
+
+Note: the executor follows edges sequentially (first match), so a "diamond" pattern means the executor will take one branch based on the first matching condition, not run both in parallel. True fan-out requires `always` conditions on multiple edges from the same step, but only the first match is followed.
+
+### Gate review pattern
+
+Use gate steps to validate agent output before proceeding.
+
+```
+Developer --on_pass--> Quality Gate --on_pass--> Terminal (Done)
+                                    --on_fail--> TerminalFail (Rejected)
+```
+
+### Multi-stage review
+
+Chain multiple agent-gate pairs for iterative refinement:
+
+```
+Implement --always--> Review Gate --on_pass--> Deploy --always--> Terminal
+                                  --on_fail--> Revise --always--> Final Gate --on_pass--> Terminal
+                                                                              --on_fail--> TerminalFail
+```
+
+## Creating edges via API
+
+```bash
+# Create an edge with on_pass condition
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_step_id": "STEP_A_UUID",
+    "target_step_id": "STEP_B_UUID",
+    "condition": "on_pass"
+  }' \
+  https://your-instance.com/api/v1/routines/$ROUTINE_ID/edges
+```
+
+### Validation
+
+- `source_step_id` and `target_step_id` must refer to different steps (self-loops are rejected).
+- Both steps must belong to the specified routine.
+
+## Next steps
+
+- [DAG validation](/docs/routines/dag-validation) -- All validation rules your routine must satisfy
+- [Step types](/docs/routines/step-types) -- What each step type does

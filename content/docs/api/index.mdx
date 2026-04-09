@@ -1,0 +1,101 @@
+---
+title: API Overview
+description: Introduction to the Nenjo API, authentication methods, and available interfaces.
+---
+
+# API Overview
+
+Nenjo exposes two programmatic interfaces:
+
+- **REST API** at `/api/v1/` -- a conventional JSON REST API for managing all platform resources.
+- **MCP endpoint** at `POST /mcp` -- a Model Context Protocol server that exposes platform tools over JSON-RPC 2.0.
+
+Both interfaces share the same backend and database. The REST API is primarily used by the frontend and external integrations, while the MCP endpoint is designed for AI agents and MCP-compatible clients.
+
+## Base URLs
+
+| Interface | Path | Protocol |
+|-----------|------|----------|
+| REST API | `/api/v1/` | HTTP/JSON |
+| MCP Server | `/mcp` | HTTP/JSON-RPC 2.0 |
+| WebSocket | `/ws` | WebSocket |
+| Version | `/api/v1/version` | HTTP/JSON |
+
+The version endpoint is public and returns:
+
+```json
+{
+  "version": "0.1.0",
+  "api": "v1"
+}
+```
+
+## Authentication
+
+Nenjo supports two authentication methods depending on the context:
+
+### Clerk JWT (Frontend / Browser)
+
+All REST API routes under `/api/v1/` (except `/auth/verify` and `/webhooks`) require a valid Clerk session token. The token is passed in the `Authorization` header:
+
+```
+Authorization: Bearer <clerk-session-token>
+```
+
+The backend validates the JWT against Clerk's JWKS endpoint and extracts the user identity. This is the method used by the Nenjo frontend.
+
+### API Key (Programmatic / MCP)
+
+The MCP endpoint and programmatic integrations authenticate via API keys. Keys can be passed in two ways:
+
+```
+Authorization: Bearer nen_<key>
+```
+
+or:
+
+```
+X-API-Key: nen_<key>
+```
+
+API keys are scoped -- they can be restricted to specific resource groups and operations. An API key with no scopes has full access. See [API Keys](/docs/api/api-keys) for details on creating and managing keys, and [Scopes](/docs/api/scopes) for the complete scope reference.
+
+## Error Responses
+
+REST API errors return standard HTTP status codes with a JSON body:
+
+```json
+{
+  "error": "Description of what went wrong"
+}
+```
+
+MCP errors follow the JSON-RPC 2.0 error format:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32601,
+    "message": "Method not found: unknown_method"
+  }
+}
+```
+
+Common JSON-RPC error codes used by the MCP server:
+
+| Code | Meaning |
+|------|---------|
+| `-32700` | Parse error |
+| `-32601` | Method not found |
+| `-32602` | Invalid params |
+| `-32603` | Internal error |
+| `-32001` | Permission denied (scope check failed) |
+
+## Next Steps
+
+- [API Keys](/docs/api/api-keys) -- Create and manage API keys
+- [Scopes](/docs/api/scopes) -- Understand the scope system
+- [MCP Server](/docs/api/mcp-server) -- Use the MCP interface
+- [REST Endpoints](/docs/api/rest-endpoints) -- Complete REST API reference

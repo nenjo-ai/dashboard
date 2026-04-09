@@ -1,0 +1,16 @@
+{
+  "title": "Nenjo",
+  "pages": [
+    "index",
+    "---Getting Started---",
+    "getting-started",
+    "---Platform---",
+    "agents",
+    "routines",
+    "prompts",
+    "---System---",
+    "system",
+    "---API---",
+    "api"
+  ]
+}

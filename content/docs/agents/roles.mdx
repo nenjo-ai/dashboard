@@ -1,0 +1,174 @@
+---
+title: Roles
+description: Agent role data model, prompt configuration, platform scopes, and API endpoints.
+---
+
+A role is the core configuration unit for an agent. It defines the agent's identity, prompts, tool access, and platform permissions.
+
+## Data Model
+
+The `RoleRow` contains the following fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Unique identifier |
+| `name` | string | Role name (unique per user) |
+| `description` | string or null | Human-readable description |
+| `created_by` | UUID or null | Owner user ID (`null` for system templates) |
+| `is_system` | boolean | Whether this is a system template |
+| `prompt_config` | JSONB | Full prompt configuration (see below) |
+| `color` | string | Hex color code (`#RRGGBB`) for UI display |
+| `platform_scopes` | string[] | MCP platform scopes granted to this role |
+| `source_role_id` | UUID or null | System template this role was copied from |
+| `created_at` | timestamp | Creation time |
+| `updated_at` | timestamp | Last update time |
+
+### Color Assignment
+
+When creating a role without specifying a color, Nenjo automatically picks from a 16-color palette, selecting the color that maximizes visual distance from existing role colors. You can also provide a custom `#RRGGBB` hex color.
+
+## PromptConfig Structure
+
+The `prompt_config` JSONB column stores the full prompt configuration:
+
+```json
+{
+  "system_prompt": "You are a senior software engineer...",
+  "developer_prompt": "Follow these internal guidelines...",
+  "templates": {
+    "task_task": "Work on task: {{ task.title }}...",
+    "chat_task": "Respond to the user's message...",
+    "gate_eval": "Evaluate whether the work meets acceptance criteria..."
+  },
+  "output_templates": {
+    "agent_done": "Summary of completed work...",
+    "gate_pass": "The work meets all acceptance criteria...",
+    "gate_fail": "The work does not meet the following criteria..."
+  },
+  "memory_profile": {
+    "core_focus": ["architecture decisions", "coding patterns"],
+    "project_focus": ["project structure", "dependencies"],
+    "priority_categories": ["technical", "requirements"]
+  }
+}
+```
+
+### Required Fields
+
+The prompt config requires:
+
+- `system_prompt` -- must not be empty
+- `templates` -- must contain `task_task`, `chat_task`, and `gate_eval`
+- `output_templates` -- must contain `agent_done`, `gate_pass`, and `gate_fail`
+
+### Memory Profile
+
+The `memory_profile` guides what the agent stores and retrieves via the `memory_store` and `memory_recall` tools:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `core_focus` | string[] | Topics for the role's core memory namespace |
+| `project_focus` | string[] | Topics for the project-scoped memory namespace |
+| `priority_categories` | string[] | Categories prioritized during memory recall |
+
+### Developer Prompt
+
+The `developer_prompt` is sent as a separate `developer` message to OpenAI-spec models. For other providers, it is concatenated with the `system_prompt`.
+
+## Platform Scopes
+
+Platform scopes control which Nenjo resources the agent can access via the [MCP integration](/docs/agents/mcp-integration). Scopes follow the format `resource:permission`.
+
+| Scope | Description |
+|-------|-------------|
+| `agents:read` | Read agents and agent subresources |
+| `agents:write` | Modify agents and agent subresources |
+| `projects:read` | Read projects plus tasks, documents, executions, and graph queries |
+| `projects:write` | Modify projects plus tasks, documents, and executions |
+| `routines:read` | Read routines plus steps, edges, and councils |
+| `routines:write` | Modify routines plus steps, edges, and councils |
+| `mcp_servers:read` | Read MCP server configurations |
+| `mcp_servers:write` | Modify MCP server configurations |
+| `chat:read` | Read chat sessions and messages |
+| `chat:write` | Perform chat write actions |
+| `models:read` | Read model configurations |
+| `models:write` | Modify model configurations |
+
+A `:write` scope implies the corresponding `:read` scope. For example, `projects:write` automatically grants `projects:read`.
+
+## API Endpoints
+
+All endpoints are under `/api/v1/agent-roles` and require authentication.
+
+### Role CRUD
+
+```bash
+# List all roles visible to the authenticated user
+curl -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/agent-roles
+
+# Get a role by ID
+curl -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/agent-roles/:id
+
+# Create a custom role
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "qa-engineer", "description": "Quality assurance specialist"}' \
+  https://your-instance.com/api/v1/agent-roles
+
+# Update a role
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "senior-qa", "color": "#22C55E"}' \
+  https://your-instance.com/api/v1/agent-roles/:id
+
+# Delete a role
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/agent-roles/:id
+```
+
+### Prompt Config
+
+```bash
+# Get prompt config for a role
+curl -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/agent-roles/:id/prompt
+
+# Update prompt config
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt_config": {"system_prompt": "...", "templates": {...}, "output_templates": {...}}}' \
+  https://your-instance.com/api/v1/agent-roles/:id/prompt
+
+# Preview a prompt with context
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"task_type": "task_task", "context": {"task": {"title": "Fix login bug"}}}' \
+  https://your-instance.com/api/v1/agent-roles/:id/preview
+```
+
+### Reset and Scopes
+
+```bash
+# Reset a system-derived role to the default template
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/agent-roles/:id/reset
+
+# Get platform scopes
+curl -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/agent-roles/:id/platform-scopes
+
+# Update platform scopes
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"scopes": ["projects:read", "agents:read"]}' \
+  https://your-instance.com/api/v1/agent-roles/:id/platform-scopes
+```
+
+## Constraints
+
+- System template roles cannot have their `name` or `description` changed (color-only updates are allowed)
+- Roles assigned to an agent cannot be deleted
+- Role names must be unique per user
+- Deleting a system-derived copy will cause it to be re-created on the user's next login

@@ -1,0 +1,161 @@
+---
+title: API Keys
+description: Creating, managing, and revoking API keys for programmatic access to Nenjo.
+---
+
+# API Keys
+
+API keys provide programmatic access to Nenjo's MCP endpoint and can be used by external tools, workers, and MCP-compatible clients. Keys are user-scoped and can be restricted to specific [scopes](/docs/api/scopes).
+
+## Key Format
+
+API keys use the prefix `nen_` followed by 64 hex characters (32 random bytes):
+
+```
+nen_a1b2c3d4e5f6...
+```
+
+The first 8 characters of the key (e.g., `nen_a1b2`) are stored as the `key_prefix` for display purposes. The full key is shown only once at creation time -- it is never stored or retrievable after that.
+
+## Storage and Security
+
+Keys are hashed with SHA-256 before storage. The database stores:
+
+| Field | Description |
+|-------|-------------|
+| `id` | UUID primary key |
+| `name` | Human-readable label |
+| `key_prefix` | First 8 characters for identification |
+| `key_hash` | SHA-256 hash of the full key |
+| `user_id` | Owning user |
+| `scopes` | Array of scope strings (empty = full access) |
+| `expires_at` | Optional expiration timestamp |
+| `last_used_at` | Updated on each successful use |
+| `revoked_at` | Set when the key is revoked |
+| `created_at` | Creation timestamp |
+
+## API Endpoints
+
+All API key endpoints require Clerk JWT authentication and are scoped under `/api/v1/api-keys`.
+
+### List Keys
+
+```
+GET /api/v1/api-keys?user_id=<uuid>
+```
+
+Returns all active (non-revoked) keys for the specified user. If `user_id` is omitted, defaults to the authenticated user.
+
+```bash
+curl -H "Authorization: Bearer <clerk-token>" \
+  https://your-instance/api/v1/api-keys
+```
+
+**Response:**
+
+```json
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "Worker Key",
+    "key_prefix": "nen_a1b2",
+    "user_id": "...",
+    "scopes": ["projects:read", "projects:write"],
+    "expires_at": null,
+    "last_used_at": "2026-03-14T10:30:00Z",
+    "created_at": "2026-03-01T00:00:00Z",
+    "revoked_at": null
+  }
+]
+```
+
+### Create Key
+
+```
+POST /api/v1/api-keys
+```
+
+Creates a new API key. The raw key is returned exactly once in the response.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Human-readable label (cannot be empty) |
+| `user_id` | UUID | No | Defaults to authenticated user |
+| `expires_at` | ISO-8601 | No | Expiration timestamp, or null for no expiry |
+| `scopes` | string[] | No | Scope restrictions. Empty or absent = full access |
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <clerk-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "CI Routine Key",
+    "scopes": ["projects:read", "routines:read"],
+    "expires_at": "2027-01-01T00:00:00Z"
+  }' \
+  https://your-instance/api/v1/api-keys
+```
+
+**Response (201 Created):**
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "CI Routine Key",
+  "key_prefix": "nen_7f3a",
+  "raw_key": "nen_7f3a9b2c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081920a1b2c3d4e5f",
+  "scopes": ["projects:read", "routines:read"],
+  "expires_at": "2027-01-01T00:00:00Z",
+  "created_at": "2026-03-14T12:00:00Z"
+}
+```
+
+Save the `raw_key` immediately. It cannot be retrieved again.
+
+### Revoke Key
+
+```
+DELETE /api/v1/api-keys/:id
+```
+
+Soft-deletes the key by setting `revoked_at`. The key immediately stops working. Returns `204 No Content` on success.
+
+```bash
+curl -X DELETE \
+  -H "Authorization: Bearer <clerk-token>" \
+  https://your-instance/api/v1/api-keys/550e8400-e29b-41d4-a716-446655440000
+```
+
+## Validation Behavior
+
+When an API key is used (e.g., against the MCP endpoint), the backend:
+
+1. Hashes the provided key with SHA-256
+2. Looks up the hash in the database
+3. Checks that `revoked_at` is null
+4. Checks that `expires_at` is null or in the future
+5. Updates `last_used_at` to the current time
+6. Returns the associated `user_id` and `scopes`
+
+If any check fails, the request receives a `401 Unauthorized` response.
+
+## Using API Keys
+
+API keys are primarily used with the [MCP Server](/docs/api/mcp-server). Pass the key in the `Authorization` header or `X-API-Key` header:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer nen_7f3a..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/list",
+    "params": {}
+  }' \
+  https://your-instance/mcp
+```
+
+The key's scopes determine which MCP tools are visible and callable. See [Scopes](/docs/api/scopes) for details.

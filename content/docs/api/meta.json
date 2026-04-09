@@ -1,0 +1,4 @@
+{
+  "title": "API",
+  "pages": ["index", "api-keys", "scopes", "mcp-server", "rest-endpoints"]
+}

@@ -1,0 +1,146 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
+import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
+import { Sidebar } from "@/components/layout/Sidebar";
+import { PageTransition } from "@/components/ui/motion";
+import { setAuthTokenGetter } from "@/lib/api";
+import { WebSocketProvider } from "@/lib/WebSocketContext";
+import { cn } from "@/lib/cn";
+import { MobileMenuProvider } from "@/lib/MobileMenuContext";
+
+/** Routes under /dashboard that should NOT show the sidebar chrome. */
+const CHROMELESS_ROUTES = ["/dashboard/login", "/dashboard/onboarding"];
+const CLERK_ENABLED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
+
+  if (!CLERK_ENABLED) {
+    if (pathname.startsWith("/dashboard/login")) {
+      return <>{children}</>;
+    }
+    return <ClerkConfigurationNotice />;
+  }
+
+  return <DashboardLayoutWithClerk pathname={pathname}>{children}</DashboardLayoutWithClerk>;
+}
+
+function DashboardLayoutWithClerk({
+  children,
+  pathname,
+}: {
+  children: React.ReactNode;
+  pathname: string;
+}) {
+  const { getToken, isLoaded } = useAuth();
+  const isChromeless = CHROMELESS_ROUTES.some((r) => pathname.startsWith(r));
+  const [authReady, setAuthReady] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Sync with localStorage after mount to avoid hydration mismatch
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("sidebar-collapsed");
+      if (stored === "true") {
+        const timer = setTimeout(() => setSidebarCollapsed(true), 0);
+        return () => clearTimeout(timer);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((c) => {
+      const next = !c;
+      localStorage.setItem("sidebar-collapsed", String(next));
+      return next;
+    });
+  };
+
+  // Wire up the global auth token getter so all API calls via `fetcher`
+  // automatically include the Clerk Bearer token.
+  useEffect(() => {
+    if (!isLoaded) {
+      return;
+    }
+
+    setAuthTokenGetter(getToken);
+    const timer = setTimeout(() => setAuthReady(true), 0);
+
+    return () => {
+      clearTimeout(timer);
+      setAuthTokenGetter(null);
+    };
+  }, [getToken, isLoaded]);
+
+  if (isChromeless) {
+    // Wait for Clerk to load so the auth token getter is wired up
+    // before children (like onboarding) make API calls.
+    if (!isLoaded) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
+          <div className="flex items-center gap-3 text-gray-400">
+            <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-sm">Loading…</span>
+          </div>
+        </div>
+      );
+    }
+    return <>{children}</>;
+  }
+
+  const mainPadding = cn(
+    "pl-0 md:transition-[padding-left] md:duration-200",
+    sidebarCollapsed ? "md:pl-16" : "md:pl-64",
+  );
+
+  // Don't render dashboard children until Clerk auth is loaded and the
+  // token getter is wired up. This prevents SWR hooks from firing
+  // requests before the auth token is available (which causes 401s).
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <main className="min-h-screen flex items-center justify-center">
+          <div className="flex items-center gap-3 text-gray-400">
+            <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-sm">Loading…</span>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <WebSocketProvider>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={toggleSidebar}
+          mobileOpen={mobileOpen}
+          onMobileClose={() => setMobileOpen(false)}
+        />
+        {/* Main content — offset by sidebar width on desktop */}
+        <div className={mainPadding}>
+          <main className="min-h-screen">
+            <MobileMenuProvider onMenuClick={() => setMobileOpen(true)}>
+              <PageTransition pageKey={pathname}>{children}</PageTransition>
+            </MobileMenuProvider>
+          </main>
+        </div>
+      </div>
+    </WebSocketProvider>
+  );
+}

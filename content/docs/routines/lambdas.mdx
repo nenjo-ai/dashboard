@@ -1,0 +1,213 @@
+---
+title: Lambdas
+description: Deterministic scripts that run without an LLM, used in lambda and cron routine steps.
+---
+
+Lambdas are reusable script definitions stored in the database and executed on the worker. They run deterministically without an LLM, making them suitable for tasks like running tests, checking git status, calling external APIs, or performing file operations.
+
+## Data model
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID | Unique identifier |
+| `name` | string | Human-readable name |
+| `description` | string? | Optional description |
+| `path` | string | Relative path within `~/.nenjo/lambdas/` |
+| `body` | string | The script source code |
+| `interpreter` | string | How to execute: `auto`, `bash`, `sh`, `python3`, or `node` |
+| `is_system` | boolean | Whether this is a built-in system lambda |
+| `created_by` | UUID? | Owner user ID (null for system lambdas) |
+
+### Interpreters
+
+| Value | Description |
+|---|---|
+| `auto` | Execute the script directly (must have a shebang line and be executable) |
+| `bash` | Run with `/bin/bash` |
+| `sh` | Run with `/bin/sh` |
+| `python3` | Run with `python3` |
+| `node` | Run with `node` |
+
+The default interpreter is `auto`.
+
+## Script storage
+
+Lambda scripts are stored in two places:
+
+- **Database** -- The `body` field contains the script source code. This is the source of truth for the API.
+- **Disk** -- Scripts are written to `~/.nenjo/lambdas/{path}` on the worker filesystem. The `path` field determines the file location relative to the lambdas directory.
+
+## Environment variables
+
+When a lambda runs as part of a routine, the executor injects `NENJO_*` environment variables from the `RoutineContext`:
+
+| Variable | Source |
+|---|---|
+| `NENJO_ROUTINE_ID` | Routine ID |
+| `NENJO_STEP_ID` | Current step ID |
+| `NENJO_STEP_NAME` | Current step name |
+| `NENJO_PROJECT_ID` | Project ID |
+| `NENJO_EXECUTION_RUN_ID` | Execution run ID |
+| `NENJO_TICKET_ID` | Task ID |
+| `NENJO_TICKET_TITLE` | Task title |
+| `NENJO_TICKET_SLUG` | URL-safe task identifier |
+| `NENJO_GIT_BRANCH` | Current working branch |
+| `NENJO_GIT_TARGET_BRANCH` | Target branch for merges/PRs |
+| `NENJO_GIT_WORK_DIR` | Worktree directory path |
+| `NENJO_GIT_REPO_URL` | Remote repository URL |
+| `NENJO_CONTEXT_FILE` | Path to a JSON file with the full routine context |
+| `NENJO_GIT_COMMON_DIR` | Path to the main `.git/` directory (handles worktrees) |
+
+### Context file
+
+A JSON file is written to a temporary path and its location is provided via `NENJO_CONTEXT_FILE`. This file contains the full routine context for scripts that need structured data beyond what environment variables provide.
+
+## Exit codes
+
+The script's exit code determines the step result:
+
+| Exit code | Result |
+|---|---|
+| `0` | `passed: true` |
+| Non-zero | `passed: false` |
+
+The script's stdout is captured as the step's `output` text.
+
+## Step configuration
+
+When using a lambda in a routine step:
+
+```json
+{
+  "name": "Run Tests",
+  "step_type": "lambda",
+  "lambda_id": "LAMBDA_UUID",
+  "config": {
+    "interpreter_override": "bash",
+    "timeout": "10m"
+  }
+}
+```
+
+| Config field | Type | Default | Description |
+|---|---|---|---|
+| `lambda_id` | UUID | -- | Can also be set as a top-level step field |
+| `interpreter_override` | string | -- | Override the lambda's default interpreter |
+| `timeout` | string | `"5m"` | Maximum execution time |
+
+## API
+
+Lambda routes are under `/api/v1/lambdas` and require authentication.
+
+### List lambdas
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/lambdas
+```
+
+### Create a lambda
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Run Tests",
+    "description": "Execute the project test suite",
+    "path": "scripts/run-tests.sh",
+    "body": "#!/bin/bash\nset -e\nnpm test",
+    "interpreter": "bash"
+  }' \
+  https://your-instance.com/api/v1/lambdas
+```
+
+### Get a lambda
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/lambdas/$LAMBDA_ID
+```
+
+### Update a lambda
+
+```bash
+curl -X PATCH \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "body": "#!/bin/bash\nset -e\nnpm run test:ci"
+  }' \
+  https://your-instance.com/api/v1/lambdas/$LAMBDA_ID
+```
+
+### Delete a lambda
+
+```bash
+curl -X DELETE \
+  -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/lambdas/$LAMBDA_ID
+```
+
+## Integration with routines
+
+Lambdas integrate with routines in two ways:
+
+### Lambda steps
+
+A direct execution of a script within the routine flow. The script runs once, and its exit code determines whether to follow the `on_pass` or `on_fail` edge. See [Step types](/docs/routines/step-types) for details.
+
+### Cron steps in lambda mode
+
+A cron step can use a lambda instead of an agent for its polling function. The lambda runs repeatedly at the configured interval and signals completion via `cron_status` JSON. See [Cron and scheduling](/docs/routines/cron-and-scheduling) for details.
+
+## Example: git status check
+
+```bash
+#!/bin/bash
+# Lambda: check-git-status.sh
+# Fails if there are uncommitted changes
+
+cd "$NENJO_GIT_WORK_DIR" || exit 1
+
+if [ -n "$(git status --porcelain)" ]; then
+  echo "Uncommitted changes detected:"
+  git status --short
+  exit 1
+fi
+
+echo "Working directory is clean"
+exit 0
+```
+
+## Example: PR merge check (cron lambda)
+
+```bash
+#!/bin/bash
+# Lambda: check-pr-merged.sh
+# For use in a cron step -- polls until a PR is merged
+
+cd "$NENJO_GIT_WORK_DIR" || exit 1
+
+# Read PR number from context file
+PR_NUMBER=$(cat "$NENJO_CONTEXT_FILE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('pr_number',''))")
+
+if [ -z "$PR_NUMBER" ]; then
+  echo '{"cron_status": "abort", "reason": "No PR number in context"}'
+  exit 0
+fi
+
+STATE=$(gh pr view "$PR_NUMBER" --json state -q '.state' 2>/dev/null)
+
+case "$STATE" in
+  MERGED)
+    echo "{\"cron_status\": \"pass\", \"reason\": \"PR #$PR_NUMBER merged\"}"
+    ;;
+  CLOSED)
+    echo "{\"cron_status\": \"fail\", \"reason\": \"PR #$PR_NUMBER closed without merge\"}"
+    ;;
+  *)
+    echo "{\"cron_status\": \"wait\"}"
+    ;;
+esac
+```
