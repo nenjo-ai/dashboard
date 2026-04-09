@@ -38,7 +38,7 @@ const DEFAULT_MANIFEST: DomainManifest = {
   session: {
     max_turns: 50,
     auto_save_interval: 5,
-    exit_commands: ["/done", "/exit", "/finish"],
+    exit_commands: ["#done", "#exit", "#finish"],
   },
 };
 

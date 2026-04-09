@@ -564,7 +564,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
 
     // Check for domain exit commands (always allowed)
     if (activeDomainSession) {
-      const exitCommands = ["/exit", "/done", "/finish"];
+      const exitCommands = ["#exit", "#done", "#finish"];
       if (exitCommands.includes(text.toLowerCase())) {
         setInput("");
         exitDomain();

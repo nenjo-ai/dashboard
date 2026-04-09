@@ -82,7 +82,7 @@ export function DomainIndicator({
           }
           style={agentColor ? { color: textColor } : undefined}
         >
-          /done
+          #done
         </button>
         <button
           onClick={onCancel}

@@ -226,7 +226,7 @@ export function SystemChat() {
     if (!text || !systemProject?.id || !systemAgentId) return;
 
     // Check for domain exit commands
-    if (chat.activeDomainSession && ["/exit", "/done", "/finish"].includes(text.toLowerCase())) {
+    if (chat.activeDomainSession && ["#exit", "#done", "#finish"].includes(text.toLowerCase())) {
       chat.exitDomain();
       setInputValue("");
       return;

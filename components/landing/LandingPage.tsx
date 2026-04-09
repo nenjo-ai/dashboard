@@ -256,7 +256,7 @@ function Navbar() {
 
 function HeroSection() {
   return (
-    <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 text-center">
+    <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4">
       {/* Background radial gradient */}
       <div
         className="pointer-events-none absolute inset-0"
@@ -265,9 +265,9 @@ function HeroSection() {
         }}
       />
 
-      <div className="relative z-10 mx-auto flex max-w-4xl flex-col items-center">
+      <div className="relative z-10 mx-auto flex w-full max-w-4xl flex-col items-center">
         {/* Logo */}
-        <div className="mb-12">
+        <div className="mb-12 self-center">
           <Image
             src="/nenjo-logo-white.png"
             alt="Nenjo"
@@ -286,19 +286,21 @@ function HeroSection() {
           <span className="text-[10px] tracking-[0.4em] text-white/50 uppercase">Beta</span>
         </div>
 
-        {/* Headline */}
-        <h1 className="mb-6 text-4xl font-extralight leading-tight tracking-tight text-white sm:text-5xl md:text-6xl lg:text-7xl">
-          Focus your will.
-          <br />
-          Multiply your agency.
-        </h1>
+        <div className="flex w-full max-w-3xl flex-col items-start text-left">
+          {/* Headline */}
+          <h1 className="mb-6 text-4xl font-extralight leading-tight tracking-tight text-white sm:text-5xl md:text-6xl lg:text-7xl">
+            Focus your will.
+            <br />
+            Expand your agency.
+          </h1>
 
-        {/* Subheadline */}
-        <p className="mx-auto mb-10 max-w-3xl text-base font-light text-white/60 sm:text-lg">
-          Nenjo is a private control plane for long-running agents. Run workers on your own
-          infrastructure, coordinate them over an internal event mesh, and update them live as your
-          system evolves.
-        </p>
+          {/* Subheadline */}
+          <p className="mb-10 max-w-3xl text-base font-light text-white/60 sm:text-lg">
+            Nenjo is a private control plane for long-running agents. Run workers on your own
+            infrastructure, coordinate them over an internal event mesh, and update them live as your
+            system evolves.
+          </p>
+        </div>
 
         {/* CTA */}
         <div className="flex flex-col gap-4 sm:flex-row">
@@ -544,29 +546,29 @@ function ArchitectureSection() {
 
 const comparisonRows = [
   {
-    label: "Runtime ownership",
-    nenjo: "User-controlled workers on your infrastructure",
-    generic: "Hosted runtime controlled by the vendor",
+    label: "Primary product shape",
+    nenjo: "A private control plane for long-running workers, routines, scopes, and live runtime policy",
+    generic: "An agent framework or orchestration library embedded inside your app stack",
   },
   {
-    label: "Network model",
-    nenjo: "Private worker mesh over NATS without exposing the worker plane publicly",
-    generic: "Publicly reachable SaaS edge calling back into tools",
+    label: "Runtime location",
+    nenjo: "Workers stay on your infrastructure and coordinate over a private event bus",
+    generic: "Application-managed processes and framework runtimes that you assemble and host yourself",
   },
   {
-    label: "Agent lifespan",
-    nenjo: "Long-running workers with routines, memory, and live config updates",
-    generic: "Mostly session-bound chat agents",
+    label: "Operational control",
+    nenjo: "Scopes, MCP access, domains, abilities, and hot-swapped manifests are first-class runtime controls",
+    generic: "Most behavior is composed in application code, graph definitions, and tool middleware",
   },
   {
-    label: "Multi-agent coordination",
-    nenjo: "Agents can message each other and trigger routines over the event bus",
-    generic: "Single-agent UX with limited orchestration",
+    label: "Coordination model",
+    nenjo: "Workers can message each other, trigger routines, and run councils across a persistent control plane",
+    generic: "Graphs, crews, flows, and agent loops coordinate work inside the framework layer",
   },
   {
-    label: "Operator control",
-    nenjo: "Scopes, MCP access, abilities, domains, and hot-swapped manifests",
-    generic: "Prompt-level customization with less runtime control",
+    label: "Where Nenjo is stronger",
+    nenjo: "Private infrastructure, durable multi-agent operations, and runtime governance without handing the worker plane to a vendor",
+    generic: "Great when you want a developer framework, but not a full private operator surface by default",
   },
 ];
 
@@ -576,15 +578,14 @@ function ComparisonSection() {
   return (
     <section className="px-4 py-32">
       <div className="mx-auto max-w-6xl">
-        <SectionLabel>WHY IT MATTERS</SectionLabel>
-
         <div className="mb-14 max-w-3xl">
           <h2 className="mb-5 text-3xl font-extralight tracking-tight text-white sm:text-4xl">
-            Position Nenjo against hosted agent products
+            Contrast with others
           </h2>
           <p className="text-base font-light leading-relaxed text-white/55 sm:text-lg">
-            The sharp comparison is not “we also have agents.” It is “we let you run your own
-            durable coding agent system where your infrastructure already lives.”
+            Some systems focus on agent frameworks and orchestration libraries. Nenjo is structured
+            as a private control plane for long-running workers, runtime policy, and durable
+            multi-agent coordination on your own infrastructure.
           </p>
         </div>
 
@@ -597,7 +598,7 @@ function ComparisonSection() {
           <div className="grid grid-cols-1 border-b border-white/10 bg-white/[0.02] text-[11px] tracking-[0.25em] text-white/35 uppercase md:grid-cols-[1.1fr_1fr_1fr]" style={{ fontFamily: "monospace" }}>
             <div className="px-5 py-4">Axis</div>
             <div className="px-5 py-4 text-[#4fc3f7]/70">Nenjo</div>
-            <div className="px-5 py-4">Typical hosted product</div>
+            <div className="px-5 py-4">CrewAI / LangChain</div>
           </div>
           {comparisonRows.map((row) => (
             <div key={row.label} className="grid grid-cols-1 border-b border-white/10 last:border-b-0 md:grid-cols-[1.1fr_1fr_1fr]">

@@ -8,6 +8,7 @@ import {
   createDomainSession,
   completeDomainSession,
   cancelDomainSession,
+  fetchDomainSession,
   fetchActiveDomainSession,
   fetchChatSessions,
   createChatSession,
@@ -72,9 +73,14 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     () => (!!agentId && pendingAgentId === agentId) ? persistedActiveTools : [],
   );
   const [activeDomainSession, setActiveDomainSession] = useState<DomainSession | null>(null);
+  const activeDomainSessionRef = useRef<DomainSession | null>(null);
   const [isDomainPending, setIsDomainPending] = useState(false);
   // Pending domain session — set by enterDomain, promoted to active by DomainEntered event
   const pendingDomainSessionRef = useRef<DomainSession | null>(null);
+
+  useEffect(() => {
+    activeDomainSessionRef.current = activeDomainSession;
+  }, [activeDomainSession]);
 
   // ── Session state ────────────────────────────────────────────────────────
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -172,9 +178,12 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
 
   // ── Load history on mount / role / session change ─────────────────────
   useEffect(() => {
+    const previousAgentId = prevAgentIdRef.current;
+    const previousSessionId = prevSessionIdRef.current;
+
     // Save current messages to cache for the previous role+session
-    if (prevAgentIdRef.current) {
-      agentCacheRef.current.set(cacheKey(prevAgentIdRef.current, prevSessionIdRef.current), {
+    if (previousAgentId) {
+      agentCacheRef.current.set(cacheKey(previousAgentId, previousSessionId), {
         messages: messages,
         hasMore: hasMore,
       });
@@ -195,8 +204,10 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     // Clear the response ref so stray tokens from the old role don't bleed in
     responseIdRef.current = null;
 
-    // Clear stale domain session when switching roles
-    setActiveDomainSession(null);
+    // Clear stale domain session only when the role or chat session actually changes.
+    if (previousAgentId !== agentId || previousSessionId !== activeSessionId) {
+      setActiveDomainSession(null);
+    }
 
     if (!projectId || !agentId) {
       setMessages([]);
@@ -348,7 +359,13 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         );
         if (idx >= 0) {
           return prev.map((m, i) =>
-            i === idx ? { ...m, persistedId: msg.id } : m,
+            i === idx ? {
+              ...m,
+              id: role === "assistant" ? msg.id : m.id,
+              persistedId: msg.id,
+              content: msg.content,
+              timestamp: msg.created_at,
+            } : m,
           );
         }
 
@@ -436,21 +453,27 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         case "Done": {
           setActiveTools([]);
           setLivePreview(undefined);
+          const { final_output, session_id } = streamEvent.data as {
+            final_output: string;
+            session_id?: string;
+          };
+          if (!session_id || session_id !== activeSessionId) {
+            break;
+          }
           let id = responseIdRef.current;
           if (!id) {
             id = generateId();
           }
           responseIdRef.current = null;
-          const finalOutput = (streamEvent.data as { final_output: string }).final_output;
           setMessages((prev) => {
             const existing = prev.find((m) => m.id === id);
             if (existing) {
               return prev.map((m) =>
-                m.id === id ? { ...m, content: finalOutput } : m,
+                m.id === id ? { ...m, content: final_output } : m,
               );
             }
             const existingPersisted = prev.findLast(
-              (m) => m.role === "assistant" && m.content === finalOutput,
+              (m) => m.role === "assistant" && m.content === final_output,
             );
             if (existingPersisted) {
               return prev;
@@ -460,7 +483,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
               {
                 id: id!,
                 role: "assistant" as const,
-                content: finalOutput,
+                content: final_output,
                 timestamp: new Date().toISOString(),
               },
             ];
@@ -497,7 +520,31 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         }
 
         case "DomainExited": {
-          setActiveDomainSession(null);
+          const { session_id } = streamEvent.data as { session_id: string };
+          const currentActiveDomainSession = activeDomainSessionRef.current;
+
+          if (pendingDomainSessionRef.current?.id === session_id) {
+            pendingDomainSessionRef.current = null;
+          }
+
+          if (currentActiveDomainSession?.id && currentActiveDomainSession.id !== session_id) {
+            break;
+          }
+
+          void fetchDomainSession(session_id)
+            .then((session) => {
+              if (session.status === "active") {
+                return;
+              }
+              setActiveDomainSession((current) =>
+                current?.id === session_id ? null : current,
+              );
+            })
+            .catch(() => {
+              setActiveDomainSession((current) =>
+                current?.id === session_id ? null : current,
+              );
+            });
           break;
         }
 
@@ -786,7 +833,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     [projectId, agentId, send, activeDomainSession, activeSessionId, status],
   );
 
-  // Enter a domain by command (e.g. "/prd")
+  // Enter a domain by command (e.g. "#creator")
   const enterDomain = useCallback(
     async (domainId: string, domainCommand: string, overrideRoleId?: string) => {
       const effectiveRoleId = overrideRoleId ?? agentId;
