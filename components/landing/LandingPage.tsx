@@ -411,11 +411,6 @@ function FeaturesSection() {
               </div>
               <h3 className="mb-2 flex items-center gap-2 text-sm font-light tracking-wide text-white">
                 {f.title}
-                {"planned" in f && f.planned && (
-                  <span className="text-[9px] tracking-[0.15em] text-white/30 uppercase" style={{ fontFamily: "monospace" }}>
-                    soon
-                  </span>
-                )}
               </h3>
               <p className="text-xs font-light leading-relaxed text-white/40">
                 {f.description}

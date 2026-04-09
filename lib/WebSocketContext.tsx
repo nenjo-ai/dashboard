@@ -192,7 +192,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         const prevTools = readActiveTools();
         const existing = prevTools.find((tool) => tool.name === ability_tool_name);
         if (existing) {
-          const nextTools = [{
+          const nextTools: ToolState[] = [{
             ...existing,
             args: "",
             status: "running",
@@ -203,7 +203,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           writeActiveTools(nextTools);
           setPersistedActiveTools(nextTools);
         } else {
-          const nextTools = [{
+          const nextTools: ToolState[] = [{
             name: ability_tool_name,
             args: "",
             textPreview: task_preview?.trim() || undefined,
@@ -224,9 +224,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         writeLivePreview(nextPreview);
         setPersistedLivePreview(nextPreview);
         const prevTools = readActiveTools();
-        const nextTools = prevTools.map((tool) => tool.name === ability_tool_name ? {
+        const nextTools: ToolState[] = prevTools.map((tool) => tool.name === ability_tool_name ? {
           ...tool,
-          status: success ? "completed" : "failed",
+          status: success ? "completed" as const : "failed" as const,
           textPreview: appendPreview(tool.textPreview, result_preview),
           outputPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? result_preview : tool.outputPreview),
           errorPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? tool.errorPreview : result_preview),
@@ -247,29 +247,29 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           }
           const existing = prevTools.find((tool) => tool.name === parent_tool_name);
           if (!existing) {
-            const nextTools = [
+            const nextTools: ToolState[] = [
               ...prevTools,
               {
                 name: parent_tool_name,
                 args: "",
                 textPreview: text_preview?.trim() || undefined,
-                status: "running",
+                status: "running" as const,
                 children: [
-                  { name: tool_name, args: tool_args || "", textPreview: undefined, status: "running" },
+                  { name: tool_name, args: tool_args || "", textPreview: undefined, status: "running" as const },
                 ],
               },
             ];
             writeActiveTools(nextTools);
             setPersistedActiveTools(nextTools);
           } else {
-            const nextTools = prevTools.map((tool) => {
+            const nextTools: ToolState[] = prevTools.map((tool) => {
               if (tool.name !== parent_tool_name) return tool;
               return {
                 ...tool,
                 textPreview: appendPreview(tool.textPreview, text_preview),
                 children: limitRecentTools([
                   ...(tool.children ?? []),
-                  { name: tool_name, args: tool_args || "", textPreview: undefined, status: "running" },
+                  { name: tool_name, args: tool_args || "", textPreview: undefined, status: "running" as const },
                 ]),
               };
             });
@@ -283,9 +283,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
               name: tool_name,
               args: "",
               textPreview: text_preview?.trim() || undefined,
-              status: "running",
+              status: "running" as const,
               children: [],
-            }]);
+            }] as ToolState[]);
             writeActiveTools(nextTools);
             setPersistedActiveTools(nextTools);
           } else {
@@ -295,7 +295,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
                 ? `${previousPreview}\n\n${text_preview.trim()}`
                 : text_preview.trim()
               : previousPreview;
-            const nextTools = limitRecentTools([{ name: tool_name, args: tool_args || "", textPreview: nextPreview || undefined, status: "running", children: [] }]);
+            const nextTools = limitRecentTools([{ name: tool_name, args: tool_args || "", textPreview: nextPreview || undefined, status: "running" as const, children: [] }] as ToolState[]);
             writeActiveTools(nextTools);
             setPersistedActiveTools(nextTools);
           }
@@ -324,20 +324,20 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           }
           const existing = prevTools.find((tool) => tool.name === parent_tool_name);
           if (!existing) {
-            const nextTools = [
+            const nextTools: ToolState[] = [
               ...prevTools,
               {
                 name: parent_tool_name,
                 args: "",
                 textPreview: text_preview?.trim() || undefined,
-                status: "running",
+                status: "running" as const,
                 children: limitRecentTools(newChildren.map((child, i) => ({ ...child, args: filteredArgs[i] || child.args }))),
               },
             ];
             writeActiveTools(nextTools);
             setPersistedActiveTools(nextTools);
           } else {
-            const nextTools = prevTools.map((tool) => {
+            const nextTools: ToolState[] = prevTools.map((tool) => {
               if (tool.name !== parent_tool_name) return tool;
               return {
                 ...tool,
@@ -359,7 +359,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
               ? `${previousPreview}\n\n${text_preview.trim()}`
               : text_preview.trim()
             : previousPreview;
-          const nextTools = limitRecentTools(tool_names.map((name, i) => ({ name, args: tool_args?.[i] || "", textPreview: nextPreview || undefined, status: "running", children: [] })));
+          const nextTools = limitRecentTools(tool_names.map((name, i) => ({ name, args: tool_args?.[i] || "", textPreview: nextPreview || undefined, status: "running" as const, children: [] })) as ToolState[]);
           writeActiveTools(nextTools);
           setPersistedActiveTools(nextTools);
         }
@@ -391,17 +391,17 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         }
         if (!parent_tool_name) {
           if (isAbilityTool(tool_name)) {
-            const nextTools = prevTools.map((tool) => tool.name === tool_name ? {
+            const nextTools: ToolState[] = prevTools.map((tool) => tool.name === tool_name ? {
               ...tool,
-              status: success ? "completed" : "failed",
+              status: success ? "completed" as const : "failed" as const,
             } : tool);
             writeActiveTools(nextTools);
             setPersistedActiveTools(nextTools);
             return;
           }
-          const nextTools = prevTools.map((tool) => tool.name === tool_name ? {
+          const nextTools: ToolState[] = prevTools.map((tool) => tool.name === tool_name ? {
             ...tool,
-            status: success ? "completed" : "failed",
+            status: success ? "completed" as const : "failed" as const,
             outputPreview: output_preview,
             errorPreview: error_preview,
           } : tool);
