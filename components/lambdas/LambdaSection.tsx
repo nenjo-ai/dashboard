@@ -225,32 +225,23 @@ function LambdaCard({
           </svg>
           {lineCount} line{lineCount !== 1 ? "s" : ""}
         </div>
-        {lambda.is_system && (
-          <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-            System
-          </span>
-        )}
       </div>
 
       {/* Actions */}
       <div className="mt-4 flex items-center gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
-        {!lambda.is_system && (
-          <button
-            onClick={() => onEdit(lambda)}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
-          >
-            Edit
-          </button>
-        )}
-        {!lambda.is_system && (
-          <button
-            onClick={() => onDelete(lambda)}
-            disabled={isDeleting}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-flag-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:text-flag-red-400 dark:hover:bg-red-900/30"
-          >
-            {isDeleting ? "Deleting..." : "Delete"}
-          </button>
-        )}
+        <button
+          onClick={() => onEdit(lambda)}
+          className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+        >
+          Edit
+        </button>
+        <button
+          onClick={() => onDelete(lambda)}
+          disabled={isDeleting}
+          className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-flag-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:text-flag-red-400 dark:hover:bg-red-900/30"
+        >
+          {isDeleting ? "Deleting..." : "Delete"}
+        </button>
       </div>
     </div>
   );

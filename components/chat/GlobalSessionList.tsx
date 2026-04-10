@@ -21,6 +21,10 @@ function displayProjectName(name: string): string {
   return name === "__system__" ? "General" : name;
 }
 
+function displayAgentName(session: ChatSessionExtended): string {
+  return session.agent_display_name ?? session.agent_name;
+}
+
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60_000);
@@ -82,7 +86,7 @@ export default function GlobalSessionList({
       (s) =>
         s.title.toLowerCase().includes(lower) ||
         s.project_name.toLowerCase().includes(lower) ||
-        s.agent_name.toLowerCase().includes(lower),
+        displayAgentName(s).toLowerCase().includes(lower),
     );
   }, [sessions, search]);
 
@@ -204,7 +208,7 @@ export default function GlobalSessionList({
                         <RoleIdenticon roleId={agent.id} color={agent.color} size={26} className="shrink-0" roleName={agent.name} />
                       ) : (
                         <div className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-gray-200 text-[10px] font-bold text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-                          {session.agent_name.charAt(0).toUpperCase()}
+                          {displayAgentName(session).charAt(0).toUpperCase()}
                         </div>
                       )}
                       <div className="min-w-0 flex-1">
@@ -221,12 +225,12 @@ export default function GlobalSessionList({
                           isActive ? "text-deep-space-blue-100" : "text-gray-500 dark:text-gray-400",
                         )}>
                           {channelType === "notification" ? (
-                            <span className="truncate">@{session.agent_name}</span>
+                            <span className="truncate">@{displayAgentName(session)}</span>
                           ) : (
                             <>
                               <span className="truncate">{displayProjectName(session.project_name)}</span>
                               <span>·</span>
-                              <span className="shrink-0">@{session.agent_name}</span>
+                              <span className="shrink-0">@{displayAgentName(session)}</span>
                             </>
                           )}
                           <span className={cn(

@@ -286,19 +286,19 @@ function HeroSection() {
           <span className="text-[10px] tracking-[0.4em] text-white/50 uppercase">Beta</span>
         </div>
 
-        <div className="flex w-full max-w-3xl flex-col items-start text-left">
+        <div className="flex w-full max-w-3xl flex-col items-center text-center">
           {/* Headline */}
           <h1 className="mb-6 text-4xl font-extralight leading-tight tracking-tight text-white sm:text-5xl md:text-6xl lg:text-7xl">
-            Focus your will.
+            The agent-first
             <br />
-            Expand your agency.
+            platform.
           </h1>
 
           {/* Subheadline */}
           <p className="mb-10 max-w-3xl text-base font-light text-white/60 sm:text-lg">
-            Nenjo is a private control plane for long-running agents. Run workers on your own
-            infrastructure, coordinate them over an internal event mesh, and update them live as your
-            system evolves.
+            Nenjo is an agent-first platform for teams building real agent products. Define agents
+            as files, update them live while the system runs, and build environments where agents
+            can work within the platform itself.
           </p>
         </div>
 
@@ -308,7 +308,7 @@ function HeroSection() {
             href="/dashboard/login"
             className="border border-white/30 px-10 py-3 text-xs font-light tracking-[0.3em] text-white/80 uppercase transition-all duration-300 hover:border-[#4fc3f7]/40 hover:text-white hover:shadow-[0_0_25px_rgba(79,195,247,0.2)]"
           >
-            Open Control Plane
+            Enter Nenjo
           </Link>
           <Link
             href="/docs/getting-started/architecture"
@@ -323,10 +323,10 @@ function HeroSection() {
 }
 
 const proofPoints = [
-  { label: "Deployment", value: "Your infra" },
-  { label: "Worker network", value: "Private by default" },
-  { label: "Coordination", value: "NATS event mesh" },
-  { label: "Update model", value: "Live hot-swap" },
+  { label: "Platform model", value: "Agent-first" },
+  { label: "Configuration", value: "Agents as files" },
+  { label: "Update model", value: "Real-time hot-swap" },
+  { label: "Coordination", value: "Multi-agent by design" },
 ];
 
 function ProofStrip() {
@@ -360,33 +360,39 @@ function ProofStrip() {
 const features = [
   {
     icon: <DiamondIcon />,
-    title: "Private Worker Mesh",
-    description: "Keep agent workers inside your network and let them coordinate over an internal message fabric",
+    title: "Agent-First By Design",
+    description:
+      "Built so agents can inspect, coordinate, and operate within the platform itself, not just answer prompts inside a hosted runtime.",
   },
   {
     icon: <HexagonIcon />,
-    title: "Portable Agent Runtime",
-    description: "Create your own coding agents with custom prompts, scopes, tools, and runtime behavior",
+    title: "Agents As Files",
+    description:
+      "Define agents in manifest files that can be versioned, reviewed, reproduced, and moved with your codebase instead of disappearing into vendor-managed state.",
   },
   {
     icon: <TriangleIcon />,
-    title: "Realtime Hot-Swap",
-    description: "Push agent and routine config changes live so long-running workers update without full redeploys",
+    title: "Real-Time Hot-Swap",
+    description:
+      "Push agent and routine updates live so long-running workers pick up new configuration without full redeploys or cold restarts.",
   },
   {
     icon: <OctagonIcon />,
-    title: "Event-Driven Routines",
-    description: "Trigger executions from schedules, upstream agent signals, or application events",
+    title: "Multi-Agent Orchestration",
+    description:
+      "Go beyond single-agent hosting with delegation, routines, gates, councils, cron, and event-driven coordination.",
   },
   {
     icon: <CircleIcon />,
-    title: "Long-Running Memory",
-    description: "Give persistent workers memory, resource access, and durable execution context across runs",
+    title: "Portable In Nature",
+    description:
+      "Stay flexible across providers, runtimes, and environments instead of rebuilding product behavior around a single hosted stack.",
   },
   {
     icon: <PentagonIcon />,
-    title: "Scoped Agent Identity",
-    description: "Shape what each agent can see and do with prompt context, MCP scopes, abilities, and domains",
+    title: "Durable Agent Context",
+    description:
+      "Give long-running workers memory, resource access, and execution context that survives beyond one stateless session.",
   },
 ];
 
@@ -426,21 +432,21 @@ function FeaturesSection() {
 const positioningPoints = [
   {
     icon: <CrosshairIcon />,
-    title: "Control plane, not hosted chat",
+    title: "More than hosted agents",
     description:
-      "Nenjo manages agents, routines, scopes, tools, and live configuration. The product is the runtime and control model, not just the UI.",
+      "Nenjo manages agents, routines, scopes, tools, manifests, and live runtime behavior. The product is the operating model, not just the interface wrapped around it.",
   },
   {
     icon: <SquareIcon />,
-    title: "Private worker intranet",
+    title: "Live systems, not static setup",
     description:
-      "Workers communicate over NATS, can send messages to each other, and stay reachable without exposing the execution plane to the public internet.",
+      "Nenjo is built for systems that keep running. Agents, routines, and workers can evolve through live hot-swapped updates instead of rigid redeploy cycles.",
   },
   {
     icon: <DiamondIcon />,
-    title: "Persistent agents that keep running",
+    title: "Nenji makes it concrete",
     description:
-      "This is built for long-running agent workflows: memory, routines, delegated execution, and runtime updates while the system is live.",
+      "Nenjo is the platform. Nenji shows what it enables: an agent that can work within the system itself and make the agent-first model tangible.",
   },
 ];
 
@@ -454,12 +460,12 @@ function WhyNenjoSection() {
 
         <div className="mb-14 max-w-3xl">
           <h2 className="mb-5 text-3xl font-extralight tracking-tight text-white sm:text-4xl">
-            A private control plane for coding agents
+            Built beyond single-agent hosting
           </h2>
           <p className="text-base font-light leading-relaxed text-white/55 sm:text-lg">
-            Nenjo is strongest when you position it as infrastructure for people who want their own
-            Claude Code-style runtime, but do not want the runtime trapped inside one hosted
-            product, one machine, or one stateless chat session.
+            Most platforms help you launch agents. Nenjo is for teams building living systems:
+            agents defined as files, updated in real time, and embedded in the operating model of
+            the product itself.
           </p>
         </div>
 
@@ -531,9 +537,53 @@ function ArchitectureSection() {
         </div>
 
         <p className="mx-auto mt-8 max-w-2xl text-center text-xs font-light leading-relaxed tracking-wide text-white/30">
-          Nenjo runs a private control plane above your worker network. Agents stay on your
-          infrastructure, communicate over an internal bus, and receive config updates in real time.
+          Nenjo sits above the worker network so agents can coordinate, receive live
+          manifest-driven updates, and keep operating without waiting for the whole system to be
+          redeployed.
         </p>
+      </div>
+    </section>
+  );
+}
+
+function NenjiSection() {
+  const { ref, visible } = useFadeIn();
+
+  return (
+    <section className="px-4 py-32">
+      <div className="mx-auto max-w-5xl">
+        <SectionLabel>NENJI</SectionLabel>
+
+        <div
+          ref={ref}
+          className={`grid gap-8 lg:grid-cols-[1.1fr_0.9fr] transition-all duration-700 ${
+            visible ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
+          }`}
+        >
+          <ClippedCard className="bg-white/[0.02]">
+            <h2 className="mb-5 text-3xl font-extralight tracking-tight text-white sm:text-4xl">
+              Nenjo is the platform.
+              <br />
+              Nenji shows what it enables.
+            </h2>
+            <p className="max-w-2xl text-base font-light leading-relaxed text-white/55 sm:text-lg">
+              Nenji gives the agent-first idea a concrete shape. It is the example of an agent that
+              does more than answer prompts: it can inspect, configure, coordinate, and operate
+              within the system itself.
+            </p>
+          </ClippedCard>
+
+          <ClippedCard className="bg-white/[0.02]">
+            <div className="mb-3 text-[10px] tracking-[0.25em] text-[#4fc3f7]/70 uppercase" style={{ fontFamily: "monospace" }}>
+              Why It Matters
+            </div>
+            <div className="space-y-4 text-sm font-light leading-relaxed text-white/48">
+              <p>Nenji makes the platform feel real instead of theoretical.</p>
+              <p>It gives users a concrete picture of an agent that can inspect, coordinate, and operate within the system it lives in.</p>
+              <p>That turns the idea of an agent-first platform from an abstract claim into something legible, memorable, and easy to imagine building with.</p>
+            </div>
+          </ClippedCard>
+        </div>
       </div>
     </section>
   );
@@ -542,28 +592,23 @@ function ArchitectureSection() {
 const comparisonRows = [
   {
     label: "Primary product shape",
-    nenjo: "A private control plane for long-running workers, routines, scopes, and live runtime policy",
-    generic: "An agent framework or orchestration library embedded inside your app stack",
+    nenjo: "An agent-first platform for multi-agent systems, live updates, and platform-level operability",
+    generic: "A hosted agent product, managed runtime, or agent framework focused on getting one agent running quickly",
   },
   {
-    label: "Runtime location",
-    nenjo: "Workers stay on your infrastructure and coordinate over a private event bus",
-    generic: "Application-managed processes and framework runtimes that you assemble and host yourself",
+    label: "Configuration model",
+    nenjo: "Agents can be defined in manifest files, versioned in your repo, and moved across environments",
+    generic: "Configuration often lives in hosted settings, templates, dashboards, or framework-specific runtime code",
   },
   {
-    label: "Operational control",
-    nenjo: "Scopes, MCP access, domains, abilities, and hot-swapped manifests are first-class runtime controls",
-    generic: "Most behavior is composed in application code, graph definitions, and tool middleware",
+    label: "Update model",
+    nenjo: "Long-running workers can pick up hot-swapped agent and routine changes while the system stays live",
+    generic: "Configuration changes often depend on manual redeploys, restarts, or hosted platform update flows",
   },
   {
-    label: "Coordination model",
-    nenjo: "Workers can message each other, trigger routines, and run councils across a persistent control plane",
-    generic: "Graphs, crews, flows, and agent loops coordinate work inside the framework layer",
-  },
-  {
-    label: "Where Nenjo is stronger",
-    nenjo: "Private infrastructure, durable multi-agent operations, and runtime governance without handing the worker plane to a vendor",
-    generic: "Great when you want a developer framework, but not a full private operator surface by default",
+    label: "Portability",
+    nenjo: "Portable across providers, runtimes, and deployment models without locking product behavior to one vendor",
+    generic: "Often centered on one vendor runtime, one hosting model, or one framework's assumptions",
   },
 ];
 
@@ -575,12 +620,12 @@ function ComparisonSection() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-14 max-w-3xl">
           <h2 className="mb-5 text-3xl font-extralight tracking-tight text-white sm:text-4xl">
-            Contrast with others
+            Built for teams who want more than setup speed
           </h2>
           <p className="text-base font-light leading-relaxed text-white/55 sm:text-lg">
-            Some systems focus on agent frameworks and orchestration libraries. Nenjo is structured
-            as a private control plane for long-running workers, runtime policy, and durable
-            multi-agent coordination on your own infrastructure.
+            Some products optimize for managed convenience, templates, or framework ergonomics.
+            Nenjo is for teams that want agent configuration as files, live runtime evolution, and a
+            system architecture that does not collapse into vendor lock-in.
           </p>
         </div>
 
@@ -593,7 +638,7 @@ function ComparisonSection() {
           <div className="grid grid-cols-1 border-b border-white/10 bg-white/[0.02] text-[11px] tracking-[0.25em] text-white/35 uppercase md:grid-cols-[1.1fr_1fr_1fr]" style={{ fontFamily: "monospace" }}>
             <div className="px-5 py-4">Axis</div>
             <div className="px-5 py-4 text-[#4fc3f7]/70">Nenjo</div>
-            <div className="px-5 py-4">CrewAI / LangChain</div>
+            <div className="px-5 py-4">Typical Alternative</div>
           </div>
           {comparisonRows.map((row) => (
             <div key={row.label} className="grid grid-cols-1 border-b border-white/10 last:border-b-0 md:grid-cols-[1.1fr_1fr_1fr]">
@@ -674,14 +719,14 @@ function FinalCtaSection() {
       <div className="mx-auto max-w-5xl">
         <ClippedCard className="bg-white/[0.03] px-8 py-14 text-center sm:px-14">
           <h2 className="mb-5 text-3xl font-extralight tracking-tight text-white sm:text-5xl">
-            Turn operational work
+            Own the agent stack.
             <br />
-            into durable agency.
+            Build beyond hosted agents.
           </h2>
           <p className="mx-auto mb-10 max-w-3xl text-base font-light leading-relaxed text-white/52 sm:text-lg">
-            Transform support, operations, internal tooling, and execution into a private agent
-            system. Nenjo gives you a control plane for long-running agents that run on your
-            infrastructure, coordinate over an internal event mesh, and stay under your control.
+            Nenjo gives teams an agent-first platform with agents defined as files, real-time hot-swapped
+            updates, and durable multi-agent coordination. Build systems where agents do more than
+            run. Build systems they can help operate.
           </p>
           <div className="flex flex-col justify-center gap-4 sm:flex-row">
             <Link
@@ -731,6 +776,7 @@ export function LandingPage() {
       <FeaturesSection />
       <WhyNenjoSection />
       <ArchitectureSection />
+      <NenjiSection />
       <ComparisonSection />
       <DocsSection />
       <FinalCtaSection />

@@ -386,44 +386,6 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
   } = usePlannerChat(projectId, agentId, sessionId ?? undefined);
   const hasActiveTools = activeTools.length > 0;
 
-  // Pick up welcome greeting from onboarding flow.
-  // Sends directly via websocket so the user's prompt doesn't appear in chat —
-  // only the agent's response shows up, making it feel like a natural greeting.
-  const { send: wsSend, status: wsStatus } = useWebSocketContext();
-  const greetingSent = useRef(false);
-  useEffect(() => {
-    if (greetingSent.current || !sessionId || isLoadingHistory) return;
-    if (wsStatus !== "connected") return;
-    try {
-      const raw = sessionStorage.getItem("nenjo:welcome_greeting");
-      if (!raw) return;
-      const greeting = JSON.parse(raw) as {
-        session_id: string;
-        project_id: string;
-        agent_id: string;
-        message: string;
-      };
-      if (greeting.session_id !== sessionId) return;
-      greetingSent.current = true;
-      sessionStorage.removeItem("nenjo:welcome_greeting");
-      // Send directly over websocket — no user message in chat history
-      setTimeout(() => {
-        wsSend({
-          type: "chat.message",
-          id: `welcome-${Date.now()}`,
-          project_id: greeting.project_id,
-          agent_id: greeting.agent_id,
-          session_id: greeting.session_id,
-          content: greeting.message,
-          hidden: true,
-          timestamp: new Date().toISOString(),
-        });
-      }, 300);
-    } catch {
-      // ignore malformed data
-    }
-  }, [sessionId, isLoadingHistory, wsSend, wsStatus]);
-
   // Domains
   const agentDomainsList: Domain[] = useMemo(
     () => (agentDomains ?? []).filter((rm) => rm.enabled && rm.domain).map((rm) => rm.domain!),

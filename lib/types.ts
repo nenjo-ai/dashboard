@@ -918,6 +918,34 @@ export interface CreateEdgeRequest {
   condition?: RoutineEdgeCondition;
 }
 
+export interface SaveRoutineGraphStepRequest {
+  client_ref: string;
+  id?: string;
+  name: string;
+  step_type: RoutineStepType;
+  model_id?: string;
+  council_id?: string;
+  agent_id?: string | null;
+  lambda_id?: string | null;
+  config?: Record<string, unknown>;
+  position_x: number;
+  position_y: number;
+  order_index: number;
+}
+
+export interface SaveRoutineGraphEdgeRequest {
+  source_ref: string;
+  target_ref: string;
+  condition?: RoutineEdgeCondition;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SaveRoutineGraphRequest extends UpdateRoutineRequest {
+  entry_step_refs: string[];
+  steps: SaveRoutineGraphStepRequest[];
+  edges: SaveRoutineGraphEdgeRequest[];
+}
+
 export type DelegationStrategy = "dynamic" | "broadcast" | "decompose" | "round_robin" | "vote";
 
 export const DELEGATION_STRATEGIES: {
@@ -1295,7 +1323,6 @@ export interface Lambda {
   path: string;
   body: string;
   interpreter: LambdaInterpreter;
-  is_system: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;

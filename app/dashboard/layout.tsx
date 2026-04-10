@@ -83,7 +83,7 @@ function DashboardLayoutWithClerk({
   if (isChromeless) {
     // Wait for Clerk to load so the auth token getter is wired up
     // before children (like onboarding) make API calls.
-    if (!isLoaded) {
+    if (!isLoaded || !authReady) {
       return (
         <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
           <div className="flex items-center gap-3 text-gray-400">
@@ -96,7 +96,7 @@ function DashboardLayoutWithClerk({
         </div>
       );
     }
-    return <>{children}</>;
+    return <WebSocketProvider>{children}</WebSocketProvider>;
   }
 
   const mainPadding = cn(

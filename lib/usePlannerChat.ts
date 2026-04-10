@@ -39,6 +39,7 @@ function appendPreview(existing?: string, incoming?: string): string | undefined
 }
 
 const MAX_VISIBLE_TOOL_CALLS = 3;
+const LOCAL_CHAT_SEED_KEY = "nenjo:local_chat_seed";
 
 function limitRecentTools<T>(tools: T[]): T[] {
   return tools.slice(-MAX_VISIBLE_TOOL_CALLS);
@@ -96,6 +97,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   // events both use this ID to target the same message, preventing
   // duplication regardless of event ordering or React batching.
   const responseIdRef = useRef<string | null>(null);
+  const responsePersistedRef = useRef(false);
 
   // Monotonic counter for history fetches — only the latest fetch can update state.
   // This handles React Strict Mode double-mount and rapid session switching.
@@ -277,6 +279,36 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, agentId, activeSessionId, pendingAgentId, persistedActiveTools, persistedLivePreview]);
 
+  useEffect(() => {
+    if (!activeSessionId || isLoadingHistory) return;
+
+    try {
+      const raw = sessionStorage.getItem(LOCAL_CHAT_SEED_KEY);
+      if (!raw) return;
+
+      const seeded = JSON.parse(raw) as { session_id: string; message: string };
+      if (seeded.session_id !== activeSessionId) return;
+
+      setMessages((prev) => {
+        if (prev.some((m) => m.role === "assistant" && m.content === seeded.message)) {
+          return prev;
+        }
+
+        return [
+          {
+            id: `local-seed-${activeSessionId}`,
+            role: "assistant",
+            content: seeded.message,
+            timestamp: new Date().toISOString(),
+          },
+          ...prev,
+        ];
+      });
+    } catch {
+      // ignore malformed seed data
+    }
+  }, [activeSessionId, isLoadingHistory]);
+
   // Restore active domain session from backend on mount/role switch
   useEffect(() => {
     if (!agentId || !userId) return;
@@ -352,6 +384,21 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
 
       setMessages((prev) => {
         const role = msg.sender as "user" | "assistant";
+        if (role === "assistant" && responseIdRef.current) {
+          const responseIdx = prev.findIndex((m) => m.id === responseIdRef.current);
+          if (responseIdx >= 0) {
+            responsePersistedRef.current = true;
+            return prev.map((m, i) =>
+              i === responseIdx ? {
+                ...m,
+                id: msg.id,
+                persistedId: msg.id,
+                content: msg.content,
+                timestamp: msg.created_at,
+              } : m,
+            );
+          }
+        }
         // Find the last message with this role and content that doesn't
         // already have a persistedId.
         const idx = prev.findLastIndex(
@@ -419,6 +466,9 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
 
       switch (streamEvent.event_type) {
         case "Token": {
+          if (responsePersistedRef.current) {
+            break;
+          }
           setActiveTools([]);
           setLivePreview(undefined);
           let id = responseIdRef.current;
@@ -451,6 +501,14 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         }
 
         case "Done": {
+          if (responsePersistedRef.current) {
+            responseIdRef.current = null;
+            responsePersistedRef.current = false;
+            setActiveTools([]);
+            setLivePreview(undefined);
+            setIsTyping(false);
+            break;
+          }
           setActiveTools([]);
           setLivePreview(undefined);
           const { final_output, session_id } = streamEvent.data as {
@@ -493,6 +551,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         }
 
         case "Error": {
+          responsePersistedRef.current = false;
           responseIdRef.current = null;
           setLivePreview(undefined);
           const errorMessage = (streamEvent.data as { message: string }).message;
@@ -806,6 +865,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       }
 
       // Pre-allocate a response ID so Token/Done events target the same message
+      responsePersistedRef.current = false;
       responseIdRef.current = generateId();
       setLivePreview(undefined);
 
