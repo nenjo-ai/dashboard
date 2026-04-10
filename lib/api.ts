@@ -773,6 +773,17 @@ export async function updateRoutine(
   return res.json();
 }
 
+export async function saveRoutineGraph(
+  routineId: string,
+  data: import("./types").SaveRoutineGraphRequest,
+): Promise<import("./types").RoutineDetail> {
+  const res = await authFetch(`${routineUrl(routineId)}/graph`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
 export async function deleteRoutine(
   routineId: string,
 ): Promise<void> {

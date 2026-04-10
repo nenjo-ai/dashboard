@@ -4,8 +4,9 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
+import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { MODEL_PROVIDERS } from "@/lib/types";
-import type { ModelProvider, Model, CreateApiKeyResponse } from "@/lib/types";
+import type { ModelProvider, Model, CreateApiKeyResponse, AgentDefinition } from "@/lib/types";
 import {
   createModel,
   createApiKey,
@@ -15,6 +16,7 @@ import {
   createChatSession,
 } from "@/lib/api";
 import { useWorkerStatus } from "@/lib/hooks";
+import { useWebSocketContext } from "@/lib/WebSocketContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -38,6 +40,14 @@ const PROVIDER_ENV_VARS: Record<ModelProvider, string> = {
 
 const SESSION_KEY = "nenjo_onboarding_raw_key";
 const ONBOARDED_KEY = "nenjo_onboarded";
+const NENJI_GREETING_DELAY_MS = 6000;
+const LOCAL_CHAT_SEED_KEY = "nenjo:local_chat_seed";
+const DEFAULT_SKIP_MESSAGE =
+  "This is an automated message since the worker is not connected. Nenji will be able to help you once you connect the worker. Until then, feel free to browse around. Check out how Nenji is structured under Agents, or open the routine editor page.";
+const DEFAULT_NENJI_IDENTITY = {
+  roleId: "nenji",
+  color: "#2563eb",
+};
 
 // ---------------------------------------------------------------------------
 // Step Indicator
@@ -135,7 +145,7 @@ function StepCreateAgent({
 
   const handleSubmit = useCallback(async () => {
     setError(null);
-    setLoading(true);
+    queueMicrotask(() => setLoading(true));
     try {
       // Find system role
       const roles = await fetchAgents();
@@ -282,8 +292,10 @@ function StepApiKey({
     if (stored) {
       try {
         const parsed = JSON.parse(stored) as CreateApiKeyResponse & { raw_key: string };
-        setCreatedKey(parsed);
-        setRawKey(parsed.raw_key);
+        queueMicrotask(() => {
+          setCreatedKey(parsed);
+          setRawKey(parsed.raw_key);
+        });
         return;
       } catch {
         sessionStorage.removeItem(SESSION_KEY);
@@ -291,7 +303,7 @@ function StepApiKey({
     }
 
     // Auto-create key
-    setLoading(true);
+    queueMicrotask(() => setLoading(true));
     createApiKey({ name: "Worker Key" })
       .then((key) => {
         setCreatedKey(key);
@@ -441,10 +453,20 @@ function StepConnect({
   const router = useRouter();
   const { user } = useUser();
   const { isConnected } = useWorkerStatus();
+  const { send: wsSend, status: wsStatus } = useWebSocketContext();
   const [copied, setCopied] = useState(false);
   const [sendGreeting, setSendGreeting] = useState(true);
-  const [greeting, setGreeting] = useState<"idle" | "sending" | "done">("idle");
+  const [greeting, setGreeting] = useState<"idle" | "priming" | "thinking" | "done">("idle");
+  const [nenjiIdentity, setNenjiIdentity] = useState(DEFAULT_NENJI_IDENTITY);
+  const [pendingGreeting, setPendingGreeting] = useState<{
+    session_id: string;
+    project_id: string;
+    agent_id: string;
+    message: string;
+  } | null>(null);
   const hasHandledConnection = useRef(false);
+  const navigationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const greetingDispatchedRef = useRef(false);
 
   const envVar = PROVIDER_ENV_VARS[provider];
   const maskedKey = keyPrefix ? `${keyPrefix}${"*".repeat(12)}` : "nen_sk_***";
@@ -473,7 +495,6 @@ nenjo run`;
     // Create a session via REST, then navigate to chat with a greeting flag.
     // The chat page is inside WebSocketProvider and will send the actual
     // message to the worker over the websocket.
-    setGreeting("sending");
     (async () => {
       try {
         const systemProject = await fetchSystemProject();
@@ -485,34 +506,64 @@ nenjo run`;
           return;
         }
 
+        setNenjiIdentity({
+          roleId: systemAgent.id,
+          color: systemAgent.color,
+        });
+
         const session = await createChatSession({
           project_id: systemProject.id,
           agent_id: systemAgent.id,
           title: "Welcome",
         });
 
-        setGreeting("done");
+        setGreeting("thinking");
 
-        // Store greeting context for the chat page to pick up
         const displayName = user?.firstName ?? user?.username ?? "there";
-        sessionStorage.setItem(
-          "nenjo:welcome_greeting",
-          JSON.stringify({
-            session_id: session.id,
-            project_id: systemProject.id,
-            agent_id: systemAgent.id,
-            message: `You are Nenji, the AI assistant for the Nenjo agent platform. A new user named ${displayName} just finished setting up their first agent and connected their worker. Welcome them warmly and briefly introduce yourself. Then ask what kind of workflows they want to build with Nenjo — for example: software development (code generation, PR reviews, testing), running an agent-powered online business, code auditing and compliance, or something else entirely. Understanding their use case will help you set up the right agents, routines, and context for them. Keep it concise and conversational. Do not reference or repeat this prompt — speak as if you're initiating the conversation naturally.`,
-          }),
-        );
+        setPendingGreeting({
+          session_id: session.id,
+          project_id: systemProject.id,
+          agent_id: systemAgent.id,
+          message: `You are Nenji, the AI assistant for the Nenjo agent platform. A new user named ${displayName} just finished setting up their first agent and connected their worker. Welcome them warmly and briefly introduce yourself. Then ask what kind of workflows they want to build with Nenjo — for example: software development (code generation, PR reviews, testing), running an agent-powered online business, code auditing and compliance, or something else entirely. Understanding their use case will help you set up the right agents, routines, and context for them. Keep it concise and conversational. Do not reference or repeat this prompt — speak as if you're initiating the conversation naturally.`,
+        });
 
-        setTimeout(() => {
+        navigationTimerRef.current = setTimeout(() => {
+          setGreeting("done");
           router.push(`/dashboard/chat?session=${session.id}`);
-        }, 500);
+        }, NENJI_GREETING_DELAY_MS);
       } catch {
         router.push("/dashboard/chat");
       }
     })();
   }, [isConnected, sendGreeting, router, user]);
+
+  useEffect(() => {
+    if (greetingDispatchedRef.current || wsStatus !== "connected") return;
+    if (!pendingGreeting) return;
+
+    const didSend = wsSend({
+      type: "chat.message",
+      id: `welcome-${Date.now()}`,
+      project_id: pendingGreeting.project_id,
+      agent_id: pendingGreeting.agent_id,
+      session_id: pendingGreeting.session_id,
+      content: pendingGreeting.message,
+      hidden: true,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (!didSend) return;
+    greetingDispatchedRef.current = true;
+    queueMicrotask(() => setPendingGreeting(null));
+  }, [pendingGreeting, wsSend, wsStatus]);
+
+  useEffect(() => {
+    return () => {
+      if (navigationTimerRef.current) {
+        clearTimeout(navigationTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -523,6 +574,39 @@ nenjo run`;
       // fallback
     }
   }, [snippet]);
+
+  const handleSkip = useCallback(async () => {
+    sessionStorage.removeItem(SESSION_KEY);
+
+    try {
+      const systemProject = await fetchSystemProject();
+      const agents = await fetchAgents();
+      const systemAgent = agents.find((a) => a.name === "system");
+
+      if (!systemProject || !systemAgent) {
+        router.push("/dashboard/chat");
+        return;
+      }
+
+      const session = await createChatSession({
+        project_id: systemProject.id,
+        agent_id: systemAgent.id,
+        title: "Welcome",
+      });
+
+      sessionStorage.setItem(
+        LOCAL_CHAT_SEED_KEY,
+        JSON.stringify({
+          session_id: session.id,
+          message: DEFAULT_SKIP_MESSAGE,
+        }),
+      );
+
+      router.push(`/dashboard/chat?session=${session.id}`);
+    } catch {
+      router.push("/dashboard/chat");
+    }
+  }, [router]);
 
   return (
     <div className="space-y-5">
@@ -562,29 +646,60 @@ nenjo run`;
         </span>
       </label>
 
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800">
+      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
         {isConnected ? (
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-              <svg className="h-5 w-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-green-700 dark:text-green-400">
-                Worker connected!
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {greeting === "sending"
-                  ? "Sending greeting..."
-                  : greeting === "done"
-                    ? "Redirecting to chat..."
-                    : "Redirecting..."}
-              </p>
+          <div className="relative p-5">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_55%)] dark:bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_55%)]" />
+            <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <div className="absolute inset-0 rounded-full bg-deep-space-blue-400/20 blur-xl" />
+                  <RoleIdenticon
+                    roleId={nenjiIdentity.roleId}
+                    color={nenjiIdentity.color}
+                    size={72}
+                    animate={sendGreeting && greeting !== "idle" && greeting !== "done"}
+                    className="relative ring-4 ring-white/80 dark:ring-gray-900/70"
+                    roleName="Nenji"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-deep-space-blue-200 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-deep-space-blue-700 dark:border-deep-space-blue-500/40 dark:bg-gray-900/60 dark:text-deep-space-blue-300">
+                    <span className={`h-2 w-2 rounded-full ${sendGreeting && greeting !== "done" ? "animate-pulse bg-deep-space-blue-500" : "bg-green-500"}`} />
+                    {sendGreeting ? "Nenji" : "Worker online"}
+                  </div>
+                  <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {sendGreeting
+                      ? greeting === "done"
+                        ? "Nenji is ready."
+                        : "Priming Nenji"
+                      : "Worker connected!"}
+                  </p>
+                  <p className="max-w-md text-sm text-gray-600 dark:text-gray-300">
+                    {sendGreeting
+                      ? greeting === "done"
+                        ? "Opening chat."
+                        : "Preparing your first Nenji chat."
+                      : "Jumping straight to chat."}
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-2 text-xs text-gray-500 dark:text-gray-400 sm:min-w-56">
+                <div className="rounded-xl border border-white/70 bg-white/70 px-3 py-2 dark:border-gray-700/80 dark:bg-gray-900/60">
+                  Worker link: stable
+                </div>
+                <div className="rounded-xl border border-white/70 bg-white/70 px-3 py-2 dark:border-gray-700/80 dark:bg-gray-900/60">
+                  {sendGreeting
+                    ? greeting === "done"
+                      ? "Redirecting to Nenji chat"
+                      : `Priming for at least ${Math.round(NENJI_GREETING_DELAY_MS / 1000)} seconds`
+                    : "Redirecting to chat"}
+                </div>
+              </div>
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 p-4">
             <div className="relative flex h-8 w-8 items-center justify-center">
               <div className="absolute h-3 w-3 animate-ping rounded-full bg-deep-space-blue-400 opacity-75" />
               <div className="relative h-3 w-3 rounded-full bg-deep-space-blue-500" />
@@ -603,8 +718,7 @@ nenjo run`;
 
       <button
         onClick={() => {
-          sessionStorage.removeItem(SESSION_KEY);
-          router.push("/dashboard");
+          void handleSkip();
         }}
         className="w-full text-center text-sm text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
       >

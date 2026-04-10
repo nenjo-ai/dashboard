@@ -41,12 +41,7 @@ import type {
 } from "@/lib/types";
 import { ROUTINE_TRIGGERS } from "@/lib/types";
 import {
-  updateRoutine,
-  createRoutineStep,
-  updateRoutineStep,
-  deleteRoutineStep,
-  createRoutineEdge,
-  deleteRoutineEdge,
+  saveRoutineGraph,
   fetchAgents,
 } from "@/lib/api";
 
@@ -595,102 +590,46 @@ function RoutineEditorInner({
 
     try {
       const currentStepNodes = nodes.filter((n) => n.id !== TRIGGER_NODE_ID);
-      const originalStepIds = new Set(routine.steps.map((s) => s.id));
-      const originalEdgeIds = new Set(routine.edges.map((e) => e.id));
-
-      // ── 1. Create new steps (temp IDs → real IDs) ──
-      const newNodes = currentStepNodes.filter((n) => n.id.startsWith(TEMP_PREFIX));
-      const tempToReal = new Map<string, string>();
-
-      for (const node of newNodes) {
-        const data = node.data as StepNodeData;
-        const updates = pendingStepUpdates.get(node.id);
-        const step = await createRoutineStep(routine.id, {
-          name: updates?.name ?? data.label,
-          step_type: (updates?.step_type ?? data.stepType) as RoutineStepType,
-          agent_id: updates?.agent_id ?? (data.config?.agent_id as string) ?? undefined,
-          council_id: updates?.council_id ?? data.councilId ?? undefined,
-          lambda_id: updates?.lambda_id ?? data.lambdaId ?? undefined,
-          config: updates?.config ?? data.config ?? {},
-          position_x: Math.round(node.position.x),
-          position_y: Math.round(node.position.y),
-          order_index: currentStepNodes.indexOf(node),
-        });
-        tempToReal.set(node.id, step.id);
-      }
-
-      // ── 2. Delete removed steps ──
-      const deletedStepIds = routine.steps
-        .filter((s) => !currentStepNodes.some((n) => n.id === s.id))
-        .map((s) => s.id);
-      for (const id of deletedStepIds) {
-        await deleteRoutineStep(routine.id, id);
-      }
-
-      // ── 3. Update existing steps (position + config) ──
-      const existingNodes = currentStepNodes.filter((n) => originalStepIds.has(n.id));
-      for (const node of existingNodes) {
-        const original = routine.steps.find((s) => s.id === node.id)!;
-        const updates: Record<string, unknown> = {};
-        const pendingUpdate = pendingStepUpdates.get(node.id);
-
-        // Position changes
-        if (Math.round(node.position.x) !== original.position_x) {
-          updates.position_x = Math.round(node.position.x);
-        }
-        if (Math.round(node.position.y) !== original.position_y) {
-          updates.position_y = Math.round(node.position.y);
-        }
-
-        // Config/name/type changes from panel
-        if (pendingUpdate) {
-          Object.assign(updates, pendingUpdate);
-        }
-
-        if (Object.keys(updates).length > 0) {
-          await updateRoutineStep(routine.id, node.id, updates);
-        }
-      }
-
-      // ── 4. Delete removed edges ──
-      // Skip edges connected to deleted steps — those are already cascade-deleted
-      // by the DB when the step was removed in phase 2.
-      const deletedStepIdSet = new Set(deletedStepIds);
       const currentRegularEdges = edges.filter(
         (e) => !(e.data as Record<string, unknown>)?.isTriggerEdge,
       );
-      const deletedEdgeIds = routine.edges
-        .filter((e) => !currentRegularEdges.some((ce) => ce.id === e.id))
-        .filter((e) => !deletedStepIdSet.has(e.source_step_id) && !deletedStepIdSet.has(e.target_step_id))
-        .map((e) => e.id);
-      for (const id of deletedEdgeIds) {
-        await deleteRoutineEdge(routine.id, id);
-      }
-
-      // ── 5. Create new edges (mapping temp step IDs) ──
-      const newEdges = currentRegularEdges.filter((e) => !originalEdgeIds.has(e.id));
-      for (const edge of newEdges) {
-        const sourceId = tempToReal.get(edge.source) ?? edge.source;
-        const targetId = tempToReal.get(edge.target) ?? edge.target;
-        const condition = (edge.data as Record<string, unknown>)?.condition as RoutineEdgeCondition ?? "always";
-        await createRoutineEdge(routine.id, {
-          source_step_id: sourceId,
-          target_step_id: targetId,
-          condition,
-        });
-      }
-
-      // ── 6. Update routine (trigger + entry_step_ids) ──
-      const entryStepIds = edges
-        .filter((e) => (e.data as Record<string, unknown>)?.isTriggerEdge)
-        .map((e) => tempToReal.get(e.target) ?? e.target);
-
-      await updateRoutine(routine.id, {
-        trigger,
-        metadata: { ...routine.metadata, entry_step_ids: entryStepIds },
+      const stepPayload = currentStepNodes.map((node, index) => {
+        const data = node.data as StepNodeData;
+        const pendingUpdate = pendingStepUpdates.get(node.id);
+        return {
+          client_ref: node.id,
+          id: node.id.startsWith(TEMP_PREFIX) ? undefined : node.id,
+          name: pendingUpdate?.name ?? data.label,
+          step_type: (pendingUpdate?.step_type ?? data.stepType) as RoutineStepType,
+          agent_id: pendingUpdate?.agent_id ?? (data.config?.agent_id as string) ?? data.agentId ?? undefined,
+          council_id: pendingUpdate?.council_id ?? data.councilId ?? undefined,
+          lambda_id: pendingUpdate?.lambda_id ?? data.lambdaId ?? undefined,
+          config: pendingUpdate?.config ?? data.config ?? {},
+          position_x: Math.round(node.position.x),
+          position_y: Math.round(node.position.y),
+          order_index: index,
+        };
       });
 
-      // ── 7. Reset state ──
+      const edgePayload = currentRegularEdges.map((edge) => ({
+        source_ref: edge.source,
+        target_ref: edge.target,
+        condition: ((edge.data as Record<string, unknown>)?.condition as RoutineEdgeCondition | undefined) ?? "always",
+        metadata: {},
+      }));
+
+      const entryStepRefs = edges
+        .filter((e) => (e.data as Record<string, unknown>)?.isTriggerEdge)
+        .map((e) => e.target);
+
+      await saveRoutineGraph(routine.id, {
+        trigger,
+        metadata: routine.metadata,
+        entry_step_refs: entryStepRefs,
+        steps: stepPayload,
+        edges: edgePayload,
+      });
+
       setPendingStepUpdates(new Map());
       setIsDirty(false);
       setSaved(true);

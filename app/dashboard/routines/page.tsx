@@ -6,11 +6,10 @@ import { useTabParam } from "@/lib/hooks";
 import { TopBar } from "@/components/layout/TopBar";
 import { Tabs } from "@/components/ui/Tabs";
 import { RoutineSection } from "@/components/routine/RoutineSection";
-import { LambdaSection } from "@/components/lambdas/LambdaSection";
 import { CouncilsSection } from "@/components/councils/CouncilsSection";
 import { PageContent } from "@/components/ui/PageContent";
 
-type RoutinesTab = "tasks" | "schedules" | "lambdas" | "councils";
+type RoutinesTab = "tasks" | "schedules" | "councils";
 
 export default function RoutinesPage() {
   return (
@@ -24,14 +23,12 @@ function RoutinesPageContent() {
   const [activeTab, setActiveTab] = useTabParam<RoutinesTab>("tasks", [
     "tasks",
     "schedules",
-    "lambdas",
     "councils",
   ]);
 
   const tabs = [
     { id: "tasks" as const, label: "Tasks" },
     { id: "schedules" as const, label: "Schedules" },
-    { id: "lambdas" as const, label: "Lambdas" },
     { id: "councils" as const, label: "Councils" },
   ];
 
@@ -56,8 +53,6 @@ function RoutinesPageContent() {
         {activeTab === "schedules" && (
           <RoutineSection triggerFilter={["cron"]} />
         )}
-
-        {activeTab === "lambdas" && <LambdaSection />}
 
         {activeTab === "councils" && <CouncilsSection />}
       </PageContent>
