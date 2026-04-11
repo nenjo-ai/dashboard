@@ -3,9 +3,10 @@
 import Link from "next/link";
 import useSWR from "swr";
 import { useAuth } from "@clerk/nextjs";
-import { Bell, BookOpen, Menu } from "lucide-react";
+import { Bell, BookOpen, Download, Menu, WifiOff } from "lucide-react";
 import { WorkerStatusIndicator } from "./WorkerStatusIndicator";
 import { useMobileMenu } from "@/lib/MobileMenuContext";
+import { usePwa } from "@/components/pwa/PwaProvider";
 import { fetcher, notificationsUnreadUrl } from "@/lib/api";
 import type { UnreadSummary } from "@/lib/types";
 
@@ -17,6 +18,7 @@ interface TopBarProps {
 export function TopBar({ title, children }: TopBarProps) {
   const onMenuClick = useMobileMenu();
   const { isLoaded, isSignedIn } = useAuth();
+  const { canInstall, isIos, isMobile, isOnline, isStandalone, promptInstall, showInstallNudge } = usePwa();
 
   const { data: unread } = useSWR<UnreadSummary>(
     isLoaded && isSignedIn ? notificationsUnreadUrl() : null,
@@ -24,9 +26,18 @@ export function TopBar({ title, children }: TopBarProps) {
     { refreshInterval: 30000, revalidateOnFocus: true },
   );
   const totalUnread = unread?.total ?? 0;
+  const showInstallButton = isMobile && !isStandalone && (canInstall || isIos);
+  const handleInstallClick = () => {
+    if (canInstall) {
+      void promptInstall();
+      return;
+    }
+
+    showInstallNudge();
+  };
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-gray-200 bg-white/80 px-4 md:px-8 backdrop-blur-xs dark:border-gray-700 dark:bg-gray-900/80">
+    <header className="pwa-topbar sticky top-0 z-20 flex h-16 items-center justify-between border-b border-gray-200 bg-white/80 px-4 md:px-8 backdrop-blur-xs dark:border-gray-700 dark:bg-gray-900/80">
       <div className="flex items-center gap-3">
         {onMenuClick && (
           <button
@@ -40,6 +51,23 @@ export function TopBar({ title, children }: TopBarProps) {
         <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{title}</h1>
       </div>
       <div className="flex items-center gap-3">
+        {!isOnline && (
+          <span className="hidden items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 md:inline-flex dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+            <WifiOff className="h-3.5 w-3.5" />
+            Offline
+          </span>
+        )}
+        {showInstallButton && (
+          <button
+            type="button"
+            onClick={handleInstallClick}
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-deep-space-blue-200 bg-deep-space-blue-50 px-3 text-[11px] font-medium text-deep-space-blue-700 transition-colors hover:border-deep-space-blue-300 hover:bg-deep-space-blue-100 dark:border-deep-space-blue-400/30 dark:bg-deep-space-blue-500/10 dark:text-deep-space-blue-200 dark:hover:border-deep-space-blue-400/50 dark:hover:bg-deep-space-blue-500/20"
+            title="Install Nenjo"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Install
+          </button>
+        )}
         <Link
           href="/docs"
           className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"

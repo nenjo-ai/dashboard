@@ -1,33 +1,35 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
 import Script from 'next/script'
 import { ClerkProvider } from '@clerk/nextjs'
 import { ThemeProvider } from '@/lib/theme'
+import { PwaInstallController } from '@/components/pwa/PwaInstallController'
+import { PwaProvider } from '@/components/pwa/PwaProvider'
 import { ToastProvider } from '@/components/ui/Toast'
 import { Analytics } from "@vercel/analytics/next"
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'] })
-
 export const metadata: Metadata = {
-  title: 'Dashboard',
-  description: 'Application Dashboard',
+  title: {
+    default: 'Nenjo',
+    template: '%s | Nenjo',
+  },
+  description: 'Nenjo is an agent-first platform for teams building real agent products.',
+  applicationName: 'Nenjo',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Nenjo',
+  },
   icons: {
     icon: [
-      {
-        url: '/nenjo-logo-dark.png',
-        sizes: '32x32',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/nenjo-logo-white.png',
-        sizes: '32x32',
-        media: '(prefers-color-scheme: dark)',
-      },
+      { url: '/pwa-icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/pwa-icon-512.png', sizes: '512x512', type: 'image/png' },
     ],
+    shortcut: '/pwa-icon-192.png',
     apple: [
       {
-        url: '/nenjo-logo-dark.png',
+        url: '/apple-touch-icon.png',
         sizes: '180x180',
       },
     ],
@@ -37,6 +39,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  themeColor: '#07111d',
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
 }
@@ -70,12 +73,15 @@ export default function RootLayout({
           `}
         </Script>
       </head>
-      <body className={inter.className}>
-        <ThemeProvider>
-          {children}
-          <ToastProvider />
-          <Analytics />
-        </ThemeProvider>
+      <body>
+        <PwaProvider>
+          <ThemeProvider>
+            {children}
+            <PwaInstallController />
+            <ToastProvider />
+            <Analytics />
+          </ThemeProvider>
+        </PwaProvider>
       </body>
     </html>
   );

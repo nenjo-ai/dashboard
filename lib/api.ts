@@ -383,11 +383,13 @@ export async function removeDependency(taskId: string, depId: string): Promise<v
 
 export function executionsUrl(params?: {
   project_id?: string;
+  routine_id?: string;
   status?: string;
   limit?: number;
 }): string {
   const search = new URLSearchParams();
   if (params?.project_id) search.set("project_id", params.project_id);
+  if (params?.routine_id) search.set("routine_id", params.routine_id);
   if (params?.status) search.set("status", params.status);
   if (params?.limit) search.set("limit", String(params.limit));
   const qs = search.toString();
@@ -423,9 +425,10 @@ export async function fetchExecutions(
   projectId?: string,
   limit?: number,
   status?: string,
+  routineId?: string,
 ): Promise<ExecutionDetails[]> {
   return fetcher<ExecutionDetails[]>(
-    executionsUrl({ project_id: projectId, status, limit }),
+    executionsUrl({ project_id: projectId, routine_id: routineId, status, limit }),
   );
 }
 

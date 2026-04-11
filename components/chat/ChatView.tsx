@@ -187,7 +187,7 @@ export function ChatView() {
   );
 
   return (
-    <div className="flex h-full overflow-hidden bg-white dark:bg-gray-900 md:rounded-xl md:border md:border-gray-200 md:dark:border-gray-700">
+    <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-white dark:bg-gray-900 md:rounded-xl md:border md:border-gray-200 md:dark:border-gray-700">
       {/* Session list — left panel (desktop: always visible, mobile: animated) */}
       <div className="hidden md:block w-80 shrink-0 border-r border-gray-200 dark:border-gray-700">
         <GlobalSessionList
@@ -203,16 +203,16 @@ export function ChatView() {
       </div>
 
       {/* Mobile: Grok-style shell */}
-      <div className="relative flex-1 min-w-0 md:hidden overflow-hidden">
+      <div className="relative min-h-0 flex-1 min-w-0 overflow-hidden md:hidden">
         <MobileChatContainer
           isNotificationView={isNotificationView}
         />
       </div>
 
       {/* Chat area — right panel (desktop only) */}
-      <div className="hidden md:block flex-1 min-w-0">
+      <div className="hidden min-h-0 flex-1 min-w-0 md:block">
         {activeSession ? (
-          <div className="flex h-full flex-col">
+          <div className="flex h-full min-h-0 flex-col">
             {/* Chat header */}
             <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-2.5 dark:border-gray-700">
               <div className="min-w-0 flex-1">

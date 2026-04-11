@@ -267,6 +267,13 @@
 /* Prevent rubber-band / overscroll on mobile — stabilizes viewport */
 @media (display-mode: standalone) {
   html, body { overscroll-behavior: none; }
+  body {
+    background: #07111d;
+  }
+  .pwa-topbar {
+    padding-top: env(safe-area-inset-top, 0px);
+    height: calc(4rem + env(safe-area-inset-top, 0px));
+  }
 }
 html, body {
   overscroll-behavior-x: none;
