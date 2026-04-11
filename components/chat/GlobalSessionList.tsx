@@ -16,6 +16,7 @@ interface GlobalSessionListProps {
   onDelete: (id: string) => void;
   channelType?: "chat" | "notification";
   hideHeaderControls?: boolean;
+  mobile?: boolean;
 }
 
 function displayProjectName(name: string): string {
@@ -47,6 +48,7 @@ export default function GlobalSessionList({
   onDelete,
   channelType = "chat",
   hideHeaderControls = false,
+  mobile = false,
 }: GlobalSessionListProps) {
   const [search, setSearch] = useState("");
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
@@ -104,10 +106,13 @@ export default function GlobalSessionList({
   );
 
   return (
-    <div className="flex h-full flex-col bg-white dark:bg-gray-900">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white dark:bg-gray-900">
       {/* Header */}
       {!hideHeaderControls && (
-        <div className="shrink-0 border-b border-gray-200 p-3 space-y-2 dark:border-gray-700">
+        <div className={cn(
+          "shrink-0 border-b border-gray-200 p-3 space-y-2 dark:border-gray-700",
+          mobile && "px-3 pb-2 pt-3",
+        )}>
           {/* Search */}
           <div className="relative">
             <svg
@@ -128,7 +133,12 @@ export default function GlobalSessionList({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={channelType === "notification" ? "Search notifications..." : "Search chats..."}
-              className="w-full rounded-full md:rounded-md border border-gray-200 bg-gray-100 md:bg-gray-50 py-2 md:py-1.5 pl-8 pr-3 text-xs text-gray-900 placeholder:text-gray-400 outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500"
+              className={cn(
+                "w-full border border-gray-200 bg-gray-100 text-xs text-gray-900 placeholder:text-gray-400 outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500",
+                mobile
+                  ? "rounded-2xl py-2.5 pl-9 pr-3"
+                  : "rounded-full py-2 pl-8 pr-3 md:rounded-md md:bg-gray-50 md:py-1.5",
+              )}
             />
           </div>
 
@@ -136,7 +146,10 @@ export default function GlobalSessionList({
           {onCreate && (
             <button
               onClick={onCreate}
-              className="flex w-full items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+              className={cn(
+                "flex w-full items-center gap-2 border border-gray-200 px-3 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800",
+                mobile ? "rounded-2xl py-2.5" : "rounded-md py-2",
+              )}
             >
               <svg
                 className="h-3.5 w-3.5"
@@ -158,27 +171,33 @@ export default function GlobalSessionList({
       )}
 
       {/* Session list */}
-      <div className="flex-1 overflow-y-auto">
+      <div className={cn(
+        "flex-1 overflow-y-auto overflow-x-hidden overscroll-contain",
+        mobile && "pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)]",
+      )}>
         {isLoading ? (
-          <div className="space-y-2 p-3">
+          <div className={cn("space-y-2 p-3", mobile && "px-3 py-3")}>
             {[1, 2, 3].map((i) => (
-              <div key={i} className="space-y-1.5 rounded-md p-2">
+              <div key={i} className={cn("space-y-1.5 p-2", mobile ? "rounded-2xl" : "rounded-md")}>
                 <div className="h-3.5 w-32 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
                 <div className="h-3 w-24 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
               </div>
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="px-3 py-8 text-center text-xs text-gray-400">
+          <div className={cn("px-3 py-8 text-center text-xs text-gray-400", mobile && "px-6 py-10")}>
             {search ? "No matching chats" : "No conversations yet"}
           </div>
         ) : (
-          <div className="py-1">
+          <div className={cn("py-1", mobile && "space-y-1 px-2 py-2")}>
             {filtered.map((session) => (
               <div
                 key={session.id}
                 className={cn(
-                  "group relative mx-1.5 cursor-pointer rounded-md md:rounded-md rounded-xl px-3 py-3 md:py-2 transition-colors",
+                  "group relative min-w-0 cursor-pointer overflow-hidden transition-colors",
+                  mobile
+                    ? "mx-0 rounded-2xl px-3.5 py-3.5 active:scale-[0.995]"
+                    : "mx-1.5 rounded-xl px-3 py-3 md:rounded-md md:py-2",
                   session.id === activeSessionId
                     ? "bg-deep-space-blue-500 text-white"
                     : "hover:bg-gray-50 dark:hover:bg-gray-800",
@@ -189,7 +208,7 @@ export default function GlobalSessionList({
                   const agent = agentMap.get(session.agent_id);
                   const isActive = session.id === activeSessionId;
                   return editingId === session.id ? (
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex min-w-0 items-center gap-2.5">
                       {agent && (
                         <RoleIdenticon roleId={agent.id} color={agent.color} size={26} className="shrink-0" roleName={agent.name} />
                       )}
@@ -215,7 +234,7 @@ export default function GlobalSessionList({
                           {displayAgentName(session).charAt(0).toUpperCase()}
                         </div>
                       )}
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 pr-8">
                         <span className={cn(
                           "truncate text-sm font-medium block",
                           isActive ? "text-white" : "text-gray-900 dark:text-gray-100",
@@ -223,14 +242,14 @@ export default function GlobalSessionList({
                           {displayAgentName(session)}
                         </span>
                         <div className={cn(
-                          "mt-0.5 flex items-center gap-1.5 text-[11px]",
+                          "mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px]",
                           isActive ? "text-deep-space-blue-100" : "text-gray-500 dark:text-gray-400",
                         )}>
                           {channelType === "notification" ? (
                             <span className="truncate">@{session.agent_name}</span>
                           ) : (
                             <>
-                              <span className="truncate">{displayProjectName(session.project_name)}</span>
+                              <span className="min-w-0 truncate">{displayProjectName(session.project_name)}</span>
                               <span>·</span>
                               <span className="shrink-0">@{session.agent_name}</span>
                             </>
@@ -251,10 +270,16 @@ export default function GlobalSessionList({
                 {editingId !== session.id && (
                   <div
                     ref={menuOpen === session.id ? menuRef : undefined}
-                    className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
+                    className={cn(
+                      "absolute right-2 top-2 transition-opacity",
+                      mobile ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                    )}
                   >
                     <button
-                      className="rounded-sm p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                      className={cn(
+                        "text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-200",
+                        mobile ? "rounded-full p-1.5" : "rounded-sm p-1",
+                      )}
                       onClick={(e) => {
                         e.stopPropagation();
                         setMenuOpen(
@@ -273,7 +298,7 @@ export default function GlobalSessionList({
 
                     {menuOpen === session.id && (
                       <div
-                        className="absolute right-0 top-7 z-50 w-28 rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
+                        className="absolute right-0 top-8 z-50 w-28 rounded-xl border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {onRename && (

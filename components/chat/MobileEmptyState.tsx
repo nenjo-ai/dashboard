@@ -45,12 +45,12 @@ export function MobileEmptyState({
         <img
           src="/nenjo-logo-dark.png"
           alt="nenjo"
-          className="h-16 w-16 opacity-20 dark:hidden"
+          className="h-20 w-20 opacity-20 dark:hidden"
         />
         <img
           src="/nenjo-logo-white.png"
           alt="nenjo"
-          className="hidden h-16 w-16 opacity-20 dark:block"
+          className="hidden h-20 w-20 opacity-20 dark:block"
         />
         {activeAgent && (
           <p className="mt-3 text-sm text-gray-400 dark:text-gray-500">

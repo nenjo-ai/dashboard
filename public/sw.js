@@ -75,3 +75,39 @@ self.addEventListener('fetch', (event) => {
     )
   }
 })
+
+self.addEventListener('push', (event) => {
+  const data = event.data ? event.data.json() : {}
+  const title = data.title || 'Nenjo'
+  const options = {
+    body: data.body || '',
+    icon: data.icon || '/pwa-icon-192.png',
+    badge: data.badge || '/pwa-icon-192.png',
+    tag: data.tag,
+    data: {
+      url: data.url || '/dashboard/chat?channel=notifications',
+    },
+  }
+
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const targetUrl = event.notification.data?.url || '/dashboard/chat?channel=notifications'
+
+  event.waitUntil((async () => {
+    const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const client of clientsList) {
+      if ('focus' in client) {
+        await client.navigate(targetUrl).catch(() => undefined)
+        await client.focus()
+        return
+      }
+    }
+
+    if (self.clients.openWindow) {
+      await self.clients.openWindow(targetUrl)
+    }
+  })())
+})

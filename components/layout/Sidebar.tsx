@@ -192,8 +192,8 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
     >
       {/* Logo / Brand */}
       <div className="flex h-16 items-center gap-2 border-b border-gray-200 px-4 dark:border-gray-700">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-deep-space-blue-500">
-          <img src="/nenjo-logo-white.png" alt="Nenjo" className="h-6 w-6" />
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-deep-space-blue-500">
+          <img src="/nenjo-logo-white.png" alt="Nenjo" className="h-7 w-7" />
         </div>
         <span
           className={cn(
@@ -355,8 +355,8 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
             >
               {/* Logo / Brand */}
               <div className="flex h-16 items-center gap-2 border-b border-gray-200 px-4 dark:border-gray-700">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-deep-space-blue-500">
-                  <img src="/nenjo-logo-white.png" alt="Nenjo" className="h-6 w-6" />
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-deep-space-blue-500">
+                  <img src="/nenjo-logo-white.png" alt="Nenjo" className="h-7 w-7" />
                 </div>
                 <span className="text-lg font-bold text-deep-space-blue-900 dark:text-white">
                   Nenjo

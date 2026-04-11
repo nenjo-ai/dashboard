@@ -165,12 +165,12 @@ export function MobileInputBar({
 
   return (
     <div
-      className="relative z-30 w-full max-w-full overflow-x-hidden bg-transparent px-3 pt-2"
-      style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.4rem)" }}
+      className="relative z-30 w-full max-w-full overflow-x-hidden bg-transparent px-3 pt-1"
+      style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.1rem)" }}
     >
       {/* Unified pill container */}
       <div
-        className="relative box-border mx-auto w-full max-w-full overflow-hidden rounded-[1.6rem] border-2 border-gray-200 bg-white transition-colors duration-300 dark:border-gray-700 dark:bg-gray-900"
+        className="relative box-border mx-auto w-full max-w-full overflow-hidden rounded-[1.55rem] border-2 border-gray-200 bg-white shadow-[0_-8px_24px_rgba(15,23,42,0.04)] transition-colors duration-300 dark:border-gray-700 dark:bg-gray-900 dark:shadow-none"
         style={{
           borderColor: inDomain && agentColor ? agentColor : undefined,
         }}
@@ -185,7 +185,7 @@ export function MobileInputBar({
           disabled={disabled || isDomainPending}
           rows={1}
           className={cn(
-            "w-full resize-none overflow-y-auto border-0 bg-transparent px-4 pt-2.5 pb-1.5 text-base placeholder:text-gray-400 focus:outline-none focus:ring-0 dark:text-gray-100 dark:placeholder:text-gray-500",
+            "w-full resize-none overflow-y-auto border-0 bg-transparent px-4 pt-2.5 pb-1 text-base placeholder:text-gray-400 focus:outline-none focus:ring-0 dark:text-gray-100 dark:placeholder:text-gray-500",
             isDomainPending && "opacity-60",
           )}
           style={{ maxHeight: 120 }}
@@ -201,7 +201,7 @@ export function MobileInputBar({
         )}
 
         {/* Action row inside the pill */}
-        <div className="flex items-center justify-between gap-2 px-2.5 pb-2 pt-0.5">
+        <div className="flex items-center justify-between gap-2 px-2.5 pb-1.5 pt-0.5">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             {inDomain && activeDomainLabel ? (
               <MobileTouchButton

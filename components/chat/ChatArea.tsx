@@ -858,8 +858,8 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
         ref={scrollRef}
         onScroll={handleScroll}
         className={cn(
-          "flex-1 overflow-y-auto overflow-x-hidden space-y-4",
-          isMobile ? "px-0 pb-4 pt-0" : "p-4",
+          "flex-1 overflow-y-auto overflow-x-hidden overscroll-contain space-y-4",
+          isMobile ? "px-0 pb-2 pt-0" : "p-4",
         )}
       >
         {isLoadingHistory ? (
@@ -927,14 +927,14 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
               )}
             </AnimatePresence>
             {/* Bottom spacer so typing indicator is never clipped by input */}
-            <div className="h-2 shrink-0" />
+            <div className="h-1 shrink-0" />
           </>
         )}
       </div>
 
       {/* Mobile input bar */}
       {isMobile && (
-        <div className="sticky bottom-0 z-20 shrink-0 border-t border-gray-100 bg-white/96 backdrop-blur-sm dark:border-gray-800 dark:bg-gray-900/96">
+        <div className="sticky bottom-0 z-20 shrink-0 border-t border-gray-100 bg-white/98 backdrop-blur-md dark:border-gray-800 dark:bg-gray-900/98">
           {/* Dropdowns render above the mobile input */}
           {showDomainDropdown && filteredDomains.length > 0 && (
             <div className="absolute bottom-full left-0 right-0 z-50 px-3 pb-1">

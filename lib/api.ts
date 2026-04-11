@@ -17,6 +17,7 @@ import type {
   CouncilMember,
   AddCouncilMemberRequest,
   AgentDefinition,
+  AgentHeartbeat,
   CreateAgentRequest,
   UpdateAgentRequest,
   Domain,
@@ -33,6 +34,8 @@ import type {
   CreateLambdaRequest,
   UpdateLambdaRequest,
   ChatSessionExtended,
+  PushConfigResponse,
+  PushSubscriptionRecord,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -383,12 +386,14 @@ export async function removeDependency(taskId: string, depId: string): Promise<v
 
 export function executionsUrl(params?: {
   project_id?: string;
+  agent_id?: string;
   routine_id?: string;
   status?: string;
   limit?: number;
 }): string {
   const search = new URLSearchParams();
   if (params?.project_id) search.set("project_id", params.project_id);
+  if (params?.agent_id) search.set("agent_id", params.agent_id);
   if (params?.routine_id) search.set("routine_id", params.routine_id);
   if (params?.status) search.set("status", params.status);
   if (params?.limit) search.set("limit", String(params.limit));
@@ -426,9 +431,10 @@ export async function fetchExecutions(
   limit?: number,
   status?: string,
   routineId?: string,
+  agentId?: string,
 ): Promise<ExecutionDetails[]> {
   return fetcher<ExecutionDetails[]>(
-    executionsUrl({ project_id: projectId, routine_id: routineId, status, limit }),
+    executionsUrl({ project_id: projectId, agent_id: agentId, routine_id: routineId, status, limit }),
   );
 }
 
@@ -976,6 +982,33 @@ export async function deleteAgent(agentId: string): Promise<void> {
   await authFetch(agentUrl(agentId), { method: "DELETE" });
 }
 
+export async function fetchAgentHeartbeat(agentId: string): Promise<AgentHeartbeat | null> {
+  return fetcher<AgentHeartbeat | null>(`${agentUrl(agentId)}/heartbeat`);
+}
+
+export async function updateAgentHeartbeat(
+  agentId: string,
+  data: { interval: string; metadata?: Record<string, unknown> },
+): Promise<AgentDefinition> {
+  const res = await authFetch(`${agentUrl(agentId)}/heartbeat`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return res.json() as Promise<AgentDefinition>;
+}
+
+export async function startAgentHeartbeat(agentId: string): Promise<void> {
+  await authFetch(`${agentUrl(agentId)}/heartbeat/start`, { method: "POST" });
+}
+
+export async function stopAgentHeartbeat(agentId: string): Promise<void> {
+  await authFetch(`${agentUrl(agentId)}/heartbeat/stop`, { method: "POST" });
+}
+
+export async function triggerAgentHeartbeat(agentId: string): Promise<void> {
+  await authFetch(`${agentUrl(agentId)}/heartbeat/trigger`, { method: "POST" });
+}
+
 // ---------------------------------------------------------------------------
 // Agent Platform Scopes
 // ---------------------------------------------------------------------------
@@ -1282,6 +1315,46 @@ export const notificationsUnreadUrl = () => `${API_V1}/notifications/unread`;
 
 export async function markNotificationRead(sessionId: string): Promise<void> {
   await authFetch(`${API_V1}/notifications/${sessionId}/read`, { method: "POST" });
+}
+
+export const pushConfigUrl = () => `${API_V1}/push-notifications/config`;
+export const pushSubscriptionsUrl = () => `${API_V1}/push-notifications/subscriptions`;
+
+export async function fetchPushConfig(): Promise<PushConfigResponse> {
+  return fetcher<PushConfigResponse>(pushConfigUrl());
+}
+
+export async function listPushSubscriptions(): Promise<PushSubscriptionRecord[]> {
+  return fetcher<PushSubscriptionRecord[]>(pushSubscriptionsUrl());
+}
+
+export async function upsertPushSubscription(
+  subscription: PushSubscriptionJSON,
+  deviceLabel?: string,
+): Promise<PushSubscriptionRecord> {
+  if (!subscription.keys?.p256dh || !subscription.keys?.auth) {
+    throw new ApiError("Push subscription is missing encryption keys", 400);
+  }
+  const res = await authFetch(pushSubscriptionsUrl(), {
+    method: "POST",
+    body: JSON.stringify({
+      endpoint: subscription.endpoint,
+      keys: {
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
+      },
+      device_label: deviceLabel ?? null,
+    }),
+  });
+  return res.json() as Promise<PushSubscriptionRecord>;
+}
+
+export async function deletePushSubscription(endpoint: string): Promise<void> {
+  const encoded = btoa(endpoint)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+  await authFetch(`${pushSubscriptionsUrl()}/${encoded}`, { method: "DELETE" });
 }
 
 // ---------------------------------------------------------------------------
