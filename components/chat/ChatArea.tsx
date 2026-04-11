@@ -191,7 +191,7 @@ const MessageBubble = memo(function MessageBubble({
       </div>
       <div
         className={cn(
-          "rounded-2xl md:rounded-xl px-4 py-2.5 text-sm leading-relaxed overflow-hidden break-words",
+          "rounded-2xl md:rounded-xl px-4 py-2.5 text-sm leading-relaxed overflow-hidden break-normal md:break-words",
           isUser
             ? "max-w-[85%] md:max-w-[75%] bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100 rounded-tr-sm md:rounded-tr-2xl md:rounded-tl-sm md:bg-deep-space-blue-500 md:text-white md:dark:bg-deep-space-blue-500 md:dark:text-white"
             : "max-w-full md:max-w-[75%] bg-transparent md:bg-white md:border md:border-gray-200 text-gray-800 rounded-tl-sm dark:text-gray-200 md:dark:bg-gray-800 md:dark:border-gray-700",
@@ -200,7 +200,7 @@ const MessageBubble = memo(function MessageBubble({
         {isUser ? (
           <p className="whitespace-pre-wrap">{displayContent}</p>
         ) : (
-          <div className="prose prose-sm max-w-none break-words dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-headings:font-semibold prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-700 dark:prose-p:text-gray-300 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:bg-gray-200 dark:prose-code:bg-gray-700 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:break-all prose-pre:bg-gray-800 dark:prose-pre:bg-gray-950 prose-pre:text-gray-100 prose-pre:text-xs prose-pre:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-700 dark:prose-li:text-gray-300 prose-li:my-0.5 prose-ul:my-1 prose-ol:my-1 prose-blockquote:border-deep-space-blue-300 dark:prose-blockquote:border-deep-space-blue-700 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
+          <div className="prose prose-sm max-w-none break-normal md:break-words dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-headings:font-semibold prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-700 dark:prose-p:text-gray-300 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:bg-gray-200 dark:prose-code:bg-gray-700 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:break-all prose-pre:bg-gray-800 dark:prose-pre:bg-gray-950 prose-pre:text-gray-100 prose-pre:text-xs prose-pre:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-700 dark:prose-li:text-gray-300 prose-li:my-0.5 prose-ul:my-1 prose-ol:my-1 prose-blockquote:border-deep-space-blue-300 dark:prose-blockquote:border-deep-space-blue-700 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
@@ -373,7 +373,9 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
 
   // All sessions (for the session picker after @mention agent selection)
   const { data: allSessions, mutate: mutateSessions } = useSWR<ChatSessionExtended[]>(
-    selectedMentionAgent ? allChatSessionsUrl() : null,
+    selectedMentionAgent
+      ? allChatSessionsUrl(isMobile ? 50 : 200, 0, "chat")
+      : null,
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 5000 },
   );
