@@ -17,7 +17,7 @@ function ChatPageTitle() {
 
 export default function ChatPage() {
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden">
       <Suspense fallback={<TopBar title="Chat" />}>
         <ChatPageTitle />
       </Suspense>
@@ -30,7 +30,9 @@ export default function ChatPage() {
           </div>
         }
       >
-        <ChatContent />
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <ChatContent />
+        </div>
       </Suspense>
     </div>
   );

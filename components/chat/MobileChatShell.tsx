@@ -47,7 +47,7 @@ export function MobileChatShell({
   }, [activeSession, allAgents]);
 
   return (
-    <div className="flex h-full flex-col overflow-x-hidden bg-white dark:bg-gray-900">
+    <div className="flex h-full min-h-0 flex-col overflow-x-hidden bg-white dark:bg-gray-900">
       {/* Header */}
       <div className="sticky top-0 z-20 flex shrink-0 items-center justify-between border-b border-gray-100 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
         {mobileShowChat && activeSession ? (
@@ -107,7 +107,7 @@ export function MobileChatShell({
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: "-100%", opacity: 0 }}
               transition={{ type: "spring", bounce: 0, duration: 0.3 }}
-              className="absolute inset-0"
+              className="absolute inset-0 min-h-0"
             >
               <GlobalSessionList
                 sessions={sessions}
@@ -128,10 +128,10 @@ export function MobileChatShell({
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: "100%", opacity: 0 }}
               transition={{ type: "spring", bounce: 0, duration: 0.3 }}
-              className="absolute inset-0"
+              className="absolute inset-0 min-h-0"
             >
               {activeSession ? (
-                <div className="flex h-full flex-col">
+                <div className="flex h-full min-h-0 flex-col">
                   <div className="flex-1 min-h-0">
                     {isNotificationView ? (
                       <NotificationArea

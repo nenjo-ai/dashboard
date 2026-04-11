@@ -14,7 +14,7 @@ import { useWebSocketContext } from "@/lib/WebSocketContext";
 // Types
 // ---------------------------------------------------------------------------
 
-type CronStatus = "stopped" | "running" | "paused";
+type CronStatus = "stopped" | "running";
 
 interface CycleRun {
   id: string;
@@ -122,37 +122,21 @@ interface RoutineRunTabProps {
 export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
   const trigger = routine.trigger as RoutineTrigger;
   const isCron = trigger === "cron";
-
-  // ── Poll DB for running executions to derive persistent status ──────────
-  const { data: runningExecutions, mutate: mutateRunning } = useSWR(
-    isCron ? `running-executions-${routine.id}` : null,
-    () => fetchExecutions(undefined, 20, "running"),
+  const isActive = routine.is_active;
+  const status: CronStatus = isActive ? "running" : "stopped";
+  const [lastRunAt, setLastRunAt] = useState<string | null>(routine.last_run_at ?? null);
+  const { data: recentExecutions, mutate: mutateExecutions } = useSWR(
+    isCron ? `routine-executions-${routine.id}` : null,
+    () => fetchExecutions(undefined, 20, undefined, routine.id),
     { revalidateOnFocus: true, refreshInterval: 10000 },
   );
-  const dbIsRunning = runningExecutions?.some(
-    (e) => e.routine_id === routine.id && e.status === "running",
-  ) ?? false;
-
-  // ── Cron state ──────────────────────────────────────────────────────────
-  // Local override: set by Start/Stop buttons for instant UI feedback.
-  // Reset to null after a short delay so DB state takes over.
-  const [localOverride, setLocalOverride] = useState<CronStatus | null>(null);
-  const status: CronStatus = localOverride ?? (dbIsRunning ? "running" : "stopped");
-
-  // Optimistic status update — clears after 15s so DB polling takes over
-  const overrideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const setOptimisticStatus = useCallback((s: CronStatus) => {
-    setLocalOverride(s);
-    if (overrideTimer.current) clearTimeout(overrideTimer.current);
-    overrideTimer.current = setTimeout(() => {
-      setLocalOverride(null);
-      mutateRunning();
-    }, 15000);
-  }, [mutateRunning]);
-
-  const [currentCycle, setCurrentCycle] = useState(0);
-  const [lastRunAt, setLastRunAt] = useState<string | null>(null);
-  const [recentRuns, setRecentRuns] = useState<CycleRun[]>([]);
+  const completedRuns = (recentExecutions ?? []).filter((run) => run.status !== "running");
+  const recentRuns: CycleRun[] = completedRuns.map((run, index) => ({
+    id: run.id,
+    cycle: completedRuns.length - index,
+    passed: run.status === "completed",
+    timestamp: run.completed_at ?? run.cancelled_at ?? run.started_at ?? run.created_at,
+  }));
 
   // ── Shared state ────────────────────────────────────────────────────────
   const [triggering, setTriggering] = useState(false);
@@ -177,6 +161,10 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
     if (editingSchedule) scheduleInputRef.current?.focus();
   }, [editingSchedule]);
 
+  useEffect(() => {
+    setLastRunAt(routine.last_run_at ?? null);
+  }, [routine.last_run_at]);
+
   const { send, subscribe } = useWebSocketContext();
 
   // ── WebSocket listener ──────────────────────────────────────────────────
@@ -186,32 +174,20 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
         const data = raw as Record<string, unknown>;
         const inner = (data?.payload ?? data) as Record<string, unknown>;
 
-        if (inner?.event_type === "cron_cycle_started") {
-          const d = inner.data as Record<string, unknown> | undefined;
-          setOptimisticStatus("running");
-          setCurrentCycle((d?.cycle as number) ?? 0);
-        }
-
         if (inner?.event_type === "cron_cycle_completed") {
-          const d = inner.data as Record<string, unknown> | undefined;
-          const cycle = (d?.cycle as number) ?? 0;
-          const passed = (d?.passed as boolean) ?? true;
           setLastRunAt(new Date().toISOString());
-          setRecentRuns((prev) => [
-            { id: `${Date.now()}-${cycle}`, cycle, passed, timestamp: new Date().toISOString() },
-            ...prev.slice(0, 19),
-          ]);
+          void mutateExecutions();
         }
 
-        if ((inner as Record<string, unknown>)?.type === "task.completed") {
-          setOptimisticStatus("stopped");
+        if (inner?.event_type === "cron_schedule_enabled" || inner?.event_type === "cron_schedule_disabled") {
+          onSaved?.();
         }
       } catch {
         // ignore
       }
     });
     return unsub;
-  }, [subscribe]);
+  }, [subscribe, mutateExecutions, onSaved]);
 
   // ── Actions ─────────────────────────────────────────────────────────────
 
@@ -220,13 +196,15 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
     setError(null);
     try {
       await triggerRoutine(routine.id);
-      if (isCron) setOptimisticStatus("running");
+      if (isCron) {
+        void mutateExecutions();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Trigger failed");
     } finally {
       setTriggering(false);
     }
-  }, [routine.id, isCron]);
+  }, [routine.id, isCron, mutateExecutions]);
 
   const handleStart = useCallback(() => {
     setError(null);
@@ -237,29 +215,24 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
       project_id: routine.project_id,
       schedule,
     });
-    setOptimisticStatus("running");
-    setCurrentCycle(0);
-  }, [routine.id, routine.project_id, currentSchedule, send]);
+    onSaved?.();
+  }, [routine.id, routine.project_id, currentSchedule, send, onSaved]);
 
   const handleStop = useCallback(async () => {
     send({ type: "cron.disable", routine_id: routine.id });
-    setOptimisticStatus("stopped");
-    setCurrentCycle(0);
-
-    // Cancel all running executions for this routine in the DB
-    if (runningExecutions) {
-      for (const exec of runningExecutions) {
-        if (exec.routine_id === routine.id && exec.status === "running") {
-          try {
-            await sendExecutionCommand(exec.id, "cancel");
-          } catch {
-            // best-effort
-          }
-        }
+    const runningExecutions = (recentExecutions ?? []).filter(
+      (exec) => exec.status === "running",
+    );
+    for (const exec of runningExecutions) {
+      try {
+        await sendExecutionCommand(exec.id, "cancel");
+      } catch {
+        // best-effort
       }
     }
-    mutateRunning();
-  }, [routine.id, send, runningExecutions, mutateRunning]);
+    onSaved?.();
+    void mutateExecutions();
+  }, [routine.id, send, recentExecutions, onSaved, mutateExecutions]);
 
   const handleSaveSchedule = useCallback(async () => {
     const trimmed = draftSchedule.trim();
@@ -386,14 +359,12 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
                 <span className="text-xs text-gray-500 dark:text-gray-400">Status</span>
                 <div className="mt-1">
                   <Badge
-                    variant={status === "running" ? "running" : status === "paused" ? "paused" : "default"}
+                    variant={status === "running" ? "running" : "default"}
                     showDot
                   >
                     {status === "running"
-                      ? `Cycle ${currentCycle}`
-                      : status === "paused"
-                        ? "Paused"
-                        : "Idle"}
+                      ? "Running"
+                      : "Idle"}
                   </Badge>
                 </div>
                 {lastRunAt && (
@@ -413,16 +384,15 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
           Controls
         </h4>
         <div className="flex items-center gap-2">
-          {isCron && status === "stopped" && (
-            <Button variant="primary" size="sm" onClick={handleStart} disabled={!currentSchedule}>
-              <PlayIcon className="w-3.5 h-3.5" />
-              Start Loop
-            </Button>
-          )}
-          {isCron && status === "running" && (
-            <Button variant="danger" size="sm" onClick={handleStop}>
-              <StopIcon className="w-3.5 h-3.5" />
-              Stop
+          {isCron && (
+            <Button
+              variant={isActive ? "danger" : "primary"}
+              size="sm"
+              onClick={isActive ? handleStop : handleStart}
+              disabled={!isActive && !currentSchedule}
+            >
+              {isActive ? <StopIcon className="w-3.5 h-3.5" /> : <PlayIcon className="w-3.5 h-3.5" />}
+              {isActive ? "Stop Loop" : "Start Loop"}
             </Button>
           )}
           <Button
@@ -512,7 +482,7 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
       )}
 
       {/* ── Empty state for cycle history ──────────────────────────────── */}
-      {isCron && recentRuns.length === 0 && status === "stopped" && (
+      {isCron && recentRuns.length === 0 && !isActive && (
         <Card className="p-6 text-center">
           <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
             <ClockIcon className="h-5 w-5 text-gray-400" />
