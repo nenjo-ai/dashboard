@@ -19,6 +19,7 @@ interface NotificationAreaProps {
   agentId: string;
   sessionId: string;
   agentName?: string;
+  variant?: "desktop" | "mobile";
 }
 
 const SEVERITY_STYLES: Record<string, string> = {
@@ -38,8 +39,13 @@ function timeAgo(dateStr: string): string {
   return `${days}d`;
 }
 
-export function NotificationArea({ agentId, sessionId }: NotificationAreaProps) {
+export function NotificationArea({
+  agentId,
+  sessionId,
+  variant = "desktop",
+}: NotificationAreaProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isMobile = variant === "mobile";
 
   // Fetch notification messages
   const { data, isLoading } = useSWR<ChatMessagePage>(
@@ -68,7 +74,7 @@ export function NotificationArea({ agentId, sessionId }: NotificationAreaProps) 
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex h-full items-center justify-center px-4">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-deep-space-blue-500" />
       </div>
     );
@@ -76,7 +82,7 @@ export function NotificationArea({ agentId, sessionId }: NotificationAreaProps) 
 
   if (messages.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex h-full items-center justify-center px-6">
         <div className="text-center">
           <svg
             className="mx-auto h-10 w-10 text-gray-300 dark:text-gray-600"
@@ -101,7 +107,15 @@ export function NotificationArea({ agentId, sessionId }: NotificationAreaProps) 
 
   // Messages come newest-first from API — display as-is (most recent on top)
   return (
-    <div ref={scrollRef} className="h-full overflow-y-auto p-4 space-y-3">
+    <div
+      ref={scrollRef}
+      className={cn(
+        "h-full overflow-y-auto overflow-x-hidden overscroll-contain space-y-3",
+        isMobile
+          ? "px-3 pb-[calc(env(safe-area-inset-bottom,0px)+0.85rem)] pt-3"
+          : "p-4",
+      )}
+    >
       {messages.map((msg) => {
         const meta: NotificationMetadata | null = msg.metadata;
         const severity = meta?.severity ?? "info";
@@ -112,11 +126,12 @@ export function NotificationArea({ agentId, sessionId }: NotificationAreaProps) 
           <div
             key={msg.id}
             className={cn(
-              "rounded-r-lg border-l-4 bg-gray-50 p-3 dark:bg-gray-800/50",
+              "overflow-hidden border-l-4 bg-gray-50 dark:bg-gray-800/50",
+              isMobile ? "rounded-2xl p-3.5" : "rounded-r-lg p-3",
               borderClass,
             )}
           >
-            <div className="prose prose-sm max-w-none text-gray-800 dark:prose-invert dark:text-gray-200">
+            <div className="prose prose-sm max-w-none break-words text-gray-800 dark:prose-invert dark:text-gray-200">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {msg.content}
               </ReactMarkdown>

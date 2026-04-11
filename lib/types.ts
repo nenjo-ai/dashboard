@@ -58,7 +58,8 @@ export interface TaskStatusCounts {
 
 export interface ExecutionRun {
   id: string;
-  project_id: string;
+  project_id: string | null;
+  agent_id: string | null;
   status: ExecutionStatus;
   config: Record<string, unknown>;
   model_count: number;
@@ -322,6 +323,24 @@ export interface UnreadCountEntry {
 export interface UnreadSummary {
   total: number;
   by_agent: UnreadCountEntry[];
+}
+
+export interface PushConfigResponse {
+  enabled: boolean;
+  public_key: string | null;
+}
+
+export interface PushSubscriptionRecord {
+  id: string;
+  user_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  device_label: string | null;
+  user_agent: string | null;
+  created_at: string;
+  updated_at: string;
+  last_used_at: string | null;
 }
 
 export interface ChatSessionExtended extends ChatSession {
@@ -1025,6 +1044,20 @@ export interface AgentDefinition {
   platform_scopes: string[];
   /** The model assigned directly to this agent. */
   model_id: string | null;
+  heartbeat?: AgentHeartbeat | null;
+}
+
+export interface AgentHeartbeat {
+  id: string;
+  agent_id: string;
+  interval: string;
+  is_active: boolean;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  metadata: Record<string, unknown>;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CreateAgentRequest {
@@ -1072,7 +1105,7 @@ export interface PromptConfig {
   system_prompt: string;
   /** Developer prompt — sent as a separate `developer` message to OpenAI-spec models, combined with system prompt for others. */
   developer_prompt: string;
-  /** Task-specific templates (task_task, gate_eval, cron_task). */
+  /** Task-specific templates (task_task, gate_eval, cron_task, heartbeat_task). */
   templates: Record<string, string>;
   /** Memory profile — guides what agents remember and retrieval priorities. */
   memory_profile?: MemoryProfile;

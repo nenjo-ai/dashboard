@@ -16,6 +16,7 @@ import { ChatArea } from "./ChatArea";
 import { NotificationArea } from "./NotificationArea";
 import { NewChatModal } from "./NewChatModal";
 import { MobileChatContainer } from "./MobileChatContainer";
+import { MobileNotificationContainer } from "./MobileNotificationContainer";
 
 export function ChatView() {
   const searchParams = useSearchParams();
@@ -204,9 +205,11 @@ export function ChatView() {
 
       {/* Mobile: Grok-style shell */}
       <div className="relative min-h-0 flex-1 min-w-0 overflow-hidden md:hidden">
-        <MobileChatContainer
-          isNotificationView={isNotificationView}
-        />
+        {isNotificationView ? (
+          <MobileNotificationContainer />
+        ) : (
+          <MobileChatContainer onSessionCreated={() => mutateSessions()} />
+        )}
       </div>
 
       {/* Chat area — right panel (desktop only) */}
@@ -234,6 +237,7 @@ export function ChatView() {
                   agentId={activeSession.agent_id}
                   sessionId={activeSession.id}
                   agentName={activeSession.agent_display_name ?? activeSession.agent_name}
+                  variant="desktop"
                 />
               ) : (
                 <ChatArea

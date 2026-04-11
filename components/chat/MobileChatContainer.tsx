@@ -17,11 +17,11 @@ import { MobileChatShell } from "./MobileChatShell";
 import { MobileNewChatSheet } from "./MobileNewChatSheet";
 
 interface MobileChatContainerProps {
-  isNotificationView: boolean;
+  onSessionCreated?: () => void;
 }
 
 export function MobileChatContainer({
-  isNotificationView,
+  onSessionCreated,
 }: MobileChatContainerProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -36,7 +36,7 @@ export function MobileChatContainer({
     isLoading: sessionsLoading,
     mutate: mutateSessions,
   } = useSWR<ChatSessionExtended[]>(
-    allChatSessionsUrl(200, 0, isNotificationView ? "notification" : "chat"),
+    allChatSessionsUrl(200, 0, "chat"),
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 5000 },
   );
@@ -163,20 +163,20 @@ export function MobileChatContainer({
         mobileShowChat={mobileShowChat}
         onSelectSession={selectSession}
         onBack={() => setMobileShowChat(false)}
-        onRename={isNotificationView ? undefined : handleRename}
+        onRename={handleRename}
         onDelete={handleDelete}
-        isNotificationView={isNotificationView}
         onNavigateToSession={navigateToSession}
-        onSessionCreated={mutateSessions}
+        onSessionCreated={async () => {
+          await mutateSessions();
+          await onSessionCreated?.();
+        }}
         onSwitchAgent={handleSwitchAgent}
       />
-      {!isNotificationView && (
-        <MobileNewChatSheet
-          open={showNewChatSheet}
-          onClose={() => setShowNewChatSheet(false)}
-          onCreate={handleCreateChat}
-        />
-      )}
+      <MobileNewChatSheet
+        open={showNewChatSheet}
+        onClose={() => setShowNewChatSheet(false)}
+        onCreate={handleCreateChat}
+      />
     </>
   );
 }

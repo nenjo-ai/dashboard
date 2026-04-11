@@ -228,6 +228,7 @@ const SECTIONS: Section[] = [
   { id: "task_task", label: "Task", group: "Task Templates" },
   { id: "gate_eval", label: "Gate", group: "Task Templates" },
   { id: "cron_task", label: "Cron", group: "Task Templates" },
+  { id: "heartbeat_task", label: "Heartbeat", group: "Task Templates" },
 ];
 
 const BASE_GROUPS = Array.from(new Set(SECTIONS.map((s) => s.group)));
@@ -249,7 +250,7 @@ function getMemoryProfile(cfg: PromptConfig): MemoryProfile {
 function getSectionValue(id: string, cfg: PromptConfig): string {
   if (id === "system_prompt") return cfg.system_prompt;
   if (id === "developer_prompt") return cfg.developer_prompt ?? "";
-  if (["task_task", "chat_task", "gate_eval", "cron_task"].includes(id))
+  if (["task_task", "chat_task", "gate_eval", "cron_task", "heartbeat_task"].includes(id))
     return cfg.templates?.[id] ?? "";
   return "";
 }
@@ -261,7 +262,7 @@ function setSectionValue(
 ): PromptConfig {
   if (id === "system_prompt") return { ...cfg, system_prompt: value };
   if (id === "developer_prompt") return { ...cfg, developer_prompt: value };
-  if (["chat_task", "task_task", "gate_eval", "cron_task"].includes(id))
+  if (["chat_task", "task_task", "gate_eval", "cron_task", "heartbeat_task"].includes(id))
     return { ...cfg, templates: { ...cfg.templates, [id]: value } };
   return cfg;
 }

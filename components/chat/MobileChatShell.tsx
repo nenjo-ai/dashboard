@@ -7,7 +7,6 @@ import { useAgents } from "@/lib/hooks";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import GlobalSessionList from "./GlobalSessionList";
 import { ChatArea } from "./ChatArea";
-import { NotificationArea } from "./NotificationArea";
 import { MobileTouchButton } from "./MobileTouchButton";
 
 interface MobileChatShellProps {
@@ -19,7 +18,6 @@ interface MobileChatShellProps {
   onBack: () => void;
   onRename?: (id: string, title: string) => void;
   onDelete: (id: string) => void;
-  isNotificationView: boolean;
   onNavigateToSession?: (sessionId: string) => void;
   onSessionCreated?: () => void;
   onSwitchAgent?: (agent: AgentDefinition) => void;
@@ -34,7 +32,6 @@ export function MobileChatShell({
   onBack,
   onRename,
   onDelete,
-  isNotificationView,
   onNavigateToSession,
   onSessionCreated,
   onSwitchAgent,
@@ -81,12 +78,12 @@ export function MobileChatShell({
               <img
                 src="/nenjo-logo-dark.png"
                 alt="nenjo"
-                className="h-6 w-6 dark:hidden"
+                className="h-7 w-7 dark:hidden"
               />
               <img
                 src="/nenjo-logo-white.png"
                 alt="nenjo"
-                className="hidden h-6 w-6 dark:block"
+                className="hidden h-7 w-7 dark:block"
               />
               <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                 nenjo
@@ -115,10 +112,11 @@ export function MobileChatShell({
                 isLoading={sessionsLoading}
                 onSelect={onSelectSession}
                 onCreate={undefined}
-                onRename={isNotificationView ? undefined : onRename}
+                onRename={onRename}
                 onDelete={onDelete}
-                channelType={isNotificationView ? "notification" : "chat"}
+                channelType="chat"
                 hideHeaderControls={true}
+                mobile={true}
               />
             </motion.div>
           ) : (
@@ -133,24 +131,16 @@ export function MobileChatShell({
               {activeSession ? (
                 <div className="flex h-full min-h-0 flex-col">
                   <div className="flex-1 min-h-0">
-                    {isNotificationView ? (
-                      <NotificationArea
-                        agentId={activeSession.agent_id}
-                        sessionId={activeSession.id}
-                        agentName={activeSession.agent_display_name ?? activeSession.agent_name}
-                      />
-                    ) : (
-                      <ChatArea
-                        key={`${activeSession.id}:${activeSession.agent_id}`}
-                        projectId={activeSession.project_id!}
-                        agentId={activeSession.agent_id}
-                        sessionId={activeSession.id}
-                        onNavigateToSession={onNavigateToSession}
-                        onSessionCreated={onSessionCreated}
-                        onSwitchAgent={onSwitchAgent}
-                        variant="mobile"
-                      />
-                    )}
+                    <ChatArea
+                      key={`${activeSession.id}:${activeSession.agent_id}`}
+                      projectId={activeSession.project_id!}
+                      agentId={activeSession.agent_id}
+                      sessionId={activeSession.id}
+                      onNavigateToSession={onNavigateToSession}
+                      onSessionCreated={onSessionCreated}
+                      onSwitchAgent={onSwitchAgent}
+                      variant="mobile"
+                    />
                   </div>
                 </div>
               ) : null}

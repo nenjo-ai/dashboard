@@ -7,6 +7,11 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import {
+  deletePushSubscription,
+  fetchPushConfig,
+  upsertPushSubscription,
+} from '@/lib/api'
 
 declare global {
   interface BeforeInstallPromptEvent extends Event {
@@ -26,7 +31,11 @@ interface PwaContextValue {
   isMobile: boolean
   isOnline: boolean
   isStandalone: boolean
+  notificationsEnabled: boolean
+  notificationsSupported: boolean
   dismissInstallNudge: () => void
+  disableNotifications: () => Promise<void>
+  enableNotifications: () => Promise<void>
   promptInstall: () => Promise<void>
   showInstallNudge: () => void
 }
@@ -76,6 +85,21 @@ export function PwaProvider({ children }: { children: ReactNode }) {
   const [isDismissed, setIsDismissed] = useState(initialState.isDismissed)
   const [isBannerVisible, setIsBannerVisible] = useState(initialState.isBannerVisible)
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false)
+  const [notificationsSupported, setNotificationsSupported] = useState(false)
+
+  const syncPushSubscription = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setNotificationsSupported(false)
+      setNotificationsEnabled(false)
+      return
+    }
+
+    setNotificationsSupported(true)
+    const registration = await navigator.serviceWorker.ready
+    const existing = await registration.pushManager.getSubscription()
+    setNotificationsEnabled(Boolean(existing))
+  }
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) {
@@ -116,6 +140,7 @@ export function PwaProvider({ children }: { children: ReactNode }) {
     window.addEventListener('online', onOnline)
     window.addEventListener('offline', onOffline)
     displayModeQuery.addEventListener('change', onDisplayModeChange)
+    void syncPushSubscription()
 
     return () => {
       window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt)
@@ -125,6 +150,49 @@ export function PwaProvider({ children }: { children: ReactNode }) {
       displayModeQuery.removeEventListener('change', onDisplayModeChange)
     }
   }, [isDismissed])
+
+  const enableNotifications = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      throw new Error('Push notifications are not supported in this browser')
+    }
+
+    const config = await fetchPushConfig()
+    if (!config.enabled || !config.public_key) {
+      throw new Error('Push notifications are not configured on the server')
+    }
+
+    const permission = await Notification.requestPermission()
+    if (permission !== 'granted') {
+      throw new Error('Notification permission was not granted')
+    }
+
+    const registration = await navigator.serviceWorker.ready
+    let subscription = await registration.pushManager.getSubscription()
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(config.public_key),
+      })
+    }
+
+    await upsertPushSubscription(subscription.toJSON(), isStandalone ? 'installed-pwa' : 'browser')
+    setNotificationsEnabled(true)
+  }
+
+  const disableNotifications = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setNotificationsEnabled(false)
+      return
+    }
+
+    const registration = await navigator.serviceWorker.ready
+    const subscription = await registration.pushManager.getSubscription()
+    if (subscription) {
+      await deletePushSubscription(subscription.endpoint).catch(() => undefined)
+      await subscription.unsubscribe().catch(() => undefined)
+    }
+    setNotificationsEnabled(false)
+  }
 
   const showInstallNudge = () => {
     if (!isMobile || isStandalone) {
@@ -174,7 +242,11 @@ export function PwaProvider({ children }: { children: ReactNode }) {
     isMobile,
     isOnline,
     isStandalone,
+    notificationsEnabled,
+    notificationsSupported,
     dismissInstallNudge,
+    disableNotifications,
+    enableNotifications,
     promptInstall,
     showInstallNudge,
   }
@@ -184,6 +256,13 @@ export function PwaProvider({ children }: { children: ReactNode }) {
       {children}
     </PwaContext.Provider>
   )
+}
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = window.atob(base64)
+  return Uint8Array.from(rawData, (char) => char.charCodeAt(0))
 }
 
 export function usePwa() {

@@ -79,6 +79,7 @@ const TASK_TYPES = [
   { id: "task_task", label: "Task" },
   { id: "gate_eval", label: "Gate" },
   { id: "cron_task", label: "Cron" },
+  { id: "heartbeat_task", label: "Heartbeat" },
 ];
 
 const PROMPT_TABS = [

@@ -37,6 +37,7 @@ import type {
   ContextBlock,
   Task,
   ExecutionDetails,
+  AgentHeartbeat,
   ExecutionTask,
   DependencyGraph,
   Model,
@@ -662,6 +663,42 @@ export function useAgent(id: string | undefined) {
 
   return {
     agent: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useAgentHeartbeat(agentId: string | undefined) {
+  const url = agentId ? `${agentUrl(agentId)}/heartbeat` : null;
+
+  const { data, error, isLoading, mutate } = useSWR<AgentHeartbeat | null>(
+    url,
+    fetcher,
+    { revalidateOnFocus: false, refreshInterval: 10000 },
+  );
+
+  return {
+    heartbeat: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useAgentExecutions(agentId: string | undefined, limit = 20) {
+  const url = agentId ? executionsUrl({ agent_id: agentId, limit }) : null;
+
+  const { data, error, isLoading, mutate } = useSWR<ExecutionDetails[]>(
+    url,
+    fetcher,
+    { revalidateOnFocus: false, refreshInterval: 10000 },
+  );
+
+  return {
+    executions: data,
     isLoading,
     isError: !!error,
     error,
