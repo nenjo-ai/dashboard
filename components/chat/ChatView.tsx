@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import useSWR from "swr";
 import {
@@ -27,6 +27,7 @@ export function ChatView() {
       ? window.matchMedia("(max-width: 767px)").matches
       : false,
   );
+  const pendingNavigationSessionRef = useRef<string | null>(null);
 
   // Active session from URL
   const sessionParam = searchParams.get("session");
@@ -53,7 +54,7 @@ export function ChatView() {
   } = useSWR<ChatSessionExtended[]>(
     isMobileViewport
       ? null
-      : allChatSessionsUrl(200, 0, isNotificationView ? "notification" : "chat"),
+      : allChatSessionsUrl(1000, 0, isNotificationView ? "notification" : "chat"),
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 5000 },
   );
@@ -66,9 +67,20 @@ export function ChatView() {
     [sessions, sessionParam],
   );
 
+  useEffect(() => {
+    if (!sessionParam) {
+      pendingNavigationSessionRef.current = null;
+      return;
+    }
+    if (sessions?.some((s) => s.id === sessionParam)) {
+      pendingNavigationSessionRef.current = null;
+    }
+  }, [sessionParam, sessions]);
+
   // Navigate to a session
   const selectSession = useCallback(
     (session: ChatSessionExtended) => {
+      pendingNavigationSessionRef.current = session.id;
       const params = new URLSearchParams(searchParams.toString());
       params.set("session", session.id);
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
@@ -106,6 +118,10 @@ export function ChatView() {
     if (isMobileViewport) return;
     if (!sessionParam || sessionsLoading || !sessions) return;
     if (sessions.some((s) => s.id === sessionParam)) return;
+    if (pendingNavigationSessionRef.current === sessionParam) {
+      void mutateSessions();
+      return;
+    }
 
     const params = new URLSearchParams(searchParams.toString());
     if (sessions.length > 0) {
@@ -121,7 +137,7 @@ export function ChatView() {
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [sessionParam, sessions, sessionsLoading, searchParams, router, pathname, isMobileViewport]);
+  }, [sessionParam, sessions, sessionsLoading, searchParams, router, pathname, isMobileViewport, mutateSessions]);
 
   // Create new chat
   const handleCreateChat = useCallback(
@@ -178,13 +194,15 @@ export function ChatView() {
 
   const navigateToSessionById = useCallback(
     (sessionId: string) => {
+      pendingNavigationSessionRef.current = sessionId;
       const params = new URLSearchParams(searchParams.toString());
       params.delete("project");
       params.delete("agent");
       params.set("session", sessionId);
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      void mutateSessions();
     },
-    [searchParams, router, pathname],
+    [searchParams, router, pathname, mutateSessions],
   );
 
   return (
