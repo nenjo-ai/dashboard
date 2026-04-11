@@ -3,7 +3,6 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import useSWR from "swr";
-import { motion, AnimatePresence } from "motion/react";
 import {
   fetcher,
   allChatSessionsUrl,
@@ -16,16 +15,34 @@ import GlobalSessionList from "./GlobalSessionList";
 import { ChatArea } from "./ChatArea";
 import { NotificationArea } from "./NotificationArea";
 import { NewChatModal } from "./NewChatModal";
+import { MobileChatContainer } from "./MobileChatContainer";
 
 export function ChatView() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(max-width: 767px)").matches
+      : false,
+  );
 
   // Active session from URL
   const sessionParam = searchParams.get("session");
   const channelParam = searchParams.get("channel");
   const isNotificationView = channelParam === "notifications";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const updateViewport = () => setIsMobileViewport(mediaQuery.matches);
+
+    updateViewport();
+    mediaQuery.addEventListener("change", updateViewport);
+
+    return () => mediaQuery.removeEventListener("change", updateViewport);
+  }, []);
 
   // Fetch sessions — filtered by channel type
   const {
@@ -33,26 +50,14 @@ export function ChatView() {
     isLoading: sessionsLoading,
     mutate: mutateSessions,
   } = useSWR<ChatSessionExtended[]>(
-    allChatSessionsUrl(50, 0, isNotificationView ? "notification" : "chat"),
+    isMobileViewport
+      ? null
+      : allChatSessionsUrl(200, 0, isNotificationView ? "notification" : "chat"),
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 5000 },
   );
 
   const [showNewChat, setShowNewChat] = useState(false);
-  const [mobileShowChat, setMobileShowChat] = useState(false);
-
-  // Navigate to a session by ID (used by ChatArea's @mention session picker)
-  const navigateToSessionById = useCallback(
-    (sessionId: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-      params.delete("project");
-      params.delete("agent");
-      params.set("session", sessionId);
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-      setMobileShowChat(true);
-    },
-    [searchParams, router, pathname],
-  );
 
   // Find active session data
   const activeSession = useMemo(
@@ -66,13 +71,13 @@ export function ChatView() {
       const params = new URLSearchParams(searchParams.toString());
       params.set("session", session.id);
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-      setMobileShowChat(true);
     },
     [searchParams, router, pathname],
   );
 
   // Handle deep-link: if URL has project+agent params, find the latest session
   useEffect(() => {
+    if (isMobileViewport) return;
     const projectParam = searchParams.get("project");
     const agentParam = searchParams.get("agent");
     if (projectParam && agentParam && !sessionParam && sessions) {
@@ -84,18 +89,20 @@ export function ChatView() {
         return () => clearTimeout(timer);
       }
     }
-  }, [searchParams, sessions, sessionParam, selectSession]);
+  }, [searchParams, sessions, sessionParam, selectSession, isMobileViewport]);
 
   // Auto-select most recent session when landing with no session param
   useEffect(() => {
+    if (isMobileViewport) return;
     if (!sessionParam && sessions && sessions.length > 0) {
       const timer = setTimeout(() => selectSession(sessions[0]), 0);
       return () => clearTimeout(timer);
     }
-  }, [sessions, sessionParam, selectSession]);
+  }, [sessions, sessionParam, selectSession, isMobileViewport]);
 
   // Recover when the URL points at a session that is no longer in the fetched list.
   useEffect(() => {
+    if (isMobileViewport) return;
     if (!sessionParam || sessionsLoading || !sessions) return;
     if (sessions.some((s) => s.id === sessionParam)) return;
 
@@ -104,7 +111,6 @@ export function ChatView() {
       params.set("session", sessions[0].id);
       const timer = setTimeout(() => {
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-        setMobileShowChat(true);
       }, 0);
       return () => clearTimeout(timer);
     } else {
@@ -114,7 +120,7 @@ export function ChatView() {
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [sessionParam, sessions, sessionsLoading, searchParams, router, pathname]);
+  }, [sessionParam, sessions, sessionsLoading, searchParams, router, pathname, isMobileViewport]);
 
   // Create new chat
   const handleCreateChat = useCallback(
@@ -143,7 +149,6 @@ export function ChatView() {
       params.delete("agent");
       params.set("session", newSession.id);
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-      setMobileShowChat(true);
     },
     [sessions, mutateSessions, searchParams, router, pathname],
   );
@@ -170,8 +175,19 @@ export function ChatView() {
     [mutateSessions, sessionParam, searchParams, router, pathname],
   );
 
+  const navigateToSessionById = useCallback(
+    (sessionId: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("project");
+      params.delete("agent");
+      params.set("session", sessionId);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router, pathname],
+  );
+
   return (
-    <div className="flex h-full overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+    <div className="flex h-full overflow-hidden bg-white dark:bg-gray-900 md:rounded-xl md:border md:border-gray-200 md:dark:border-gray-700">
       {/* Session list — left panel (desktop: always visible, mobile: animated) */}
       <div className="hidden md:block w-80 shrink-0 border-r border-gray-200 dark:border-gray-700">
         <GlobalSessionList
@@ -186,82 +202,11 @@ export function ChatView() {
         />
       </div>
 
-      {/* Mobile: animated panel swap */}
+      {/* Mobile: Grok-style shell */}
       <div className="relative flex-1 min-w-0 md:hidden overflow-hidden">
-        <AnimatePresence initial={false} mode="popLayout">
-          {!mobileShowChat ? (
-            <motion.div
-              key="session-list"
-              initial={{ x: "-100%", opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: "-100%", opacity: 0 }}
-              transition={{ type: "spring", bounce: 0, duration: 0.3 }}
-              className="absolute inset-0"
-            >
-              <GlobalSessionList
-                sessions={sessions ?? []}
-                activeSessionId={sessionParam}
-                isLoading={sessionsLoading}
-                onSelect={selectSession}
-                onCreate={isNotificationView ? undefined : () => setShowNewChat(true)}
-                onRename={isNotificationView ? undefined : handleRename}
-                onDelete={handleDelete}
-                channelType={isNotificationView ? "notification" : "chat"}
-              />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="chat-area"
-              initial={{ x: "100%", opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: "100%", opacity: 0 }}
-              transition={{ type: "spring", bounce: 0, duration: 0.3 }}
-              className="absolute inset-0"
-            >
-              {activeSession ? (
-                <div className="flex h-full flex-col">
-                  <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-2.5 dark:border-gray-700">
-                    <button
-                      onClick={() => setMobileShowChat(false)}
-                      className="shrink-0 rounded-md p-1 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-                    >
-                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-                      </svg>
-                    </button>
-                    <div className="min-w-0 flex-1">
-                      <h2 className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                        {activeSession.agent_display_name ?? activeSession.agent_name}
-                      </h2>
-                      <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                        {isNotificationView
-                          ? `@${activeSession.agent_name}`
-                          : `${activeSession.project_name === "__system__" ? "General" : activeSession.project_name} · @${activeSession.agent_name}`}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex-1 min-h-0">
-                    {isNotificationView ? (
-                      <NotificationArea
-                        agentId={activeSession.agent_id}
-                        sessionId={activeSession.id}
-                        agentName={activeSession.agent_display_name ?? activeSession.agent_name}
-                      />
-                    ) : (
-                      <ChatArea
-                        projectId={activeSession.project_id!}
-                        agentId={activeSession.agent_id}
-                        sessionId={activeSession.id}
-                        onNavigateToSession={navigateToSessionById}
-                        onSessionCreated={() => mutateSessions()}
-                      />
-                    )}
-                  </div>
-                </div>
-              ) : null}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <MobileChatContainer
+          isNotificationView={isNotificationView}
+        />
       </div>
 
       {/* Chat area — right panel (desktop only) */}

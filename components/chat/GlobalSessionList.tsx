@@ -15,6 +15,7 @@ interface GlobalSessionListProps {
   onRename?: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   channelType?: "chat" | "notification";
+  hideHeaderControls?: boolean;
 }
 
 function displayProjectName(name: string): string {
@@ -45,6 +46,7 @@ export default function GlobalSessionList({
   onRename,
   onDelete,
   channelType = "chat",
+  hideHeaderControls = false,
 }: GlobalSessionListProps) {
   const [search, setSearch] = useState("");
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
@@ -104,39 +106,12 @@ export default function GlobalSessionList({
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-900">
       {/* Header */}
-      <div className="shrink-0 border-b border-gray-200 p-3 space-y-2 dark:border-gray-700">
-        {/* Search */}
-        <div className="relative">
-          <svg
-            className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
-            />
-          </svg>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={channelType === "notification" ? "Search notifications..." : "Search chats..."}
-            className="w-full rounded-md border border-gray-200 bg-gray-50 py-1.5 pl-8 pr-3 text-xs text-gray-900 placeholder:text-gray-400 outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500"
-          />
-        </div>
-
-        {/* New chat button — hidden for notification view */}
-        {onCreate && (
-          <button
-            onClick={onCreate}
-            className="flex w-full items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
-          >
+      {!hideHeaderControls && (
+        <div className="shrink-0 border-b border-gray-200 p-3 space-y-2 dark:border-gray-700">
+          {/* Search */}
+          <div className="relative">
             <svg
-              className="h-3.5 w-3.5"
+              className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
               fill="none"
               viewBox="0 0 24 24"
               strokeWidth={2}
@@ -145,13 +120,42 @@ export default function GlobalSessionList({
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                d="M12 4.5v15m7.5-7.5h-15"
+                d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
               />
             </svg>
-            New chat
-          </button>
-        )}
-      </div>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={channelType === "notification" ? "Search notifications..." : "Search chats..."}
+              className="w-full rounded-full md:rounded-md border border-gray-200 bg-gray-100 md:bg-gray-50 py-2 md:py-1.5 pl-8 pr-3 text-xs text-gray-900 placeholder:text-gray-400 outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500"
+            />
+          </div>
+
+          {/* New chat button — hidden for notification view */}
+          {onCreate && (
+            <button
+              onClick={onCreate}
+              className="flex w-full items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              <svg
+                className="h-3.5 w-3.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 4.5v15m7.5-7.5h-15"
+                />
+              </svg>
+              New chat
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Session list */}
       <div className="flex-1 overflow-y-auto">
@@ -174,7 +178,7 @@ export default function GlobalSessionList({
               <div
                 key={session.id}
                 className={cn(
-                  "group relative mx-1.5 cursor-pointer rounded-md px-3 py-2 transition-colors",
+                  "group relative mx-1.5 cursor-pointer rounded-md md:rounded-md rounded-xl px-3 py-3 md:py-2 transition-colors",
                   session.id === activeSessionId
                     ? "bg-deep-space-blue-500 text-white"
                     : "hover:bg-gray-50 dark:hover:bg-gray-800",
@@ -216,21 +220,19 @@ export default function GlobalSessionList({
                           "truncate text-sm font-medium block",
                           isActive ? "text-white" : "text-gray-900 dark:text-gray-100",
                         )}>
-                          {channelType === "notification"
-                            ? (session.agent_display_name ?? session.agent_name)
-                            : session.title}
+                          {displayAgentName(session)}
                         </span>
                         <div className={cn(
                           "mt-0.5 flex items-center gap-1.5 text-[11px]",
                           isActive ? "text-deep-space-blue-100" : "text-gray-500 dark:text-gray-400",
                         )}>
                           {channelType === "notification" ? (
-                            <span className="truncate">@{displayAgentName(session)}</span>
+                            <span className="truncate">@{session.agent_name}</span>
                           ) : (
                             <>
                               <span className="truncate">{displayProjectName(session.project_name)}</span>
                               <span>·</span>
-                              <span className="shrink-0">@{displayAgentName(session)}</span>
+                              <span className="shrink-0">@{session.agent_name}</span>
                             </>
                           )}
                           <span className={cn(

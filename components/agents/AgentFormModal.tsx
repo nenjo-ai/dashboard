@@ -1,6 +1,5 @@
 "use client";
 
-import { cn } from "@/lib/cn";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type {
   Model,
@@ -29,11 +28,14 @@ interface FormState {
   provider: ModelProvider;
   model: string;
   temperature: number;
+  baseUrl: string;
+  keyTag: string;
 }
 
 interface FormErrors {
   model?: string;
   temperature?: string;
+  baseUrl?: string;
 }
 
 function detectProvider(model: string): ModelProvider {
@@ -54,7 +56,14 @@ const INITIAL: FormState = {
   provider: "openai",
   model: "gpt-4o",
   temperature: 0.7,
+  baseUrl: "",
+  keyTag: "",
 };
+
+/** Derive the env var name from a key tag: "sambanova" → "SAMBANOVA_API_KEY" */
+function envVarFromTag(tag: string): string {
+  return `${tag.toUpperCase().replace(/-/g, "_")}_API_KEY`;
+}
 
 export function AgentFormModal({
   open,
@@ -72,11 +81,22 @@ export function AgentFormModal({
   useEffect(() => {
     if (!open) return;
     if (agent) {
+      // Parse "openai-compatible:{tag}" back into provider + keyTag.
+      let provider = agent.model_provider as ModelProvider;
+      let keyTag = "";
+      if (agent.model_provider.startsWith("openai-compatible:")) {
+        provider = "openai-compatible";
+        keyTag = agent.model_provider.slice("openai-compatible:".length);
+      } else if (!MODEL_PROVIDERS.some((p) => p.id === provider)) {
+        provider = detectProvider(agent.model);
+      }
       setForm({
         description: agent.description ?? "",
-        provider: (agent.model_provider as ModelProvider) || detectProvider(agent.model),
+        provider,
         model: agent.model,
         temperature: agent.temperature,
+        baseUrl: agent.base_url ?? "",
+        keyTag,
       });
     } else {
       setForm(INITIAL);
@@ -104,6 +124,8 @@ export function AgentFormModal({
       ...prev,
       provider,
       model: pd?.models[0] ?? "",
+      baseUrl: "",
+      keyTag: "",
     }));
   }, []);
 
@@ -112,6 +134,15 @@ export function AgentFormModal({
     if (!form.model.trim()) errs.model = "Model is required.";
     if (form.temperature < 0 || form.temperature > 2)
       errs.temperature = "Temperature must be between 0.0 and 2.0.";
+    if (form.provider === "openai-compatible" && !form.baseUrl.trim()) {
+      errs.baseUrl = "Base URL is required for OpenAI Compatible providers.";
+    } else if (form.baseUrl.trim()) {
+      try {
+        new URL(form.baseUrl.trim());
+      } catch {
+        errs.baseUrl = "Must be a valid URL (e.g. http://localhost:1234/v1).";
+      }
+    }
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }, [form]);
@@ -125,13 +156,20 @@ export function AgentFormModal({
 
       try {
         const modelName = form.model.trim();
+        const trimmedUrl = form.baseUrl.trim() || undefined;
+        // Compose "openai-compatible:{tag}" when a tag is provided.
+        const modelProvider =
+          form.provider === "openai-compatible" && form.keyTag.trim()
+            ? `openai-compatible:${form.keyTag.trim()}`
+            : form.provider;
         if (isEdit && agent) {
           const data: UpdateModelRequest = {
             name: modelName,
             description: form.description.trim() || null,
             model: modelName,
-            model_provider: form.provider,
+            model_provider: modelProvider,
             temperature: form.temperature,
+            base_url: trimmedUrl ?? null,
           };
           await updateModel(agent.id, data);
         } else {
@@ -139,8 +177,9 @@ export function AgentFormModal({
             name: modelName,
             description: form.description.trim() || undefined,
             model: modelName,
-            model_provider: form.provider,
+            model_provider: modelProvider,
             temperature: form.temperature,
+            base_url: trimmedUrl,
           };
           await createModel(data);
         }
@@ -214,6 +253,53 @@ export function AgentFormModal({
             )}
           </div>
         </div>
+
+        {/* Base URL (shown for Ollama and OpenAI-compatible providers) */}
+        {(form.provider === "ollama" || form.provider === "openai-compatible") && (
+          <div>
+            <Label required={form.provider === "openai-compatible"}>Base URL</Label>
+            <Input
+              value={form.baseUrl}
+              onChange={(e) => set("baseUrl", e.target.value)}
+              placeholder={
+                form.provider === "ollama"
+                  ? "http://localhost:11434"
+                  : "http://localhost:1234/v1"
+              }
+              error={!!errors.baseUrl}
+              disabled={submitting}
+              className="mt-1"
+            />
+            {errors.baseUrl ? (
+              <p className="mt-1 text-xs text-red-500">{errors.baseUrl}</p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                {form.provider === "ollama"
+                  ? "Leave empty for default (localhost:11434)"
+                  : "e.g. LM Studio, vLLM, llama.cpp, LocalAI, TGI"}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Key Tag (shown for OpenAI-compatible only) */}
+        {form.provider === "openai-compatible" && (
+          <div>
+            <Label>Key Tag</Label>
+            <Input
+              value={form.keyTag}
+              onChange={(e) => set("keyTag", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+              placeholder="e.g. sambanova, deepseek, my-server"
+              disabled={submitting}
+              className="mt-1"
+            />
+            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+              {form.keyTag.trim()
+                ? <>Set <code className="text-gray-500 dark:text-gray-400">{envVarFromTag(form.keyTag.trim())}</code> on your harness</>
+                : "Optional — identifies which env var holds the API key"}
+            </p>
+          </div>
+        )}
 
         {/* Temperature */}
         <div>

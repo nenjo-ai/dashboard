@@ -21,6 +21,8 @@ import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { DomainSlashCommandDropdown } from "@/components/project/DomainSlashCommandDropdown";
 import { Button } from "@/components/ui/Button";
 import { motion, AnimatePresence } from "motion/react";
+import { MobileInputBar } from "./MobileInputBar";
+import { MobileEmptyState } from "./MobileEmptyState";
 
 interface ChatAreaProps {
   projectId: string;
@@ -30,6 +32,21 @@ interface ChatAreaProps {
   onNavigateToSession?: (sessionId: string) => void;
   /** Called after creating a new session via @mention → new chat flow. */
   onSessionCreated?: () => void;
+  /** Render variant — "mobile" uses MobileInputBar and MobileEmptyState */
+  variant?: "desktop" | "mobile";
+  /** Switch to a different agent's general chat (handled at ChatView level). */
+  onSwitchAgent?: (agent: AgentDefinition) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/** Shorten full UUIDs to their first 8-char segment for compact mobile display. */
+function shortenUuids(text: string): string {
+  return text.replace(UUID_RE, (match) => `${match.slice(0, 8)}…`);
 }
 
 // ---------------------------------------------------------------------------
@@ -144,17 +161,24 @@ const MessageBubble = memo(function MessageBubble({
   userImageUrl,
   userInitials,
   onDelete,
+  compact,
 }: {
   message: ChatMessage;
   activeAgent?: AgentDefinition;
   userImageUrl?: string | null;
   userInitials: string;
   onDelete?: (messageId: string) => void;
+  /** When true, shorten UUIDs in message content (mobile). */
+  compact?: boolean;
 }) {
   const isUser = message.role === "user";
+  const displayContent = compact ? shortenUuids(message.content) : message.content;
 
   return (
-    <div className="group flex items-start gap-3">
+    <div className={cn(
+      "group flex items-start gap-3",
+      isUser ? "flex-row-reverse md:flex-row" : "flex-row",
+    )}>
       {/* Avatar — hidden on mobile */}
       <div className="hidden md:block">
         {isUser ? (
@@ -167,15 +191,14 @@ const MessageBubble = memo(function MessageBubble({
       </div>
       <div
         className={cn(
-          "rounded-xl px-4 py-2.5 text-sm leading-relaxed overflow-hidden break-words",
-          "max-w-full md:max-w-[75%]",
+          "rounded-2xl md:rounded-xl px-4 py-2.5 text-sm leading-relaxed overflow-hidden break-words",
           isUser
-            ? "bg-deep-space-blue-500 text-white rounded-tl-sm"
-            : "bg-white border border-gray-200 text-gray-800 rounded-tl-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200",
+            ? "max-w-[85%] md:max-w-[75%] bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100 rounded-tr-sm md:rounded-tr-2xl md:rounded-tl-sm md:bg-deep-space-blue-500 md:text-white md:dark:bg-deep-space-blue-500 md:dark:text-white"
+            : "max-w-full md:max-w-[75%] bg-transparent md:bg-white md:border md:border-gray-200 text-gray-800 rounded-tl-sm dark:text-gray-200 md:dark:bg-gray-800 md:dark:border-gray-700",
         )}
       >
         {isUser ? (
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          <p className="whitespace-pre-wrap">{displayContent}</p>
         ) : (
           <div className="prose prose-sm max-w-none break-words dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-headings:font-semibold prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-700 dark:prose-p:text-gray-300 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:bg-gray-200 dark:prose-code:bg-gray-700 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:break-all prose-pre:bg-gray-800 dark:prose-pre:bg-gray-950 prose-pre:text-gray-100 prose-pre:text-xs prose-pre:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-700 dark:prose-li:text-gray-300 prose-li:my-0.5 prose-ul:my-1 prose-ol:my-1 prose-blockquote:border-deep-space-blue-300 dark:prose-blockquote:border-deep-space-blue-700 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
             <ReactMarkdown
@@ -189,13 +212,13 @@ const MessageBubble = memo(function MessageBubble({
                 },
               }}
             >
-              {message.content}
+              {displayContent}
             </ReactMarkdown>
           </div>
         )}
         <div className="mt-1 flex items-center gap-1.5">
           <span
-            className={cn("text-[10px]", isUser ? "text-deep-space-blue-200" : "text-gray-400")}
+            className={cn("text-[10px]", isUser ? "text-gray-400 md:text-deep-space-blue-200" : "text-gray-400")}
             suppressHydrationWarning
           >
             {new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -314,7 +337,8 @@ function timeAgo(dateStr: string): string {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, onSessionCreated }: ChatAreaProps) {
+export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, onSessionCreated, variant = "desktop", onSwitchAgent }: ChatAreaProps) {
+  const isMobile = variant === "mobile";
   const { user } = useUser();
   const userImageUrl = user?.imageUrl;
   const userInitials = user?.firstName?.[0] ?? "U";
@@ -432,7 +456,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
     holdTimerRef.current = setTimeout(() => {
       cancelResponse();
       setHoldProgress(false);
-    }, 2000);
+    }, 1000);
   }, [cancelResponse]);
 
   const handleCancelHoldEnd = useCallback(() => {
@@ -446,6 +470,23 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
   useEffect(() => {
     return () => { if (holdTimerRef.current) clearTimeout(holdTimerRef.current); };
   }, []);
+
+  // Double-tap Escape to cancel
+  const lastEscRef = useRef(0);
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !isTyping) return;
+      const now = Date.now();
+      if (now - lastEscRef.current < 500) {
+        cancelResponse();
+        lastEscRef.current = 0;
+      } else {
+        lastEscRef.current = now;
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [isTyping, cancelResponse]);
 
   // Auto-scroll
   const skipAutoScrollRef = useRef(false);
@@ -596,6 +637,12 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
     }
   }, [selectedMentionAgent, isCreatingChat, mentionAgentSessions, closeMentionFlow, mutateSessions, onSessionCreated, onNavigateToSession]);
 
+  const resetInputHeight = useCallback(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+    }
+  }, []);
+
   const handleSend = () => {
     const text = input.trim();
     if (!text) return;
@@ -607,6 +654,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
       const exitCommands = ["#exit", "#done", "#finish"];
       if (exitCommands.includes(text.toLowerCase())) {
         setInput("");
+        resetInputHeight();
         exitDomain();
         return;
       }
@@ -616,6 +664,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
       const matchedDomain = availableDomains.find((m) => m.command.toLowerCase() === text.toLowerCase());
       if (matchedDomain) {
         setInput("");
+        resetInputHeight();
         enterDomain(matchedDomain.id, matchedDomain.command, agentId);
         return;
       }
@@ -624,6 +673,13 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
     if (isTyping) return;
     sendMessage(text);
     setInput("");
+    resetInputHeight();
+    // On mobile, force scroll to bottom after send to prevent layout shift
+    requestAnimationFrame(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -677,8 +733,18 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
   };
 
   const placeholder = activeAgent
-    ? `Message @${activeAgent.name}... (type @ to switch agent)`
-    : "Ask anything... (type @ to pick an agent)";
+    ? (isMobile ? "Ask anything..." : `Message @${activeAgent.name}... (type @ to switch agent)`)
+    : "Ask anything...";
+
+  // Mobile: handle agent switch — delegates to ChatView-level handler
+  const handleSwitchAgent = useCallback((agent: AgentDefinition) => {
+    onSwitchAgent?.(agent);
+  }, [onSwitchAgent]);
+
+  // Mobile: handle enter domain via MobileEmptyState
+  const handleEnterDomainFromChip = useCallback((domain: Domain) => {
+    enterDomain(domain.id, domain.command, agentId);
+  }, [enterDomain, agentId]);
 
   const agentColor = activeAgent?.color;
   const inDomain = !!activeDomainSession && !!agentColor;
@@ -691,17 +757,21 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
     if (inDomain && !prevInDomainRef.current) {
       // Enter — the enter + idle animations are chained in CSS, no phase swap needed
       setBorderPhase("enter");
-      // Refocus the input after domain expansion
-      setTimeout(() => inputRef.current?.focus(), 50);
+      if (!isMobile) {
+        // Desktop keeps focus inside the composer after domain transitions.
+        setTimeout(() => inputRef.current?.focus(), 50);
+      }
     }
     if (!inDomain && prevInDomainRef.current) {
       setBorderPhase("exit");
-      setTimeout(() => inputRef.current?.focus(), 50);
-      const timer = setTimeout(() => setBorderPhase(null), 2250);
+      if (!isMobile) {
+        setTimeout(() => inputRef.current?.focus(), 50);
+      }
+      const timer = setTimeout(() => setBorderPhase(null), 1250);
       return () => clearTimeout(timer);
     }
     prevInDomainRef.current = inDomain;
-  }, [inDomain]);
+  }, [inDomain, isMobile]);
 
   useEffect(() => { prevInDomainRef.current = inDomain; });
 
@@ -718,9 +788,9 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
   }, [inDomain]);
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden rounded-lg">
-      {/* Conic-gradient border with animated position — entry, idle pulse at top, exit */}
-      {borderPhase && agentColor && (
+    <div className={cn("relative flex h-full flex-col overflow-hidden", isMobile ? "rounded-none" : "rounded-lg")}>
+      {/* Conic-gradient border with animated position — entry, idle pulse at top, exit (desktop only) */}
+      {!isMobile && borderPhase && agentColor && (
         <div
           className="pointer-events-none absolute inset-0 z-10 rounded-lg"
           style={{
@@ -731,17 +801,17 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
             WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
             WebkitMaskComposite: 'xor',
             animation: borderPhase === "enter"
-              ? 'domain-border-enter 3.25s ease-in-out forwards'
+              ? 'domain-border-enter 2.25s ease-in-out forwards'
               : borderPhase === "exit"
-              ? 'domain-border-exit 2s ease-in forwards'
+              ? 'domain-border-exit 1s ease-in forwards'
               : 'domain-border-idle 6s linear infinite',
           }}
         />
       )}
 
-      {/* Domain banner at top — appears after border animation settles */}
+      {/* Domain banner at top — appears after border animation settles (desktop only) */}
       <AnimatePresence>
-        {showDomainBanner && activeDomainSession && activeAgent && (() => {
+        {!isMobile && showDomainBanner && activeDomainSession && activeAgent && (() => {
           const activeDomain = availableDomains.find((m) => m.id === activeDomainSession.domain_id);
           return (
             <motion.div
@@ -784,7 +854,14 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
       </AnimatePresence>
 
       {/* Messages */}
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className={cn(
+          "flex-1 overflow-y-auto overflow-x-hidden space-y-4",
+          isMobile ? "px-0 pb-4 pt-0" : "p-4",
+        )}
+      >
         {isLoadingHistory ? (
           <div className="flex items-center justify-center py-12">
             <div className="flex items-center gap-1.5 font-mono text-xs text-gray-400">
@@ -792,6 +869,14 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
               <span className="animate-blink-cursor text-base leading-none text-deep-space-blue-500 dark:text-deep-space-blue-400">&#9612;</span>
             </div>
           </div>
+        ) : messages.length === 0 && isMobile ? (
+          /* Mobile empty state — Grok-style centered logo + action chips */
+          <MobileEmptyState
+            agentId={agentId}
+            activeAgent={activeAgent}
+            onSwitchAgent={handleSwitchAgent}
+            onEnterDomain={handleEnterDomainFromChip}
+          />
         ) : (
           <>
             {isLoadingMore && (
@@ -818,6 +903,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                       userImageUrl={userImageUrl}
                       userInitials={userInitials}
                       onDelete={msg.id !== "welcome" ? deleteMessage : undefined}
+                      compact={isMobile}
                     />
                   </motion.div>
                 );
@@ -830,7 +916,13 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.15, ease: "easeOut" }}
                 >
-                  <TypingIndicator activeAgent={activeAgent} tools={activeTools} preview={livePreview} />
+                  {isMobile ? (
+                    <div className="flex items-center px-1 py-1">
+                      <span className="animate-blink-cursor text-lg leading-none text-deep-space-blue-500 dark:text-deep-space-blue-400">&#9612;</span>
+                    </div>
+                  ) : (
+                    <TypingIndicator activeAgent={activeAgent} tools={activeTools} preview={livePreview} />
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -840,8 +932,159 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
         )}
       </div>
 
-      {/* Input */}
-      <div className="border-t border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+      {/* Mobile input bar */}
+      {isMobile && (
+        <div className="sticky bottom-0 z-20 shrink-0 border-t border-gray-100 bg-white/96 backdrop-blur-sm dark:border-gray-800 dark:bg-gray-900/96">
+          {/* Dropdowns render above the mobile input */}
+          {showDomainDropdown && filteredDomains.length > 0 && (
+            <div className="absolute bottom-full left-0 right-0 z-50 px-3 pb-1">
+              <DomainSlashCommandDropdown
+                domains={filteredDomains}
+                selectedIndex={selectedDomainIndex}
+                onSelect={handleDomainSelect}
+                onClose={() => setShowDomainDropdown(false)}
+                anchorRef={inputRef}
+              />
+            </div>
+          )}
+          {showAgentDropdown && !selectedMentionAgent && filteredAgents.length > 0 && (
+            <div className="absolute bottom-full left-0 right-0 z-50 px-3 pb-1">
+              <div
+                ref={dropdownRef}
+                className="w-full max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800"
+              >
+                {filteredAgents.map((agent: AgentDefinition, index: number) => (
+                  <button
+                    key={agent.id}
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); handleAgentSelect(agent); }}
+                    className={cn(
+                      "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
+                      index === selectedDropdownIndex
+                        ? "bg-gray-100 dark:bg-gray-700"
+                        : "hover:bg-gray-50 dark:hover:bg-gray-750",
+                    )}
+                  >
+                    <RoleIdenticon roleId={agent.id} color={agent.color} size={20} className="shrink-0" roleName={agent.name} />
+                    <span className="font-medium text-gray-900 dark:text-gray-100">@{agent.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {selectedMentionAgent && (
+            <div className="absolute bottom-full left-0 right-0 z-50 px-3 pb-1">
+              <div
+                ref={dropdownRef}
+                className="w-full max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800"
+              >
+                <div className="sticky top-0 flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-850">
+                  <RoleIdenticon roleId={selectedMentionAgent.id} color={selectedMentionAgent.color} size={18} className="shrink-0" roleName={selectedMentionAgent.name} />
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">@{selectedMentionAgent.name}</span>
+                  <span className="text-xs text-gray-400">— {mentionStep === "project" ? "pick a project" : "pick a session"}</span>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      if (mentionStep === "project") { setMentionStep("session"); setSessionPickerIndex(0); }
+                      else { closeMentionFlow(); }
+                    }}
+                    className="ml-auto text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      {mentionStep === "project" ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      )}
+                    </svg>
+                  </button>
+                </div>
+                {mentionStep === "session" ? (
+                  <>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); handleNewChatFromMention(); }}
+                      className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors", sessionPickerIndex === 0 ? "bg-deep-space-blue-500 text-white" : "hover:bg-gray-50 dark:hover:bg-gray-750")}
+                    >
+                      <svg className="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                      </svg>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">New chat</span>
+                    </button>
+                    {mentionAgentSessions.map((session, index) => (
+                      <button
+                        key={session.id}
+                        type="button"
+                        onMouseDown={(e) => { e.preventDefault(); handleSessionSelect(session); }}
+                        className={cn("flex w-full flex-col px-3 py-2 text-left transition-colors", index + 1 === sessionPickerIndex ? "bg-deep-space-blue-500 text-white" : "hover:bg-gray-50 dark:hover:bg-gray-750")}
+                      >
+                        <span className={cn("truncate text-sm font-medium", index + 1 === sessionPickerIndex ? "text-white" : "text-gray-900 dark:text-gray-100")}>{session.title}</span>
+                        <span className={cn("mt-0.5 flex items-center gap-1.5 text-[11px]", index + 1 === sessionPickerIndex ? "text-deep-space-blue-100" : "text-gray-500 dark:text-gray-400")}>
+                          <span className="truncate">{session.project_name === "__system__" ? "General" : session.project_name}</span>
+                          <span>·</span>
+                          <span className="shrink-0">{timeAgo(session.updated_at)}</span>
+                        </span>
+                      </button>
+                    ))}
+                    {mentionAgentSessions.length === 0 && (
+                      <div className="px-3 py-2 text-center text-[11px] text-gray-400">No existing sessions</div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {userProjects.length === 0 ? (
+                      <div className="px-3 py-4 text-center text-xs text-gray-400">No projects available</div>
+                    ) : (
+                      userProjects.map((project, index) => (
+                        <button
+                          key={project.id}
+                          type="button"
+                          onMouseDown={(e) => { e.preventDefault(); handleProjectSelect(project); }}
+                          className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors", index === sessionPickerIndex ? "bg-deep-space-blue-500 text-white" : "hover:bg-gray-50 dark:hover:bg-gray-750")}
+                        >
+                          <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold", index === sessionPickerIndex ? "bg-deep-space-blue-500 text-white" : "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400")}>
+                            {project.is_system ? "G" : project.name.charAt(0).toUpperCase()}
+                          </span>
+                          <span className="truncate font-medium text-gray-900 dark:text-gray-100">{project.is_system ? "General" : project.name}</span>
+                        </button>
+                      ))
+                    )}
+                    {isCreatingChat && <div className="px-3 py-2 text-center text-xs text-gray-400">Creating chat...</div>}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+          <MobileInputBar
+            input={input}
+            onInputChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            onSend={handleSend}
+            placeholder={placeholder}
+            disabled={isDomainPending}
+            isTyping={isTyping}
+            hasActiveTools={hasActiveTools}
+            activeAgent={activeAgent}
+            availableAgents={availableAgents}
+            availableDomains={availableDomains}
+            onSelectAgent={handleSwitchAgent}
+            onSelectDomain={handleEnterDomainFromChip}
+            holdProgress={holdProgress}
+            onCancelHoldStart={handleCancelHoldStart}
+            onCancelHoldEnd={handleCancelHoldEnd}
+            agentColor={agentColor}
+            isDomainPending={isDomainPending}
+            inputRef={inputRef}
+            inDomain={inDomain}
+            onExitDomain={exitDomain}
+            activeDomainLabel={activeDomainSession ? availableDomains.find((m) => m.id === activeDomainSession.domain_id)?.command : undefined}
+          />
+        </div>
+      )}
+
+      {/* Desktop Input */}
+      {!isMobile && <div className="border-t border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
         <div className="relative">
           {showDomainDropdown && filteredDomains.length > 0 && (
             <DomainSlashCommandDropdown
@@ -1072,7 +1315,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                 onTouchStart={handleCancelHoldStart}
                 onTouchEnd={handleCancelHoldEnd}
                 className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-flag-red-100 hover:bg-flag-red-200 text-flag-red-600 dark:bg-flag-red-900/40 dark:hover:bg-flag-red-800/50 dark:text-flag-red-400 transition-colors"
-                title="Hold for 2 seconds to cancel"
+                title="Hold for 1 second to cancel"
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                   <rect x="6" y="6" width="12" height="12" rx="2" />
@@ -1082,7 +1325,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                 )}
                 {holdProgress && (
                   <svg className="absolute inset-0 -rotate-90" viewBox="0 0 40 40">
-                    <circle cx="20" cy="20" r="16" fill="none" className="stroke-flag-red-500 dark:stroke-flag-red-400" strokeWidth="3" strokeDasharray="100" strokeDashoffset="100" strokeLinecap="round" style={{ animation: "hold-arc 2s linear forwards" }} />
+                    <circle cx="20" cy="20" r="16" fill="none" className="stroke-flag-red-500 dark:stroke-flag-red-400" strokeWidth="3" strokeDasharray="100" strokeDashoffset="100" strokeLinecap="round" style={{ animation: "hold-arc 1s linear forwards" }} />
                   </svg>
                 )}
               </button>
@@ -1093,8 +1336,22 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
               </svg>
             </Button>
           </div>
+          <AnimatePresence>
+            {(isTyping || hasActiveTools) && (
+              <motion.p
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="text-center text-xs text-gray-400 dark:text-gray-500"
+              >
+                Press <kbd className="rounded border border-gray-300 px-1 py-0.5 text-[10px] font-medium dark:border-gray-600">Esc</kbd>{" "}
+                <kbd className="rounded border border-gray-300 px-1 py-0.5 text-[10px] font-medium dark:border-gray-600">Esc</kbd>{" "}
+                to interrupt
+              </motion.p>
+            )}
+          </AnimatePresence>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

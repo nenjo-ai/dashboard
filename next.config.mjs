@@ -4,6 +4,7 @@ import { createMDX } from 'fumadocs-mdx/next';
 const config = {
   reactStrictMode: true,
   turbopack: {},
+  allowedDevOrigins: ['192.168.1.228'],
   async rewrites() {
     return [
       {

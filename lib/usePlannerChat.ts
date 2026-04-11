@@ -76,8 +76,11 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   const [activeDomainSession, setActiveDomainSession] = useState<DomainSession | null>(null);
   const activeDomainSessionRef = useRef<DomainSession | null>(null);
   const [isDomainPending, setIsDomainPending] = useState(false);
-  // Pending domain session — set by enterDomain, promoted to active by DomainEntered event
+  // Pending domain session — kept only while waiting for backend domain-session creation.
   const pendingDomainSessionRef = useRef<DomainSession | null>(null);
+  // After a local exit/cancel succeeds, suppress backend "active domain" restore
+  // for this project+agent until the user explicitly enters a domain again.
+  const suppressedDomainRestoreRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     activeDomainSessionRef.current = activeDomainSession;
@@ -130,6 +133,10 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   // Cache key includes session ID
   const cacheKey = useCallback(
     (rId: string, sId?: string | null) => `${rId}:${sId ?? "none"}`,
+    [],
+  );
+  const domainRestoreKey = useCallback(
+    (pId: string, aId: string) => `${pId}:${aId}`,
     [],
   );
 
@@ -312,11 +319,23 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   // Restore active domain session from backend on mount/role switch
   useEffect(() => {
     if (!agentId || !userId) return;
+    const restoreKey = domainRestoreKey(projectId, agentId);
+
+    if (suppressedDomainRestoreRef.current.has(restoreKey)) {
+      setActiveDomainSession(null);
+      return;
+    }
+
     let cancelled = false;
 
     fetchActiveDomainSession(projectId, agentId)
       .then((session) => {
-        if (!cancelled && session) {
+        if (
+          !cancelled &&
+          session &&
+          session.status === "active" &&
+          !suppressedDomainRestoreRef.current.has(restoreKey)
+        ) {
           setActiveDomainSession(session);
         }
       })
@@ -327,7 +346,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId, userId]);
+  }, [projectId, agentId, userId, domainRestoreKey]);
 
   // Load older messages (scroll-up pagination)
   const loadMore = useCallback(async () => {
@@ -569,7 +588,8 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         }
 
         case "DomainEntered": {
-          // Worker confirmed domain entry — activate the pending session
+          // Domain is activated from the backend createDomainSession response.
+          // Keep this as a no-op fallback in case older workers still emit it.
           setIsDomainPending(false);
           if (pendingDomainSessionRef.current) {
             setActiveDomainSession(pendingDomainSessionRef.current);
@@ -586,24 +606,11 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
             pendingDomainSessionRef.current = null;
           }
 
-          if (currentActiveDomainSession?.id && currentActiveDomainSession.id !== session_id) {
+          if (!currentActiveDomainSession?.id || currentActiveDomainSession.id !== session_id) {
             break;
           }
 
-          void fetchDomainSession(session_id)
-            .then((session) => {
-              if (session.status === "active") {
-                return;
-              }
-              setActiveDomainSession((current) =>
-                current?.id === session_id ? null : current,
-              );
-            })
-            .catch(() => {
-              setActiveDomainSession((current) =>
-                current?.id === session_id ? null : current,
-              );
-            });
+          setActiveDomainSession(null);
           break;
         }
 
@@ -900,13 +907,15 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       if (!effectiveRoleId || activeDomainSession) return;
 
       try {
+        suppressedDomainRestoreRef.current.delete(domainRestoreKey(projectId, effectiveRoleId));
         setIsDomainPending(true);
         const session = await createDomainSession(domainId, projectId, effectiveRoleId);
-        // Don't activate yet — wait for worker's DomainEntered event
         pendingDomainSessionRef.current = session;
+        setActiveDomainSession(session);
+        setIsDomainPending(false);
+        pendingDomainSessionRef.current = null;
 
-        // Send domain enter event via WebSocket (include the backend session
-        // ID so the harness stores its domain runner under the same key).
+        // Inform the worker if connected so it can begin domain-specific handling.
         const outbound: ChatDomainEnterOutbound = {
           type: "chat.domain_enter",
           project_id: projectId,
@@ -916,6 +925,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         };
         send(outbound);
       } catch (err) {
+        pendingDomainSessionRef.current = null;
         setIsDomainPending(false);
         console.error("Failed to enter domain:", err);
         setMessages((prev) => [
@@ -929,7 +939,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         ]);
       }
     },
-    [projectId, agentId, activeDomainSession, send],
+    [projectId, agentId, activeDomainSession, send, domainRestoreKey],
   );
 
   // Exit the active domain
@@ -937,10 +947,13 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     if (!activeDomainSession || !agentId) return;
 
     try {
+      const restoreKey = domainRestoreKey(projectId, agentId);
+      suppressedDomainRestoreRef.current.add(restoreKey);
       await completeDomainSession(activeDomainSession.id);
+      pendingDomainSessionRef.current = null;
+      setActiveDomainSession(null);
 
-      // Send domain exit event via WebSocket — don't clear activeDomainSession yet,
-      // wait for worker's DomainExited event to trigger exit animations
+      // Inform the worker if connected so it can end domain-specific handling.
       const outbound: ChatDomainExitOutbound = {
         type: "chat.domain_exit",
         project_id: projectId,
@@ -949,16 +962,21 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       };
       send(outbound);
     } catch (err) {
+      suppressedDomainRestoreRef.current.delete(domainRestoreKey(projectId, agentId));
       console.error("Failed to exit domain:", err);
     }
-  }, [projectId, agentId, activeDomainSession, send]);
+  }, [projectId, agentId, activeDomainSession, send, domainRestoreKey]);
 
   // Cancel the active domain (discard artifact)
   const cancelDomain = useCallback(async () => {
     if (!activeDomainSession || !agentId) return;
 
     try {
+      const restoreKey = domainRestoreKey(projectId, agentId);
+      suppressedDomainRestoreRef.current.add(restoreKey);
       await cancelDomainSession(activeDomainSession.id);
+      pendingDomainSessionRef.current = null;
+      setActiveDomainSession(null);
 
       const outbound: ChatDomainExitOutbound = {
         type: "chat.domain_exit",
@@ -968,9 +986,10 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       };
       send(outbound);
     } catch (err) {
+      suppressedDomainRestoreRef.current.delete(domainRestoreKey(projectId, agentId));
       console.error("Failed to cancel domain:", err);
     }
-  }, [projectId, agentId, activeDomainSession, send]);
+  }, [projectId, agentId, activeDomainSession, send, domainRestoreKey]);
 
   const deleteMessage = useCallback(
     (messageId: string) => {
