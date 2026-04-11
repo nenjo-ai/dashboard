@@ -4,14 +4,9 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { TopBar } from "@/components/layout/TopBar";
 import { ChatView } from "@/components/chat/ChatView";
-import { PageContent } from "@/components/ui/PageContent";
 
 function ChatContent() {
-  return (
-    <PageContent className="min-h-0 flex-1">
-      <ChatView />
-    </PageContent>
-  );
+  return <ChatView />;
 }
 
 function ChatPageTitle() {
@@ -22,17 +17,17 @@ function ChatPageTitle() {
 
 export default function ChatPage() {
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-[100dvh] flex-col overflow-hidden">
       <Suspense fallback={<TopBar title="Chat" />}>
         <ChatPageTitle />
       </Suspense>
       <Suspense
         fallback={
-          <PageContent className="min-h-0 flex-1">
+          <div className="flex min-h-0 flex-1 items-center justify-center">
             <div className="flex h-full items-center justify-center">
               <span className="text-sm text-gray-400">Loading...</span>
             </div>
-          </PageContent>
+          </div>
         }
       >
         <ChatContent />

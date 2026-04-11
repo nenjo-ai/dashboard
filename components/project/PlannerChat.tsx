@@ -430,7 +430,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
     holdTimerRef.current = setTimeout(() => {
       cancelResponse();
       setHoldProgress(false);
-    }, 2000);
+    }, 1000);
   }, [cancelResponse]);
 
   const handleCancelHoldEnd = useCallback(() => {
@@ -446,6 +446,23 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
     };
   }, []);
+
+  // Double-tap Escape to cancel
+  const lastEscRef = useRef(0);
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !isTyping) return;
+      const now = Date.now();
+      if (now - lastEscRef.current < 500) {
+        cancelResponse();
+        lastEscRef.current = 0;
+      } else {
+        lastEscRef.current = now;
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [isTyping, cancelResponse]);
 
   // Auto-scroll on new messages (skip when loading older messages to preserve position)
   const skipAutoScrollRef = useRef(false);
@@ -884,7 +901,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
                 onTouchStart={handleCancelHoldStart}
                 onTouchEnd={handleCancelHoldEnd}
                 className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-flag-red-100 hover:bg-flag-red-200 text-flag-red-600 dark:bg-flag-red-900/40 dark:hover:bg-flag-red-800/50 dark:text-flag-red-400 transition-colors"
-                title="Hold for 2 seconds to cancel"
+                title="Hold for 1 second to cancel"
               >
                 {/* Square stop icon */}
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
@@ -910,7 +927,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
                       strokeDasharray="100"
                       strokeDashoffset="100"
                       strokeLinecap="round"
-                      style={{ animation: "hold-arc 2s linear forwards" }}
+                      style={{ animation: "hold-arc 1s linear forwards" }}
                     />
                   </svg>
                 )}
@@ -936,6 +953,13 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
               </svg>
             </Button>
           </div>
+          {isTyping && (
+            <p className="text-center text-xs text-gray-400 dark:text-gray-500">
+              Press <kbd className="rounded border border-gray-300 px-1 py-0.5 text-[10px] font-medium dark:border-gray-600">Esc</kbd>{" "}
+              <kbd className="rounded border border-gray-300 px-1 py-0.5 text-[10px] font-medium dark:border-gray-600">Esc</kbd>{" "}
+              to interrupt
+            </p>
+          )}
         </div>
       </div>
       </div>{/* end flex-1 wrapper */}

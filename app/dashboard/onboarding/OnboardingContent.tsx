@@ -14,6 +14,7 @@ import {
   updateAgent,
   fetchSystemProject,
   createChatSession,
+  fetchCurrentUser,
 } from "@/lib/api";
 import { useWorkerStatus } from "@/lib/hooks";
 import { useWebSocketContext } from "@/lib/WebSocketContext";
@@ -36,10 +37,12 @@ const PROVIDER_ENV_VARS: Record<ModelProvider, string> = {
   openrouter: "OPENROUTER_API_KEY",
   ollama: "OLLAMA_HOST",
   groq: "GROQ_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
+  minimax: "MINIMAX_API_KEY",
+  "openai-compatible": "",
 };
 
 const SESSION_KEY = "nenjo_onboarding_raw_key";
-const ONBOARDED_KEY = "nenjo_onboarded";
 const NENJI_GREETING_DELAY_MS = 6000;
 const LOCAL_CHAT_SEED_KEY = "nenjo:local_chat_seed";
 const DEFAULT_SKIP_MESSAGE =
@@ -170,7 +173,6 @@ function StepCreateAgent({
         model_id: agent.id,
       });
 
-      localStorage.setItem(ONBOARDED_KEY, "1");
       onCreated(agent);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create agent");
@@ -743,17 +745,10 @@ export default function OnboardingContent() {
   const [selectedProvider, setSelectedProvider] = useState<ModelProvider>("anthropic");
 
   // Single redirect effect — runs once when Clerk is loaded.
-  // localStorage is the sole gate for onboarding completion.
+  // Checks the backend to see if the user has already completed onboarding.
   useEffect(() => {
     if (redirected.current) return;
     if (!isLoaded) return;
-
-    // Already onboarded — go to dashboard
-    if (localStorage.getItem(ONBOARDED_KEY)) {
-      redirected.current = true;
-      router.replace("/dashboard");
-      return;
-    }
 
     // Not authenticated (give Clerk a moment after OAuth callback)
     if (!user) {
@@ -765,6 +760,21 @@ export default function OnboardingContent() {
       }, 2000);
       return () => clearTimeout(timeout);
     }
+
+    // Check backend for onboarding status
+    let cancelled = false;
+    fetchCurrentUser()
+      .then((me) => {
+        if (cancelled || redirected.current) return;
+        if (me.onboarded) {
+          redirected.current = true;
+          router.replace("/dashboard");
+        }
+      })
+      .catch(() => {
+        // If the API call fails, let the user proceed with onboarding
+      });
+    return () => { cancelled = true; };
   }, [isLoaded, user, router]);
 
   const maxWidth = currentStep === 3 ? "max-w-2xl" : currentStep === 2 ? "max-w-md" : "max-w-sm";

@@ -635,6 +635,7 @@ export async function fetchCurrentUser(): Promise<{
   session_id?: string | null;
   org_id?: string | null;
   org_role?: string | null;
+  onboarded?: boolean;
 }> {
   return fetcher(authMeUrl());
 }
