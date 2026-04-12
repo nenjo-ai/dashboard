@@ -2,6 +2,8 @@
 
 import { cn } from "@/lib/cn";
 import { useState, useCallback, useMemo, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type {
   ExecutionDetails,
   ExecutionCommand,
@@ -12,8 +14,8 @@ import {
   createExecution,
   sendExecutionCommand,
 } from "@/lib/api";
+import { subscribeExecutionRealtime } from "@/lib/executionRealtime";
 import { useExecutionTasks } from "@/lib/hooks";
-import { useWebSocketContext } from "@/lib/WebSocketContext";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -163,6 +165,101 @@ function deduplicateSteps(steps: TaskStepProgress[]): TaskStepProgress[] {
   return Array.from(map.values());
 }
 
+interface DisplayStep {
+  step: TaskStepProgress;
+  children: TaskStepProgress[];
+}
+
+function mergeStep(prev: TaskStepProgress, next: TaskStepProgress): TaskStepProgress {
+  const merged = { ...next };
+  if (!merged.step_type && prev.step_type) merged.step_type = prev.step_type;
+  if (!merged.agent && prev.agent) merged.agent = prev.agent;
+  merged.data = { ...(prev.data ?? {}), ...(next.data ?? {}) };
+  return merged;
+}
+
+function isCompletedStep(step: TaskStepProgress): boolean {
+  return (
+    step.event_type === "step_completed" ||
+    step.event_type === "step_failed" ||
+    step.event_type === "failed" ||
+    step.event_type === "done"
+  );
+}
+
+function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
+  const groups: DisplayStep[] = [];
+  const parentIndex = new Map<string, number>();
+  let currentParentName: string | null = null;
+
+  const upsertTopLevel = (step: TaskStepProgress): number => {
+    const existingIndex = parentIndex.get(step.step_name);
+    if (existingIndex != null) {
+      groups[existingIndex] = {
+        ...groups[existingIndex],
+        step: mergeStep(groups[existingIndex].step, step),
+      };
+      return existingIndex;
+    }
+
+    const nextIndex = groups.length;
+    groups.push({ step, children: [] });
+    parentIndex.set(step.step_name, nextIndex);
+    return nextIndex;
+  };
+
+  const upsertChild = (groupIndex: number, step: TaskStepProgress) => {
+    const toolNames = Array.isArray(step.data?.tool_names)
+      ? step.data.tool_names.filter((value): value is string => typeof value === "string")
+      : [step.step_name];
+
+    for (const toolName of toolNames) {
+      const childStep: TaskStepProgress = {
+        ...step,
+        step_name: toolName,
+      };
+
+      const existingIndex = groups[groupIndex].children.findIndex(
+        (child) => child.step_name === toolName,
+      );
+
+      if (existingIndex >= 0) {
+        groups[groupIndex].children[existingIndex] = mergeStep(
+          groups[groupIndex].children[existingIndex],
+          childStep,
+        );
+      } else {
+        groups[groupIndex].children.push(childStep);
+      }
+    }
+  };
+
+  for (const rawStep of steps) {
+    if (rawStep.step_type !== "tool") {
+      upsertTopLevel(rawStep);
+      currentParentName = rawStep.step_name;
+      continue;
+    }
+
+    const parentToolName =
+      typeof rawStep.data?.parent_tool_name === "string"
+        ? rawStep.data.parent_tool_name
+        : null;
+    const parentName = parentToolName ?? currentParentName;
+    const parentGroupIndex =
+      parentName != null ? parentIndex.get(parentName) : undefined;
+
+    if (parentGroupIndex != null && groups[parentGroupIndex].step.step_type !== "tool") {
+      upsertChild(parentGroupIndex, rawStep);
+      continue;
+    }
+
+    upsertTopLevel(rawStep);
+  }
+
+  return groups;
+}
+
 /** Extract token counts from a step's data — supports both flat (output_preview flow)
  *  and nested metrics (real-time flow) shapes. */
 function getStepTokens(data: Record<string, unknown> | undefined): { input: number; output: number; total: number } {
@@ -176,9 +273,63 @@ function getStepTokens(data: Record<string, unknown> | undefined): { input: numb
   return { input, output, total };
 }
 
+function MarkdownPreview({ content }: { content: string }) {
+  const normalized = content
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t");
+
+  return (
+    <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-headings:font-semibold prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-700 dark:prose-p:text-gray-300 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:bg-gray-200 dark:prose-code:bg-gray-700 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:break-all prose-pre:bg-gray-800 dark:prose-pre:bg-gray-950 prose-pre:text-gray-100 prose-pre:text-xs prose-pre:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-700 dark:prose-li:text-gray-300 prose-li:my-0.5 prose-ul:my-1 prose-ol:my-1 prose-blockquote:border-deep-space-blue-300 dark:prose-blockquote:border-deep-space-blue-700">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          code({ className, children, ...props }) {
+            if (className) {
+              return <code className={className} {...props}>{children}</code>;
+            }
+            return <code {...props}>{children}</code>;
+          },
+        }}
+      >
+        {normalized}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function friendlyToolName(toolName: string): string {
+  return toolName.replace(/^app\.nenjo\.platform\//, "");
+}
+
+function isLowSignalJsonFragment(text: string): boolean {
+  const normalized = text.trim();
+  return (
+    /^"[^"]+":\s.+,?$/.test(normalized) ||
+    /^(null|\[|\]|\{|\}|,)$/.test(normalized)
+  );
+}
+
+function summarizeToolActivity(toolName: string, preview?: string | null, error?: string | null): string {
+  if (error) return error;
+  if (!preview) return "Running…";
+  if (!isLowSignalJsonFragment(preview)) return preview;
+
+  const short = friendlyToolName(toolName);
+  if (short.includes("agents")) return "Returned agent records";
+  if (short.includes("projects")) return "Returned project records";
+  if (short.includes("routines")) return "Returned routine records";
+  if (short.includes("mcp_servers")) return "Returned MCP server records";
+  if (short.includes("models")) return "Returned model records";
+  if (short.includes("chat")) return "Chat query failed";
+  return "Returned structured data";
+}
+
 function TaskRow({ task }: { task: ExecutionTask }) {
   const [expanded, setExpanded] = useState(false);
+  const [openActivity, setOpenActivity] = useState<Record<string, boolean>>({});
 
+  const displaySteps = useMemo(() => buildDisplaySteps(task.steps ?? []), [task.steps]);
   const steps = useMemo(() => deduplicateSteps(task.steps ?? []), [task.steps]);
   const totalDuration = steps.reduce((acc, s) => acc + (s.duration_ms ?? 0), 0);
   const totalTokens = steps.reduce(
@@ -220,9 +371,9 @@ function TaskRow({ task }: { task: ExecutionTask }) {
         </svg>
       </button>
 
-      {expanded && steps.length > 0 && (
+      {expanded && displaySteps.length > 0 && (
         <div className="pl-10 pr-4 pb-2 space-y-1">
-          {steps.map((step) => {
+          {displaySteps.map(({ step, children }) => {
             const d = step.data as Record<string, unknown> | undefined;
             const metrics = d?.metrics as
               | { execution_count?: number }
@@ -245,6 +396,10 @@ function TaskRow({ task }: { task: ExecutionTask }) {
             const agent = step.agent;
             const isRunning =
               step.event_type === "step_started" || step.event_type === "running";
+            const hasActivity = step.step_type !== "tool" && (children.length > 0 || isRunning);
+            const activityKey = `${task.id ?? task.slug ?? task.title}:${step.step_name}`;
+            const isDone = isCompletedStep(step);
+            const activityExpanded = isDone ? !!openActivity[activityKey] : hasActivity;
             return (
               <div key={step.step_name}>
                 <div className="flex items-center gap-2 py-1">
@@ -285,7 +440,7 @@ function TaskRow({ task }: { task: ExecutionTask }) {
                 </div>
                 {outputPreview && (
                   <div className="ml-5 mt-0.5 mb-1 rounded-md bg-gray-50 px-2.5 py-1.5 text-xs text-gray-600 dark:bg-gray-900/50 dark:text-gray-400 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
-                    {outputPreview}
+                    <MarkdownPreview content={outputPreview} />
                   </div>
                 )}
                 {errorMsg && (
@@ -296,6 +451,89 @@ function TaskRow({ task }: { task: ExecutionTask }) {
                 {warningMsg && (
                   <div className="ml-5 mt-0.5 mb-1 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400 whitespace-pre-wrap wrap-break-word">
                     {warningMsg}
+                  </div>
+                )}
+                {hasActivity && isDone && (
+                  <div className="ml-5 mt-1 mb-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOpenActivity((prev) => ({
+                          ...prev,
+                          [activityKey]: !prev[activityKey],
+                        }))
+                      }
+                      className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                    >
+                      <span>{activityExpanded ? "Hide" : "Show"} source activity</span>
+                      <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                        {children.length}
+                      </span>
+                    </button>
+                  </div>
+                )}
+                {hasActivity && activityExpanded && (
+                  <div className="ml-5 mt-1 mb-2 rounded-md border border-gray-200 bg-gray-50/70 px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40">
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className={cn("inline-flex h-2 w-2 rounded-full", isDone ? "bg-gray-400" : "bg-yellow-500 animate-pulse")} />
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        {isDone ? "Source activity" : "Live stream"}
+                      </span>
+                    </div>
+                    {children.length === 0 ? (
+                      <div className="rounded-md bg-white px-2.5 py-2 text-xs text-gray-500 dark:bg-gray-950/60 dark:text-gray-400">
+                        Waiting for tool activity…
+                      </div>
+                    ) : (
+                    <div className="space-y-0.5">
+                      {children.map((child) => {
+                        const childData = child.data as Record<string, unknown> | undefined;
+                        const childPreview =
+                          child.event_type === "step_started"
+                            ? childData?.text_preview
+                              ? String(childData.text_preview)
+                              : null
+                            : childData?.output_preview
+                              ? String(childData.output_preview)
+                              : null;
+                        const childError =
+                          (child.event_type === "step_failed" || child.event_type === "failed") &&
+                          childData?.error
+                            ? String(childData.error)
+                            : null;
+                        const summary = summarizeToolActivity(child.step_name, childPreview, childError);
+                        const showDetails = !!childError || (!!childPreview && !isLowSignalJsonFragment(childPreview));
+
+                        return (
+                          <div key={`${step.step_name}:${child.step_name}`} className="rounded-md bg-white px-2 py-1.5 dark:bg-gray-950/60">
+                            <div className="flex items-start gap-2">
+                              <StatusIcon status={child.event_type} />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">
+                                    {friendlyToolName(child.step_name)}
+                                  </span>
+                                </div>
+                                <p className={cn("mt-0 text-[11px] leading-5", childError ? "text-red-600 dark:text-red-400" : "text-gray-500 dark:text-gray-400")}>
+                                  {summary}
+                                </p>
+                              </div>
+                            </div>
+                            {showDetails && childPreview && (
+                              <div className="mt-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+                                <MarkdownPreview content={childPreview} />
+                              </div>
+                            )}
+                            {childError && showDetails && (
+                              <div className="mt-1 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-400 whitespace-pre-wrap break-words">
+                                {childError}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -447,28 +685,47 @@ export function ExecutionPanel({
     activeExecution?.id,
   );
 
-  // Listen for routine events on the main WebSocket connection
-  const { subscribe, status: wsStatus } = useWebSocketContext();
   useEffect(() => {
-    if (!activeExecution) return;
-    const runId = activeExecution.id;
-    return subscribe((data: unknown) => {
-      const msg = data as Record<string, unknown>;
-      // Check if this is a routine event for our execution
-      const payload = (msg.payload ?? msg) as Record<string, unknown>;
-      const msgType = (payload.type ?? payload.event_type ?? "") as string;
-      const eventRunId = (payload.execution_run_id ?? "") as string;
-      if (
-        eventRunId === runId &&
-        (msgType === "task.step_event" ||
-          msgType === "task.completed" ||
-          msgType === "execution.completed")
-      ) {
+    const controller = new AbortController();
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleRefresh = (includeTasks: boolean) => {
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
         onRefresh();
-        mutateTasks();
+        if (includeTasks) {
+          void mutateTasks();
+        }
+      }, 350);
+    };
+
+    void subscribeExecutionRealtime(
+      (event) => {
+        const type = typeof event.data.type === "string" ? event.data.type : "";
+        if (
+          type === "task.step_event" ||
+          type === "task.completed" ||
+          type === "execution.started" ||
+          type === "execution.completed"
+        ) {
+          scheduleRefresh(true);
+        }
+      },
+      controller.signal,
+    ).catch((error) => {
+      if (!controller.signal.aborted) {
+        console.error("Execution realtime stream failed:", error);
       }
     });
-  }, [activeExecution, subscribe, onRefresh, mutateTasks]);
+
+    return () => {
+      controller.abort();
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+    };
+  }, [onRefresh, mutateTasks]);
 
   const handleCreate = useCallback(async () => {
     setError(null);
@@ -557,13 +814,13 @@ export function ExecutionPanel({
               <span
                 className={cn(
                   "h-2 w-2 rounded-full",
-                  wsStatus === "connected"
-                    ? "bg-emerald-500"
-                    : wsStatus === "connecting"
-                      ? "bg-yellow-500 animate-pulse"
+                  activeExecution.status === "running" || activeExecution.status === "pending"
+                    ? "bg-emerald-500 animate-pulse"
+                    : activeExecution.status === "paused"
+                      ? "bg-yellow-500"
                       : "bg-gray-300",
                 )}
-                title={`WebSocket: ${wsStatus}`}
+                title="Realtime execution state"
               />
             </div>
             <div className="flex items-center gap-2">

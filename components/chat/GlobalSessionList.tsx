@@ -194,10 +194,11 @@ export default function GlobalSessionList({
               <div
                 key={session.id}
                 className={cn(
-                  "group relative min-w-0 cursor-pointer overflow-hidden transition-colors",
+                  "group relative min-w-0 cursor-pointer overflow-visible transition-colors",
                   mobile
                     ? "mx-0 rounded-2xl px-3.5 py-3.5 active:scale-[0.995]"
                     : "mx-1.5 rounded-xl px-3 py-3 md:rounded-md md:py-2",
+                  menuOpen === session.id && "z-20",
                   session.id === activeSessionId
                     ? "bg-deep-space-blue-500 text-white"
                     : "hover:bg-gray-50 dark:hover:bg-gray-800",
@@ -271,7 +272,7 @@ export default function GlobalSessionList({
                   <div
                     ref={menuOpen === session.id ? menuRef : undefined}
                     className={cn(
-                      "absolute right-2 top-2 transition-opacity",
+                      "absolute right-2 top-2 z-30 transition-opacity",
                       mobile ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                     )}
                   >

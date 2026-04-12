@@ -36,6 +36,11 @@ import type {
   ChatSessionExtended,
   PushConfigResponse,
   PushSubscriptionRecord,
+  ChatCancelRequest,
+  ChatDomainEnterRequest,
+  ChatDomainExitRequest,
+  ChatSessionDeleteRequest,
+  ChatStreamRequest,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -46,10 +51,6 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const API_V1 = `${API_BASE}/api/v1`;
 const FETCH_TIMEOUT_MS = 15000;
-
-export const WS_BASE =
-  (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-    .replace(/^http/, "ws");
 
 // ---------------------------------------------------------------------------
 // Generic fetcher (used by SWR and direct calls)
@@ -134,6 +135,12 @@ async function authHeaders(
   }
 
   return headers;
+}
+
+export async function authRequestHeaders(
+  extra?: Record<string, string>,
+): Promise<Record<string, string>> {
+  return authHeaders(extra);
 }
 
 /**
@@ -702,29 +709,6 @@ export async function pingWorker(): Promise<{ worker_connected: boolean }> {
 }
 
 // ---------------------------------------------------------------------------
-// WebSocket
-// ---------------------------------------------------------------------------
-
-export function wsUrl(): string {
-  return `${WS_BASE}/ws`;
-}
-
-/**
- * Retrieve the current Clerk JWT token (if set via `setAuthTokenGetter`).
- * Used by the chat WebSocket hook for the handshake.
- */
-export async function getAuthToken(): Promise<string | null> {
-  if (!_getToken) {
-    await Promise.race([
-      tokenGetterReadyPromise(),
-      new Promise<void>((resolve) => setTimeout(resolve, 1500)),
-    ]);
-  }
-  if (!_getToken) return null;
-  return _getToken();
-}
-
-// ---------------------------------------------------------------------------
 // Routines (user-scoped, like councils)
 // ---------------------------------------------------------------------------
 
@@ -1274,6 +1258,74 @@ export async function createChatSession(body: {
     body: JSON.stringify(body),
   });
   return res.json() as Promise<ChatSession>;
+}
+
+export async function createChatStream(
+  body: ChatStreamRequest,
+  signal?: AbortSignal,
+): Promise<Response> {
+  const headers = await authHeaders({
+    Accept: "text/event-stream",
+  });
+  const res = await fetch(`${API_V1}/chat-streams`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "Unknown error");
+    throw new ApiError(text, res.status);
+  }
+  return res;
+}
+
+export async function createExecutionEventStream(
+  signal?: AbortSignal,
+): Promise<Response> {
+  const headers = await authHeaders({
+    Accept: "text/event-stream",
+  });
+  const res = await fetch(`${API_V1}/execution-streams`, {
+    method: "GET",
+    headers,
+    signal,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "Unknown error");
+    throw new ApiError(text, res.status);
+  }
+  return res;
+}
+
+export async function cancelChat(body: ChatCancelRequest): Promise<void> {
+  await authFetch(`${API_V1}/chat-commands/cancel`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function enterChatDomain(body: ChatDomainEnterRequest): Promise<void> {
+  await authFetch(`${API_V1}/chat-commands/domain-enter`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function exitChatDomain(body: ChatDomainExitRequest): Promise<void> {
+  await authFetch(`${API_V1}/chat-commands/domain-exit`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function notifyChatSessionDelete(
+  body: ChatSessionDeleteRequest,
+): Promise<void> {
+  await authFetch(`${API_V1}/chat-commands/session-delete`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export async function updateChatSession(

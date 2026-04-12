@@ -3,7 +3,7 @@
 import Link from "next/link";
 import useSWR from "swr";
 import { useAuth } from "@clerk/nextjs";
-import { Bell, BellOff, Download, Menu, WifiOff } from "lucide-react";
+import { Bell, BellOff, BookOpenText, Download, Github, Menu, WifiOff } from "lucide-react";
 import { WorkerStatusIndicator } from "./WorkerStatusIndicator";
 import { useMobileMenu } from "@/lib/MobileMenuContext";
 import { usePwa } from "@/components/pwa/PwaProvider";
@@ -74,6 +74,26 @@ export function TopBar({ title, children }: TopBarProps) {
           <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{title}</h1>
         </div>
         <div className="flex items-center gap-3">
+          <div className="hidden items-center gap-1 md:flex">
+            <Link
+              href="/docs"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              title="Developer Docs"
+            >
+              <BookOpenText className="h-4 w-4" />
+              Docs
+            </Link>
+            <Link
+              href="https://github.com/nenjo-ai/nenjo"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              title="GitHub"
+            >
+              <Github className="h-4 w-4" />
+              GitHub
+            </Link>
+          </div>
           {!isOnline && (
             <span className="hidden items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 md:inline-flex dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
               <WifiOff className="h-3.5 w-3.5" />

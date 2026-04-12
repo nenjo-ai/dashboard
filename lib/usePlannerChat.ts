@@ -1,31 +1,42 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import {
   fetchChatMessages,
   deleteChatMessage,
-
+  createChatStream,
+  cancelChat,
   createDomainSession,
   completeDomainSession,
   cancelDomainSession,
-  fetchDomainSession,
+  enterChatDomain,
+  exitChatDomain,
   fetchActiveDomainSession,
   fetchChatSessions,
   createChatSession,
   updateChatSession,
   archiveChatSession,
   deleteChatSession,
+  notifyChatSessionDelete,
 } from "./api";
-import { useWebSocketContext } from "./WebSocketContext";
+import { consumeSseStream } from "./chatStream";
+import {
+  clearChatStreamSnapshot,
+  loadChatStreamSnapshot,
+  notifyChatStreamSnapshot,
+  persistChatStreamSnapshot,
+} from "./chatStreamDurability";
 import type {
   ChatMessage,
-  ChatCancelOutbound,
-  ChatMessageOutbound,
-  ChatDomainEnterOutbound,
-  ChatDomainExitOutbound,
   ChatSession,
   DomainSession,
 } from "./types";
+
+type NormalizedStreamEvent = {
+  event_type: string;
+  data: Record<string, unknown>;
+};
 
 function isAbilityTool(name: string): boolean {
   return name.startsWith("ability/");
@@ -40,6 +51,9 @@ function appendPreview(existing?: string, incoming?: string): string | undefined
 
 const MAX_VISIBLE_TOOL_CALLS = 3;
 const LOCAL_CHAT_SEED_KEY = "nenjo:local_chat_seed";
+const PENDING_AGENT_KEY = "nenjo:pendingAgentId";
+const TOOLS_KEY = "nenjo:activeTools";
+const LIVE_PREVIEW_KEY = "nenjo:livePreview";
 
 function limitRecentTools<T>(tools: T[]): T[] {
   return tools.slice(-MAX_VISIBLE_TOOL_CALLS);
@@ -47,6 +61,105 @@ function limitRecentTools<T>(tools: T[]): T[] {
 
 function generateId(): string {
   return Math.random().toString(36).substring(2, 15);
+}
+
+function readPendingAgentId(): string | null {
+  try {
+    return sessionStorage.getItem(PENDING_AGENT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writePendingAgentId(agentId: string | null): void {
+  try {
+    if (agentId) {
+      sessionStorage.setItem(PENDING_AGENT_KEY, agentId);
+    } else {
+      sessionStorage.removeItem(PENDING_AGENT_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function readPersistedTools() {
+  try {
+    const raw = sessionStorage.getItem(TOOLS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePersistedTools(tools: unknown[]): void {
+  try {
+    if (tools.length > 0) {
+      sessionStorage.setItem(TOOLS_KEY, JSON.stringify(tools));
+    } else {
+      sessionStorage.removeItem(TOOLS_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function readPersistedLivePreview(): string | undefined {
+  try {
+    return sessionStorage.getItem(LIVE_PREVIEW_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writePersistedLivePreview(preview?: string): void {
+  try {
+    const next = preview?.trim();
+    if (next) {
+      sessionStorage.setItem(LIVE_PREVIEW_KEY, next);
+    } else {
+      sessionStorage.removeItem(LIVE_PREVIEW_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function normalizeSseAgentEvent(event: { event: string; data: unknown }): NormalizedStreamEvent | null {
+  if (typeof event.data === "object" && event.data !== null) {
+    const maybeWrapped = event.data as { event_type?: unknown; data?: unknown };
+    if (typeof maybeWrapped.event_type === "string") {
+      return {
+        event_type: maybeWrapped.event_type,
+        data: (maybeWrapped.data as Record<string, unknown> | undefined) ?? {},
+      };
+    }
+  }
+
+  const eventTypeMap: Record<string, string> = {
+    token: "Token",
+    tool_calls: "ToolCalls",
+    tool_completed: "ToolCompleted",
+    ability_activated: "AbilityActivated",
+    ability_completed: "AbilityCompleted",
+    done: "Done",
+    error: "Error",
+    domain_entered: "DomainEntered",
+    domain_exited: "DomainExited",
+    message_compacted: "MessageCompacted",
+    paused: "Paused",
+    resumed: "Resumed",
+  };
+
+  const event_type = eventTypeMap[event.event];
+  if (!event_type || typeof event.data !== "object" || event.data === null) {
+    return null;
+  }
+
+  return {
+    event_type,
+    data: event.data as Record<string, unknown>,
+  };
 }
 
 interface AgentCache {
@@ -57,21 +170,21 @@ interface AgentCache {
 export function usePlannerChat(projectId: string, agentId?: string, initialSessionId?: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [livePreview, setLivePreview] = useState<string | undefined>(undefined);
-
-  // Read context BEFORE isTyping so we can seed the initial value.
-  const { status, send, userId, subscribe, pendingAgentId, persistedActiveTools, persistedLivePreview } = useWebSocketContext();
+  const status = "connected";
 
   // Initialize from pendingAgentId so the typing indicator is correct on the
   // very first render after remount — no useEffect delay.
   // Only show typing if THIS role is the one with a pending response.
   const [isTyping, setIsTyping] = useState(
-    () => !!agentId && pendingAgentId === agentId,
+    () => !!agentId && readPendingAgentId() === agentId,
   );
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [activeTools, setActiveTools] = useState<{ name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string; children?: { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string }[] }[]>(
-    () => (!!agentId && pendingAgentId === agentId) ? persistedActiveTools : [],
+    () => (!!agentId && readPendingAgentId() === agentId)
+      ? readPersistedTools() as { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string; children?: { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string }[] }[]
+      : [],
   );
   const [activeDomainSession, setActiveDomainSession] = useState<DomainSession | null>(null);
   const activeDomainSessionRef = useRef<DomainSession | null>(null);
@@ -85,6 +198,14 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   useEffect(() => {
     activeDomainSessionRef.current = activeDomainSession;
   }, [activeDomainSession]);
+
+  useEffect(() => {
+    return () => {
+      if (clearTypingUiTimeoutRef.current) {
+        clearTimeout(clearTypingUiTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // ── Session state ────────────────────────────────────────────────────────
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -101,6 +222,8 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   // duplication regardless of event ordering or React batching.
   const responseIdRef = useRef<string | null>(null);
   const responsePersistedRef = useRef(false);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const clearTypingUiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Monotonic counter for history fetches — only the latest fetch can update state.
   // This handles React Strict Mode double-mount and rapid session switching.
@@ -115,20 +238,6 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
 
   // ── Stable subscriber via ref ──────────────────────────────────────────
   const handleIncomingRef = useRef<(raw: unknown) => void>(() => {});
-
-  // Gate: don't process WS messages until history is loaded for the current
-  // role, otherwise the async history fetch overwrites buffer-replayed msgs.
-  const historyReadyRef = useRef(false);
-  const localBufferRef = useRef<unknown[]>([]);
-
-  const drainLocalBuffer = useCallback(() => {
-    const buf = localBufferRef.current;
-    if (buf.length === 0) return;
-    localBufferRef.current = [];
-    for (const msg of buf) {
-      handleIncomingRef.current(msg);
-    }
-  }, []);
 
   // Cache key includes session ID
   const cacheKey = useCallback(
@@ -189,6 +298,9 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   useEffect(() => {
     const previousAgentId = prevAgentIdRef.current;
     const previousSessionId = prevSessionIdRef.current;
+    const pendingAgentId = readPendingAgentId();
+    const persistedActiveTools = readPersistedTools() as { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string; children?: { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string }[] }[];
+    const persistedLivePreview = readPersistedLivePreview();
 
     // Save current messages to cache for the previous role+session
     if (previousAgentId) {
@@ -199,10 +311,6 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     }
     prevAgentIdRef.current = agentId;
     prevSessionIdRef.current = activeSessionId;
-
-    // Pause message processing until new history is loaded
-    historyReadyRef.current = false;
-    localBufferRef.current = [];
 
     // Reset typing state: only show if the NEW role has a pending response
     const isPending = !!agentId && pendingAgentId === agentId;
@@ -221,8 +329,6 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     if (!projectId || !agentId) {
       setMessages([]);
       setHasMore(false);
-      historyReadyRef.current = true;
-      drainLocalBuffer();
       return;
     }
 
@@ -231,8 +337,6 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     if (cached) {
       setMessages(cached.messages);
       setHasMore(cached.hasMore);
-      historyReadyRef.current = true;
-      drainLocalBuffer();
       return;
     }
 
@@ -242,8 +346,6 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       setMessages([]);
       setHasMore(false);
       setIsLoadingHistory(false);
-      historyReadyRef.current = true;
-      drainLocalBuffer();
       return;
     }
 
@@ -280,11 +382,8 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       .finally(() => {
         if (fetchId !== historyFetchIdRef.current) return;
         setIsLoadingHistory(false);
-        historyReadyRef.current = true;
-        drainLocalBuffer();
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, agentId, activeSessionId, pendingAgentId, persistedActiveTools, persistedLivePreview]);
+  }, [projectId, agentId, activeSessionId]);
 
   useEffect(() => {
     if (!activeSessionId || isLoadingHistory) return;
@@ -318,7 +417,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
 
   // Restore active domain session from backend on mount/role switch
   useEffect(() => {
-    if (!agentId || !userId) return;
+    if (!agentId) return;
     const restoreKey = domainRestoreKey(projectId, agentId);
 
     if (suppressedDomainRestoreRef.current.has(restoreKey)) {
@@ -346,7 +445,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId, userId, domainRestoreKey]);
+  }, [projectId, agentId, domainRestoreKey]);
 
   // Load older messages (scroll-up pagination)
   const loadMore = useCallback(async () => {
@@ -384,14 +483,15 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   const handleIncoming = useCallback((raw: unknown) => {
     // The backend wraps worker responses in an AgentEvent envelope:
     // { user_id, payload } where payload is the worker's AgentResponse.
-    const envelope = raw as { user_id?: string; payload?: unknown };
-    const inner = (envelope.payload ?? raw) as Record<string, unknown>;
+    const outer = raw as { type?: string; user_id?: string; payload?: unknown };
+    const inner = outer.type === "agent_response"
+      ? outer as Record<string, unknown>
+      : ((outer.payload ?? raw) as Record<string, unknown>);
 
     // ── Handle persisted message from backend ────────────────────────────
     // The backend persists chat messages (user + assistant) and pushes the
     // DB row back. We store the server UUID as `persistedId` rather than
-    // replacing `id`, because delivery status events (message_status,
-    // delivery_receipt) still reference the original client-generated ID.
+    // replacing the client-generated ID for optimistic user messages.
     if (inner.type === "chat.message_persisted") {
       const msg = inner.message as {
         id: string;
@@ -431,6 +531,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
               persistedId: msg.id,
               content: msg.content,
               timestamp: msg.created_at,
+              status: role === "user" ? "delivered" : m.status,
             } : m,
           );
         }
@@ -474,7 +575,6 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
           m.id === message_id ? { ...m, status: "delivered" } : m,
         ),
       );
-      setIsTyping(true);
       return;
     }
 
@@ -488,16 +588,12 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
           if (responsePersistedRef.current) {
             break;
           }
-          setActiveTools([]);
-          setLivePreview(undefined);
           let id = responseIdRef.current;
           if (!id) {
             // Orphan token from buffer replay — create a new slot
             id = generateId();
             responseIdRef.current = id;
           }
-          // Response text is now visible — dismiss typing indicator
-          setIsTyping(false);
           const text = (streamEvent.data as { text: string }).text;
           setMessages((prev) => {
             const existing = prev.find((m) => m.id === id);
@@ -516,6 +612,24 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
               },
             ];
           });
+          if (activeSessionId) {
+            void persistChatStreamSnapshot({
+              sessionId: activeSessionId,
+              requestId: responseIdRef.current ?? id,
+              responseId: id,
+              content: text,
+              status: "streaming",
+              updatedAt: Date.now(),
+            });
+            notifyChatStreamSnapshot({
+              sessionId: activeSessionId,
+              requestId: responseIdRef.current ?? id,
+              responseId: id,
+              content: text,
+              status: "streaming",
+              updatedAt: Date.now(),
+            });
+          }
           break;
         }
 
@@ -523,18 +637,22 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
           if (responsePersistedRef.current) {
             responseIdRef.current = null;
             responsePersistedRef.current = false;
-            setActiveTools([]);
-            setLivePreview(undefined);
-            setIsTyping(false);
+            if (clearTypingUiTimeoutRef.current) {
+              clearTimeout(clearTypingUiTimeoutRef.current);
+            }
+            clearTypingUiTimeoutRef.current = setTimeout(() => {
+              setActiveTools([]);
+              setLivePreview(undefined);
+              setIsTyping(false);
+              clearTypingUiTimeoutRef.current = null;
+            }, 600);
             break;
           }
-          setActiveTools([]);
-          setLivePreview(undefined);
           const { final_output, session_id } = streamEvent.data as {
             final_output: string;
             session_id?: string;
           };
-          if (!session_id || session_id !== activeSessionId) {
+          if (session_id && activeSessionId && session_id !== activeSessionId) {
             break;
           }
           let id = responseIdRef.current;
@@ -565,14 +683,25 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
               },
             ];
           });
-          setIsTyping(false);
+          if (clearTypingUiTimeoutRef.current) {
+            clearTimeout(clearTypingUiTimeoutRef.current);
+          }
+          clearTypingUiTimeoutRef.current = setTimeout(() => {
+            setActiveTools([]);
+            setLivePreview(undefined);
+            setIsTyping(false);
+            clearTypingUiTimeoutRef.current = null;
+          }, 600);
+          if (activeSessionId) {
+            void clearChatStreamSnapshot(activeSessionId);
+            notifyChatStreamSnapshot({ sessionId: activeSessionId, clear: true });
+          }
           break;
         }
 
         case "Error": {
           responsePersistedRef.current = false;
           responseIdRef.current = null;
-          setLivePreview(undefined);
           const errorMessage = (streamEvent.data as { message: string }).message;
           setMessages((prev) => [
             ...prev,
@@ -583,7 +712,19 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
               timestamp: new Date().toISOString(),
             },
           ]);
-          setIsTyping(false);
+          if (clearTypingUiTimeoutRef.current) {
+            clearTimeout(clearTypingUiTimeoutRef.current);
+          }
+          clearTypingUiTimeoutRef.current = setTimeout(() => {
+            setActiveTools([]);
+            setLivePreview(undefined);
+            setIsTyping(false);
+            clearTypingUiTimeoutRef.current = null;
+          }, 0);
+          if (activeSessionId) {
+            void clearChatStreamSnapshot(activeSessionId);
+            notifyChatStreamSnapshot({ sessionId: activeSessionId, clear: true });
+          }
           break;
         }
 
@@ -615,203 +756,184 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         }
 
         case "AbilityActivated": {
-          setIsTyping(true);
           const { ability_tool_name, task_preview } = streamEvent.data as {
             ability_tool_name: string;
             task_preview?: string;
           };
-          setLivePreview((prev) => appendPreview(prev, task_preview));
-          setActiveTools((prev) => {
-            const existing = prev.find((tool) => tool.name === ability_tool_name);
-            if (existing) {
+          flushSync(() => {
+            setIsTyping(true);
+            setLivePreview((prev) => appendPreview(prev, task_preview));
+            setActiveTools((prev) => {
+              const existing = prev.find((tool) => tool.name === ability_tool_name);
+              if (existing) {
+                return [{
+                  ...existing,
+                  args: "",
+                  status: "running",
+                  textPreview: appendPreview(existing.textPreview, task_preview),
+                  outputPreview: undefined,
+                  errorPreview: undefined,
+                }];
+              }
               return [{
-                ...existing,
+                name: ability_tool_name,
                 args: "",
+                textPreview: task_preview?.trim() || undefined,
                 status: "running",
-                textPreview: appendPreview(existing.textPreview, task_preview),
-                outputPreview: undefined,
-                errorPreview: undefined,
+                children: [],
               }];
-            }
-            return [{
-              name: ability_tool_name,
-              args: "",
-              textPreview: task_preview?.trim() || undefined,
-              status: "running",
-              children: [],
-            }];
+            });
           });
           break;
         }
 
         case "AbilityCompleted": {
-          setIsTyping(true);
           const { ability_tool_name, success, result_preview } = streamEvent.data as {
             ability_tool_name: string;
             success: boolean;
             result_preview: string;
           };
-          setLivePreview((prev) => appendPreview(prev, result_preview));
-          setActiveTools((prev) => prev.map((tool) => tool.name === ability_tool_name ? {
-            ...tool,
-            status: success ? "completed" : "failed",
-            textPreview: appendPreview(tool.textPreview, result_preview),
-            outputPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? result_preview : tool.outputPreview),
-            errorPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? tool.errorPreview : result_preview),
-          } : tool));
-          break;
-        }
-
-        case "ToolInvoked": {
-          setIsTyping(true);
-          const { tool_name, tool_args, text_preview, parent_tool_name } = streamEvent.data as { tool_name: string; tool_args: string; text_preview?: string; parent_tool_name?: string };
-          setLivePreview((prev) => appendPreview(prev, text_preview));
-          if (parent_tool_name) {
-            if (tool_name === parent_tool_name) {
-              break;
-            }
-            setActiveTools((prev) => {
-              const existing = prev.find((tool) => tool.name === parent_tool_name);
-              if (!existing) {
-                return [
-                  ...limitRecentTools(prev),
-                  {
-                    name: parent_tool_name,
-                    args: "",
-                    textPreview: text_preview?.trim() || undefined,
-                    status: "running",
-                    children: [
-                      { name: tool_name, args: tool_args || "", textPreview: undefined, status: "running" },
-                    ],
-                  },
-                ];
-              }
-              return prev.map((tool) => {
-                if (tool.name !== parent_tool_name) return tool;
-                return {
-                  ...tool,
-                  textPreview: appendPreview(tool.textPreview, text_preview),
-                  children: limitRecentTools([
-                    ...(tool.children ?? []),
-                    { name: tool_name, args: tool_args || "", textPreview: undefined, status: "running" },
-                  ]),
-                };
-              });
-            });
-            break;
-          }
-          setActiveTools((prev) => {
-            if (isAbilityTool(tool_name)) {
-              return limitRecentTools([{
-                name: tool_name,
-                args: "",
-                textPreview: text_preview?.trim() || undefined,
-                status: "running",
-                children: [],
-              }]);
-            }
-            const previousPreview = prev[0]?.textPreview?.trim() ?? "";
-            const nextPreview = text_preview?.trim()
-              ? previousPreview
-                ? `${previousPreview}\n\n${text_preview.trim()}`
-                : text_preview.trim()
-              : previousPreview;
-            return limitRecentTools([{ name: tool_name, args: tool_args || "", textPreview: nextPreview || undefined, status: "running", children: [] }]);
+          flushSync(() => {
+            setIsTyping(true);
+            setLivePreview((prev) => appendPreview(prev, result_preview));
+            setActiveTools((prev) => prev.map((tool) => tool.name === ability_tool_name ? {
+              ...tool,
+              status: success ? "completed" : "failed",
+              textPreview: appendPreview(tool.textPreview, result_preview),
+              outputPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? result_preview : tool.outputPreview),
+              errorPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? tool.errorPreview : result_preview),
+            } : tool));
           });
           break;
         }
 
-        case "ToolsInvoked": {
-          setIsTyping(true);
-          const { tool_names, tool_args, text_preview, parent_tool_name } = streamEvent.data as { tool_names: string[]; tool_args: string[]; text_preview?: string; parent_tool_name?: string };
-          setLivePreview((prev) => appendPreview(prev, text_preview));
+        case "ToolCalls": {
+          const { tool_calls, text_preview, parent_tool_name } = streamEvent.data as {
+            tool_calls: { tool_name: string; tool_args: string }[];
+            text_preview?: string;
+            parent_tool_name?: string;
+          };
+          const toolNames = tool_calls.map((call) => call.tool_name);
           if (parent_tool_name) {
-            setActiveTools((prev) => {
-              const newChildren = tool_names.map((name, i) => ({
-                name,
-                args: tool_args?.[i] || "",
+            const newChildren = tool_calls
+              .filter((call) => call.tool_name !== parent_tool_name)
+              .map((call) => ({
+                name: call.tool_name,
+                args: call.tool_args || "",
                 textPreview: undefined,
                 status: "running" as const,
-              })).filter((child) => child.name !== parent_tool_name);
-              if (newChildren.length === 0) {
-                return prev;
-              }
-              const existing = prev.find((tool) => tool.name === parent_tool_name);
-              if (!existing) {
-                return [
+              }));
+            if (newChildren.length === 0) {
+              break;
+            }
+            flushSync(() => {
+              setIsTyping(true);
+              setLivePreview((prev) => appendPreview(prev, text_preview));
+              setActiveTools((prev) => {
+                const existing = prev.find((tool) => tool.name === parent_tool_name);
+                const nextTools = !existing ? [
                   ...limitRecentTools(prev),
                   {
                     name: parent_tool_name,
                     args: "",
                     textPreview: text_preview?.trim() || undefined,
-                    status: "running",
+                    status: "running" as const,
                     children: limitRecentTools(newChildren),
                   },
-                ];
-              }
-              return prev.map((tool) => {
-                if (tool.name !== parent_tool_name) return tool;
-                return {
-                  ...tool,
-                  textPreview: appendPreview(tool.textPreview, text_preview),
-                  children: limitRecentTools([
-                    ...(tool.children ?? []),
-                    ...newChildren,
-                  ]),
-                };
+                ] : prev.map((tool) => {
+                  if (tool.name !== parent_tool_name) return tool;
+                  return {
+                    ...tool,
+                    textPreview: appendPreview(tool.textPreview, text_preview),
+                    children: limitRecentTools([
+                      ...(tool.children ?? []),
+                      ...newChildren,
+                    ]),
+                  };
+                });
+                return nextTools;
               });
             });
             break;
           }
-          setActiveTools((prev) => {
-            const previousPreview = prev[0]?.textPreview?.trim() ?? "";
-            const nextPreview = text_preview?.trim()
-              ? previousPreview
-                ? `${previousPreview}\n\n${text_preview.trim()}`
-                : text_preview.trim()
-              : previousPreview;
-            return limitRecentTools(tool_names.map((name, i) => ({ name, args: tool_args?.[i] || "", textPreview: nextPreview || undefined, status: "running", children: [] })));
+          flushSync(() => {
+            setIsTyping(true);
+            setLivePreview((prev) => appendPreview(prev, text_preview));
+            setActiveTools((prev) => {
+              const nextTools = toolNames.length === 1 && isAbilityTool(toolNames[0])
+                ? limitRecentTools([{
+                  name: toolNames[0],
+                  args: "",
+                  textPreview: text_preview?.trim() || undefined,
+                  status: "running" as const,
+                  children: [],
+                }])
+                : (() => {
+                    const previousPreview = prev[0]?.textPreview?.trim() ?? "";
+                    const nextPreview = text_preview?.trim()
+                      ? previousPreview
+                        ? `${previousPreview}\n\n${text_preview.trim()}`
+                        : text_preview.trim()
+                      : previousPreview;
+                    return limitRecentTools(tool_calls.map((call) => ({
+                      name: call.tool_name,
+                      args: call.tool_args || "",
+                      textPreview: nextPreview || undefined,
+                      status: "running" as const,
+                      children: [],
+                    })));
+                  })();
+              return nextTools;
+            });
           });
           break;
         }
 
         case "ToolCompleted": {
-          setIsTyping(true);
           const { tool_name, success, output_preview, error_preview, parent_tool_name } = streamEvent.data as { tool_name: string; success: boolean; output_preview?: string; error_preview?: string; parent_tool_name?: string };
           if (parent_tool_name) {
             if (tool_name === parent_tool_name) {
               break;
             }
-            setActiveTools((prev) => prev.map((tool) => {
-              if (tool.name !== parent_tool_name) return tool;
-              const children = [...(tool.children ?? [])];
-              const idx = [...children].reverse().findIndex((child) => child.name === tool_name && (!child.status || child.status === "running"));
-              if (idx !== -1) {
-                const realIdx = children.length - 1 - idx;
-                children[realIdx] = {
-                  ...children[realIdx],
-                  status: success ? "completed" : "failed",
-                  outputPreview: output_preview,
-                  errorPreview: error_preview,
-                };
-              }
-              return { ...tool, children };
-            }));
+            flushSync(() => {
+              setIsTyping(true);
+              setActiveTools((prev) => prev.map((tool) => {
+                if (tool.name !== parent_tool_name) return tool;
+                const children = [...(tool.children ?? [])];
+                const idx = [...children].reverse().findIndex((child) => child.name === tool_name && (!child.status || child.status === "running"));
+                if (idx !== -1) {
+                  const realIdx = children.length - 1 - idx;
+                  children[realIdx] = {
+                    ...children[realIdx],
+                    status: success ? "completed" : "failed",
+                    outputPreview: output_preview,
+                    errorPreview: error_preview,
+                  };
+                }
+                return { ...tool, children };
+              }));
+            });
             break;
           }
           if (isAbilityTool(tool_name)) {
+            flushSync(() => {
+              setIsTyping(true);
+              setActiveTools((prev) => prev.map((tool) => tool.name === tool_name ? {
+                ...tool,
+                status: success ? "completed" : "failed",
+              } : tool));
+            });
+            break;
+          }
+          flushSync(() => {
+            setIsTyping(true);
             setActiveTools((prev) => prev.map((tool) => tool.name === tool_name ? {
               ...tool,
               status: success ? "completed" : "failed",
+              outputPreview: output_preview,
+              errorPreview: error_preview,
             } : tool));
-            break;
-          }
-          setActiveTools((prev) => prev.map((tool) => tool.name === tool_name ? {
-            ...tool,
-            status: success ? "completed" : "failed",
-            outputPreview: output_preview,
-            errorPreview: error_preview,
-          } : tool));
+          });
           break;
         }
 
@@ -824,24 +946,47 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     // Legacy chat.response / chat.response.chunk / chat.error formats
     // are no longer sent by the worker. All responses use the
     // agent_response envelope handled above.
-  }, []);
+  }, [activeSessionId]);
 
   // Keep the ref in sync with the latest handleIncoming
   useEffect(() => {
     handleIncomingRef.current = handleIncoming;
   }, [handleIncoming]);
 
-  // Subscribe once — the stable wrapper routes through the ref and gates on
-  // history readiness so the async history fetch can't overwrite replayed msgs.
   useEffect(() => {
-    return subscribe((data: unknown) => {
-      if (!historyReadyRef.current) {
-        localBufferRef.current.push(data);
+    if (!activeSessionId) return;
+    void loadChatStreamSnapshot(activeSessionId).then((snapshot) => {
+      if (!snapshot || snapshot.status !== "streaming" || !snapshot.content.trim()) {
         return;
       }
-      handleIncomingRef.current(data);
+      setMessages((prev) => {
+        if (prev.some((msg) => msg.id === (snapshot.responseId ?? snapshot.requestId))) {
+          return prev;
+        }
+        return [
+          ...prev,
+          {
+            id: snapshot.responseId ?? snapshot.requestId,
+            role: "assistant",
+            content: snapshot.content,
+            timestamp: new Date(snapshot.updatedAt).toISOString(),
+          },
+        ];
+      });
     });
-  }, [subscribe]);
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    writePendingAgentId(isTyping && agentId ? agentId : null);
+  }, [agentId, isTyping]);
+
+  useEffect(() => {
+    writePersistedTools(activeTools);
+  }, [activeTools]);
+
+  useEffect(() => {
+    writePersistedLivePreview(livePreview);
+  }, [livePreview]);
 
   const sendMessage = useCallback(
     (text: string) => {
@@ -854,50 +999,100 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         role: "user",
         content: trimmed,
         timestamp: new Date().toISOString(),
-        status: status === "connected" ? "sending" : "failed",
+        status: "sending",
       };
       setMessages((prev) => [...prev, userMsg]);
-
-      if (status !== "connected") {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: generateId(),
-            role: "assistant" as const,
-            content: "Cannot send message while the backend connection is offline.",
-            timestamp: new Date().toISOString(),
-          },
-        ]);
-        return;
-      }
 
       // Pre-allocate a response ID so Token/Done events target the same message
       responsePersistedRef.current = false;
       responseIdRef.current = generateId();
       setLivePreview(undefined);
+      setIsTyping(true);
 
-      // Send over WebSocket — the backend persists the message to the DB
-      // and pushes back a chat.message_persisted event with the server ID.
-      const outbound: ChatMessageOutbound = {
-        type: "chat.message",
-        id: msgId,
-        project_id: projectId,
-        content: trimmed,
-        timestamp: userMsg.timestamp,
-        ...(agentId ? { agent_id: agentId } : {}),
-        ...(activeDomainSession ? { domain_session_id: activeDomainSession.id } : {}),
-        session_id: activeSessionId,
-      };
-      if (!send(outbound)) {
-        responseIdRef.current = null;
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === msgId ? { ...m, status: "failed" } : m,
-          ),
-        );
+      if (activeSessionId) {
+        void persistChatStreamSnapshot({
+          sessionId: activeSessionId,
+          requestId: msgId,
+          responseId: responseIdRef.current ?? undefined,
+          content: "",
+          status: "streaming",
+          updatedAt: Date.now(),
+        });
+        notifyChatStreamSnapshot({
+          sessionId: activeSessionId,
+          requestId: msgId,
+          responseId: responseIdRef.current ?? undefined,
+          content: "",
+          status: "streaming",
+          updatedAt: Date.now(),
+        });
       }
+
+      const controller = new AbortController();
+      streamAbortRef.current = controller;
+
+      void createChatStream(
+        {
+          id: msgId,
+          message: trimmed,
+          session_id: activeSessionId,
+          ...(activeDomainSession ? { domain_session_id: activeDomainSession.id } : {}),
+          agent_id: agentId!,
+          ...(projectId ? { project_id: projectId } : {}),
+        },
+        controller.signal,
+      )
+        .then((response) =>
+          consumeSseStream(response, (event) => {
+            if (event.event === "message_persisted") {
+              handleIncomingRef.current(event.data);
+              return;
+            }
+            if (event.event === "delivery_receipt") {
+              handleIncomingRef.current(event.data);
+              return;
+            }
+            const normalized = normalizeSseAgentEvent(event);
+            if (!normalized) {
+              return;
+            }
+            handleIncomingRef.current({
+              type: "agent_response",
+              payload: normalized,
+            });
+          }),
+        )
+        .catch((err) => {
+          console.error("Failed to stream chat:", err);
+          responseIdRef.current = null;
+          setIsTyping(false);
+          if (activeSessionId) {
+            void clearChatStreamSnapshot(activeSessionId);
+            notifyChatStreamSnapshot({ sessionId: activeSessionId, clear: true });
+          }
+          const wasCancelled =
+            (err instanceof DOMException && err.name === "AbortError") ||
+            (err instanceof Error && err.name === "AbortError");
+          setMessages((prev) => prev.map((m) => (
+            m.id === msgId ? { ...m, status: wasCancelled ? "cancelled" : "failed" } : m
+          )));
+        })
+        .finally(() => {
+          if (streamAbortRef.current === controller) {
+            streamAbortRef.current = null;
+          }
+          if (clearTypingUiTimeoutRef.current) {
+            clearTimeout(clearTypingUiTimeoutRef.current);
+          }
+          clearTypingUiTimeoutRef.current = setTimeout(() => {
+            setActiveTools([]);
+            setLivePreview(undefined);
+            setIsTyping(false);
+            clearTypingUiTimeoutRef.current = null;
+          }, 0);
+        });
     },
-    [projectId, agentId, send, activeDomainSession, activeSessionId, status],
+    [projectId, agentId, activeDomainSession, activeSessionId],
   );
 
   // Enter a domain by command (e.g. "#creator")
@@ -915,15 +1110,12 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         setIsDomainPending(false);
         pendingDomainSessionRef.current = null;
 
-        // Inform the worker if connected so it can begin domain-specific handling.
-        const outbound: ChatDomainEnterOutbound = {
-          type: "chat.domain_enter",
+        await enterChatDomain({
           project_id: projectId,
           agent_id: effectiveRoleId,
           domain_command: domainCommand,
           session_id: session.id,
-        };
-        send(outbound);
+        });
       } catch (err) {
         pendingDomainSessionRef.current = null;
         setIsDomainPending(false);
@@ -939,7 +1131,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         ]);
       }
     },
-    [projectId, agentId, activeDomainSession, send, domainRestoreKey],
+    [projectId, agentId, activeDomainSession, domainRestoreKey],
   );
 
   // Exit the active domain
@@ -953,19 +1145,16 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       pendingDomainSessionRef.current = null;
       setActiveDomainSession(null);
 
-      // Inform the worker if connected so it can end domain-specific handling.
-      const outbound: ChatDomainExitOutbound = {
-        type: "chat.domain_exit",
+      await exitChatDomain({
         project_id: projectId,
         agent_id: agentId,
         domain_session_id: activeDomainSession.id,
-      };
-      send(outbound);
+      });
     } catch (err) {
       suppressedDomainRestoreRef.current.delete(domainRestoreKey(projectId, agentId));
       console.error("Failed to exit domain:", err);
     }
-  }, [projectId, agentId, activeDomainSession, send, domainRestoreKey]);
+  }, [projectId, agentId, activeDomainSession, domainRestoreKey]);
 
   // Cancel the active domain (discard artifact)
   const cancelDomain = useCallback(async () => {
@@ -978,18 +1167,16 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       pendingDomainSessionRef.current = null;
       setActiveDomainSession(null);
 
-      const outbound: ChatDomainExitOutbound = {
-        type: "chat.domain_exit",
+      await exitChatDomain({
         project_id: projectId,
         agent_id: agentId,
         domain_session_id: activeDomainSession.id,
-      };
-      send(outbound);
+      });
     } catch (err) {
       suppressedDomainRestoreRef.current.delete(domainRestoreKey(projectId, agentId));
       console.error("Failed to cancel domain:", err);
     }
-  }, [projectId, agentId, activeDomainSession, send, domainRestoreKey]);
+  }, [projectId, agentId, activeDomainSession, domainRestoreKey]);
 
   const deleteMessage = useCallback(
     (messageId: string) => {
@@ -1058,15 +1245,21 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     // Clear local typing state immediately
     responseIdRef.current = null;
     setIsTyping(false);
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    if (activeSessionId) {
+      void clearChatStreamSnapshot(activeSessionId);
+      notifyChatStreamSnapshot({ sessionId: activeSessionId, clear: true });
+    }
 
-    // Send cancel over WebSocket
-    const outbound: ChatCancelOutbound = {
-      type: "chat.cancel",
+    void cancelChat({
       project_id: projectId,
       ...(agentId ? { agent_id: agentId } : {}),
-    };
-    send(outbound);
-  }, [projectId, agentId, isTyping, send]);
+      ...(activeSessionId ? { session_id: activeSessionId } : {}),
+    }).catch((err) => {
+      console.error("Failed to cancel chat:", err);
+    });
+  }, [projectId, agentId, activeSessionId, isTyping]);
 
   // ── Session management callbacks ─────────────────────────────────────
   const switchSession = useCallback(
@@ -1116,14 +1309,15 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   const notifyWorkerSessionDelete = useCallback(
     (sessionId: string) => {
       if (!agentId) return;
-      send({
-        type: "chat.session_delete",
+      void notifyChatSessionDelete({
         project_id: projectId,
         agent_id: agentId,
         session_id: sessionId,
+      }).catch((err) => {
+        console.error("Failed to notify worker of session delete:", err);
       });
     },
-    [projectId, agentId, send],
+    [projectId, agentId],
   );
 
   const archiveSession = useCallback(

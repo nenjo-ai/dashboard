@@ -17,7 +17,6 @@ import {
   fetchCurrentUser,
 } from "@/lib/api";
 import { useWorkerStatus } from "@/lib/hooks";
-import { useWebSocketContext } from "@/lib/WebSocketContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -47,6 +46,8 @@ const NENJI_GREETING_DELAY_MS = 6000;
 const LOCAL_CHAT_SEED_KEY = "nenjo:local_chat_seed";
 const DEFAULT_SKIP_MESSAGE =
   "This is an automated message since the worker is not connected. Nenji will be able to help you once you connect the worker. Until then, feel free to browse around. Check out how Nenji is structured under Agents, or open the routine editor page.";
+const DEFAULT_CONNECTED_GREETING =
+  "Welcome to Nenjo. Nenji is online and ready to help you shape agents, routines, and context. What kind of workflow do you want to build first?";
 const DEFAULT_NENJI_IDENTITY = {
   roleId: "nenji",
   color: "#2563eb",
@@ -455,20 +456,12 @@ function StepConnect({
   const router = useRouter();
   const { user } = useUser();
   const { isConnected } = useWorkerStatus();
-  const { send: wsSend, status: wsStatus } = useWebSocketContext();
   const [copied, setCopied] = useState(false);
   const [sendGreeting, setSendGreeting] = useState(true);
   const [greeting, setGreeting] = useState<"idle" | "priming" | "thinking" | "done">("idle");
   const [nenjiIdentity, setNenjiIdentity] = useState(DEFAULT_NENJI_IDENTITY);
-  const [pendingGreeting, setPendingGreeting] = useState<{
-    session_id: string;
-    project_id: string;
-    agent_id: string;
-    message: string;
-  } | null>(null);
   const hasHandledConnection = useRef(false);
   const navigationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const greetingDispatchedRef = useRef(false);
 
   const envVar = PROVIDER_ENV_VARS[provider];
   const maskedKey = keyPrefix ? `${keyPrefix}${"*".repeat(12)}` : "nen_sk_***";
@@ -494,9 +487,6 @@ nenjo run`;
       return;
     }
 
-    // Create a session via REST, then navigate to chat with a greeting flag.
-    // The chat page is inside WebSocketProvider and will send the actual
-    // message to the worker over the websocket.
     (async () => {
       try {
         const systemProject = await fetchSystemProject();
@@ -522,12 +512,13 @@ nenjo run`;
         setGreeting("thinking");
 
         const displayName = user?.firstName ?? user?.username ?? "there";
-        setPendingGreeting({
-          session_id: session.id,
-          project_id: systemProject.id,
-          agent_id: systemAgent.id,
-          message: `You are Nenji, the AI assistant for the Nenjo agent platform. A new user named ${displayName} just finished setting up their first agent and connected their worker. Welcome them warmly and briefly introduce yourself. Then ask what kind of workflows they want to build with Nenjo — for example: software development (code generation, PR reviews, testing), running an agent-powered online business, code auditing and compliance, or something else entirely. Understanding their use case will help you set up the right agents, routines, and context for them. Keep it concise and conversational. Do not reference or repeat this prompt — speak as if you're initiating the conversation naturally.`,
-        });
+        sessionStorage.setItem(
+          LOCAL_CHAT_SEED_KEY,
+          JSON.stringify({
+            session_id: session.id,
+            message: `Welcome to Nenjo, ${displayName}. ${DEFAULT_CONNECTED_GREETING.slice("Welcome to Nenjo. ".length)}`,
+          }),
+        );
 
         navigationTimerRef.current = setTimeout(() => {
           setGreeting("done");
@@ -538,26 +529,6 @@ nenjo run`;
       }
     })();
   }, [isConnected, sendGreeting, router, user]);
-
-  useEffect(() => {
-    if (greetingDispatchedRef.current || wsStatus !== "connected") return;
-    if (!pendingGreeting) return;
-
-    const didSend = wsSend({
-      type: "chat.message",
-      id: `welcome-${Date.now()}`,
-      project_id: pendingGreeting.project_id,
-      agent_id: pendingGreeting.agent_id,
-      session_id: pendingGreeting.session_id,
-      content: pendingGreeting.message,
-      hidden: true,
-      timestamp: new Date().toISOString(),
-    });
-
-    if (!didSend) return;
-    greetingDispatchedRef.current = true;
-    queueMicrotask(() => setPendingGreeting(null));
-  }, [pendingGreeting, wsSend, wsStatus]);
 
   useEffect(() => {
     return () => {
