@@ -7,7 +7,6 @@ import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNo
 import { Sidebar } from "@/components/layout/Sidebar";
 import { PageTransition } from "@/components/ui/motion";
 import { setAuthTokenGetter } from "@/lib/api";
-import { WebSocketProvider } from "@/lib/WebSocketContext";
 import { cn } from "@/lib/cn";
 import { MobileMenuProvider } from "@/lib/MobileMenuContext";
 
@@ -96,7 +95,7 @@ function DashboardLayoutWithClerk({
         </div>
       );
     }
-    return <WebSocketProvider>{children}</WebSocketProvider>;
+    return <>{children}</>;
   }
 
   const mainPadding = cn(
@@ -124,23 +123,21 @@ function DashboardLayoutWithClerk({
   }
 
   return (
-    <WebSocketProvider>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Sidebar
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={toggleSidebar}
-          mobileOpen={mobileOpen}
-          onMobileClose={() => setMobileOpen(false)}
-        />
-        {/* Main content — offset by sidebar width on desktop */}
-        <div className={mainPadding}>
-          <main className="min-h-screen">
-            <MobileMenuProvider onMenuClick={() => setMobileOpen(true)}>
-              <PageTransition pageKey={pathname}>{children}</PageTransition>
-            </MobileMenuProvider>
-          </main>
-        </div>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebar}
+        mobileOpen={mobileOpen}
+        onMobileClose={() => setMobileOpen(false)}
+      />
+      {/* Main content — offset by sidebar width on desktop */}
+      <div className={mainPadding}>
+        <main className="min-h-screen">
+          <MobileMenuProvider onMenuClick={() => setMobileOpen(true)}>
+            <PageTransition pageKey={pathname}>{children}</PageTransition>
+          </MobileMenuProvider>
+        </main>
       </div>
-    </WebSocketProvider>
+    </div>
   );
 }

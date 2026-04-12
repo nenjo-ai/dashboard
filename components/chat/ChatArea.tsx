@@ -15,7 +15,6 @@ import {
 import { fetcher, allChatSessionsUrl, createChatSession } from "@/lib/api";
 import type { Project } from "@/lib/types";
 import { usePlannerChat } from "@/lib/usePlannerChat";
-import { useWebSocketContext } from "@/lib/WebSocketContext";
 import { useUser } from "@clerk/nextjs";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { DomainSlashCommandDropdown } from "@/components/project/DomainSlashCommandDropdown";
@@ -133,6 +132,21 @@ const MessageStatusIndicator = memo(function MessageStatusIndicator({
         className="inline-flex items-center gap-1.5 text-[11px] font-medium text-rose-300"
       >
         Failed
+      </motion.span>
+    );
+  }
+
+  if (status === "cancelled") {
+    return (
+      <motion.span
+        key="cancelled"
+        initial={{ opacity: 0, x: 10 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -5 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-300"
+      >
+        Cancelled
       </motion.span>
     );
   }

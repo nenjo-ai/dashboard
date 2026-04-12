@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useWebSocketContext } from "@/lib/WebSocketContext";
+import { pingWorker } from "@/lib/api";
+import { useWorkerStatus } from "@/lib/hooks";
 
 const PING_TIMEOUT_MS = 4000;
 const POLL_INTERVAL_MS = 30_000;
@@ -9,38 +10,24 @@ const POLL_INTERVAL_MS = 30_000;
 /**
  * Displays harness connection status with a colored dot.
  *
- * Sends `worker.ping` over WebSocket on mount, periodically, and on click.
- * If the worker responds with `worker.pong` within 4 seconds → connected.
- * Otherwise → offline.
+ * Uses the worker status REST endpoint for passive polling and the ping
+ * endpoint for active checks.
  */
 export function WorkerStatusIndicator() {
-  const { send, subscribe, status: wsStatus } = useWebSocketContext();
+  const { isConnected, mutate } = useWorkerStatus();
   const [connected, setConnected] = useState<boolean | null>(null);
   const [checking, setChecking] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const manualRef = useRef(false);
 
-  // Listen for worker.pong responses
   useEffect(() => {
-    const unsub = subscribe((data: unknown) => {
-      const envelope = data as { type?: string; payload?: { type?: string } };
-      const msgType = envelope.payload?.type ?? envelope.type;
-      if (msgType === "worker.pong") {
-        clearTimeout(timeoutRef.current);
-        setChecking(false);
-        manualRef.current = false;
-        setConnected(true);
-      }
-    });
-    return unsub;
-  }, [subscribe]);
+    setConnected(isConnected);
+  }, [isConnected]);
 
-  const ping = useCallback((manual = false) => {
-    if (wsStatus !== "connected") return;
+  const ping = useCallback(async (manual = false) => {
     manualRef.current = manual;
     if (manual) setChecking(true);
-    send({ type: "worker.ping" });
 
     clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
@@ -48,24 +35,28 @@ export function WorkerStatusIndicator() {
       manualRef.current = false;
       setConnected(false);
     }, PING_TIMEOUT_MS);
-  }, [send, wsStatus]);
 
-  // Auto-ping on WS connect and poll periodically
-  useEffect(() => {
-    if (wsStatus !== "connected") {
-      setConnected(null);
-      return;
+    try {
+      const result = await pingWorker();
+      clearTimeout(timeoutRef.current);
+      setConnected(result.worker_connected);
+      await mutate({ worker_connected: result.worker_connected }, false);
+    } catch {
+      clearTimeout(timeoutRef.current);
+      setConnected(false);
+    } finally {
+      setChecking(false);
+      manualRef.current = false;
     }
+  }, [mutate]);
 
-    // Initial ping once WS handshake completes
-    ping();
-
+  useEffect(() => {
     pollRef.current = setInterval(() => ping(), POLL_INTERVAL_MS);
     return () => {
       clearInterval(pollRef.current);
       clearTimeout(timeoutRef.current);
     };
-  }, [wsStatus, ping]);
+  }, [ping]);
 
   // Only show "Checking..." for manual pings
   const busy = checking && manualRef.current;

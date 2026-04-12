@@ -254,7 +254,7 @@ export function useExecutions(projectId: string | undefined, limit = 20) {
   const { data, error, isLoading, mutate } = useSWR<ExecutionDetails[]>(
     url,
     fetcher,
-    { revalidateOnFocus: false, refreshInterval: 10000 },
+    { revalidateOnFocus: false },
   );
 
   return {
@@ -291,7 +291,7 @@ export function useRecentExecutions(projectId?: string, limit = 10) {
   const { data, error, isLoading } = useSWR<ExecutionDetails[]>(
     url,
     fetcher,
-    { revalidateOnFocus: false, refreshInterval: 15000 },
+    { revalidateOnFocus: false },
   );
 
   return {
@@ -694,7 +694,7 @@ export function useAgentExecutions(agentId: string | undefined, limit = 20) {
   const { data, error, isLoading, mutate } = useSWR<ExecutionDetails[]>(
     url,
     fetcher,
-    { revalidateOnFocus: false, refreshInterval: 10000 },
+    { revalidateOnFocus: false },
   );
 
   return {

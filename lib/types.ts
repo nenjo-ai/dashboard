@@ -209,7 +209,7 @@ export interface RoutineEvent {
 
 export type ChatRole = "user" | "assistant";
 
-export type MessageStatus = "sending" | "sent" | "delivered" | "failed";
+export type MessageStatus = "sending" | "sent" | "delivered" | "failed" | "cancelled";
 
 export interface ChatMessage {
   id: string;
@@ -235,6 +235,15 @@ export interface ChatMessageOutbound {
   timestamp: string;
 }
 
+export interface ChatStreamRequest {
+  id: string;
+  message: string;
+  session_id: string;
+  domain_session_id?: string;
+  agent_id: string;
+  project_id?: string;
+}
+
 export interface ChatDomainEnterOutbound {
   type: "chat.domain_enter";
   project_id: string;
@@ -254,6 +263,31 @@ export interface ChatDomainExitOutbound {
   project_id: string;
   agent_id: string;
   domain_session_id: string;
+}
+
+export interface ChatCancelRequest {
+  project_id: string;
+  agent_id?: string;
+  session_id?: string;
+}
+
+export interface ChatDomainEnterRequest {
+  project_id: string;
+  agent_id: string;
+  domain_command: string;
+  session_id: string;
+}
+
+export interface ChatDomainExitRequest {
+  project_id: string;
+  agent_id: string;
+  domain_session_id: string;
+}
+
+export interface ChatSessionDeleteRequest {
+  project_id: string;
+  agent_id: string;
+  session_id: string;
 }
 
 // Inbound: worker → frontend (wrapped in AgentEvent envelope)

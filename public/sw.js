@@ -1,4 +1,6 @@
 const CACHE_NAME = 'nenjo-pwa-v2'
+const STREAM_DB = 'nenjo-chat-streams'
+const STREAM_STORE = 'snapshots'
 const APP_SHELL_ASSETS = [
   '/offline',
   '/manifest.webmanifest',
@@ -6,6 +8,33 @@ const APP_SHELL_ASSETS = [
   '/pwa-icon-512.png',
   '/apple-touch-icon.png',
 ]
+
+function openStreamDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(STREAM_DB, 1)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(STREAM_STORE)) {
+        db.createObjectStore(STREAM_STORE, { keyPath: 'sessionId' })
+      }
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+async function writeSnapshot(snapshot) {
+  const db = await openStreamDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STREAM_STORE, 'readwrite')
+    const store = tx.objectStore(STREAM_STORE)
+    const request = snapshot.clear
+      ? store.delete(snapshot.sessionId)
+      : store.put(snapshot)
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(request.error)
+  })
+}
 
 function isStaticAsset(pathname) {
   return pathname.startsWith('/_next/static/')
@@ -108,6 +137,25 @@ self.addEventListener('notificationclick', (event) => {
 
     if (self.clients.openWindow) {
       await self.clients.openWindow(targetUrl)
+    }
+  })())
+})
+
+self.addEventListener('message', (event) => {
+  const data = event.data
+  if (!data || data.type !== 'chat-stream-snapshot' || !data.snapshot) {
+    return
+  }
+
+  event.waitUntil((async () => {
+    await writeSnapshot(data.snapshot).catch(() => undefined)
+
+    const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const client of clientsList) {
+      client.postMessage({
+        type: 'chat-stream-snapshot',
+        snapshot: data.snapshot,
+      })
     }
   })())
 })
