@@ -54,7 +54,7 @@ function EmptyTasks() {
   return (
     <div className="flex flex-col items-center py-12 text-center">
       <svg
-        className="h-12 w-12 text-gray-300"
+        className="theme-text-muted h-12 w-12"
         fill="none"
         viewBox="0 0 24 24"
         strokeWidth={1.5}
@@ -66,10 +66,10 @@ function EmptyTasks() {
           d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"
         />
       </svg>
-      <h3 className="mt-3 text-sm font-semibold text-gray-900 dark:text-gray-100">
+      <h3 className="theme-text mt-3 text-sm font-semibold">
         No tasks yet
       </h3>
-      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+      <p className="theme-text-muted mt-1 text-sm">
         Use an agent to create tasks or manually create them.
       </p>
     </div>
@@ -143,9 +143,9 @@ export function TaskList({
 
   return (
     <>
-    <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+    <div className="theme-surface theme-border rounded-xl border">
       {/* Filter bar */}
-      <div className="border-b border-gray-100 px-4 py-3 flex items-center gap-2 overflow-x-auto dark:border-gray-700">
+      <div className="theme-border flex items-center gap-2 overflow-x-auto border-b px-4 py-3">
         {STATUS_FILTERS.map((f) => {
           const count =
             f.id === "all"
@@ -164,7 +164,7 @@ export function TaskList({
                 "flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors whitespace-nowrap",
                 isActive
                   ? "bg-deep-space-blue-50 text-deep-space-blue-700 border border-deep-space-blue-200 dark:bg-deep-space-blue-900/40 dark:text-deep-space-blue-300 dark:border-deep-space-blue-700"
-                  : "text-gray-500 hover:bg-gray-100 border border-transparent dark:text-gray-400 dark:hover:bg-gray-700",
+                  : "theme-text-muted hover:[background:var(--app-hover)] border border-transparent",
               )}
             >
               {f.label}
@@ -173,7 +173,7 @@ export function TaskList({
                   "rounded-full px-1.5 py-0.5 text-[10px]",
                   isActive
                     ? "bg-deep-space-blue-100 text-deep-space-blue-600 dark:bg-deep-space-blue-900/50 dark:text-deep-space-blue-300"
-                    : "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400",
+                    : "theme-surface-muted theme-text-muted",
                 )}
               >
                 {count}
@@ -197,7 +197,7 @@ export function TaskList({
               <button
                 type="button"
                 onClick={() => setConfirmDeleteAll(true)}
-                className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 transition-colors whitespace-nowrap"
+                className="theme-text-muted inline-flex items-center gap-1 whitespace-nowrap text-xs transition-colors hover:text-red-500"
               >
                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
@@ -221,7 +221,7 @@ export function TaskList({
                   type="button"
                   onClick={() => setConfirmDeleteAll(false)}
                   disabled={deletingAll}
-                  className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  className="theme-text-muted text-xs transition-colors hover:[color:var(--app-text)]"
                 >
                   Cancel
                 </button>
@@ -233,44 +233,44 @@ export function TaskList({
 
       {/* Task list */}
       {isLoading ? (
-        <div className="divide-y divide-gray-50">
+        <div className="theme-border divide-y">
           {Array.from({ length: 8 }).map((_, i) => (
             <TaskRowSkeleton key={i} />
           ))}
         </div>
       ) : isError ? (
-        <div className="py-8 text-center text-sm text-gray-500">
+        <div className="theme-text-muted py-8 text-center text-sm">
           Failed to load tasks.
         </div>
       ) : filtered.length === 0 ? (
         statusFilter === "all" ? (
           <EmptyTasks />
         ) : (
-          <div className="py-8 text-center text-sm text-gray-500">
+          <div className="theme-text-muted py-8 text-center text-sm">
             No tasks with status &ldquo;{statusFilter.replace("_", " ")}
             &rdquo;.
           </div>
         )
       ) : (
-        <div className="divide-y divide-gray-50">
+        <div className="theme-border divide-y">
           {filtered.map((task) => (
             <button
               key={task.id}
               onClick={() => onSelectTask(task)}
-              className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors dark:hover:bg-gray-700/50"
+              className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:[background:var(--app-hover)]"
             >
               {/* Order index */}
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-gray-100 text-[10px] font-bold text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+              <span className="theme-surface-muted theme-text-muted flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-[10px] font-bold">
                 {task.order_index}
               </span>
 
               {/* Title + slug */}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate dark:text-gray-100">
+                <p className="theme-text truncate text-sm font-medium">
                   {task.title}
                 </p>
                 {task.slug && (
-                  <p className="text-xs text-gray-400 truncate">
+                  <p className="theme-text-muted truncate text-xs">
                     {task.slug}
                   </p>
                 )}
@@ -290,7 +290,7 @@ export function TaskList({
               {task.routine_id && routines && (() => {
                 const pl = routines.find((p) => p.id === task.routine_id);
                 return pl ? (
-                  <span className="hidden md:block text-xs text-gray-400 dark:text-gray-500 truncate max-w-[100px]">
+                  <span className="theme-text-muted hidden max-w-[100px] truncate text-xs md:block">
                     {pl.name}
                   </span>
                 ) : null;
@@ -298,14 +298,14 @@ export function TaskList({
 
               {/* Complexity */}
               {task.complexity !== null && (
-                <span className="hidden sm:block text-xs text-gray-400 w-16 text-right">
+                <span className="theme-text-muted hidden w-16 text-right text-xs sm:block">
                   {complexityLabel(task.complexity)}
                 </span>
               )}
 
               {/* Chevron */}
               <svg
-                className="h-4 w-4 shrink-0 text-gray-300"
+                className="theme-text-muted h-4 w-4 shrink-0"
                 fill="none"
                 viewBox="0 0 24 24"
                 strokeWidth={2}
@@ -338,7 +338,7 @@ export function TaskList({
           </div>
         )}
         <div>
-          <label htmlFor="task-title" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label htmlFor="task-title" className="theme-text block text-sm font-medium">
             Title <span className="text-flag-red-500">*</span>
           </label>
           <input
@@ -347,13 +347,13 @@ export function TaskList({
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="Task title"
-            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-xs placeholder:text-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500"
+            className="theme-surface theme-border theme-text mt-1 block w-full rounded-lg border px-3 py-2 text-sm shadow-xs placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500"
             disabled={creating}
             autoFocus
           />
         </div>
         <div>
-          <label htmlFor="task-description" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label htmlFor="task-description" className="theme-text block text-sm font-medium">
             Description
           </label>
           <textarea
@@ -362,7 +362,7 @@ export function TaskList({
             onChange={(e) => setNewDescription(e.target.value)}
             placeholder="Describe the task..."
             rows={3}
-            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-xs placeholder:text-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 resize-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500"
+            className="theme-surface theme-border theme-text mt-1 block w-full resize-none rounded-lg border px-3 py-2 text-sm shadow-xs placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500"
             disabled={creating}
           />
         </div>

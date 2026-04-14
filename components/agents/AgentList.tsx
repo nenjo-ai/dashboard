@@ -19,7 +19,7 @@ interface AgentListProps {
   onEdit: (agent: Model) => void;
   onView: (agent: Model) => void;
   onDelete: (agent: Model) => void;
-  onCreate: () => void;
+  onCreate?: () => void;
 }
 
 /** Check if a model has a given agent (via tag match). */
@@ -32,7 +32,7 @@ function modelHasAgent(
 
 function CardSkeleton() {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-xs dark:border-gray-700 dark:bg-gray-800">
+    <div className="theme-border theme-surface rounded-xl border p-5 shadow-xs">
       <div className="flex items-start gap-2">
         <Skeleton className="h-9 w-9 rounded-lg" />
         <div className="flex-1 space-y-1.5">
@@ -49,9 +49,9 @@ function CardSkeleton() {
   );
 }
 
-function EmptyState({ onCreate }: { onCreate: () => void }) {
+function EmptyState({ onCreate }: { onCreate?: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white px-6 py-16 dark:border-gray-600 dark:bg-gray-800">
+    <div className="theme-border theme-surface flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-16">
       <div className="rounded-full bg-deep-space-blue-50 p-4 dark:bg-deep-space-blue-900/50">
         <svg
           className="h-10 w-10 text-deep-space-blue-400"
@@ -71,12 +71,14 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       <p className="mt-2 max-w-sm text-center text-sm text-gray-500 dark:text-gray-400">
         Create your first AI model to start automating work. Models are assigned to tasks based on their agents.
       </p>
-      <Button onClick={onCreate} className="mt-6">
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
-        Create Model
-      </Button>
+      {onCreate ? (
+        <Button onClick={onCreate} className="mt-6">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          Create Model
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -161,7 +163,7 @@ export function AgentList({
               "flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors whitespace-nowrap border",
               agentFilter === "all"
                 ? "bg-deep-space-blue-50 text-deep-space-blue-700 border-deep-space-blue-200 dark:bg-deep-space-blue-900/40 dark:text-deep-space-blue-300 dark:border-deep-space-blue-700"
-                : "text-gray-500 hover:bg-gray-100 border-transparent dark:text-gray-400 dark:hover:bg-gray-800",
+                : "text-gray-500 hover:[background:var(--app-hover)] border-transparent dark:text-gray-400",
             )}
           >
             All
@@ -169,7 +171,7 @@ export function AgentList({
               "rounded-full px-1.5 py-0.5 text-[10px]",
               agentFilter === "all"
                 ? "bg-deep-space-blue-100 text-deep-space-blue-600 dark:bg-deep-space-blue-900/50 dark:text-deep-space-blue-300"
-                : "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400",
+                : "theme-surface-muted theme-text-muted",
             )}>
               {agents.length}
             </span>
@@ -184,7 +186,7 @@ export function AgentList({
                   "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors whitespace-nowrap border",
                   isSelected
                     ? "border-current"
-                    : "border-transparent hover:bg-gray-100 dark:hover:bg-gray-800",
+                    : "border-transparent hover:[background:var(--app-hover)]",
                 )}
                 style={
                   isSelected

@@ -88,19 +88,18 @@ self.addEventListener('fetch', (event) => {
 
   if (APP_SHELL_ASSETS.includes(url.pathname) || isStaticAsset(url.pathname)) {
     event.respondWith(
-      caches.match(event.request).then((cachedResponse) => {
-        const networkFetch = fetch(event.request).then((networkResponse) => {
-          if (!networkResponse.ok) {
-            return networkResponse
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse.ok) {
+            const responseClone = networkResponse.clone()
+            void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone))
           }
-
-          const responseClone = networkResponse.clone()
-          void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone))
           return networkResponse
         })
-
-        return cachedResponse ?? networkFetch
-      })
+        .catch(async () => {
+          const cachedResponse = await caches.match(event.request)
+          return cachedResponse || Response.error()
+        })
     )
   }
 })

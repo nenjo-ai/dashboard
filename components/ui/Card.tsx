@@ -17,7 +17,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
     <div
       ref={ref}
       className={cn(
-        "rounded-xl border border-gray-200 bg-white shadow-xs dark:border-gray-700 dark:bg-gray-800",
+        "rounded-xl border border-gray-200 bg-transparent shadow-xs dark:border-gray-700 dark:bg-transparent",
         isStatic ? "" : "transition-all hover:shadow-md hover:scale-[1.01]",
         size === "compact" && "[&>div]:p-5 [&>div]:pt-0 [&>div:first-child]:pt-5",
         className,

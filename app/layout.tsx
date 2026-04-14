@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
+    statusBarStyle: 'default',
     title: 'Nenjo',
   },
   icons: {
@@ -39,7 +39,10 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: '#07111d',
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f7fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#05070b" },
+  ],
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
 }
@@ -61,13 +64,23 @@ export default function RootLayout({
   const content = (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="color-scheme" content="light dark" />
+        <meta name="theme-color" content="#f5f7fb" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#05070b" media="(prefers-color-scheme: dark)" />
         <Script id="nenjo-theme-init" strategy="beforeInteractive">
           {`
             (function(){
               try {
                 var t = localStorage.getItem('nenjo-theme');
                 var dark = t === 'dark' || (!t || t === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches;
-                if (dark) document.documentElement.classList.add('dark');
+                if (dark) {
+                  document.documentElement.classList.add('dark');
+                  document.documentElement.style.colorScheme = 'dark';
+                } else {
+                  document.documentElement.style.colorScheme = 'light';
+                }
               } catch(e){}
             })();
           `}

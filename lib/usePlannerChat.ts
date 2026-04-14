@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { flushSync } from "react-dom";
 import {
   fetchChatMessages,
   deleteChatMessage,
@@ -23,6 +22,7 @@ import {
 import { consumeSseStream } from "./chatStream";
 import {
   clearChatStreamSnapshot,
+  type ChatStreamSnapshot,
   loadChatStreamSnapshot,
   notifyChatStreamSnapshot,
   persistChatStreamSnapshot,
@@ -49,14 +49,16 @@ function appendPreview(existing?: string, incoming?: string): string | undefined
   return prev ? `${prev}\n\n${next}` : next;
 }
 
-const MAX_VISIBLE_TOOL_CALLS = 3;
 const LOCAL_CHAT_SEED_KEY = "nenjo:local_chat_seed";
 const PENDING_AGENT_KEY = "nenjo:pendingAgentId";
 const TOOLS_KEY = "nenjo:activeTools";
 const LIVE_PREVIEW_KEY = "nenjo:livePreview";
+const STREAM_CHANNEL_NAME = "nenjo-chat-stream";
 
-function limitRecentTools<T>(tools: T[]): T[] {
-  return tools.slice(-MAX_VISIBLE_TOOL_CALLS);
+function isClearSnapshot(
+  snapshot: ChatStreamSnapshot | { sessionId: string; clear: true },
+): snapshot is { sessionId: string; clear: true } {
+  return "clear" in snapshot && snapshot.clear === true;
 }
 
 function generateId(): string {
@@ -167,6 +169,63 @@ interface AgentCache {
   hasMore: boolean;
 }
 
+function findLastIndexCompat<T>(
+  items: T[],
+  predicate: (item: T, index: number, array: T[]) => boolean,
+): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index], index, items)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function findLastCompat<T>(
+  items: T[],
+  predicate: (item: T, index: number, array: T[]) => boolean,
+): T | undefined {
+  const index = findLastIndexCompat(items, predicate);
+  return index >= 0 ? items[index] : undefined;
+}
+
+function mergeLoadedMessages(loaded: ChatMessage[], current: ChatMessage[]): ChatMessage[] {
+  const merged = [...loaded];
+  const seen = new Set(loaded.map((message) => message.persistedId ?? message.id));
+
+  for (const message of current) {
+    const key = message.persistedId ?? message.id;
+    if (seen.has(key)) continue;
+    const duplicateLoadedMessage = loaded.find((loadedMessage) => {
+      if (loadedMessage.role !== message.role) return false;
+      if (loadedMessage.content !== message.content) return false;
+
+      const loadedTime = new Date(loadedMessage.timestamp).getTime();
+      const currentTime = new Date(message.timestamp).getTime();
+      return Math.abs(loadedTime - currentTime) < 120_000;
+    });
+    if (duplicateLoadedMessage) continue;
+    merged.push(message);
+    seen.add(key);
+  }
+
+  return merged.sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+  );
+}
+
+function isRecentMatch(a: ChatMessage, bTimestamp: string, windowMs = 120_000): boolean {
+  const aTime = new Date(a.timestamp).getTime();
+  const bTime = new Date(bTimestamp).getTime();
+  return Math.abs(aTime - bTime) < windowMs;
+}
+
+function isLikelySameAssistantContent(existing: string, incoming: string): boolean {
+  if (existing === incoming) return true;
+  if (!existing || !incoming) return false;
+  return incoming.startsWith(existing) || existing.startsWith(incoming);
+}
+
 export function usePlannerChat(projectId: string, agentId?: string, initialSessionId?: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [livePreview, setLivePreview] = useState<string | undefined>(undefined);
@@ -238,6 +297,63 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
 
   // ── Stable subscriber via ref ──────────────────────────────────────────
   const handleIncomingRef = useRef<(raw: unknown) => void>(() => {});
+  const optimisticUserMessageIdRef = useRef<string | null>(null);
+
+  const applyStreamSnapshot = useCallback((snapshot: ChatStreamSnapshot | { sessionId: string; clear: true }) => {
+    if (!activeSessionId || snapshot.sessionId !== activeSessionId) {
+      return;
+    }
+
+    if (isClearSnapshot(snapshot)) {
+      responseIdRef.current = null;
+      responsePersistedRef.current = false;
+      setActiveTools([]);
+      setLivePreview(undefined);
+      setIsTyping(false);
+      return;
+    }
+
+    const responseId = snapshot.responseId ?? snapshot.requestId;
+    responseIdRef.current = responseId;
+    responsePersistedRef.current = false;
+    setIsTyping(snapshot.status === "streaming");
+    setMessages((prev) => {
+      const targetIndex = findLastIndexCompat(
+        prev,
+        (message) =>
+          message.id === responseId
+          || message.persistedId === responseId
+          || (message.role === "assistant" && message.id === snapshot.requestId),
+      );
+
+      if (targetIndex >= 0) {
+        return prev.map((message, index) =>
+          index === targetIndex
+            ? {
+                ...message,
+                id: responseId,
+                content: snapshot.content,
+                timestamp: new Date(snapshot.updatedAt).toISOString(),
+              }
+            : message,
+        );
+      }
+
+      if (!snapshot.content.trim()) {
+        return prev;
+      }
+
+      return [
+        ...prev,
+        {
+          id: responseId,
+          role: "assistant",
+          content: snapshot.content,
+          timestamp: new Date(snapshot.updatedAt).toISOString(),
+        },
+      ];
+    });
+  }, [activeSessionId]);
 
   // Cache key includes session ID
   const cacheKey = useCallback(
@@ -365,11 +481,12 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
             .reverse()
             .map((m) => ({
               id: m.id,
+              persistedId: m.id,
               role: m.sender,
               content: m.content,
               timestamp: m.created_at,
             }));
-          setMessages(loaded);
+          setMessages((prev) => mergeLoadedMessages(loaded, prev));
           setHasMore(page.has_more);
         }
       })
@@ -503,10 +620,25 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
 
       setMessages((prev) => {
         const role = msg.sender as "user" | "assistant";
+        if (role === "user" && optimisticUserMessageIdRef.current) {
+          const optimisticIdx = prev.findIndex((m) => m.id === optimisticUserMessageIdRef.current);
+          if (optimisticIdx >= 0) {
+            optimisticUserMessageIdRef.current = null;
+            return prev.map((m, i) =>
+              i === optimisticIdx ? {
+                ...m,
+                persistedId: msg.id,
+                content: msg.content,
+                timestamp: msg.created_at,
+                status: "delivered",
+              } : m,
+            );
+          }
+        }
         if (role === "assistant" && responseIdRef.current) {
           const responseIdx = prev.findIndex((m) => m.id === responseIdRef.current);
           if (responseIdx >= 0) {
-            responsePersistedRef.current = true;
+            responseIdRef.current = msg.id;
             return prev.map((m, i) =>
               i === responseIdx ? {
                 ...m,
@@ -518,12 +650,40 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
             );
           }
         }
+        if (role === "assistant") {
+          const partialIdx = findLastIndexCompat(
+            prev,
+            (m) =>
+              m.role === "assistant"
+              && !m.persistedId
+              && isLikelySameAssistantContent(m.content, msg.content)
+              && isRecentMatch(m, msg.created_at),
+          );
+          if (partialIdx >= 0) {
+            return prev.map((m, i) =>
+              i === partialIdx ? {
+                ...m,
+                id: msg.id,
+                persistedId: msg.id,
+                content: msg.content,
+                timestamp: msg.created_at,
+              } : m,
+            );
+          }
+        }
         // Find the last message with this role and content that doesn't
         // already have a persistedId.
-        const idx = prev.findLastIndex(
+        const idx = findLastIndexCompat(
+          prev,
           (m) => m.role === role && m.content === msg.content && !m.persistedId,
         );
         if (idx >= 0) {
+          if (role === "assistant" && responseIdRef.current === prev[idx].id) {
+            responseIdRef.current = msg.id;
+          }
+          if (role === "user" && optimisticUserMessageIdRef.current === prev[idx].id) {
+            optimisticUserMessageIdRef.current = null;
+          }
           return prev.map((m, i) =>
             i === idx ? {
               ...m,
@@ -585,9 +745,6 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
 
       switch (streamEvent.event_type) {
         case "Token": {
-          if (responsePersistedRef.current) {
-            break;
-          }
           let id = responseIdRef.current;
           if (!id) {
             // Orphan token from buffer replay — create a new slot
@@ -595,9 +752,11 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
             responseIdRef.current = id;
           }
           const text = (streamEvent.data as { text: string }).text;
+          let nextContent = text;
           setMessages((prev) => {
             const existing = prev.find((m) => m.id === id);
             if (existing) {
+              nextContent = existing.content + text;
               return prev.map((m) =>
                 m.id === id ? { ...m, content: m.content + text } : m,
               );
@@ -617,7 +776,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
               sessionId: activeSessionId,
               requestId: responseIdRef.current ?? id,
               responseId: id,
-              content: text,
+              content: nextContent,
               status: "streaming",
               updatedAt: Date.now(),
             });
@@ -625,7 +784,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
               sessionId: activeSessionId,
               requestId: responseIdRef.current ?? id,
               responseId: id,
-              content: text,
+              content: nextContent,
               status: "streaming",
               updatedAt: Date.now(),
             });
@@ -634,20 +793,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         }
 
         case "Done": {
-          if (responsePersistedRef.current) {
-            responseIdRef.current = null;
-            responsePersistedRef.current = false;
-            if (clearTypingUiTimeoutRef.current) {
-              clearTimeout(clearTypingUiTimeoutRef.current);
-            }
-            clearTypingUiTimeoutRef.current = setTimeout(() => {
-              setActiveTools([]);
-              setLivePreview(undefined);
-              setIsTyping(false);
-              clearTypingUiTimeoutRef.current = null;
-            }, 600);
-            break;
-          }
+          optimisticUserMessageIdRef.current = null;
           const { final_output, session_id } = streamEvent.data as {
             final_output: string;
             session_id?: string;
@@ -667,7 +813,20 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
                 m.id === id ? { ...m, content: final_output } : m,
               );
             }
-            const existingPersisted = prev.findLast(
+            const partialIdx = findLastIndexCompat(
+              prev,
+              (m) =>
+                m.role === "assistant"
+                && !m.persistedId
+                && isLikelySameAssistantContent(m.content, final_output),
+            );
+            if (partialIdx >= 0) {
+              return prev.map((m, i) =>
+                i === partialIdx ? { ...m, content: final_output } : m,
+              );
+            }
+            const existingPersisted = findLastCompat(
+              prev,
               (m) => m.role === "assistant" && m.content === final_output,
             );
             if (existingPersisted) {
@@ -700,6 +859,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         }
 
         case "Error": {
+          optimisticUserMessageIdRef.current = null;
           responsePersistedRef.current = false;
           responseIdRef.current = null;
           const errorMessage = (streamEvent.data as { message: string }).message;
@@ -760,29 +920,27 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
             ability_tool_name: string;
             task_preview?: string;
           };
-          flushSync(() => {
-            setIsTyping(true);
-            setLivePreview((prev) => appendPreview(prev, task_preview));
-            setActiveTools((prev) => {
-              const existing = prev.find((tool) => tool.name === ability_tool_name);
-              if (existing) {
-                return [{
-                  ...existing,
-                  args: "",
-                  status: "running",
-                  textPreview: appendPreview(existing.textPreview, task_preview),
-                  outputPreview: undefined,
-                  errorPreview: undefined,
-                }];
-              }
+          setIsTyping(true);
+          setLivePreview((prev) => appendPreview(prev, task_preview));
+          setActiveTools((prev) => {
+            const existing = prev.find((tool) => tool.name === ability_tool_name);
+            if (existing) {
               return [{
-                name: ability_tool_name,
+                ...existing,
                 args: "",
-                textPreview: task_preview?.trim() || undefined,
                 status: "running",
-                children: [],
+                textPreview: appendPreview(existing.textPreview, task_preview),
+                outputPreview: undefined,
+                errorPreview: undefined,
               }];
-            });
+            }
+            return [{
+              name: ability_tool_name,
+              args: "",
+              textPreview: task_preview?.trim() || undefined,
+              status: "running",
+              children: [],
+            }];
           });
           break;
         }
@@ -793,17 +951,15 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
             success: boolean;
             result_preview: string;
           };
-          flushSync(() => {
-            setIsTyping(true);
-            setLivePreview((prev) => appendPreview(prev, result_preview));
-            setActiveTools((prev) => prev.map((tool) => tool.name === ability_tool_name ? {
-              ...tool,
-              status: success ? "completed" : "failed",
-              textPreview: appendPreview(tool.textPreview, result_preview),
-              outputPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? result_preview : tool.outputPreview),
-              errorPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? tool.errorPreview : result_preview),
-            } : tool));
-          });
+          setIsTyping(true);
+          setLivePreview((prev) => appendPreview(prev, result_preview));
+          setActiveTools((prev) => prev.map((tool) => tool.name === ability_tool_name ? {
+            ...tool,
+            status: success ? "completed" : "failed",
+            textPreview: appendPreview(tool.textPreview, result_preview),
+            outputPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? result_preview : tool.outputPreview),
+            errorPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? tool.errorPreview : result_preview),
+          } : tool));
           break;
         }
 
@@ -826,65 +982,61 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
             if (newChildren.length === 0) {
               break;
             }
-            flushSync(() => {
-              setIsTyping(true);
-              setLivePreview((prev) => appendPreview(prev, text_preview));
-              setActiveTools((prev) => {
-                const existing = prev.find((tool) => tool.name === parent_tool_name);
-                const nextTools = !existing ? [
-                  ...limitRecentTools(prev),
-                  {
-                    name: parent_tool_name,
-                    args: "",
-                    textPreview: text_preview?.trim() || undefined,
-                    status: "running" as const,
-                    children: limitRecentTools(newChildren),
-                  },
-                ] : prev.map((tool) => {
-                  if (tool.name !== parent_tool_name) return tool;
-                  return {
-                    ...tool,
-                    textPreview: appendPreview(tool.textPreview, text_preview),
-                    children: limitRecentTools([
-                      ...(tool.children ?? []),
-                      ...newChildren,
-                    ]),
-                  };
-                });
-                return nextTools;
-              });
-            });
-            break;
-          }
-          flushSync(() => {
             setIsTyping(true);
             setLivePreview((prev) => appendPreview(prev, text_preview));
             setActiveTools((prev) => {
-              const nextTools = toolNames.length === 1 && isAbilityTool(toolNames[0])
-                ? limitRecentTools([{
-                  name: toolNames[0],
+              const existing = prev.find((tool) => tool.name === parent_tool_name);
+              const nextTools = !existing ? [
+                ...prev,
+                {
+                  name: parent_tool_name,
                   args: "",
                   textPreview: text_preview?.trim() || undefined,
                   status: "running" as const,
-                  children: [],
-                }])
-                : (() => {
-                    const previousPreview = prev[0]?.textPreview?.trim() ?? "";
-                    const nextPreview = text_preview?.trim()
-                      ? previousPreview
-                        ? `${previousPreview}\n\n${text_preview.trim()}`
-                        : text_preview.trim()
-                      : previousPreview;
-                    return limitRecentTools(tool_calls.map((call) => ({
-                      name: call.tool_name,
-                      args: call.tool_args || "",
-                      textPreview: nextPreview || undefined,
-                      status: "running" as const,
-                      children: [],
-                    })));
-                  })();
+                  children: newChildren,
+                },
+              ] : prev.map((tool) => {
+                if (tool.name !== parent_tool_name) return tool;
+                return {
+                  ...tool,
+                  textPreview: appendPreview(tool.textPreview, text_preview),
+                  children: [
+                    ...(tool.children ?? []),
+                    ...newChildren,
+                  ],
+                };
+              });
               return nextTools;
             });
+            break;
+          }
+          setIsTyping(true);
+          setLivePreview((prev) => appendPreview(prev, text_preview));
+          setActiveTools((prev) => {
+            const nextTools = toolNames.length === 1 && isAbilityTool(toolNames[0])
+              ? [{
+                name: toolNames[0],
+                args: "",
+                textPreview: text_preview?.trim() || undefined,
+                status: "running" as const,
+                children: [],
+              }]
+              : (() => {
+                  const previousPreview = prev[0]?.textPreview?.trim() ?? "";
+                  const nextPreview = text_preview?.trim()
+                    ? previousPreview
+                      ? `${previousPreview}\n\n${text_preview.trim()}`
+                      : text_preview.trim()
+                    : previousPreview;
+                  return tool_calls.map((call) => ({
+                    name: call.tool_name,
+                    args: call.tool_args || "",
+                    textPreview: nextPreview || undefined,
+                    status: "running" as const,
+                    children: [],
+                  }));
+                })();
+            return nextTools;
           });
           break;
         }
@@ -895,45 +1047,39 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
             if (tool_name === parent_tool_name) {
               break;
             }
-            flushSync(() => {
-              setIsTyping(true);
-              setActiveTools((prev) => prev.map((tool) => {
-                if (tool.name !== parent_tool_name) return tool;
-                const children = [...(tool.children ?? [])];
-                const idx = [...children].reverse().findIndex((child) => child.name === tool_name && (!child.status || child.status === "running"));
-                if (idx !== -1) {
-                  const realIdx = children.length - 1 - idx;
-                  children[realIdx] = {
-                    ...children[realIdx],
-                    status: success ? "completed" : "failed",
-                    outputPreview: output_preview,
-                    errorPreview: error_preview,
-                  };
-                }
-                return { ...tool, children };
-              }));
-            });
+            setIsTyping(true);
+            setActiveTools((prev) => prev.map((tool) => {
+              if (tool.name !== parent_tool_name) return tool;
+              const children = [...(tool.children ?? [])];
+              const idx = [...children].reverse().findIndex((child) => child.name === tool_name && (!child.status || child.status === "running"));
+              if (idx !== -1) {
+                const realIdx = children.length - 1 - idx;
+                children[realIdx] = {
+                  ...children[realIdx],
+                  status: success ? "completed" : "failed",
+                  outputPreview: output_preview,
+                  errorPreview: error_preview,
+                };
+              }
+              return { ...tool, children };
+            }));
             break;
           }
           if (isAbilityTool(tool_name)) {
-            flushSync(() => {
-              setIsTyping(true);
-              setActiveTools((prev) => prev.map((tool) => tool.name === tool_name ? {
-                ...tool,
-                status: success ? "completed" : "failed",
-              } : tool));
-            });
-            break;
-          }
-          flushSync(() => {
             setIsTyping(true);
             setActiveTools((prev) => prev.map((tool) => tool.name === tool_name ? {
               ...tool,
               status: success ? "completed" : "failed",
-              outputPreview: output_preview,
-              errorPreview: error_preview,
             } : tool));
-          });
+            break;
+          }
+          setIsTyping(true);
+          setActiveTools((prev) => prev.map((tool) => tool.name === tool_name ? {
+            ...tool,
+            status: success ? "completed" : "failed",
+            outputPreview: output_preview,
+            errorPreview: error_preview,
+          } : tool));
           break;
         }
 
@@ -959,22 +1105,47 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       if (!snapshot || snapshot.status !== "streaming" || !snapshot.content.trim()) {
         return;
       }
-      setMessages((prev) => {
-        if (prev.some((msg) => msg.id === (snapshot.responseId ?? snapshot.requestId))) {
-          return prev;
-        }
-        return [
-          ...prev,
-          {
-            id: snapshot.responseId ?? snapshot.requestId,
-            role: "assistant",
-            content: snapshot.content,
-            timestamp: new Date(snapshot.updatedAt).toISOString(),
-          },
-        ];
-      });
+      applyStreamSnapshot(snapshot);
     });
-  }, [activeSessionId]);
+  }, [activeSessionId, applyStreamSnapshot]);
+
+  useEffect(() => {
+    if (!activeSessionId) return;
+
+    let channel: BroadcastChannel | null = null;
+
+    const handleSnapshotMessage = (data: unknown) => {
+      const snapshot = data as ChatStreamSnapshot | { sessionId: string; clear: true } | undefined;
+      if (!snapshot || typeof snapshot !== "object" || !("sessionId" in snapshot)) {
+        return;
+      }
+      applyStreamSnapshot(snapshot);
+    };
+
+    try {
+      channel = new BroadcastChannel(STREAM_CHANNEL_NAME);
+      channel.addEventListener("message", (event) => handleSnapshotMessage(event.data));
+    } catch {
+      channel = null;
+    }
+
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; snapshot?: unknown } | undefined;
+      if (data?.type !== "chat-stream-snapshot") return;
+      handleSnapshotMessage(data.snapshot);
+    };
+
+    if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
+    }
+
+    return () => {
+      channel?.close();
+      if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
+      }
+    };
+  }, [activeSessionId, applyStreamSnapshot]);
 
   useEffect(() => {
     writePendingAgentId(isTyping && agentId ? agentId : null);
@@ -1001,6 +1172,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         timestamp: new Date().toISOString(),
         status: "sending",
       };
+      optimisticUserMessageIdRef.current = msgId;
       setMessages((prev) => [...prev, userMsg]);
 
       // Pre-allocate a response ID so Token/Done events target the same message
@@ -1031,39 +1203,43 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       const controller = new AbortController();
       streamAbortRef.current = controller;
 
-      void createChatStream(
-        {
-          id: msgId,
-          message: trimmed,
-          session_id: activeSessionId,
-          ...(activeDomainSession ? { domain_session_id: activeDomainSession.id } : {}),
-          agent_id: agentId!,
-          ...(projectId ? { project_id: projectId } : {}),
-        },
+      const streamBody = {
+        id: msgId,
+        message: trimmed,
+        session_id: activeSessionId,
+        ...(activeDomainSession ? { domain_session_id: activeDomainSession.id } : {}),
+        agent_id: agentId!,
+        ...(projectId ? { project_id: projectId } : {}),
+      };
+
+      const handleStreamEvent = (event: { event: string; data: unknown }) => {
+        if (event.event === "message_persisted") {
+          handleIncomingRef.current(event.data);
+          return;
+        }
+        if (event.event === "delivery_receipt") {
+          handleIncomingRef.current(event.data);
+          return;
+        }
+        const normalized = normalizeSseAgentEvent(event);
+        if (!normalized) {
+          return;
+        }
+        handleIncomingRef.current({
+          type: "agent_response",
+          payload: normalized,
+        });
+      };
+
+      const streamPromise = createChatStream(
+        streamBody,
         controller.signal,
-      )
-        .then((response) =>
-          consumeSseStream(response, (event) => {
-            if (event.event === "message_persisted") {
-              handleIncomingRef.current(event.data);
-              return;
-            }
-            if (event.event === "delivery_receipt") {
-              handleIncomingRef.current(event.data);
-              return;
-            }
-            const normalized = normalizeSseAgentEvent(event);
-            if (!normalized) {
-              return;
-            }
-            handleIncomingRef.current({
-              type: "agent_response",
-              payload: normalized,
-            });
-          }),
-        )
+      ).then((response) => consumeSseStream(response, handleStreamEvent));
+
+      void streamPromise
         .catch((err) => {
           console.error("Failed to stream chat:", err);
+          optimisticUserMessageIdRef.current = null;
           responseIdRef.current = null;
           setIsTyping(false);
           if (activeSessionId) {

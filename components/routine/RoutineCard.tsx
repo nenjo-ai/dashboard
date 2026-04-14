@@ -78,7 +78,7 @@ export function RoutineCard({ routine, onDelete, isDeleting }: RoutineCardProps)
         const tab = routine.trigger === "cron" ? "?tab=run" : "";
         router.push(`/dashboard/routines/${routine.id}${tab}`);
       }}
-      className="flex h-full flex-col rounded-xl border border-gray-200 bg-white p-5 shadow-xs transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800 cursor-pointer"
+      className="theme-surface theme-border theme-text flex h-full cursor-pointer flex-col rounded-xl border p-5 shadow-xs transition-shadow hover:shadow-md"
     >
       {/* Header */}
       <div className="flex items-start justify-between">
@@ -109,7 +109,7 @@ export function RoutineCard({ routine, onDelete, isDeleting }: RoutineCardProps)
           <button
             onClick={() => onDelete(routine)}
             disabled={isDeleting}
-            className="rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-red-50 hover:text-flag-red-500 disabled:opacity-50 dark:text-gray-600 dark:hover:bg-red-900/30 dark:hover:text-flag-red-400"
+            className="rounded-lg p-1.5 text-[var(--app-text-muted)] transition-colors hover:bg-red-500/10 hover:text-flag-red-500 disabled:opacity-50 dark:hover:text-flag-red-400"
             title="Delete routine"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">

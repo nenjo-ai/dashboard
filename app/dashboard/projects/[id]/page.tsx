@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import {
   useProject,
+  useProjectDocuments,
   useTasks,
   useExecutions,
   useRoutines,
@@ -12,7 +13,9 @@ import {
 } from "@/lib/hooks";
 import type { Task } from "@/lib/types";
 
+import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { TopBar } from "@/components/layout/TopBar";
+import { MobileProjectDetail } from "@/components/project/MobileProjectDetail";
 import { Tabs } from "@/components/ui/Tabs";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 
@@ -24,6 +27,7 @@ import { ProjectContextTab } from "@/components/project/ProjectContextTab";
 import { ProjectSettingsTab } from "@/components/project/ProjectSettingsTab";
 import { ExecutionPanel } from "@/components/project/ExecutionPanel";
 import { PageContent } from "@/components/ui/PageContent";
+import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
 // ---------------------------------------------------------------------------
 // Tab configuration
@@ -76,17 +80,20 @@ const TABS = [
       </svg>
     ),
   },
-];
+] as const;
+
+type ProjectTabId = (typeof TABS)[number]["id"];
 
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export default function ProjectDetailPage() {
+  const isMobileViewport = useIsMobileViewport();
   const params = useParams();
   const projectId = params.id as string;
 
-  const [activeTab, setActiveTab] = useTabParam("tasks", ["tasks", "documents", "context", "execution", "settings"] as const);
+  const [activeTab, setActiveTab] = useTabParam<ProjectTabId>("tasks", ["tasks", "documents", "context", "execution", "settings"] as const);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   // Data fetching
@@ -108,6 +115,7 @@ export default function ProjectDetailPage() {
     isLoading: executionsLoading,
     mutate: mutateExecutions,
   } = useExecutions(projectId);
+  const { documents } = useProjectDocuments(projectId);
 
   const { routines } = useRoutines();
   const { graph, mutate: mutateGraph } = useDependencyGraph(projectId);
@@ -119,80 +127,142 @@ export default function ProjectDetailPage() {
       tab.id === "tasks" ? tasks?.length : undefined,
   }));
 
+  if (projectLoading) {
+    return isMobileViewport ? (
+      <MobilePageShell title="Project" backHref="/dashboard/projects" backLabel="Projects">
+          <div className="flex h-48 items-center justify-center">
+            <svg className="theme-text-muted h-6 w-6 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          </div>
+        </MobilePageShell>
+    ) : (
+      <>
+          <TopBar title="Project" />
+          <PageContent className="space-y-6">
+            <ProjectHeader
+              project={project}
+              projectId={projectId}
+              isLoading={projectLoading}
+              onUpdated={() => mutateProject()}
+            />
+          </PageContent>
+      </>
+    );
+  }
+
+  if (!project) {
+    return isMobileViewport ? (
+      <MobilePageShell title="Project" backHref="/dashboard/projects" backLabel="Projects">
+          <div className="theme-text-muted flex h-48 items-center justify-center text-sm">
+            Project not found
+          </div>
+        </MobilePageShell>
+    ) : (
+      <>
+          <TopBar title="Project" />
+          <PageContent className="space-y-6">
+            <div className="theme-text-muted flex h-48 items-center justify-center text-sm">
+              Project not found
+            </div>
+          </PageContent>
+      </>
+    );
+  }
+
   return (
     <>
-      <TopBar title="Project" />
-
-      <PageContent className="space-y-6">
-        <Breadcrumbs
-          items={[
-            { label: "Dashboard", href: "/dashboard" },
-            { label: "Projects", href: "/dashboard/projects" },
-            { label: project?.name ?? "Project" },
-          ]}
-        />
-
-        {/* Project header */}
-        <ProjectHeader
+      {isMobileViewport ? (
+      <MobilePageShell
+        title={project.name}
+        backHref="/dashboard/projects"
+        backLabel="Projects"
+      >
+        <MobileProjectDetail
           project={project}
-          projectId={projectId}
-          isLoading={projectLoading}
-          onUpdated={() => mutateProject()}
-        />
-
-        {/* Tabs */}
-        <Tabs
-          tabs={tabsWithCounts}
+          tasks={tasks}
+          documents={documents}
+          executions={executions}
           activeTab={activeTab}
-          onChange={(id) => setActiveTab(id as typeof activeTab)}
+          onTabChange={(tab) => setActiveTab(tab as typeof activeTab)}
+          tabs={tabsWithCounts}
         />
+      </MobilePageShell>
+      ) : (
+      <>
+        <TopBar title="Project" />
 
-        <div className="min-h-[500px]">
-          {activeTab === "tasks" && (
-            <TaskList
-              tasks={tasks}
-              isLoading={tasksLoading}
-              isError={tasksError}
-              onSelectTask={(t) => setSelectedTask(t)}
-              onDeleted={() => {
-                mutateTasks();
-              }}
-              projectId={projectId}
-              routines={routines}
-            />
-          )}
+        <PageContent className="space-y-6">
+          <Breadcrumbs
+            items={[
+              { label: "Dashboard", href: "/dashboard" },
+              { label: "Projects", href: "/dashboard/projects" },
+              { label: project?.name ?? "Project" },
+            ]}
+          />
 
-          {activeTab === "documents" && (
-            <ProductDocSection projectId={projectId} />
-          )}
+          <ProjectHeader
+            project={project}
+            projectId={projectId}
+            isLoading={projectLoading}
+            onUpdated={() => mutateProject()}
+          />
 
-          {activeTab === "context" && (
-            <ProjectContextTab
-              project={project}
-              onUpdated={() => mutateProject()}
-            />
-          )}
+          <Tabs
+            tabs={tabsWithCounts}
+            activeTab={activeTab}
+            onChange={(id) => setActiveTab(id as typeof activeTab)}
+          />
 
-          {activeTab === "settings" && (
-            <ProjectSettingsTab
-              project={project}
-              onUpdated={() => mutateProject()}
-            />
-          )}
+          <div className="min-h-[500px]">
+            {activeTab === "tasks" && (
+              <TaskList
+                tasks={tasks}
+                isLoading={tasksLoading}
+                isError={tasksError}
+                onSelectTask={(t) => setSelectedTask(t)}
+                onDeleted={() => {
+                  mutateTasks();
+                }}
+                projectId={projectId}
+                routines={routines}
+              />
+            )}
 
-          {activeTab === "execution" && (
-            <ExecutionPanel
-              projectId={projectId}
-              executions={executions}
-              isLoading={executionsLoading}
-              onRefresh={() => {
-                mutateExecutions();
-                mutateTasks();
-              }}
-            />
-          )}
-        </div>
-      </PageContent>
+            {activeTab === "documents" && (
+              <ProductDocSection projectId={projectId} />
+            )}
+
+            {activeTab === "context" && (
+              <ProjectContextTab
+                project={project}
+                onUpdated={() => mutateProject()}
+              />
+            )}
+
+            {activeTab === "settings" && (
+              <ProjectSettingsTab
+                project={project}
+                onUpdated={() => mutateProject()}
+              />
+            )}
+
+            {activeTab === "execution" && (
+              <ExecutionPanel
+                projectId={projectId}
+                executions={executions}
+                isLoading={executionsLoading}
+                onRefresh={() => {
+                  mutateExecutions();
+                  mutateTasks();
+                }}
+              />
+            )}
+          </div>
+        </PageContent>
+      </>
+      )}
 
       {/* Task detail modal */}
       <TaskDetailModal

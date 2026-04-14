@@ -46,12 +46,12 @@ export function MobileNewChatSheet({
             Project
           </label>
           {projectsLoading ? (
-            <div className="h-11 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800" />
+            <div className="h-11 animate-pulse rounded-2xl border border-black/10 bg-[#f5f7fb] dark:border-white/10 dark:bg-[#05070b]" />
           ) : (
             <select
               value={selectedProjectId ?? ""}
               onChange={(e) => setSelectedProjectId(e.target.value || null)}
-              className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-hidden focus:border-deep-space-blue-500 focus:ring-1 focus:ring-deep-space-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              className="w-full rounded-2xl border border-black/10 bg-[#f5f7fb] px-4 py-3 text-sm text-gray-900 outline-hidden focus:border-deep-space-blue-500 focus:ring-1 focus:ring-deep-space-blue-500 dark:border-white/10 dark:bg-[#05070b] dark:text-gray-100"
             >
               <option value="">Select a project...</option>
               {allProjects.map((project) => (
@@ -70,7 +70,7 @@ export function MobileNewChatSheet({
           <select
             value={selectedAgentId ?? ""}
             onChange={(e) => setSelectedAgentId(e.target.value || null)}
-            className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-hidden focus:border-deep-space-blue-500 focus:ring-1 focus:ring-deep-space-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+            className="w-full rounded-2xl border border-black/10 bg-[#f5f7fb] px-4 py-3 text-sm text-gray-900 outline-hidden focus:border-deep-space-blue-500 focus:ring-1 focus:ring-deep-space-blue-500 dark:border-white/10 dark:bg-[#05070b] dark:text-gray-100"
           >
             <option value="">Select an agent...</option>
             {availableAgents.map((agent) => (
@@ -84,7 +84,7 @@ export function MobileNewChatSheet({
         <div className="flex gap-2 pt-1">
           <MobileTouchButton
             onPress={onClose}
-            className="flex-1 rounded-2xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 dark:border-gray-700 dark:text-gray-300"
+            className="flex-1 rounded-2xl border border-black/10 bg-transparent px-4 py-3 text-sm font-medium text-gray-700 dark:border-white/10 dark:text-gray-300"
           >
             Cancel
           </MobileTouchButton>
@@ -95,10 +95,10 @@ export function MobileNewChatSheet({
             }}
             disabled={!selectedProjectId || !selectedAgentId}
             className={cn(
-              "flex-1 rounded-2xl px-4 py-3 text-sm font-medium text-white",
+              "flex-1 rounded-2xl border px-4 py-3 text-sm font-medium transition-colors",
               selectedProjectId && selectedAgentId
-                ? "bg-deep-space-blue-500"
-                : "bg-gray-300 dark:bg-gray-700",
+                ? "border-black/10 bg-transparent text-gray-900 dark:border-white/10 dark:text-gray-100"
+                : "border-black/10 bg-transparent text-gray-400 dark:border-white/10 dark:text-gray-500",
             )}
           >
             Create

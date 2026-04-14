@@ -50,18 +50,18 @@ export function MobileBottomSheet({ open, onClose, title, children }: MobileBott
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 28, stiffness: 300 }}
-            className="fixed inset-x-0 bottom-0 z-50 w-screen max-w-full overflow-x-hidden rounded-t-2xl bg-white pb-safe dark:bg-gray-900"
+            className="fixed inset-x-0 bottom-0 z-50 w-screen max-w-full overflow-x-hidden rounded-t-2xl border-t border-black/10 bg-[#f5f7fb] pb-safe dark:border-white/10 dark:bg-[#05070b]"
             style={{ maxHeight: "70vh" }}
           >
             {/* Handle + title */}
-            <div className="flex items-center justify-between border-b border-gray-100 px-4 pb-3 pt-3 dark:border-gray-800">
-              <div className="mx-auto mb-2 h-1 w-8 rounded-full bg-gray-300 dark:bg-gray-600" />
+            <div className="flex items-center justify-between border-b border-black/5 px-4 pb-3 pt-3 dark:border-white/10">
+              <div className="mx-auto mb-2 h-1 w-8 rounded-full bg-black/15 dark:bg-white/20" />
             </div>
             <div className="flex items-center justify-between px-4 pb-2 pt-1">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{title}</h3>
               <MobileTouchButton
                 onPress={onClose}
-                className="rounded-full p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                className="rounded-full border border-black/10 bg-transparent p-1.5 text-gray-400 transition-colors hover:bg-black/[0.03] hover:text-gray-600 dark:border-white/10 dark:hover:bg-white/[0.04] dark:hover:text-gray-300"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />

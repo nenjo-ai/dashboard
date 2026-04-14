@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { motion, AnimatePresence } from "motion/react";
 import type { AgentDefinition, Domain } from "@/lib/types";
@@ -22,9 +24,7 @@ interface MobileInputBarProps {
   availableDomains: Domain[];
   onSelectAgent: (agent: AgentDefinition) => void;
   onSelectDomain: (domain: Domain) => void;
-  holdProgress: boolean;
-  onCancelHoldStart: () => void;
-  onCancelHoldEnd: () => void;
+  onCancelPress: () => void;
   agentColor?: string;
   isDomainPending?: boolean;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -47,9 +47,7 @@ export function MobileInputBar({
   availableDomains,
   onSelectAgent,
   onSelectDomain,
-  holdProgress,
-  onCancelHoldStart,
-  onCancelHoldEnd,
+  onCancelPress,
   agentColor,
   isDomainPending,
   inputRef,
@@ -57,10 +55,42 @@ export function MobileInputBar({
   onExitDomain,
   activeDomainLabel,
 }: MobileInputBarProps) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [sheetOpen, setSheetOpen] = useState<"agent" | "domain" | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [interruptReady, setInterruptReady] = useState(false);
+  const [cancelArmed, setCancelArmed] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(max-width: 767px)").matches
+      : false,
+  );
+  const composerRef = useRef<HTMLDivElement | null>(null);
   const blurResetRafRef = useRef<number | null>(null);
   const blurResetCleanupRef = useRef<(() => void) | null>(null);
+  const cancelArmTimerRef = useRef<number | null>(null);
   const currentAgentId = activeAgent?.id;
+  const interruptActive = isTyping || hasActiveTools;
+  const shouldRenderComposer =
+    isMobileViewport
+    && pathname.startsWith("/dashboard/chat")
+    && searchParams.get("channel") !== "notifications"
+    && Boolean(searchParams.get("session"));
+  const flushToKeyboard = shouldRenderComposer && (keyboardVisible || isInputFocused);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const updateViewport = () => setIsMobileViewport(mediaQuery.matches);
+
+    updateViewport();
+    mediaQuery.addEventListener("change", updateViewport);
+
+    return () => mediaQuery.removeEventListener("change", updateViewport);
+  }, []);
 
   const openSheet = useCallback((sheet: "agent" | "domain") => {
     inputRef.current?.blur();
@@ -70,6 +100,36 @@ export function MobileInputBar({
   const closeSheet = useCallback(() => {
     setSheetOpen(null);
   }, []);
+
+  const handleSendPress = useCallback(() => {
+    closeSheet();
+    inputRef.current?.blur();
+    window.setTimeout(() => {
+      onSend();
+    }, 0);
+  }, [closeSheet, inputRef, onSend]);
+
+  const clearCancelArm = useCallback(() => {
+    if (cancelArmTimerRef.current !== null) {
+      window.clearTimeout(cancelArmTimerRef.current);
+      cancelArmTimerRef.current = null;
+    }
+    setCancelArmed(false);
+  }, []);
+
+  const handleCancelPress = useCallback(() => {
+    if (cancelArmed) {
+      clearCancelArm();
+      onCancelPress();
+      return;
+    }
+
+    setCancelArmed(true);
+    cancelArmTimerRef.current = window.setTimeout(() => {
+      cancelArmTimerRef.current = null;
+      setCancelArmed(false);
+    }, 1500);
+  }, [cancelArmed, clearCancelArm, onCancelPress]);
 
   useEffect(() => {
     const input = inputRef.current;
@@ -94,6 +154,7 @@ export function MobileInputBar({
     };
 
     const handleBlur = () => {
+      setIsInputFocused(false);
       stopBlurReset();
 
       const viewport = window.visualViewport;
@@ -150,6 +211,7 @@ export function MobileInputBar({
     };
 
     const handleFocus = () => {
+      setIsInputFocused(true);
       stopBlurReset();
     };
 
@@ -163,18 +225,122 @@ export function MobileInputBar({
     };
   }, [inputRef]);
 
-  return (
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    const updateKeyboardVisibility = () => {
+      const bottomInset = Math.max(window.innerHeight - (viewport.height + viewport.offsetTop), 0);
+      const inputFocused = document.activeElement === inputRef.current;
+      setKeyboardVisible(inputFocused || bottomInset > 24);
+    };
+
+    updateKeyboardVisibility();
+    viewport.addEventListener("resize", updateKeyboardVisibility);
+    viewport.addEventListener("scroll", updateKeyboardVisibility);
+
+    return () => {
+      viewport.removeEventListener("resize", updateKeyboardVisibility);
+      viewport.removeEventListener("scroll", updateKeyboardVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (!shouldRenderComposer) {
+      root.style.removeProperty("--mobile-composer-height");
+      root.style.removeProperty("--mobile-composer-dock-height");
+      return;
+    }
+
+    const setComposerHeight = () => {
+      const height = composerRef.current?.offsetHeight ?? 108;
+      root.style.setProperty("--mobile-composer-height", `${height}px`);
+      root.style.setProperty("--mobile-composer-dock-height", `${height + 24}px`);
+    };
+
+    setComposerHeight();
+
+    const observer = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => setComposerHeight())
+      : null;
+
+    if (observer && composerRef.current) {
+      observer.observe(composerRef.current);
+    }
+
+    return () => {
+      observer?.disconnect();
+      root.style.removeProperty("--mobile-composer-height");
+      root.style.removeProperty("--mobile-composer-dock-height");
+    };
+  }, [inDomain, shouldRenderComposer]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setInterruptReady(interruptActive);
+    }, interruptActive ? 250 : 0);
+
+    return () => window.clearTimeout(timer);
+  }, [interruptActive]);
+
+  useEffect(() => {
+    return () => {
+      if (cancelArmTimerRef.current !== null) {
+        window.clearTimeout(cancelArmTimerRef.current);
+      }
+    };
+  }, []);
+
+  const content = (
     <div
-      className="relative z-30 w-full max-w-full overflow-x-hidden bg-transparent px-3 pt-1"
-      style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.1rem)" }}
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex w-full max-w-full items-end overflow-x-hidden px-4"
+      style={{
+        backgroundColor: "rgba(255,255,255,0.01)",
+        height: flushToKeyboard
+          ? "calc(var(--mobile-composer-height, 108px) + env(safe-area-inset-bottom, 0px))"
+          : "calc(var(--mobile-composer-dock-height, 132px) + env(safe-area-inset-bottom, 0px))",
+        paddingBottom: flushToKeyboard ? "0px" : "max(env(safe-area-inset-bottom, 0px), 0.1rem)",
+      }}
     >
-      {/* Unified pill container */}
-      <div
-        className="relative box-border mx-auto w-full max-w-full overflow-hidden rounded-[1.55rem] border-2 border-gray-200 bg-white shadow-[0_-8px_24px_rgba(15,23,42,0.04)] transition-colors duration-300 dark:border-gray-700 dark:bg-gray-900 dark:shadow-none"
+      <motion.div
+        ref={composerRef}
+        initial={false}
+        animate={{
+          scale: inDomain ? 1.02 : 1,
+          y: flushToKeyboard ? 0 : (inDomain ? -10 : -2),
+          boxShadow: "0 0 0 rgba(0,0,0,0)",
+        }}
+        transition={{
+          type: "spring",
+          stiffness: 260,
+          damping: 24,
+          mass: 0.9,
+        }}
+        className="pointer-events-auto relative box-border mx-auto w-full max-w-full overflow-hidden rounded-[1.55rem] border-[3px] border-black/12 bg-transparent transition-[border-color] duration-300 dark:border-white/20 dark:shadow-[0_20px_64px_rgba(0,0,0,0.46)]"
         style={{
           borderColor: inDomain && agentColor ? agentColor : undefined,
+          marginBottom: flushToKeyboard ? "0px" : undefined,
         }}
       >
+        <motion.div
+          initial={false}
+          animate={{
+            opacity: inDomain ? 1 : 0.45,
+            scale: inDomain ? 1.02 : 1,
+          }}
+          transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          className="pointer-events-none absolute inset-0 rounded-[inherit]"
+          style={{
+            boxShadow: inDomain
+              ? `inset 0 0 0 1px ${agentColor ?? "rgba(255,255,255,0.2)"}`
+              : undefined,
+          }}
+        />
+        <div className="pointer-events-none absolute inset-[3px] overflow-hidden rounded-[calc(1.55rem-3px)]">
+          <div className="absolute inset-0 bg-[#f5f7fb]/50 backdrop-blur-[26px] [-webkit-backdrop-filter:blur(26px)] dark:bg-[#05070b]/48" />
+        </div>
+
         {/* Text input */}
         <textarea
           ref={inputRef}
@@ -185,14 +351,14 @@ export function MobileInputBar({
           disabled={disabled || isDomainPending}
           rows={1}
           className={cn(
-            "w-full resize-none overflow-y-auto border-0 bg-transparent px-4 pt-2.5 pb-1 text-base placeholder:text-gray-400 focus:outline-none focus:ring-0 dark:text-gray-100 dark:placeholder:text-gray-500",
+            "relative z-10 w-full resize-none overflow-y-auto border-0 bg-transparent px-5 pt-3 pb-1.5 text-[16px] leading-6 tracking-[-0.01em] text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-0 dark:text-gray-50 dark:placeholder:text-gray-500",
             isDomainPending && "opacity-60",
           )}
-          style={{ maxHeight: 120 }}
+          style={{ maxHeight: 120, colorScheme: "light" }}
         />
 
         {isDomainPending && (
-          <div className="absolute right-4 top-3.5">
+          <div className="absolute right-5 top-4 z-10">
             <svg className="h-4 w-4 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -200,8 +366,7 @@ export function MobileInputBar({
           </div>
         )}
 
-        {/* Action row inside the pill */}
-        <div className="flex items-center justify-between gap-2 px-2.5 pb-1.5 pt-0.5">
+        <div className="relative z-10 flex items-center justify-between gap-2 px-3 pb-2.5 pt-0.5">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             {inDomain && activeDomainLabel ? (
               <MobileTouchButton
@@ -220,10 +385,10 @@ export function MobileInputBar({
                   <MobileTouchButton
                     onPress={() => openSheet("domain")}
                     className={cn(
-                      "flex h-8 w-8 items-center justify-center rounded-full",
+                      "flex h-9 w-9 items-center justify-center rounded-full border border-black/5 backdrop-blur-sm dark:border-white/10",
                       sheetOpen === "domain"
-                        ? "bg-deep-space-blue-100 text-deep-space-blue-600 dark:bg-deep-space-blue-900/40 dark:text-deep-space-blue-400"
-                        : "bg-gray-100 text-gray-500 active:bg-gray-200 dark:bg-gray-800 dark:text-gray-400",
+                        ? "bg-deep-space-blue-100/90 text-deep-space-blue-600 dark:bg-deep-space-blue-500/20 dark:text-deep-space-blue-300"
+                        : "bg-black/[0.04] text-gray-500 active:bg-black/[0.07] dark:bg-white/[0.06] dark:text-gray-400",
                     )}
                   >
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -236,10 +401,10 @@ export function MobileInputBar({
                   <MobileTouchButton
                     onPress={() => openSheet("agent")}
                     className={cn(
-                      "flex h-8 w-8 items-center justify-center rounded-full",
+                      "flex h-9 w-9 items-center justify-center rounded-full border border-black/5 backdrop-blur-sm dark:border-white/10",
                       sheetOpen === "agent"
-                        ? "bg-deep-space-blue-100 text-deep-space-blue-600 dark:bg-deep-space-blue-900/40 dark:text-deep-space-blue-400"
-                        : "bg-gray-100 text-gray-500 active:bg-gray-200 dark:bg-gray-800 dark:text-gray-400",
+                        ? "bg-deep-space-blue-100/90 text-deep-space-blue-600 dark:bg-deep-space-blue-500/20 dark:text-deep-space-blue-300"
+                        : "bg-black/[0.04] text-gray-500 active:bg-black/[0.07] dark:bg-white/[0.06] dark:text-gray-400",
                     )}
                   >
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -252,40 +417,50 @@ export function MobileInputBar({
             )}
 
             {activeAgent && !inDomain && (
-              <span className="min-w-0 truncate text-[11px] font-medium text-gray-400 dark:text-gray-500">
+              <span className="min-w-0 truncate text-[12px] font-medium text-gray-500 dark:text-gray-400">
                 {activeAgent.name}
               </span>
             )}
           </div>
 
-          {(isTyping || hasActiveTools) ? (
-            <button
-              type="button"
-              onTouchStart={onCancelHoldStart}
-              onTouchEnd={onCancelHoldEnd}
-              onMouseDown={(e) => { e.preventDefault(); onCancelHoldStart(); }}
-              onMouseUp={onCancelHoldEnd}
-              onMouseLeave={onCancelHoldEnd}
-              className="relative flex h-8 w-8 items-center justify-center rounded-full bg-flag-red-100 text-flag-red-600 dark:bg-flag-red-900/40 dark:text-flag-red-400"
-            >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="6" width="12" height="12" rx="2" />
-              </svg>
-              {holdProgress && (
-                <svg className="absolute inset-0 -rotate-90" viewBox="0 0 32 32">
-                  <circle cx="16" cy="16" r="13" fill="none" className="stroke-flag-red-500 dark:stroke-flag-red-400" strokeWidth="2" strokeDasharray="82" strokeDashoffset="82" strokeLinecap="round" style={{ animation: "hold-arc 1s linear forwards" }} />
+          {interruptActive && interruptReady ? (
+            <div className="flex shrink-0 items-center gap-2">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={cancelArmed ? "armed" : "idle"}
+                  initial={{ opacity: 0, x: 6 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -6 }}
+                  transition={{ duration: 0.16, ease: "easeOut" }}
+                  className="whitespace-nowrap text-[10px] font-medium text-gray-400 dark:text-gray-500"
+                >
+                  {cancelArmed ? "Press again to cancel" : "Press twice to cancel"}
+                </motion.span>
+              </AnimatePresence>
+              <button
+                type="button"
+                onClick={handleCancelPress}
+                className={cn(
+                  "relative flex h-9 w-9 items-center justify-center rounded-full transition-colors",
+                  cancelArmed
+                    ? "bg-flag-red-200 text-flag-red-700 dark:bg-flag-red-800/70 dark:text-flag-red-200"
+                    : "bg-flag-red-100 text-flag-red-600 dark:bg-flag-red-900/40 dark:text-flag-red-400",
+                )}
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
                 </svg>
-              )}
-            </button>
+              </button>
+            </div>
           ) : (
             <MobileTouchButton
-              onPress={onSend}
-              disabled={!input.trim()}
+              onPress={handleSendPress}
+              disabled={!input.trim() || interruptActive}
               className={cn(
-                "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
-                input.trim()
-                  ? "bg-deep-space-blue-500 text-white active:bg-deep-space-blue-600"
-                  : "bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500",
+                "flex h-10 w-10 items-center justify-center rounded-full border border-black/5 transition-colors dark:border-white/10",
+                input.trim() && !interruptActive
+                  ? "bg-gray-950 text-white active:bg-gray-800 dark:bg-white dark:text-gray-950"
+                  : "bg-black/[0.04] text-gray-400 dark:bg-white/[0.06] dark:text-gray-500",
               )}
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
@@ -294,23 +469,10 @@ export function MobileInputBar({
             </MobileTouchButton>
           )}
         </div>
-      </div>
-
-      <AnimatePresence>
-        {(isTyping || hasActiveTools) && (
-          <motion.p
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mt-1 text-center text-[10px] text-gray-400 dark:text-gray-500"
-          >
-            Hold stop to cancel
-          </motion.p>
-        )}
-      </AnimatePresence>
+      </motion.div>
 
       <MobileBottomSheet
-        open={sheetOpen === "agent"}
+        open={shouldRenderComposer && sheetOpen === "agent"}
         onClose={closeSheet}
         title="Switch Agent"
       >
@@ -349,9 +511,9 @@ export function MobileInputBar({
       </MobileBottomSheet>
 
       <MobileBottomSheet
-        open={sheetOpen === "domain"}
+        open={shouldRenderComposer && sheetOpen === "domain"}
         onClose={closeSheet}
-        title="Enter Domain"
+        title="Domain expansion"
       >
         <div className="space-y-1">
           {availableDomains.map((domain) => (
@@ -380,4 +542,8 @@ export function MobileInputBar({
       </MobileBottomSheet>
     </div>
   );
+
+  if (!shouldRenderComposer) return null;
+  if (typeof document === "undefined") return content;
+  return createPortal(content, document.body);
 }

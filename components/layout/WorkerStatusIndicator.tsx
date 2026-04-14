@@ -88,7 +88,7 @@ export function WorkerStatusIndicator() {
     <div className="group relative">
       <button
         onClick={() => ping(true)}
-        className="flex items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+        className="flex items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
       >
         <span className="relative flex h-2.5 w-2.5">
           {(busy || showConnected) && (
@@ -100,7 +100,7 @@ export function WorkerStatusIndicator() {
           {label}
         </span>
       </button>
-      <div className="pointer-events-none absolute right-0 top-full mt-1.5 z-50 w-max max-w-48 rounded-lg bg-gray-900 px-3 py-1.5 text-xs text-gray-100 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-700">
+      <div className="pointer-events-none absolute right-0 top-full mt-1.5 z-50 w-max max-w-48 rounded-lg border border-black/10 bg-[#f5f7fb] px-3 py-1.5 text-xs text-gray-700 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:border-white/10 dark:bg-[#05070b] dark:text-gray-100">
         {tooltip}
       </div>
     </div>

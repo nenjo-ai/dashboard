@@ -52,7 +52,7 @@ export function McpServersSection() {
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="rounded-xl border border-gray-200 bg-white p-5 shadow-xs dark:border-gray-700 dark:bg-gray-800"
+            className="theme-border theme-surface rounded-xl border p-5 shadow-xs"
           >
             <div className="space-y-3">
               <Skeleton className="h-5 w-32" />
@@ -77,7 +77,7 @@ export function McpServersSection() {
 
       {/* Empty state */}
       {(!mcpServers || mcpServers.length === 0) && (
-        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white px-6 py-16 dark:border-gray-600 dark:bg-gray-800">
+        <div className="theme-border theme-surface flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-16">
           <div className="rounded-full bg-deep-space-blue-50 p-4 dark:bg-deep-space-blue-900/50">
             <svg
               className="h-10 w-10 text-deep-space-blue-400"
@@ -165,7 +165,7 @@ function McpServerCard({
   isDeleting: boolean;
 }) {
   return (
-    <div className="flex h-[200px] flex-col rounded-xl border border-gray-200 bg-white p-4 shadow-xs transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800">
+    <div className="theme-border theme-surface flex h-[200px] flex-col rounded-xl border p-4 shadow-xs transition-shadow hover:shadow-md">
       {/* Header: title + actions */}
       <div className="flex items-center justify-between gap-2">
         <h3 className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
@@ -175,7 +175,7 @@ function McpServerCard({
           {!server.is_system && onEdit && (
             <button
               onClick={onEdit}
-              className="rounded p-1 text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300"
+              className="rounded p-1 text-gray-300 transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300"
               title="Edit server"
             >
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -332,7 +332,7 @@ function McpServerFormModal({
                 className={`rounded-lg border px-4 py-1.5 text-sm font-medium transition-colors ${
                   transport === t
                     ? "border-deep-space-blue-500 bg-deep-space-blue-50 text-deep-space-blue-700 dark:bg-deep-space-blue-900/30 dark:text-deep-space-blue-300"
-                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-600"
+                    : "theme-border theme-surface text-gray-600 hover:[border-color:var(--app-border-strong)] hover:[background:var(--app-hover)] dark:text-gray-300"
                 }`}
               >
                 {t.toUpperCase()}
@@ -606,7 +606,7 @@ function McpRegistryModal({
               {searching ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map((i) => (
-                    <div key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+                    <div key={i} className="theme-border theme-surface-muted rounded-lg border p-3">
                       <div className="space-y-2">
                         <Skeleton className="h-4 w-40" />
                         <Skeleton className="h-3 w-full" />
@@ -633,7 +633,7 @@ function McpRegistryModal({
                       <button
                         key={`${server.name}-${idx}`}
                         onClick={() => handleViewDetail(server)}
-                        className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-gray-50 p-3 text-left transition-colors hover:border-gray-300 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-700/50 dark:hover:border-gray-500 dark:hover:bg-gray-700"
+                        className="theme-border theme-surface-muted flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors hover:[border-color:var(--app-border-strong)] hover:[background:var(--app-hover)]"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -779,7 +779,7 @@ function McpRegistryDetailView({
             )}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {server.version && (
-                <span className="inline-flex rounded-sm bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                <span className="theme-surface-muted theme-text-muted inline-flex rounded-sm px-2 py-0.5 text-xs font-medium">
                   v{server.version}
                 </span>
               )}
@@ -821,7 +821,7 @@ function McpRegistryDetailView({
               <div className="mt-2 space-y-1.5">
                 {transports.map((t, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs">
-                    <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                    <span className="theme-surface-muted theme-text-muted rounded-sm px-1.5 py-0.5 font-medium">
                       {t.label}
                     </span>
                     {t.detail && (
@@ -844,7 +844,7 @@ function McpRegistryDetailView({
               {authUndeclared ? (
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   This server may require authentication. Set credentials via the worker&apos;s{" "}
-                  <code className="rounded-sm bg-gray-100 px-1 py-0.5 text-[11px] dark:bg-gray-700">
+                  <code className="theme-surface-muted rounded-sm px-1 py-0.5 text-[11px]">
                     ~/.nenjo/credentials.toml
                   </code>{" "}
                   or environment variables.
@@ -852,7 +852,7 @@ function McpRegistryDetailView({
               ) : (
                 <div className="mt-2 space-y-2">
                   {authRequirements.map((req, i) => (
-                    <div key={i} className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-600 dark:bg-gray-700/50">
+                    <div key={i} className="theme-border theme-surface-muted rounded-md border px-3 py-2">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs text-gray-700 dark:text-gray-200">{req.label}</span>
                         {req.isSecret && (
@@ -866,7 +866,7 @@ function McpRegistryDetailView({
                       )}
                       {req.envVar && (
                         <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-                          Set via: <code className="rounded-sm bg-gray-100 px-1 py-0.5 dark:bg-gray-600">{req.envVar}</code>
+                          Set via: <code className="theme-surface-muted rounded-sm px-1 py-0.5">{req.envVar}</code>
                         </p>
                       )}
                     </div>

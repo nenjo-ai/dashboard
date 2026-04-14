@@ -24,12 +24,12 @@ export function PromptSection({
   const [isExpanded, setIsExpanded] = useState(true);
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+    <div className="theme-border theme-surface rounded-lg border">
       {/* Header */}
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50"
+        className="flex w-full items-center justify-between px-4 py-3 text-left hover:[background:var(--app-hover)]"
       >
         <div>
           <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -58,13 +58,13 @@ export function PromptSection({
 
       {/* Content */}
       {isExpanded && (
-        <div className="border-t border-gray-200 px-4 pb-4 pt-2 dark:border-gray-700">
+        <div className="theme-border border-t px-4 pb-4 pt-2">
           <textarea
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
             rows={rows}
-            className={`w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-500 ${
+            className={`theme-border theme-surface-muted w-full rounded-lg border px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:text-gray-100 dark:placeholder-gray-500 ${
               monospace ? "font-mono" : ""
             }`}
           />

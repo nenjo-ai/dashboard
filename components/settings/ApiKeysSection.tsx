@@ -162,7 +162,7 @@ export function ApiKeysSection() {
 
   return (
     <>
-      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-xs dark:border-gray-700 dark:bg-gray-800">
+      <div className="theme-border theme-surface rounded-xl border p-6 shadow-xs">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
@@ -174,7 +174,7 @@ export function ApiKeysSection() {
           </div>
           <button
             onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-deep-space-blue-600 px-4 py-2 text-sm font-medium text-white shadow-xs transition-colors hover:bg-deep-space-blue-700 focus:outline-hidden focus:ring-2 focus:ring-deep-space-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+            className="inline-flex items-center gap-2 rounded-lg bg-deep-space-blue-600 px-4 py-2 text-sm font-medium text-white shadow-xs transition-colors hover:bg-deep-space-blue-700 focus:outline-hidden focus:ring-2 focus:ring-deep-space-blue-500 focus:ring-offset-2 dark:focus:ring-offset-[#05070b]"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -188,11 +188,11 @@ export function ApiKeysSection() {
           {isLoading ? (
             <div className="space-y-3">
               {[1, 2].map((i) => (
-                <div key={i} className="h-16 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
+                <div key={i} className="theme-surface-muted h-16 animate-pulse rounded-lg" />
               ))}
             </div>
           ) : !apiKeys || apiKeys.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center dark:border-gray-600 dark:bg-gray-800/50">
+            <div className="theme-border theme-surface-muted rounded-lg border border-dashed px-6 py-8 text-center">
               <svg className="mx-auto h-10 w-10 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
               </svg>
@@ -201,7 +201,7 @@ export function ApiKeysSection() {
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100 dark:divide-gray-700">
+            <div className="theme-border divide-y">
               {apiKeys.map((key) => (
                 <div
                   key={key.id}
@@ -212,10 +212,10 @@ export function ApiKeysSection() {
                       <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
                         {key.name}
                       </p>
-                      <code className="rounded-sm bg-gray-100 px-2 py-0.5 text-xs font-mono text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                      <code className="theme-surface-muted theme-text-muted rounded-sm px-2 py-0.5 text-xs font-mono">
                         {key.key_prefix}••••••••
                       </code>
-                      <code className="rounded-sm bg-gray-50 px-1.5 py-0.5 text-[10px] font-mono text-gray-400 dark:bg-gray-800 dark:text-gray-500">
+                      <code className="theme-surface-muted rounded-sm px-1.5 py-0.5 text-[10px] font-mono text-gray-400 dark:text-gray-500">
                         {key.id.slice(0, 8)}
                       </code>
                     </div>
@@ -231,7 +231,7 @@ export function ApiKeysSection() {
                           </span>
                         ))
                       ) : (
-                        <span className="inline-flex rounded-sm bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                        <span className="theme-surface-muted theme-text-muted inline-flex rounded-sm px-1.5 py-0.5 text-[10px] font-medium">
                           all capabilities
                         </span>
                       )}
@@ -250,7 +250,7 @@ export function ApiKeysSection() {
                           </span>
                         ))
                       ) : (
-                        <span className="inline-flex rounded-sm bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                        <span className="theme-surface-muted theme-text-muted inline-flex rounded-sm px-1.5 py-0.5 text-[10px] font-medium">
                           full access
                         </span>
                       )}
@@ -349,7 +349,7 @@ export function ApiKeysSection() {
                   className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
                     expiration === opt.value
                       ? "border-deep-space-blue-500 bg-deep-space-blue-50 text-deep-space-blue-700 dark:bg-deep-space-blue-900/30 dark:text-deep-space-blue-300"
-                      : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-600"
+                      : "theme-border theme-surface text-gray-600 hover:[border-color:var(--app-border-strong)] hover:[background:var(--app-hover)] dark:text-gray-300"
                   }`}
                 >
                   {opt.label}
@@ -388,19 +388,19 @@ export function ApiKeysSection() {
                     }}
                     className={`relative flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                       isTaken
-                        ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-600"
+                        ? "theme-border theme-surface-muted cursor-not-allowed text-gray-400 dark:text-gray-600"
                         : checked
                           ? "border-deep-space-blue-500 bg-deep-space-blue-50 text-deep-space-blue-700 dark:bg-deep-space-blue-900/30 dark:text-deep-space-blue-300"
-                          : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-600"
+                          : "theme-border theme-surface text-gray-600 hover:[border-color:var(--app-border-strong)] hover:[background:var(--app-hover)] dark:text-gray-300"
                     }`}
                     title={isTaken ? `Already assigned to "${takenByKey?.name}"` : undefined}
                   >
                     <span className={`inline-block h-3 w-3 rounded-sm border ${
                       isTaken
-                        ? "border-gray-300 bg-gray-200 dark:border-gray-600 dark:bg-gray-700"
+                        ? "theme-border theme-surface-muted"
                         : checked
                           ? "border-deep-space-blue-500 bg-deep-space-blue-500"
-                          : "border-gray-300 dark:border-gray-500"
+                          : "theme-border"
                     }`}>
                       {checked && !isTaken && (
                         <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
@@ -426,7 +426,7 @@ export function ApiKeysSection() {
               <button
                 type="button"
                 onClick={() => setSelectedCapabilities([])}
-                className="mt-2 rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:border-gray-500"
+                className="theme-border theme-surface mt-2 rounded-lg border px-3 py-1 text-xs font-medium text-gray-500 transition-colors hover:[border-color:var(--app-border-strong)] hover:[background:var(--app-hover)] dark:text-gray-400"
               >
                 Clear capabilities
               </button>
@@ -456,7 +456,7 @@ export function ApiKeysSection() {
                 className={`rounded-lg border px-3 py-1 text-xs font-medium transition-colors ${
                   MCP_RESOURCE_SCOPES.filter((s) => s.endsWith(":read")).every((s) => selectedScopes.includes(s))
                     ? "border-deep-space-blue-500 bg-deep-space-blue-50 text-deep-space-blue-700 dark:bg-deep-space-blue-900/30 dark:text-deep-space-blue-300"
-                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:border-gray-500"
+                    : "theme-border theme-surface text-gray-600 hover:[border-color:var(--app-border-strong)] hover:[background:var(--app-hover)] dark:text-gray-300"
                 }`}
               >
                 All Reads
@@ -475,7 +475,7 @@ export function ApiKeysSection() {
                 className={`rounded-lg border px-3 py-1 text-xs font-medium transition-colors ${
                   MCP_RESOURCE_SCOPES.filter((s) => s.endsWith(":write")).every((s) => selectedScopes.includes(s))
                     ? "border-vivid-tangerine-500 bg-vivid-tangerine-50 text-vivid-tangerine-700 dark:bg-vivid-tangerine-900/30 dark:text-vivid-tangerine-300"
-                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:border-gray-500"
+                    : "theme-border theme-surface text-gray-600 hover:[border-color:var(--app-border-strong)] hover:[background:var(--app-hover)] dark:text-gray-300"
                 }`}
               >
                 All Writes
@@ -484,13 +484,13 @@ export function ApiKeysSection() {
                 <button
                   type="button"
                   onClick={() => setSelectedScopes([])}
-                  className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:border-gray-500"
+                  className="theme-border theme-surface rounded-lg border px-3 py-1 text-xs font-medium text-gray-500 transition-colors hover:[border-color:var(--app-border-strong)] hover:[background:var(--app-hover)] dark:text-gray-400"
                 >
                   Clear
                 </button>
               )}
             </div>
-            <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-600 dark:bg-gray-700/50">
+            <div className="theme-border theme-surface-muted mt-2 grid max-h-48 grid-cols-2 gap-x-4 gap-y-1.5 overflow-y-auto rounded-lg border p-3">
               {MCP_RESOURCE_SCOPES.map((scope) => {
                 const checked = selectedScopes.includes(scope);
                 return (
@@ -503,7 +503,7 @@ export function ApiKeysSection() {
                           checked ? prev.filter((s) => s !== scope) : [...prev, scope]
                         );
                       }}
-                      className="h-3.5 w-3.5 rounded-sm border-gray-300 text-deep-space-blue-600 focus:ring-deep-space-blue-500 dark:border-gray-500 dark:bg-gray-600"
+                      className="theme-border h-3.5 w-3.5 rounded-sm text-deep-space-blue-600 focus:ring-deep-space-blue-500"
                     />
                     <code className="text-xs text-gray-700 dark:text-gray-300">{scope}</code>
                   </label>
@@ -530,7 +530,7 @@ export function ApiKeysSection() {
                 setSelectedCapabilities([]);
                 setCreateError(null);
               }}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+              className="theme-border theme-surface rounded-lg border px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:[background:var(--app-hover)] dark:text-gray-300"
             >
               Cancel
             </button>
@@ -580,14 +580,14 @@ export function ApiKeysSection() {
                 Your API Key
               </Label>
               <div className="mt-1 flex items-center gap-2">
-                <code className="flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-mono text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 break-all">
+                <code className="theme-border theme-surface-muted flex-1 break-all rounded-lg border px-3 py-2 text-sm font-mono text-gray-900 dark:text-gray-100">
                   {keyVisible
                     ? createdKey.raw_key
                     : "•".repeat(createdKey.raw_key.length)}
                 </code>
                 <button
                   onClick={() => setKeyVisible((v) => !v)}
-                  className="shrink-0 rounded-lg border border-gray-300 bg-white p-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-200"
+                  className="theme-border theme-surface shrink-0 rounded-lg border p-2 text-gray-500 transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                   title={keyVisible ? "Hide key" : "Show key"}
                 >
                   {keyVisible ? (
@@ -606,7 +606,7 @@ export function ApiKeysSection() {
                   className={`shrink-0 rounded-lg border p-2 transition-colors ${
                     copied
                       ? "border-green-300 bg-green-50 text-green-700 dark:border-green-700 dark:bg-green-900/20 dark:text-green-400"
-                      : "border-gray-300 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-200"
+                      : "theme-border theme-surface text-gray-500 hover:[background:var(--app-hover)] hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                   }`}
                   title={copied ? "Copied!" : "Copy to clipboard"}
                 >

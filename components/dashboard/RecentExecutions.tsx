@@ -72,7 +72,7 @@ function TaskStatusIcon({ status }: { status: string }) {
         </svg>
       );
     default:
-      return <span className="h-3.5 w-3.5 rounded-full bg-gray-300 dark:bg-gray-600 shrink-0 block" />;
+      return <span className="theme-surface-muted h-3.5 w-3.5 shrink-0 rounded-full block" />;
   }
 }
 
@@ -112,7 +112,7 @@ function ExecutionRow({ exec }: { exec: ExecutionDetails }) {
     <div>
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center justify-between px-1 py-3 hover:bg-gray-50 rounded-lg transition-colors dark:hover:bg-gray-800/50 text-left"
+        className="flex w-full items-center justify-between rounded-lg px-1 py-3 text-left transition-colors hover:[background:var(--app-hover)]"
       >
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <Badge variant={exec.status} showDot>
@@ -173,13 +173,13 @@ function ExecutionRow({ exec }: { exec: ExecutionDetails }) {
 
       {/* Expanded task details */}
       {expanded && (
-        <div className="ml-10 mr-2 mb-2 rounded-lg border border-gray-100 bg-gray-50/50 px-4 py-2 dark:border-gray-700 dark:bg-gray-800/50">
+        <div className="theme-border theme-surface-muted ml-10 mr-2 mb-2 rounded-lg border px-4 py-2">
           {tasksLoading ? (
             <div className="space-y-2 py-2">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <div className="h-3.5 w-3.5 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                  <div className="h-3 w-48 rounded-sm bg-gray-200 dark:bg-gray-700 animate-pulse" />
+                  <div className="theme-surface-muted-strong h-3.5 w-3.5 animate-pulse rounded-full" />
+                  <div className="theme-surface-muted-strong h-3 w-48 animate-pulse rounded-sm" />
                 </div>
               ))}
             </div>

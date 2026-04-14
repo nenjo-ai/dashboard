@@ -32,10 +32,10 @@ function DetailRow({
 }) {
   return (
     <div className="flex items-start gap-3 py-2">
-      <span className="w-28 shrink-0 text-xs font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">
+      <span className="theme-text-muted w-28 shrink-0 text-xs font-medium uppercase tracking-wider">
         {label}
       </span>
-      <div className="flex-1 text-sm text-gray-700 dark:text-gray-300">{children}</div>
+      <div className="theme-text flex-1 text-sm">{children}</div>
     </div>
   );
 }
@@ -59,7 +59,7 @@ export function CouncilDetailModal({
       title={council.name}
       className="max-w-2xl"
     >
-      <div className="space-y-1 divide-y divide-gray-100 dark:divide-gray-700">
+      <div className="theme-border space-y-1 divide-y">
         {/* Badges */}
         <div className="flex flex-wrap gap-2 pb-3">
           <Badge variant="default">
@@ -73,7 +73,7 @@ export function CouncilDetailModal({
         {/* Description */}
         {council.description && (
           <div className="py-3">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+            <p className="theme-text-muted text-sm">
               {council.description}
             </p>
           </div>
@@ -81,10 +81,10 @@ export function CouncilDetailModal({
 
         {/* Strategy Info */}
         <div className="py-3">
-          <h4 className="text-xs font-medium uppercase tracking-wider text-gray-400 mb-2">
+          <h4 className="theme-text-muted mb-2 text-xs font-medium uppercase tracking-wider">
             Delegation Strategy
           </h4>
-          <div className="rounded-lg bg-deep-space-blue-50 px-4 py-3 dark:bg-deep-space-blue-900/30">
+          <div className="theme-surface-muted rounded-lg px-4 py-3">
             <p className="text-sm font-medium text-deep-space-blue-700 dark:text-deep-space-blue-300">
               {strategy?.label ?? council.delegation_strategy}
             </p>
@@ -98,11 +98,11 @@ export function CouncilDetailModal({
 
         {/* Leader */}
         <div className="py-3">
-          <h4 className="text-xs font-medium uppercase tracking-wider text-gray-400 mb-2">
+          <h4 className="theme-text-muted mb-2 text-xs font-medium uppercase tracking-wider">
             Council Leader
           </h4>
-          <div className="flex items-center gap-3 rounded-lg border border-deep-space-blue-200 bg-deep-space-blue-50 px-4 py-3 dark:border-deep-space-blue-800 dark:bg-deep-space-blue-900/30">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-deep-space-blue-100 dark:bg-deep-space-blue-900/50">
+          <div className="theme-border theme-surface-muted flex items-center gap-3 rounded-lg border px-4 py-3">
+            <div className="theme-surface-muted-strong flex h-8 w-8 items-center justify-center rounded-lg">
               <svg
                 className="h-4 w-4 text-deep-space-blue-600 dark:text-deep-space-blue-400"
                 fill="none"
@@ -130,11 +130,11 @@ export function CouncilDetailModal({
 
         {/* Members */}
         <div className="py-3">
-          <h4 className="text-xs font-medium uppercase tracking-wider text-gray-400 mb-2">
+          <h4 className="theme-text-muted mb-2 text-xs font-medium uppercase tracking-wider">
             Members ({council.members?.length ?? 0})
           </h4>
           {(council.members?.length ?? 0) === 0 ? (
-            <p className="text-sm text-gray-400 italic dark:text-gray-500">
+            <p className="theme-text-muted text-sm italic">
               No members configured.
             </p>
           ) : (
@@ -142,9 +142,9 @@ export function CouncilDetailModal({
               {council.members.map((member) => (
                 <div
                   key={member.id}
-                  className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/50"
+                  className="theme-border theme-surface-muted flex items-center gap-3 rounded-lg border px-4 py-3"
                 >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-deep-space-blue-50 dark:bg-deep-space-blue-900/50">
+                  <div className="theme-surface-muted-strong flex h-8 w-8 items-center justify-center rounded-lg">
                     <svg
                       className="h-4 w-4 text-deep-space-blue-500 dark:text-deep-space-blue-400"
                       fill="none"
@@ -160,10 +160,10 @@ export function CouncilDetailModal({
                     </svg>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <p className="theme-text text-sm font-medium">
                       {member.agent?.name ?? "Unknown Agent"}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className="theme-text-muted text-xs">
                       {member.agent?.model_name ?? "—"}
                     </p>
                   </div>
@@ -175,11 +175,11 @@ export function CouncilDetailModal({
 
         {/* Metadata */}
         <div className="py-3">
-          <h4 className="text-xs font-medium uppercase tracking-wider text-gray-400 mb-2">
+          <h4 className="theme-text-muted mb-2 text-xs font-medium uppercase tracking-wider">
             Details
           </h4>
           <DetailRow label="ID">
-            <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded-sm dark:bg-gray-700">
+            <code className="theme-surface-muted theme-text rounded-sm px-1.5 py-0.5 text-xs">
               {council.id}
             </code>
           </DetailRow>

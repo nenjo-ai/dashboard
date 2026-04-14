@@ -18,18 +18,18 @@ export function AgentDetailHeader({ agent, models }: AgentDetailHeaderProps) {
       <div className="min-w-0 flex-1">
         {/* Name row */}
         <div className="flex items-center gap-2.5">
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+          <h1 className="theme-text text-xl font-semibold">
             {agent.display_name || agent.name}
           </h1>
           {agent.display_name && (
-            <span className="font-mono text-sm text-gray-400 dark:text-gray-500">
+            <span className="theme-text-muted font-mono text-sm">
               {agent.name}
             </span>
           )}
           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
             agent.source_agent_id
               ? "bg-deep-space-blue-50 text-deep-space-blue-600 dark:bg-deep-space-blue-900/30 dark:text-deep-space-blue-400"
-              : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+              : "theme-surface-muted theme-text-muted"
           }`}>
             {agent.source_agent_id ? "System" : "Custom"}
           </span>
@@ -37,13 +37,13 @@ export function AgentDetailHeader({ agent, models }: AgentDetailHeaderProps) {
 
         {/* Model chip */}
         {assignedModel && (
-          <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-            <span className="font-medium text-gray-600 dark:text-gray-300">
+          <div className="theme-text-muted mt-1 flex items-center gap-1.5 text-xs">
+            <span className="theme-text font-medium">
               {assignedModel.model_provider}
             </span>
             <span>/</span>
             <span>{assignedModel.model}</span>
-            <span className="text-gray-400 dark:text-gray-500">
+            <span className="theme-text-muted">
               &middot; {assignedModel.temperature}
             </span>
           </div>
@@ -51,7 +51,7 @@ export function AgentDetailHeader({ agent, models }: AgentDetailHeaderProps) {
 
         {/* Description */}
         {agent.description && (
-          <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400 line-clamp-2">
+          <p className="theme-text-muted mt-1.5 line-clamp-2 text-sm">
             {agent.description}
           </p>
         )}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { updateAgentPlatformScopes } from "@/lib/api";
+import { agentColorAlpha } from "@/lib/agent-colors";
 import type { AgentDefinition } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 
@@ -67,16 +68,16 @@ export function AgentPlatformScopesPanel({ agent, onSaved }: AgentPlatformScopes
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+      <div className="theme-text-muted flex items-center gap-2 text-xs">
         <span>{readCount} read</span>
-        <span className="text-gray-300 dark:text-gray-600">/</span>
+        <span className="opacity-50">/</span>
         <span>{writeCount} write</span>
       </div>
 
       <div className="space-y-3">
         {SCOPE_GROUPS.map((group) => (
-          <div key={group.label} className="rounded-lg border border-gray-200 bg-gray-50/50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
-            <div className="mb-2 text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+          <div key={group.label} className="theme-surface-muted theme-border rounded-lg border p-3">
+            <div className="theme-text-muted mb-2 text-xs font-medium uppercase tracking-wider">
               {group.label}
             </div>
             <div className="flex flex-wrap gap-3">
@@ -86,19 +87,33 @@ export function AgentPlatformScopesPanel({ agent, onSaved }: AgentPlatformScopes
                 return (
                   <label
                     key={scope}
-                    className="flex items-center gap-2 cursor-pointer"
+                    className={`flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 transition-colors ${
+                      isChecked
+                        ? ""
+                        : "theme-border-strong [background:var(--app-surface-muted-strong)] hover:[background:var(--app-hover-strong)]"
+                    }`}
+                    style={isChecked ? {
+                      backgroundColor: agentColorAlpha(agent.color, 0.12),
+                      borderColor: agentColorAlpha(agent.color, 0.36),
+                    } : undefined}
                   >
                     <input
                       type="checkbox"
                       checked={isChecked}
                       onChange={() => toggle(scope)}
-                      className="h-3.5 w-3.5 rounded-sm border-gray-300 text-deep-space-blue-600 focus:ring-deep-space-blue-500 dark:border-gray-600"
+                      className="theme-border h-3.5 w-3.5 rounded-sm"
+                      style={{ accentColor: agent.color }}
                     />
                     <span className={`text-xs font-medium ${
                       accessType === "write"
-                        ? "text-amber-600 dark:text-amber-400"
-                        : "text-gray-700 dark:text-gray-300"
-                    }`}>
+                          ? isChecked
+                            ? ""
+                            : "theme-text"
+                          : isChecked
+                            ? ""
+                            : "theme-text-muted"
+                    }`}
+                    style={isChecked ? { color: agent.color } : undefined}>
                       {accessType}
                     </span>
                   </label>

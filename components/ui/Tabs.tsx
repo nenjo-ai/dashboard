@@ -27,7 +27,7 @@ export function Tabs({ tabs, activeTab, onChange, className, layoutId = "tab-ind
         <select
           value={activeTab}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2.5 pl-3 pr-10 text-sm font-medium text-gray-900 transition-colors focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+          className="theme-border theme-surface w-full appearance-none rounded-lg border py-2.5 pl-3 pr-10 text-sm font-medium text-gray-900 transition-colors focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400 dark:text-gray-100"
         >
           {tabs.map((tab) => (
             <option key={tab.id} value={tab.id}>
@@ -41,7 +41,7 @@ export function Tabs({ tabs, activeTab, onChange, className, layoutId = "tab-ind
       {/* Desktop: pill tabs */}
       <div
         className={cn(
-          "hidden md:flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-800",
+          "theme-surface-muted hidden gap-1 rounded-lg p-1 md:flex",
           className,
         )}
       >
@@ -61,7 +61,7 @@ export function Tabs({ tabs, activeTab, onChange, className, layoutId = "tab-ind
               {isActive && (
                 <motion.div
                   layoutId={layoutId}
-                  className="absolute inset-0 rounded-md bg-white shadow-xs dark:bg-gray-700"
+                  className="theme-surface-elevated absolute inset-0 rounded-md shadow-xs"
                   transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
                 />
               )}

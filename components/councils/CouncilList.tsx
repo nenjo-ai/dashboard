@@ -13,7 +13,7 @@ interface CouncilListProps {
   isLoading: boolean;
   isError: boolean;
   onView: (council: CouncilDetail) => void;
-  onCreate: () => void;
+  onCreate?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,8 +55,8 @@ function getStrategyLabel(strategy: string): string {
 function getStrategyColors(strategy: string) {
   return (
     STRATEGY_COLORS[strategy] ?? {
-      bg: "bg-gray-50 dark:bg-gray-900",
-      text: "text-gray-700 dark:text-gray-300",
+      bg: "theme-surface-muted",
+      text: "theme-text",
       dot: "bg-gray-400",
     }
   );
@@ -68,7 +68,7 @@ function getStrategyColors(strategy: string) {
 
 function CardSkeleton() {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-xs dark:border-gray-700 dark:bg-gray-800">
+    <div className="theme-surface theme-border rounded-xl border p-5 shadow-xs">
       <div className="flex items-start gap-3">
         <Skeleton className="h-10 w-10 rounded-lg" />
         <div className="flex-1 space-y-1.5">
@@ -88,10 +88,10 @@ function CardSkeleton() {
   );
 }
 
-function EmptyState({ onCreate }: { onCreate: () => void }) {
+function EmptyState({ onCreate }: { onCreate?: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white px-6 py-16 dark:border-gray-600 dark:bg-gray-800">
-      <div className="rounded-full bg-deep-space-blue-50 p-4 dark:bg-deep-space-blue-900/50">
+    <div className="theme-surface theme-border flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-16">
+      <div className="theme-surface-muted rounded-full p-4">
         <svg
           className="h-10 w-10 text-deep-space-blue-400"
           fill="none"
@@ -106,25 +106,27 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
           />
         </svg>
       </div>
-      <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+      <h3 className="theme-text mt-4 text-lg font-semibold">
         No councils yet
       </h3>
-      <p className="mt-2 max-w-sm text-center text-sm text-gray-500 dark:text-gray-400">
+      <p className="theme-text-muted mt-2 max-w-sm text-center text-sm">
         Create your first agent council to enable multi-agent collaboration.
         Councils group agents with a leader and configurable delegation strategies.
       </p>
-      <Button onClick={onCreate} className="mt-6">
-        <svg
-          className="h-4 w-4"
-          fill="none"
-          viewBox="0 0 24 24"
-          strokeWidth={2}
-          stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
-        Create Council
-      </Button>
+      {onCreate ? (
+        <Button onClick={onCreate} className="mt-6">
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={2}
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          Create Council
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -147,10 +149,10 @@ function CouncilCard({
       type="button"
       onClick={() => onView(council)}
       className={cn(
-        "w-full rounded-xl border border-gray-200 bg-white p-5 shadow-xs text-left transition-all",
+        "theme-surface theme-border theme-text w-full rounded-xl border p-5 text-left shadow-xs transition-all",
         "hover:border-deep-space-blue-300 hover:shadow-md",
-        "dark:border-gray-700 dark:bg-gray-800 dark:hover:border-deep-space-blue-700",
-        "focus:outline-hidden focus:ring-2 focus:ring-deep-space-blue-500 focus:ring-offset-1 dark:focus:ring-offset-gray-900",
+        "dark:hover:border-deep-space-blue-700",
+        "focus:outline-hidden focus:ring-2 focus:ring-deep-space-blue-500 focus:ring-offset-1 dark:focus:ring-offset-[#05070b]",
       )}
     >
       {/* Header */}
@@ -171,11 +173,11 @@ function CouncilCard({
           </svg>
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-gray-900 truncate dark:text-gray-100">
+          <h3 className="truncate text-sm font-semibold theme-text">
             {council.name}
           </h3>
           {council.description && (
-            <p className="mt-0.5 text-xs text-gray-500 truncate dark:text-gray-400">
+            <p className="theme-text-muted mt-0.5 truncate text-xs">
               {council.description}
             </p>
           )}
@@ -194,7 +196,7 @@ function CouncilCard({
           <span className={cn("h-1.5 w-1.5 rounded-full", strategyColors.dot)} />
           {getStrategyLabel(council.delegation_strategy)}
         </span>
-        <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+        <span className="theme-surface-muted theme-text-muted inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium">
           <svg
             className="h-3 w-3"
             fill="none"
@@ -213,7 +215,7 @@ function CouncilCard({
       </div>
 
       {/* Leader */}
-      <div className="mt-3 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+      <div className="theme-text-muted mt-3 flex items-center gap-1.5 text-xs">
         <svg
           className="h-3.5 w-3.5 text-deep-space-blue-400"
           fill="none"
@@ -228,7 +230,7 @@ function CouncilCard({
           />
         </svg>
         <span className="truncate">
-          Leader: <span className="font-medium text-gray-700 dark:text-gray-300">{council.leader_agent?.name ?? "Unknown"}</span>
+          Leader: <span className="font-medium theme-text">{council.leader_agent?.name ?? "Unknown"}</span>
         </span>
       </div>
     </button>
@@ -272,10 +274,10 @@ export function CouncilList({
             d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
           />
         </svg>
-        <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+        <h3 className="theme-text mt-4 text-lg font-semibold">
           Failed to load councils
         </h3>
-        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+        <p className="theme-text-muted mt-2 text-sm">
           Please check your connection and try again.
         </p>
       </div>

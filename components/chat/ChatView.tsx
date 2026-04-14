@@ -206,91 +206,97 @@ export function ChatView() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-white dark:bg-gray-900 md:rounded-xl md:border md:border-gray-200 md:dark:border-gray-700">
+    <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-transparent md:rounded-xl md:border md:border-black/10 md:bg-transparent md:dark:border-white/10 md:dark:bg-transparent">
       {/* Session list — left panel (desktop: always visible, mobile: animated) */}
-      <div className="hidden md:block w-80 shrink-0 border-r border-gray-200 dark:border-gray-700">
-        <GlobalSessionList
-          sessions={sessions ?? []}
-          activeSessionId={sessionParam}
-          isLoading={sessionsLoading}
-          onSelect={selectSession}
-          onCreate={isNotificationView ? undefined : () => setShowNewChat(true)}
-          onRename={isNotificationView ? undefined : handleRename}
-          onDelete={handleDelete}
-          channelType={isNotificationView ? "notification" : "chat"}
-        />
-      </div>
+      {!isMobileViewport && (
+        <div className="w-80 shrink-0 border-r border-black/10 dark:border-white/10">
+          <GlobalSessionList
+            sessions={sessions ?? []}
+            activeSessionId={sessionParam}
+            isLoading={sessionsLoading}
+            onSelect={selectSession}
+            onCreate={isNotificationView ? undefined : () => setShowNewChat(true)}
+            onRename={isNotificationView ? undefined : handleRename}
+            onDelete={handleDelete}
+            channelType={isNotificationView ? "notification" : "chat"}
+          />
+        </div>
+      )}
 
       {/* Mobile: Grok-style shell */}
-      <div className="relative min-h-0 flex-1 min-w-0 overflow-hidden md:hidden">
-        {isNotificationView ? (
-          <MobileNotificationContainer />
-        ) : (
-          <MobileChatContainer onSessionCreated={() => mutateSessions()} />
-        )}
-      </div>
+      {isMobileViewport && (
+        <div className="relative min-h-0 flex-1 min-w-0 overflow-hidden">
+          {isNotificationView ? (
+            <MobileNotificationContainer />
+          ) : (
+            <MobileChatContainer onSessionCreated={() => mutateSessions()} />
+          )}
+        </div>
+      )}
 
       {/* Chat area — right panel (desktop only) */}
-      <div className="hidden min-h-0 flex-1 min-w-0 md:block">
-        {activeSession ? (
-          <div className="flex h-full min-h-0 flex-col">
-            {/* Chat header */}
-            <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-2.5 dark:border-gray-700">
-              <div className="min-w-0 flex-1">
-                <h2 className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                  {activeSession.agent_display_name ?? activeSession.agent_name}
-                </h2>
-                <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                  {isNotificationView
-                    ? `@${activeSession.agent_name}`
-                    : `${activeSession.project_name === "__system__" ? "General" : activeSession.project_name} · @${activeSession.agent_name}`}
+      {!isMobileViewport && (
+        <div className="min-h-0 flex-1 min-w-0">
+          {activeSession ? (
+            <div className="flex h-full min-h-0 flex-col">
+              {/* Chat header */}
+              <div className="flex items-center gap-3 border-b border-black/10 px-4 py-2.5 dark:border-white/10">
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                    {activeSession.agent_display_name ?? activeSession.agent_name}
+                  </h2>
+                  <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                    {isNotificationView
+                      ? `@${activeSession.agent_name}`
+                      : `${activeSession.project_name === "__system__" ? "General" : activeSession.project_name} · @${activeSession.agent_name}`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Chat content */}
+              <div className="flex-1 min-h-0">
+                {isNotificationView ? (
+                  <NotificationArea
+                    agentId={activeSession.agent_id}
+                    sessionId={activeSession.id}
+                    agentName={activeSession.agent_display_name ?? activeSession.agent_name}
+                    variant="desktop"
+                  />
+                ) : (
+                  <ChatArea
+                    projectId={activeSession.project_id!}
+                    agentId={activeSession.agent_id}
+                    sessionId={activeSession.id}
+                    onNavigateToSession={navigateToSessionById}
+                    onSessionCreated={() => mutateSessions()}
+                  />
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <div className="text-center">
+                <svg
+                  className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1}
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"
+                  />
+                </svg>
+                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  Select a conversation or start a new chat
                 </p>
               </div>
             </div>
-
-            {/* Chat content */}
-            <div className="flex-1 min-h-0">
-              {isNotificationView ? (
-                <NotificationArea
-                  agentId={activeSession.agent_id}
-                  sessionId={activeSession.id}
-                  agentName={activeSession.agent_display_name ?? activeSession.agent_name}
-                  variant="desktop"
-                />
-              ) : (
-                <ChatArea
-                  projectId={activeSession.project_id!}
-                  agentId={activeSession.agent_id}
-                  sessionId={activeSession.id}
-                  onNavigateToSession={navigateToSessionById}
-                  onSessionCreated={() => mutateSessions()}
-                />
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="hidden md:flex h-full items-center justify-center">
-            <div className="text-center">
-              <svg
-                className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={1}
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"
-                />
-              </svg>
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                Select a conversation or start a new chat
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* New chat modal — hidden in notification view */}
       {showNewChat && !isNotificationView && (

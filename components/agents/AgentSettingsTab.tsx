@@ -65,69 +65,69 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
     <div className="max-w-2xl space-y-8">
       {/* Metadata */}
       <section className="space-y-4">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+        <h3 className="theme-text text-sm font-semibold">
           Agent Details
         </h3>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="theme-text mb-1 block text-sm font-medium">
             Display Name
           </label>
           <input
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+            className="theme-border theme-surface theme-text w-full rounded-lg border px-3 py-2 text-sm focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400/20"
             placeholder="Human-readable name"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="theme-text mb-1 block text-sm font-medium">
             Identifier
           </label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono text-sm text-gray-900 focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+            className="theme-border theme-surface theme-text w-full rounded-lg border px-3 py-2 font-mono text-sm focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400/20"
             placeholder="machine-readable-name"
           />
-          <p className="mt-1 text-xs text-gray-400">Used in templates as the role identifier.</p>
+          <p className="theme-text-muted mt-1 text-xs">Used in templates as the role identifier.</p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="theme-text mb-1 block text-sm font-medium">
             Description
           </label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+            className="theme-border theme-surface theme-text w-full rounded-lg border px-3 py-2 text-sm focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400/20"
             placeholder="What this agent does..."
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="theme-text mb-1 block text-sm font-medium">
             Color
           </label>
           <ColorSwatchPicker value={color} onChange={setColor} />
         </div>
       </section>
 
-      <hr className="border-gray-200 dark:border-gray-700" />
+      <hr className="theme-border" />
 
       {/* Model Assignment */}
       <section className="space-y-4">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+        <h3 className="theme-text text-sm font-semibold">
           Model
         </h3>
         <select
           value={modelId ?? ""}
           onChange={(e) => setModelId(e.target.value || null)}
-          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400/20 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+          className="theme-border theme-surface theme-text w-full rounded-lg border px-3 py-2 text-sm focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400/20"
         >
           <option value="">No model assigned</option>
           {models?.map((m) => (
@@ -146,7 +146,7 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
         {error && <span className="text-sm text-red-500">{error}</span>}
       </div>
 
-      <hr className="border-gray-200 dark:border-gray-700" />
+      <hr className="theme-border" />
 
       {/* Danger Zone */}
       <section className="space-y-3">
@@ -175,7 +175,7 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
             </Button>
             <button
               onClick={() => setConfirmDelete(false)}
-              className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+              className="theme-text-muted text-sm transition-colors hover:[color:var(--app-text)]"
             >
               Cancel
             </button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import type { AgentDefinition, ChatSessionExtended } from "@/lib/types";
@@ -13,6 +13,7 @@ import {
   fetcher,
   updateChatSession,
 } from "@/lib/api";
+import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { MobileChatShell } from "./MobileChatShell";
 import { MobileNewChatSheet } from "./MobileNewChatSheet";
 
@@ -30,6 +31,7 @@ export function MobileChatContainer({
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(() => sessionParam);
   const [mobileShowChat, setMobileShowChat] = useState(() => Boolean(sessionParam));
   const [showNewChatSheet, setShowNewChatSheet] = useState(false);
+  const pendingSessionClearRef = useRef(false);
 
   const {
     data: sessions,
@@ -42,6 +44,14 @@ export function MobileChatContainer({
   );
 
   useEffect(() => {
+    if (pendingSessionClearRef.current && sessionParam) {
+      return;
+    }
+
+    if (pendingSessionClearRef.current && !sessionParam) {
+      pendingSessionClearRef.current = false;
+    }
+
     setSelectedSessionId(sessionParam);
     setMobileShowChat(Boolean(sessionParam));
   }, [sessionParam]);
@@ -154,6 +164,21 @@ export function MobileChatContainer({
     [sessions, mutateSessions, navigateToSession],
   );
 
+  const handleBackToList = useCallback(() => {
+    pendingSessionClearRef.current = true;
+    setMobileShowChat(false);
+    setSelectedSessionId(null);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("session");
+    const nextUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+
+    if (typeof window !== "undefined") {
+      window.history.replaceState(window.history.state, "", nextUrl);
+    }
+
+    router.replace(nextUrl, { scroll: false });
+  }, [pathname, router, searchParams]);
+
   return (
     <>
       <MobileChatShell
@@ -161,8 +186,9 @@ export function MobileChatContainer({
         activeSession={activeSession}
         sessionsLoading={sessionsLoading}
         mobileShowChat={mobileShowChat}
+        onCreate={() => setShowNewChatSheet(true)}
         onSelectSession={selectSession}
-        onBack={() => setMobileShowChat(false)}
+        onBack={handleBackToList}
         onRename={handleRename}
         onDelete={handleDelete}
         onNavigateToSession={navigateToSession}
@@ -172,6 +198,7 @@ export function MobileChatContainer({
         }}
         onSwitchAgent={handleSwitchAgent}
       />
+      {!mobileShowChat && <MobileTabBar />}
       <MobileNewChatSheet
         open={showNewChatSheet}
         onClose={() => setShowNewChatSheet(false)}

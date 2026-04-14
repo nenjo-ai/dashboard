@@ -7,16 +7,16 @@ import { forwardRef, type ButtonHTMLAttributes } from "react";
 // ---------------------------------------------------------------------------
 
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-deep-space-blue-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 dark:focus-visible:ring-offset-gray-900";
+  "inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-deep-space-blue-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 dark:focus-visible:ring-offset-[#05070b]";
 
 const variantStyles: Record<string, string> = {
   primary:
-    "bg-deep-space-blue-500 text-white hover:bg-deep-space-blue-600 active:bg-deep-space-blue-700",
+    "[background:var(--app-accent)] [color:var(--app-accent-foreground)] hover:[background:var(--app-accent-hover)] active:[background:var(--app-accent-active)]",
   secondary:
-    "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 active:bg-gray-100 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700 dark:active:bg-gray-600",
-  ghost: "text-gray-700 hover:bg-gray-100 active:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-800 dark:active:bg-gray-700",
+    "theme-surface theme-border border [color:var(--app-text)] hover:[background:var(--app-hover)] active:[background:var(--app-hover-strong)]",
+  ghost: "[color:var(--app-text)] hover:[background:var(--app-hover)] active:[background:var(--app-hover-strong)]",
   danger:
-    "bg-flag-red-500 text-white hover:bg-flag-red-600 active:bg-flag-red-700",
+    "[background:var(--app-danger)] [color:var(--app-danger-foreground)] hover:[background:var(--app-danger-hover)] active:[background:var(--app-danger-active)]",
 };
 
 const sizeStyles: Record<string, string> = {

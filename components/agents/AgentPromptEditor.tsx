@@ -64,7 +64,7 @@ function BlockTreeNode({ node, depth, onInsert }: { node: TreeNode; depth: numbe
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
-          className="flex w-full items-center gap-1.5 py-1 text-left hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded px-1"
+          className="flex w-full items-center gap-1.5 rounded px-1 py-1 text-left hover:[background:var(--app-hover)]"
           style={{ paddingLeft: `${depth * 12 + 4}px` }}
         >
           <svg
@@ -127,9 +127,9 @@ function TabbedVariablePanel({ onInsertVariable }: { onInsertVariable: (text: st
   return (
     <>
       <ResizeHandle onMouseDown={panel.onMouseDown} />
-      <div style={{ width: panel.width }} className="flex shrink-0 flex-col overflow-hidden bg-gray-50 dark:bg-gray-800/50">
+      <div style={{ width: panel.width }} className="theme-surface-muted flex shrink-0 flex-col overflow-hidden">
         {/* Tab bar */}
-        <div className="flex shrink-0 border-b border-gray-200 dark:border-gray-700">
+        <div className="theme-border flex shrink-0 border-b">
           <button
             type="button"
             onClick={() => setTab("blocks")}
@@ -520,10 +520,10 @@ export function AgentPromptEditor({
 
         {/* Panel */}
         <div
-          className="relative z-10 mx-6 my-6 flex w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+          className="theme-border theme-surface relative z-10 mx-6 my-6 flex w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl border shadow-2xl"
         >
           {/* -- Header -- */}
-          <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-6 py-3 dark:border-gray-700">
+          <div className="theme-border flex shrink-0 items-center justify-between border-b px-6 py-3">
             <div className="flex items-center gap-3 min-w-0">
               <div
                 className="flex h-9 w-9 items-center justify-center rounded-full"
@@ -540,7 +540,7 @@ export function AgentPromptEditor({
                     className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
                       role.source_agent_id
                         ? "bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300"
-                        : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+                        : "theme-surface-muted theme-text-muted"
                     }`}
                   >
                     {role.source_agent_id ? "System" : "Custom"}
@@ -657,7 +657,7 @@ export function AgentPromptEditor({
                 className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
                   isLocked
                     ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50"
-                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                    : "theme-border theme-surface text-gray-600 hover:[background:var(--app-hover)] dark:text-gray-400"
                 }`}
               >
                 {isLocked ? (
@@ -722,7 +722,7 @@ export function AgentPromptEditor({
               </Button>
               <button
                 onClick={onClose}
-                className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                className="rounded-lg p-1.5 text-gray-400 transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
                 aria-label="Close"
               >
                 <svg
@@ -755,14 +755,14 @@ export function AgentPromptEditor({
           {/* -- Body (3-column) -- */}
           <div className="flex flex-1 overflow-hidden">
             {/* -- Left sidebar -- */}
-            <div className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
+            <div className="theme-border theme-surface-muted flex w-56 shrink-0 flex-col overflow-y-auto border-r">
               <div className="flex-1 p-3 space-y-4">
                 {GROUPS.map((group) => (
                   <div key={group}>
                     <h4 className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
                       {group}
                       {group === "Task Templates" && (
-                        <span className="ml-1 inline-block rounded bg-gray-100 px-1 py-px text-[8px] font-medium normal-case tracking-normal text-gray-500 dark:bg-gray-700 dark:text-gray-400">user msg</span>
+                        <span className="theme-surface-muted-strong theme-text-muted ml-1 inline-block rounded px-1 py-px text-[8px] font-medium normal-case tracking-normal">user msg</span>
                       )}
                     </h4>
                     <div className="space-y-0.5">
@@ -785,7 +785,7 @@ export function AgentPromptEditor({
                                   : "border-r-2 border-deep-space-blue-500 bg-deep-space-blue-50 font-medium text-deep-space-blue-700 dark:bg-deep-space-blue-900/30 dark:text-deep-space-blue-300"
                                 : isDomain
                                   ? "text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/20"
-                                  : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700/50"
+                                  : "text-gray-600 hover:[background:var(--app-hover)] dark:text-gray-400"
                             }`}
                           >
                             {isDomain && (
@@ -810,7 +810,7 @@ export function AgentPromptEditor({
             {/* -- Center editor -- */}
             <div className="flex flex-1 flex-col overflow-hidden">
               {/* Section title bar */}
-              <div className="flex shrink-0 items-center border-b border-gray-200 bg-gray-50/50 px-4 py-2 dark:border-gray-700 dark:bg-gray-800/30">
+              <div className="theme-border theme-surface-muted flex shrink-0 items-center border-b px-4 py-2">
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {activeLabel}
                 </span>
@@ -917,7 +917,7 @@ export function AgentPromptEditor({
 
             {/* -- Right sidebar -- */}
             {activeSection === "memory_profile" ? (
-              <div className="w-80 shrink-0 overflow-y-auto border-l border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+              <div className="theme-border theme-surface-muted w-80 shrink-0 overflow-y-auto border-l p-4">
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Memory Profile
@@ -951,7 +951,7 @@ export function AgentPromptEditor({
                       </p>
                     </div>
                   </div>
-                  <div className="rounded-md bg-gray-100 p-3 dark:bg-gray-800">
+                  <div className="theme-surface-muted-strong rounded-md p-3">
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       An empty memory profile is valid -- agents will use default memory behaviour.
                     </p>
@@ -964,7 +964,7 @@ export function AgentPromptEditor({
           </div>
 
           {/* -- Status bar -- */}
-          <div className="flex shrink-0 items-center justify-between border-t border-gray-200 px-4 py-1.5 text-xs text-gray-400 dark:border-gray-700 dark:text-gray-500">
+          <div className="theme-border flex shrink-0 items-center justify-between border-t px-4 py-1.5 text-xs text-gray-400 dark:text-gray-500">
             <div className="flex items-center gap-4">
               <span>{(currentValue ?? "").length.toLocaleString()} chars</span>
               <span>
@@ -1221,9 +1221,9 @@ export function AgentPromptEditorContent({
 
   return (
     <>
-    <div className="flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900" style={{ height: "calc(100dvh - 200px)", minHeight: "700px" }}>
+    <div className="theme-border theme-surface flex flex-col overflow-hidden rounded-xl border" style={{ height: "calc(100dvh - 200px)", minHeight: "700px" }}>
       {/* Toolbar */}
-      <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-700">
+      <div className="theme-border flex shrink-0 items-center justify-between border-b px-4 py-2">
         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
           Prompt Editor
         </span>
@@ -1243,7 +1243,7 @@ export function AgentPromptEditorContent({
             className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
               isLocked
                 ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50"
-                : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                : "theme-border theme-surface text-gray-600 hover:[background:var(--app-hover)] dark:text-gray-400"
             }`}
           >
             {isLocked ? (
@@ -1276,14 +1276,14 @@ export function AgentPromptEditorContent({
       {/* 3-column body */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left sidebar */}
-        <div className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
+        <div className="theme-border theme-surface-muted flex w-56 shrink-0 flex-col overflow-y-auto border-r">
           <div className="flex-1 p-3 space-y-4">
             {GROUPS.map((group) => (
               <div key={group}>
                 <h4 className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
                   {group}
                   {group === "Task Templates" && (
-                    <span className="ml-1 inline-block rounded bg-gray-100 px-1 py-px text-[8px] font-medium normal-case tracking-normal text-gray-500 dark:bg-gray-700 dark:text-gray-400">user msg</span>
+                    <span className="theme-surface-muted-strong theme-text-muted ml-1 inline-block rounded px-1 py-px text-[8px] font-medium normal-case tracking-normal">user msg</span>
                   )}
                 </h4>
                 <div className="space-y-0.5">
@@ -1302,7 +1302,7 @@ export function AgentPromptEditorContent({
                               : "border-r-2 border-deep-space-blue-500 bg-deep-space-blue-50 font-medium text-deep-space-blue-700 dark:bg-deep-space-blue-900/30 dark:text-deep-space-blue-300"
                             : isDomain
                               ? "text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/20"
-                              : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700/50"
+                              : "text-gray-600 hover:[background:var(--app-hover)] dark:text-gray-400"
                         }`}
                       >
                         {isDomain && (
@@ -1324,7 +1324,7 @@ export function AgentPromptEditorContent({
 
         {/* Center editor */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex shrink-0 items-center border-b border-gray-200 bg-gray-50/50 px-4 py-2 dark:border-gray-700 dark:bg-gray-800/30">
+          <div className="theme-border theme-surface-muted flex shrink-0 items-center border-b px-4 py-2">
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{activeLabel}</span>
           </div>
 
@@ -1369,13 +1369,13 @@ export function AgentPromptEditorContent({
 
         {/* Right sidebar */}
         {activeSection === "memory_profile" ? (
-          <div className="w-80 shrink-0 overflow-y-auto border-l border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+          <div className="theme-border theme-surface-muted w-80 shrink-0 overflow-y-auto border-l p-4">
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Memory Profile</h3>
               <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
                 The memory profile guides what agents remember and how memories are prioritised during retrieval.
               </p>
-              <div className="rounded-md bg-gray-100 p-3 dark:bg-gray-800">
+              <div className="theme-surface-muted-strong rounded-md p-3">
                 <p className="text-xs text-gray-500 dark:text-gray-400">An empty memory profile is valid — agents will use default memory behaviour.</p>
               </div>
             </div>
@@ -1386,7 +1386,7 @@ export function AgentPromptEditorContent({
       </div>
 
       {/* Status bar */}
-      <div className="flex shrink-0 items-center justify-between border-t border-gray-200 px-4 py-1.5 text-xs text-gray-400 dark:border-gray-700 dark:text-gray-500">
+      <div className="theme-border flex shrink-0 items-center justify-between border-t px-4 py-1.5 text-xs text-gray-400 dark:text-gray-500">
         <div className="flex items-center gap-4">
           <span>{(currentValue ?? "").length.toLocaleString()} chars</span>
           <span>Ln {cursorLine}, Col {cursorCol}</span>

@@ -266,6 +266,7 @@ function RoutineEditorInner({
   const [error, setError] = useState<string | null>(null);
   const [addStepOpen, setAddStepOpen] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [isDesktopCanvas, setIsDesktopCanvas] = useState(false);
 
   // Accumulated step config updates (from StepConfigPanel "Apply")
   const [pendingStepUpdates, setPendingStepUpdates] = useState<Map<string, StepUpdatePayload>>(new Map());
@@ -278,6 +279,14 @@ function RoutineEditorInner({
   }, []);
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 768px)");
+    const sync = () => setIsDesktopCanvas(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   // ── Re-sync from backend after save ────────────────────────────────────
   const lastRoutineUpdatedAt = useRef(routine.updated_at);
@@ -647,7 +656,7 @@ function RoutineEditorInner({
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 md:px-4 py-2.5 shrink-0 overflow-hidden">
+      <div className="theme-border theme-surface flex shrink-0 items-center justify-between gap-2 overflow-hidden border-b px-3 py-2.5 md:px-4">
         {/* Left: trigger + add step */}
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
@@ -657,7 +666,7 @@ function RoutineEditorInner({
             <select
               value={trigger}
               onChange={(e) => handleTriggerChange(e.target.value as RoutineTrigger)}
-              className="min-w-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+              className="theme-border theme-surface min-w-0 rounded-lg border px-2.5 py-1.5 text-sm text-gray-900 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:text-gray-100"
             >
               {ROUTINE_TRIGGERS.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -723,6 +732,17 @@ function RoutineEditorInner({
       <div className="relative flex flex-1 min-h-0 overflow-hidden">
         {/* ReactFlow Canvas */}
         <div ref={reactFlowWrapper} className="flex-1 min-w-0 relative">
+          {isDesktopCanvas && (
+            <div
+              className="pointer-events-none absolute inset-0 z-0"
+              style={{
+                backgroundImage:
+                  "linear-gradient(to right, var(--app-border-strong) 1px, transparent 1px), linear-gradient(to bottom, var(--app-border-strong) 1px, transparent 1px)",
+                backgroundSize: "28px 28px",
+                opacity: 0.65,
+              }}
+            />
+          )}
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -743,11 +763,18 @@ function RoutineEditorInner({
             }}
             proOptions={{ hideAttribution: true }}
           >
-            <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+            {!isDesktopCanvas && (
+              <Background
+                variant={BackgroundVariant.Dots}
+                gap={16}
+                size={1}
+                color="var(--app-border-color)"
+              />
+            )}
             <Controls />
             <MiniMap
               nodeStrokeWidth={3}
-              className="bg-gray-50! dark:bg-gray-800! border-gray-200! dark:border-gray-700!"
+              className="theme-surface-muted! theme-border!"
             />
           </ReactFlow>
         </div>

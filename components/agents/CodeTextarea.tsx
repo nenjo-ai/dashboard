@@ -183,23 +183,29 @@ export const editorTheme = EditorView.theme(
     "&": {
       height: "100%",
       fontSize: "14px",
+      backgroundColor: "transparent",
     },
     ".cm-scroller": {
       fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
       lineHeight: "1.5rem",
       overflow: "auto",
+      backgroundColor: "transparent",
+    },
+    ".cm-editor": {
+      backgroundColor: "transparent",
     },
     ".cm-content": {
       padding: "12px 0",
       caretColor: "#111827",
+      backgroundColor: "transparent",
     },
     ".cm-line": {
       padding: "0 12px",
     },
     ".cm-gutters": {
-      backgroundColor: "rgb(249 250 251)",
-      borderRight: "1px solid rgb(229 231 235)",
-      color: "rgb(156 163 175)",
+      backgroundColor: "var(--app-surface-muted)",
+      borderRight: "1px solid var(--app-border-color)",
+      color: "var(--app-text-muted)",
       minWidth: "48px",
     },
     ".cm-gutterElement": {
@@ -207,10 +213,10 @@ export const editorTheme = EditorView.theme(
     },
     ".cm-activeLineGutter": {
       backgroundColor: "transparent",
-      color: "rgb(107 114 128)",
+      color: "var(--app-text-muted)",
     },
     ".cm-activeLine": {
-      backgroundColor: "rgba(0, 0, 0, 0.03)",
+      backgroundColor: "var(--app-hover)",
     },
     ".cm-selectionBackground": {
       backgroundColor: "rgba(45, 70, 130, 0.25) !important",
@@ -222,7 +228,7 @@ export const editorTheme = EditorView.theme(
       borderLeftColor: "#111827",
     },
     ".cm-placeholder": {
-      color: "rgb(156 163 175)",
+      color: "var(--app-text-muted)",
       fontStyle: "normal",
     },
     // Template variable highlights
@@ -271,23 +277,29 @@ export const editorThemeDark = EditorView.theme(
     "&": {
       height: "100%",
       fontSize: "14px",
+      backgroundColor: "transparent",
     },
     ".cm-scroller": {
       fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
       lineHeight: "1.5rem",
       overflow: "auto",
+      backgroundColor: "transparent",
+    },
+    ".cm-editor": {
+      backgroundColor: "transparent",
     },
     ".cm-content": {
       padding: "12px 0",
       caretColor: "rgb(243 244 246)",
+      backgroundColor: "transparent",
     },
     ".cm-line": {
       padding: "0 12px",
     },
     ".cm-gutters": {
-      backgroundColor: "rgba(31 41 55 / 0.6)",
-      borderRight: "1px solid rgb(55 65 81)",
-      color: "rgb(107 114 128)",
+      backgroundColor: "var(--app-surface-muted)",
+      borderRight: "1px solid var(--app-border-color)",
+      color: "var(--app-text-muted)",
       minWidth: "48px",
     },
     ".cm-gutterElement": {
@@ -295,10 +307,10 @@ export const editorThemeDark = EditorView.theme(
     },
     ".cm-activeLineGutter": {
       backgroundColor: "transparent",
-      color: "rgb(156 163 175)",
+      color: "var(--app-text-muted)",
     },
     ".cm-activeLine": {
-      backgroundColor: "rgba(255, 255, 255, 0.03)",
+      backgroundColor: "var(--app-hover)",
     },
     ".cm-selectionBackground": {
       backgroundColor: "rgba(108, 126, 168, 0.3) !important",
@@ -310,7 +322,7 @@ export const editorThemeDark = EditorView.theme(
       borderLeftColor: "rgb(243 244 246)",
     },
     ".cm-placeholder": {
-      color: "rgb(107 114 128)",
+      color: "var(--app-text-muted)",
       fontStyle: "normal",
     },
     // Template variable highlights
@@ -501,7 +513,7 @@ export const CodeTextarea = forwardRef(function CodeTextarea(
   ];
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+    <div className="theme-border theme-surface relative h-full w-full overflow-hidden rounded-lg border">
       <div className="absolute inset-0 [&>div]:h-full [&_.cm-editor]:h-full">
         <CodeMirror
           ref={cmRef}

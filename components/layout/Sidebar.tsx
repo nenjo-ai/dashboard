@@ -10,6 +10,7 @@ import useSWR from "swr";
 import { fetcher, projectsUrl } from "@/lib/api";
 import type { Project } from "@/lib/types";
 import { CreateProjectModal } from "@/components/dashboard/CreateProjectModal";
+import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
 import { Bot, GitBranch } from "lucide-react";
 
 
@@ -120,7 +121,7 @@ function ProjectSubmenu({ activeProjectId }: { activeProjectId: string | undefin
               "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs transition-colors",
               isProjectActive
                 ? "bg-deep-space-blue-50 font-medium text-deep-space-blue-700 dark:bg-deep-space-blue-900/30 dark:text-deep-space-blue-200"
-                : "text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200",
+                : "theme-text-muted hover:[background:var(--app-hover)] hover:text-gray-700 dark:hover:text-gray-200",
             )}
             title={project.name}
           >
@@ -128,7 +129,7 @@ function ProjectSubmenu({ activeProjectId }: { activeProjectId: string | undefin
               "flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-[9px] font-bold",
               isProjectActive
                 ? "bg-deep-space-blue-500 text-white"
-                : "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400",
+                : "theme-surface-muted-strong theme-text-muted",
             )}>
               {project.name.charAt(0).toUpperCase()}
             </span>
@@ -139,7 +140,7 @@ function ProjectSubmenu({ activeProjectId }: { activeProjectId: string | undefin
       <button
         type="button"
         onClick={() => setCreateModalOpen(true)}
-        className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300 w-full"
+        className="theme-text-muted flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-xs transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
       >
         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -183,7 +184,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
   const sidebarContent = (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-30 flex flex-col border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900",
+        "theme-app-bg theme-border fixed inset-y-0 left-0 z-30 flex flex-col border-r",
         "transition-[width] duration-200 ease-in-out",
         // Desktop: normal sidebar behavior
         "hidden md:flex",
@@ -191,10 +192,8 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
       )}
     >
       {/* Logo / Brand */}
-      <div className="flex h-16 items-center gap-2 border-b border-gray-200 px-4 dark:border-gray-700">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-deep-space-blue-500">
-          <img src="/nenjo-logo-white.png" alt="Nenjo" className="h-7 w-7" />
-        </div>
+      <div className="theme-border flex h-16 items-center gap-2 border-b px-4">
+        <NenjoLogoMark className="h-9 w-9 rounded-lg" />
         <span
           className={cn(
             "whitespace-nowrap text-lg font-bold text-deep-space-blue-900 transition-[opacity,transform] duration-200 ease-in-out dark:text-white",
@@ -222,7 +221,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
                     "flex items-center rounded-lg text-sm font-medium transition-colors",
                     isActive
                       ? "bg-deep-space-blue-50 text-deep-space-blue-700 dark:bg-deep-space-blue-900/40 dark:text-deep-space-blue-200"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100",
+                      : "theme-text-muted hover:[background:var(--app-hover)] hover:text-gray-900 dark:hover:text-gray-100",
                   )}
                 >
                   <Link
@@ -285,7 +284,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive
                   ? "bg-deep-space-blue-50 text-deep-space-blue-700 dark:bg-deep-space-blue-900/40 dark:text-deep-space-blue-200"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100",
+                : "theme-text-muted hover:[background:var(--app-hover)] hover:text-gray-900 dark:hover:text-gray-100",
               )}
             >
               <span className={cn("shrink-0", isActive ? "text-deep-space-blue-500 dark:text-deep-space-blue-300" : "text-gray-400 dark:text-gray-500")}>
@@ -310,7 +309,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="flex items-center justify-center rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            className="theme-text-muted flex items-center justify-center rounded-lg p-2 transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             <svg
@@ -347,17 +346,15 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
               onClick={onMobileClose}
             />
             <motion.aside
-              className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 md:hidden"
+              className="theme-app-bg theme-border fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r md:hidden"
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ type: "spring", bounce: 0, duration: 0.3 }}
             >
               {/* Logo / Brand */}
-              <div className="flex h-16 items-center gap-2 border-b border-gray-200 px-4 dark:border-gray-700">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-deep-space-blue-500">
-                  <img src="/nenjo-logo-white.png" alt="Nenjo" className="h-7 w-7" />
-                </div>
+              <div className="theme-border flex h-16 items-center gap-2 border-b px-4">
+                <NenjoLogoMark className="h-9 w-9 rounded-lg" />
                 <span className="text-lg font-bold text-deep-space-blue-900 dark:text-white">
                   Nenjo
                 </span>
@@ -379,7 +376,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
                             "flex items-center rounded-lg text-sm font-medium transition-colors",
                             isActive
                               ? "bg-deep-space-blue-50 text-deep-space-blue-700 dark:bg-deep-space-blue-900/40 dark:text-deep-space-blue-200"
-                              : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100",
+                              : "theme-text-muted hover:[background:var(--app-hover)] hover:text-gray-900 dark:hover:text-gray-100",
                           )}
                         >
                           <Link href={item.href} className="flex flex-1 items-center gap-3 px-3 py-2.5">
@@ -418,7 +415,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
                         "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                         isActive
                           ? "bg-deep-space-blue-50 text-deep-space-blue-700 dark:bg-deep-space-blue-900/40 dark:text-deep-space-blue-200"
-                          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100",
+                          : "theme-text-muted hover:[background:var(--app-hover)] hover:text-gray-900 dark:hover:text-gray-100",
                       )}
                     >
                       <span className={cn("shrink-0", isActive ? "text-deep-space-blue-500 dark:text-deep-space-blue-300" : "text-gray-400 dark:text-gray-500")}>
@@ -480,7 +477,7 @@ function UserProfile({ collapsed = false }: { collapsed?: boolean }) {
   // Loading skeleton
   if (!isLoaded) {
     return (
-      <div className="overflow-hidden border-t border-gray-200 p-4 dark:border-gray-700">
+      <div className="theme-border overflow-hidden border-t p-4">
         <div className="flex items-center gap-3">
           <div className="h-8 w-8 shrink-0 rounded-full bg-gray-200 animate-pulse dark:bg-gray-700" />
           <div className={cn("flex-1 min-w-0 space-y-1.5", textClasses)}>
@@ -495,7 +492,7 @@ function UserProfile({ collapsed = false }: { collapsed?: boolean }) {
   // Not signed in — show placeholder
   if (!isSignedIn) {
     return (
-      <div className="overflow-hidden border-t border-gray-200 p-4 dark:border-gray-700">
+      <div className="theme-border overflow-hidden border-t p-4">
         <div className="flex items-center gap-3">
           <div className="h-8 w-8 shrink-0 rounded-full bg-deep-space-blue-100 flex items-center justify-center dark:bg-deep-space-blue-900/50">
             <span className="text-sm font-medium text-deep-space-blue-700 dark:text-deep-space-blue-300">?</span>
@@ -509,14 +506,14 @@ function UserProfile({ collapsed = false }: { collapsed?: boolean }) {
   }
 
   return (
-    <div ref={menuRef} className="relative border-t border-gray-200 dark:border-gray-700">
+    <div ref={menuRef} className="theme-border relative border-t">
       {/* Logout popover — rendered outside overflow context */}
       {menuOpen && (
-        <div className="absolute bottom-full left-2 right-2 mb-1 z-50 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+        <div className="theme-border theme-surface-elevated absolute bottom-full left-2 right-2 z-50 mb-1 rounded-lg border py-1 shadow-lg">
           <button
             type="button"
             onClick={handleLogout}
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 transition-colors hover:[background:var(--app-hover)] dark:text-gray-300"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
@@ -529,7 +526,7 @@ function UserProfile({ collapsed = false }: { collapsed?: boolean }) {
       <button
         type="button"
         onClick={() => setMenuOpen((prev) => !prev)}
-        className="flex w-full items-center gap-3 overflow-hidden p-4 text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+        className="flex w-full items-center gap-3 overflow-hidden p-4 text-left transition-colors hover:[background:var(--app-hover)]"
       >
         {imageUrl ? (
           <img
