@@ -131,7 +131,7 @@ export function TopBar({ title, children }: TopBarProps) {
                 </span>
               ) : (
                 <span>
-                  Push notifications are {notificationsEnabled ? "enabled" : "available"}.
+                  Agent push notifications are {notificationsEnabled ? "enabled" : "available"}.
                 </span>
               )}
             </div>
@@ -157,7 +157,7 @@ export function TopBar({ title, children }: TopBarProps) {
                   ) : (
                     <Bell className="h-3.5 w-3.5" />
                   )}
-                  {notificationsEnabled ? "Disable Push" : "Enable Push"}
+                  {notificationsEnabled ? "Disable Agent Push" : "Enable Agent Push"}
                 </button>
               )}
             </div>
