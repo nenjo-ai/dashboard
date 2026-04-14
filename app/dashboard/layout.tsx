@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
+import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { PageTransition } from "@/components/ui/motion";
 import { setAuthTokenGetter } from "@/lib/api";
@@ -40,9 +41,15 @@ function DashboardLayoutWithClerk({
 }) {
   const { getToken, isLoaded } = useAuth();
   const isChromeless = CHROMELESS_ROUTES.some((r) => pathname.startsWith(r));
+  const isChatRoute = pathname.startsWith("/dashboard/chat");
+  const showMobileNav = !isChatRoute;
   const [authReady, setAuthReady] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(max-width: 767px)").matches
+      : false,
+  );
 
   // Sync with localStorage after mount to avoid hydration mismatch
   useEffect(() => {
@@ -53,6 +60,18 @@ function DashboardLayoutWithClerk({
         return () => clearTimeout(timer);
       }
     } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const updateViewport = () => setIsMobileViewport(mediaQuery.matches);
+
+    updateViewport();
+    mediaQuery.addEventListener("change", updateViewport);
+
+    return () => mediaQuery.removeEventListener("change", updateViewport);
   }, []);
 
   const toggleSidebar = () => {
@@ -84,7 +103,7 @@ function DashboardLayoutWithClerk({
     // before children (like onboarding) make API calls.
     if (!isLoaded || !authReady) {
       return (
-        <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] dark:bg-[#05070b]">
           <div className="flex items-center gap-3 text-gray-400">
             <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -108,7 +127,7 @@ function DashboardLayoutWithClerk({
   // requests before the auth token is available (which causes 401s).
   if (!authReady) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="min-h-screen bg-[#f5f7fb] dark:bg-[#05070b]">
         <main className="min-h-screen flex items-center justify-center">
           <div className="flex items-center gap-3 text-gray-400">
             <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -123,21 +142,26 @@ function DashboardLayoutWithClerk({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-[#f5f7fb] dark:bg-[#05070b]">
       <Sidebar
         collapsed={sidebarCollapsed}
         onToggleCollapse={toggleSidebar}
-        mobileOpen={mobileOpen}
-        onMobileClose={() => setMobileOpen(false)}
+        mobileOpen={false}
+        onMobileClose={() => {}}
       />
       {/* Main content — offset by sidebar width on desktop */}
       <div className={mainPadding}>
-        <main className="min-h-screen">
-          <MobileMenuProvider onMenuClick={() => setMobileOpen(true)}>
-            <PageTransition pageKey={pathname}>{children}</PageTransition>
+        <main className={cn("min-h-screen bg-[#f5f7fb] dark:bg-[#05070b] md:bg-transparent md:dark:bg-transparent", showMobileNav && "pb-[calc(5.25rem+env(safe-area-inset-bottom,0px))] md:pb-0")}>
+          <MobileMenuProvider onMenuClick={() => {}}>
+            {isMobileViewport ? (
+              children
+            ) : (
+              <PageTransition pageKey={pathname}>{children}</PageTransition>
+            )}
           </MobileMenuProvider>
         </main>
       </div>
+      {showMobileNav && <MobileTabBar />}
     </div>
   );
 }

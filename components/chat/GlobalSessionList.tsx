@@ -106,7 +106,7 @@ export default function GlobalSessionList({
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white dark:bg-gray-900">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent dark:bg-transparent">
       {/* Header */}
       {!hideHeaderControls && (
         <div className={cn(
@@ -134,10 +134,10 @@ export default function GlobalSessionList({
               onChange={(e) => setSearch(e.target.value)}
               placeholder={channelType === "notification" ? "Search notifications..." : "Search chats..."}
               className={cn(
-                "w-full border border-gray-200 bg-gray-100 text-xs text-gray-900 placeholder:text-gray-400 outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500",
+                "w-full border text-xs text-gray-900 placeholder:text-gray-400 outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400 dark:text-gray-100 dark:placeholder:text-gray-500",
                 mobile
-                  ? "rounded-2xl py-2.5 pl-9 pr-3"
-                  : "rounded-full py-2 pl-8 pr-3 md:rounded-md md:bg-gray-50 md:py-1.5",
+                  ? "rounded-[1.35rem] border-black/10 bg-[#f5f7fb]/80 py-3 pl-9 pr-3 backdrop-blur-xl dark:border-white/10 dark:bg-[#05070b]/80"
+                  : "rounded-full border-gray-200 bg-gray-100 py-2 pl-8 pr-3 md:rounded-md md:bg-gray-50 md:py-1.5 dark:border-gray-600 dark:bg-gray-800",
               )}
             />
           </div>
@@ -147,8 +147,10 @@ export default function GlobalSessionList({
             <button
               onClick={onCreate}
               className={cn(
-                "flex w-full items-center gap-2 border border-gray-200 px-3 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800",
-                mobile ? "rounded-2xl py-2.5" : "rounded-md py-2",
+                "flex w-full items-center gap-2 px-3 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800",
+                mobile
+                  ? "rounded-[1.35rem] border border-black/10 bg-[#f5f7fb]/80 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-[#05070b]/80"
+                  : "rounded-md border border-gray-200 py-2 dark:border-gray-600",
               )}
             >
               <svg
@@ -196,11 +198,11 @@ export default function GlobalSessionList({
                 className={cn(
                   "group relative min-w-0 cursor-pointer overflow-visible transition-colors",
                   mobile
-                    ? "mx-0 rounded-2xl px-3.5 py-3.5 active:scale-[0.995]"
+                    ? "mx-0 rounded-[1.5rem] border border-black/10 bg-transparent px-4 py-4 active:scale-[0.995] dark:border-white/10 dark:bg-transparent"
                     : "mx-1.5 rounded-xl px-3 py-3 md:rounded-md md:py-2",
                   menuOpen === session.id && "z-20",
                   session.id === activeSessionId
-                    ? "bg-deep-space-blue-500 text-white"
+                    ? "bg-gray-950 text-white dark:bg-white/[0.11]"
                     : "hover:bg-gray-50 dark:hover:bg-gray-800",
                 )}
                 onClick={() => onSelect(session)}
@@ -215,7 +217,7 @@ export default function GlobalSessionList({
                       )}
                       <input
                         ref={editRef}
-                        className="w-full rounded-sm border border-gray-300 bg-white px-2 py-0.5 text-xs text-gray-900 outline-hidden dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                        className="w-full rounded-sm border border-black/10 bg-[#f5f7fb] px-2 py-0.5 text-xs text-gray-900 outline-hidden dark:border-white/10 dark:bg-[#05070b] dark:text-gray-100"
                         value={editTitle}
                         onChange={(e) => setEditTitle(e.target.value)}
                         onBlur={() => handleRenameSubmit(session.id)}
@@ -299,7 +301,7 @@ export default function GlobalSessionList({
 
                     {menuOpen === session.id && (
                       <div
-                        className="absolute right-0 top-8 z-50 w-28 rounded-xl border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
+                        className="absolute right-0 top-8 z-50 w-28 rounded-xl border border-black/10 bg-[#f5f7fb] py-1 shadow-lg dark:border-white/10 dark:bg-[#05070b]"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {onRename && (
@@ -337,7 +339,7 @@ export default function GlobalSessionList({
       {confirmDeleteId && (
         <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/50">
           <div
-            className="w-80 rounded-lg border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800"
+            className="w-80 rounded-lg border border-black/10 bg-[#f5f7fb] p-4 shadow-xl dark:border-white/10 dark:bg-[#05070b]"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="mb-2 text-sm font-medium text-gray-900 dark:text-gray-100">

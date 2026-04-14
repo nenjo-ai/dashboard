@@ -5,6 +5,11 @@ export type SseEvent = {
   data: unknown;
 };
 
+function findEventBoundary(buffer: string): number {
+  const match = /\r?\n\r?\n/.exec(buffer);
+  return match ? match.index : -1;
+}
+
 function decodeEventBlock(block: string): SseEvent | null {
   const lines = block.split("\n");
   let event = "message";
@@ -31,6 +36,38 @@ function decodeEventBlock(block: string): SseEvent | null {
   }
 }
 
+function createSseTextParser(onEvent: (event: SseEvent) => void) {
+  let buffer = "";
+
+  return {
+    push(chunk: string) {
+      buffer += chunk;
+
+      let boundary = findEventBoundary(buffer);
+      while (boundary >= 0) {
+        const block = buffer.slice(0, boundary);
+        const separatorMatch = /\r?\n\r?\n/.exec(buffer.slice(boundary));
+        const separatorLength = separatorMatch?.[0].length ?? 2;
+        buffer = buffer.slice(boundary + separatorLength);
+        const parsed = decodeEventBlock(block);
+        if (parsed) {
+          onEvent(parsed);
+        }
+        boundary = findEventBoundary(buffer);
+      }
+    },
+    flush() {
+      const finalBlock = buffer.trim();
+      if (!finalBlock) return;
+      const parsed = decodeEventBlock(finalBlock);
+      if (parsed) {
+        onEvent(parsed);
+      }
+      buffer = "";
+    },
+  };
+}
+
 export async function consumeSseStream(
   response: Response,
   onEvent: (event: SseEvent) => void,
@@ -41,30 +78,84 @@ export async function consumeSseStream(
   }
 
   const decoder = new TextDecoder();
-  let buffer = "";
+  const parser = createSseTextParser(onEvent);
 
   while (true) {
     const { done, value } = await reader.read();
-    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
-
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary >= 0) {
-      const block = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      const parsed = decodeEventBlock(block);
-      if (parsed) {
-        onEvent(parsed);
-      }
-      boundary = buffer.indexOf("\n\n");
-    }
+    parser.push(decoder.decode(value ?? new Uint8Array(), { stream: !done }));
 
     if (done) {
-      const finalBlock = buffer.trim();
-      if (finalBlock) {
-        const parsed = decodeEventBlock(finalBlock);
-        if (parsed) onEvent(parsed);
-      }
+      parser.flush();
       return;
     }
   }
+}
+
+export async function consumeSseStreamXhr(options: {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  signal?: AbortSignal;
+  onEvent: (event: SseEvent) => void;
+}): Promise<void> {
+  const { url, method = "GET", headers, body, signal, onEvent } = options;
+
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const parser = createSseTextParser(onEvent);
+    let lastIndex = 0;
+
+    const cleanup = () => {
+      xhr.onprogress = null;
+      xhr.onerror = null;
+      xhr.onload = null;
+      xhr.onabort = null;
+      signal?.removeEventListener("abort", abortXhr);
+    };
+
+    const readNewText = () => {
+      const nextText = xhr.responseText.slice(lastIndex);
+      if (!nextText) return;
+      lastIndex = xhr.responseText.length;
+      parser.push(nextText);
+    };
+
+    const abortXhr = () => {
+      xhr.abort();
+    };
+
+    xhr.open(method, url, true);
+    Object.entries(headers ?? {}).forEach(([key, value]) => {
+      xhr.setRequestHeader(key, value);
+    });
+
+    xhr.onprogress = () => {
+      readNewText();
+    };
+
+    xhr.onload = () => {
+      readNewText();
+      parser.flush();
+      cleanup();
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+        return;
+      }
+      reject(new Error(xhr.responseText || `Request failed with status ${xhr.status}`));
+    };
+
+    xhr.onerror = () => {
+      cleanup();
+      reject(new Error("Network error while streaming response"));
+    };
+
+    xhr.onabort = () => {
+      cleanup();
+      reject(new DOMException("The operation was aborted.", "AbortError"));
+    };
+
+    signal?.addEventListener("abort", abortXhr);
+    xhr.send(body);
+  });
 }

@@ -6,10 +6,12 @@ import { deleteModel } from "@/lib/api";
 import type { Model } from "@/lib/types";
 
 import { TopBar } from "@/components/layout/TopBar";
+import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import { AgentList } from "@/components/agents/AgentList";
 import { AgentsSection } from "@/components/agents/AgentsSection";
+import { MobileAgentList } from "@/components/agents/MobileAgentList";
 import { DomainsSection } from "@/components/agents/DomainsSection";
 import { McpServersSection } from "@/components/settings/McpServersSection";
 import { AbilitiesSection } from "@/components/agents/AbilitiesSection";
@@ -19,6 +21,7 @@ import { AgentDetailModal } from "@/components/agents/AgentDetailModal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PageContent } from "@/components/ui/PageContent";
 import { toast } from "@/lib/toast";
+import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
 type AgentsTab = "agents" | "domains" | "abilities" | "context" | "mcp" | "models";
 
@@ -31,6 +34,7 @@ export default function AgentsPage() {
 }
 
 function AgentsPageContent() {
+  const isMobileViewport = useIsMobileViewport();
   const { models, isLoading, isError, mutate } = useModels();
   const { projects } = useProjects();
   const { agents } = useAgents();
@@ -94,89 +98,163 @@ function AgentsPageContent() {
 
   return (
     <>
-      <TopBar title="Agents" />
-
-      <PageContent>
-        {/* Tabs */}
-        <div className="mb-6">
+      {isMobileViewport ? (
+      <MobilePageShell title="Agents">
+        <div className="space-y-4">
           <Tabs
             tabs={tabs}
             activeTab={activeTab}
             onChange={(id) => setActiveTab(id as AgentsTab)}
           />
+
+          {activeTab === "agents" && (
+            <>
+              <p className="text-sm leading-6 text-gray-500 dark:text-gray-400">
+                Define agent identities, prompts, and behavior for different task types.
+              </p>
+              <MobileAgentList />
+            </>
+          )}
+
+          {activeTab === "domains" && (
+            <>
+              <p className="text-sm leading-6 text-gray-500 dark:text-gray-400">
+                Slash command domains that guide agents through structured workflows.
+              </p>
+              <DomainsSection />
+            </>
+          )}
+
+          {activeTab === "abilities" && (
+            <>
+              <p className="text-sm leading-6 text-gray-500 dark:text-gray-400">
+                Specialized behaviors agents can activate as tools during execution.
+              </p>
+              <AbilitiesSection />
+            </>
+          )}
+
+          {activeTab === "context" && (
+            <>
+              <p className="text-sm leading-6 text-gray-500 dark:text-gray-400">
+                Editable templates that control what agents see in their prompts.
+              </p>
+              <ContextBlocksSection />
+            </>
+          )}
+
+          {activeTab === "mcp" && (
+            <>
+              <p className="text-sm leading-6 text-gray-500 dark:text-gray-400">
+                External MCP servers that provide agents with additional tools.
+              </p>
+              <McpServersSection />
+            </>
+          )}
+
+          {activeTab === "models" && (
+            <>
+              <p className="text-sm leading-6 text-gray-500 dark:text-gray-400">
+                LLM configurations assigned to agents for execution.
+              </p>
+              <AgentList
+                agents={models}
+                roles={agents ?? []}
+                isLoading={isLoading}
+                isError={isError}
+                onEdit={handleEdit}
+                onView={handleView}
+                onDelete={handleDeleteRequest}
+              />
+            </>
+          )}
         </div>
+      </MobilePageShell>
+      ) : (
+      <>
+        <TopBar title="Agents" />
 
-        {/* Tab Content */}
-        {activeTab === "agents" && (
-          <>
-            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-              Define agent identities, prompts, and behavior for different task types.
-            </p>
-            <AgentsSection />
-          </>
-        )}
-
-        {activeTab === "domains" && (
-          <>
-            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-              Slash command domains that guide agents through structured workflows.
-            </p>
-            <DomainsSection />
-          </>
-        )}
-
-        {activeTab === "abilities" && (
-          <>
-            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-              Specialized behaviors agents can activate as tools during execution.
-            </p>
-            <AbilitiesSection />
-          </>
-        )}
-
-        {activeTab === "context" && (
-          <>
-            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-              Editable templates that control what agents see in their prompts.
-            </p>
-            <ContextBlocksSection />
-          </>
-        )}
-
-        {activeTab === "mcp" && (
-          <>
-            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-              External MCP servers that provide agents with additional tools.
-            </p>
-            <McpServersSection />
-          </>
-        )}
-
-        {activeTab === "models" && (
-          <>
-            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-              LLM configurations assigned to agents for execution.
-            </p>
-            <div className="mb-4 flex justify-end">
-              <Button onClick={handleCreate}>
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                </svg>
-              </Button>
-            </div>
-            <AgentList
-              agents={models}
-              roles={agents ?? []}
-              isLoading={isLoading}
-              isError={isError}
-              onEdit={handleEdit}
-              onView={handleView}
-              onDelete={handleDeleteRequest}
-              onCreate={handleCreate}
+        <PageContent>
+          <div className="mb-6">
+            <Tabs
+              tabs={tabs}
+              activeTab={activeTab}
+              onChange={(id) => setActiveTab(id as AgentsTab)}
             />
-          </>
-        )}
-      </PageContent>
+          </div>
+
+          {activeTab === "agents" && (
+            <>
+              <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                Define agent identities, prompts, and behavior for different task types.
+              </p>
+              <AgentsSection />
+            </>
+          )}
+
+          {activeTab === "domains" && (
+            <>
+              <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                Slash command domains that guide agents through structured workflows.
+              </p>
+              <DomainsSection />
+            </>
+          )}
+
+          {activeTab === "abilities" && (
+            <>
+              <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                Specialized behaviors agents can activate as tools during execution.
+              </p>
+              <AbilitiesSection />
+            </>
+          )}
+
+          {activeTab === "context" && (
+            <>
+              <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                Editable templates that control what agents see in their prompts.
+              </p>
+              <ContextBlocksSection />
+            </>
+          )}
+
+          {activeTab === "mcp" && (
+            <>
+              <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                External MCP servers that provide agents with additional tools.
+              </p>
+              <McpServersSection />
+            </>
+          )}
+
+          {activeTab === "models" && (
+            <>
+              <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                LLM configurations assigned to agents for execution.
+              </p>
+              <div className="mb-4 flex justify-end">
+                <Button onClick={handleCreate}>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                </Button>
+              </div>
+              <AgentList
+                agents={models}
+                roles={agents ?? []}
+                isLoading={isLoading}
+                isError={isError}
+                onEdit={handleEdit}
+                onView={handleView}
+                onDelete={handleDeleteRequest}
+                onCreate={handleCreate}
+              />
+            </>
+          )}
+        </PageContent>
+      </>
+      )}
 
       {/* Create / Edit Modal */}
       <AgentFormModal

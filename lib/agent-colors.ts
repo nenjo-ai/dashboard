@@ -14,6 +14,12 @@ function hexToRgb(hex: string): [number, number, number] {
   return [r, g, b];
 }
 
+/** Apply an alpha channel to an agent color for soft fills and borders. */
+export function agentColorAlpha(hex: string, alpha: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 /** Light tinted background (15% opacity on white). */
 export function agentColorBg(hex: string): string {
   const [r, g, b] = hexToRgb(hex);

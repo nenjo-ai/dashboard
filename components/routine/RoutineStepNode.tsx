@@ -30,43 +30,43 @@ export interface StepNodeData {
 
 const STEP_STYLES: Record<RoutineStepType, { bg: string; border: string; icon: string; iconBg: string }> = {
   agent: {
-    bg: "bg-white dark:bg-gray-800",
+    bg: "theme-surface",
     border: "border-deep-space-blue-300 dark:border-deep-space-blue-600",
     icon: "✦",
     iconBg: "bg-deep-space-blue-100 text-deep-space-blue-600 dark:bg-deep-space-blue-900/50 dark:text-deep-space-blue-300",
   },
   gate: {
-    bg: "bg-white dark:bg-gray-800",
+    bg: "theme-surface",
     border: "border-amber-300 dark:border-amber-600",
     icon: "⬥",
     iconBg: "bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-300",
   },
   terminal: {
-    bg: "bg-white dark:bg-gray-800",
+    bg: "theme-surface",
     border: "border-emerald-300 dark:border-emerald-600",
     icon: "●",
     iconBg: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-300",
   },
   council: {
-    bg: "bg-white dark:bg-gray-800",
+    bg: "theme-surface",
     border: "border-purple-300 dark:border-purple-600",
     icon: "⚑",
     iconBg: "bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-300",
   },
   cron: {
-    bg: "bg-white dark:bg-gray-800",
+    bg: "theme-surface",
     border: "border-cyan-300 dark:border-cyan-600",
     icon: "⟳",
     iconBg: "bg-cyan-100 text-cyan-600 dark:bg-cyan-900/50 dark:text-cyan-300",
   },
   lambda: {
-    bg: "bg-white dark:bg-gray-800",
+    bg: "theme-surface",
     border: "border-orange-300 dark:border-orange-600",
     icon: "\u03BB",
     iconBg: "bg-orange-100 text-orange-600 dark:bg-orange-900/50 dark:text-orange-300",
   },
   terminal_fail: {
-    bg: "bg-white dark:bg-gray-800",
+    bg: "theme-surface",
     border: "border-red-300 dark:border-red-600",
     icon: "✕",
     iconBg: "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300",
@@ -109,7 +109,7 @@ function RoutineStepNodeInner({ data, selected }: NodeProps) {
       className={`
         relative rounded-lg border-2 shadow-xs transition-all min-w-[140px] md:min-w-[180px]
         ${style.bg} ${style.border}
-        ${selected ? "ring-2 ring-deep-space-blue-400 ring-offset-2 dark:ring-offset-gray-900" : ""}
+        ${selected ? "ring-2 ring-deep-space-blue-400 ring-offset-2 dark:ring-offset-[#05070b]" : ""}
         hover:shadow-md
       `}
     >
@@ -117,7 +117,7 @@ function RoutineStepNodeInner({ data, selected }: NodeProps) {
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3! h-3! bg-gray-400! border-2! border-white! dark:border-gray-800! -top-1.5!"
+        className="w-3! h-3! bg-gray-400! border-2! theme-surface! -top-1.5!"
       />
 
       {/* Content */}
@@ -147,7 +147,7 @@ function RoutineStepNodeInner({ data, selected }: NodeProps) {
             type="source"
             position={Position.Bottom}
             id={HANDLE_GATE_PASS}
-            className="w-3! h-3! bg-emerald-400! border-2! border-white! dark:border-gray-800! -bottom-1.5!"
+            className="w-3! h-3! bg-emerald-400! border-2! theme-surface! -bottom-1.5!"
             style={{ left: "30%" }}
           />
           <span className="absolute bottom-0 left-[18%] translate-y-full pt-0.5 text-[9px] font-medium tracking-wide uppercase text-emerald-500 dark:text-emerald-400 pointer-events-none select-none">
@@ -159,7 +159,7 @@ function RoutineStepNodeInner({ data, selected }: NodeProps) {
             type="source"
             position={Position.Bottom}
             id={HANDLE_GATE_FAIL}
-            className="w-3! h-3! bg-red-400! border-2! border-white! dark:border-gray-800! -bottom-1.5!"
+            className="w-3! h-3! bg-red-400! border-2! theme-surface! -bottom-1.5!"
             style={{ left: "70%" }}
           />
           <span className="absolute bottom-0 right-[18%] translate-y-full pt-0.5 text-[9px] font-medium tracking-wide uppercase text-red-400 dark:text-red-400 pointer-events-none select-none">
@@ -171,7 +171,7 @@ function RoutineStepNodeInner({ data, selected }: NodeProps) {
         <Handle
           type="source"
           position={Position.Bottom}
-          className="w-3! h-3! bg-gray-400! border-2! border-white! dark:border-gray-800! -bottom-1.5!"
+          className="w-3! h-3! bg-gray-400! border-2! theme-surface! -bottom-1.5!"
         />
       ) : null}
     </div>

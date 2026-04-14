@@ -120,7 +120,7 @@ function StatusIcon({ status, size = "sm" }: { status: string; size?: "sm" | "md
         </svg>
       );
     default:
-      return <span className={cn(sizeClass, "rounded-full bg-gray-300 dark:bg-gray-600 shrink-0 block")} />;
+      return <span className={cn(sizeClass, "theme-surface-muted rounded-full shrink-0 block")} />;
   }
 }
 
@@ -129,9 +129,9 @@ function StepTypeBadge({ stepType }: { stepType: string }) {
     agent: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
     gate: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
     council: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-    terminal: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+    terminal: "theme-surface-muted theme-text-muted",
     merge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-    setup: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+    setup: "theme-surface-muted theme-text-muted",
   };
   return (
     <span className={cn("inline-flex px-1.5 py-0.5 rounded-sm text-[10px] font-medium", colors[stepType] ?? colors.agent)}>
@@ -337,29 +337,29 @@ function TaskRow({ task }: { task: ExecutionTask }) {
   );
 
   return (
-    <div className="border-b border-gray-100 dark:border-gray-700 last:border-b-0">
+    <div className="theme-border border-b last:border-b-0">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 w-full px-4 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+        className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:[background:var(--app-hover)]"
       >
         <StatusIcon status={task.status} size="md" />
-        <span className="text-sm text-gray-900 dark:text-gray-100 truncate flex-1 font-medium">
+        <span className="theme-text flex-1 truncate text-sm font-medium">
           {task.slug ?? task.title}
         </span>
         {totalTokens > 0 && (
-          <span className="text-[10px] text-gray-400 shrink-0 tabular-nums">
+          <span className="theme-text-muted shrink-0 text-[10px] tabular-nums">
             {formatTokens(totalTokens)} tok
           </span>
         )}
         {totalDuration > 0 && (
-          <span className="text-xs text-gray-400 shrink-0 tabular-nums">
+          <span className="theme-text-muted shrink-0 text-xs tabular-nums">
             {formatDuration(totalDuration)}
           </span>
         )}
         <svg
           className={cn(
-            "h-3.5 w-3.5 text-gray-400 transition-transform shrink-0",
+            "theme-text-muted h-3.5 w-3.5 shrink-0 transition-transform",
             expanded && "rotate-90",
           )}
           fill="none"
@@ -415,7 +415,7 @@ function TaskRow({ task }: { task: ExecutionTask }) {
                   ) : (
                     <StatusIcon status={step.event_type} />
                   )}
-                  <span className="text-xs text-gray-700 dark:text-gray-300 flex-1 truncate">
+                  <span className="theme-text flex-1 truncate text-xs">
                     {step.step_name}
                   </span>
                   {metrics?.execution_count != null && metrics.execution_count > 1 && (
@@ -426,20 +426,20 @@ function TaskRow({ task }: { task: ExecutionTask }) {
                   <StepTypeBadge stepType={step.step_type} />
                   {tokens.total > 0 && (
                     <span
-                      className="text-[10px] text-gray-400 tabular-nums shrink-0"
+                      className="theme-text-muted shrink-0 text-[10px] tabular-nums"
                       title={`In: ${tokens.input.toLocaleString()} / Out: ${tokens.output.toLocaleString()}`}
                     >
                       {formatTokens(tokens.total)} tok
                     </span>
                   )}
                   {step.duration_ms != null && step.duration_ms > 0 && (
-                    <span className="text-xs text-gray-400 tabular-nums shrink-0">
+                    <span className="theme-text-muted shrink-0 text-xs tabular-nums">
                       {formatDuration(step.duration_ms)}
                     </span>
                   )}
                 </div>
                 {outputPreview && (
-                  <div className="ml-5 mt-0.5 mb-1 rounded-md bg-gray-50 px-2.5 py-1.5 text-xs text-gray-600 dark:bg-gray-900/50 dark:text-gray-400 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+                  <div className="theme-surface-muted theme-text ml-5 mt-0.5 mb-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-md px-2.5 py-1.5 text-xs">
                     <MarkdownPreview content={outputPreview} />
                   </div>
                 )}
@@ -463,25 +463,25 @@ function TaskRow({ task }: { task: ExecutionTask }) {
                           [activityKey]: !prev[activityKey],
                         }))
                       }
-                      className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                      className="theme-surface theme-border theme-text inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:[background:var(--app-hover)]"
                     >
                       <span>{activityExpanded ? "Hide" : "Show"} source activity</span>
-                      <span className="rounded-sm bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                      <span className="theme-surface-muted theme-text-muted rounded-sm px-1.5 py-0.5 text-[10px]">
                         {children.length}
                       </span>
                     </button>
                   </div>
                 )}
                 {hasActivity && activityExpanded && (
-                  <div className="ml-5 mt-1 mb-2 rounded-md border border-gray-200 bg-gray-50/70 px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40">
+                  <div className="theme-border theme-surface-muted ml-5 mt-1 mb-2 rounded-md border px-3 py-2">
                     <div className="mb-2 flex items-center gap-2">
                       <span className={cn("inline-flex h-2 w-2 rounded-full", isDone ? "bg-gray-400" : "bg-yellow-500 animate-pulse")} />
-                      <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      <span className="theme-text-muted text-[11px] font-semibold uppercase tracking-wide">
                         {isDone ? "Source activity" : "Live stream"}
                       </span>
                     </div>
                     {children.length === 0 ? (
-                      <div className="rounded-md bg-white px-2.5 py-2 text-xs text-gray-500 dark:bg-gray-950/60 dark:text-gray-400">
+                      <div className="theme-surface rounded-md px-2.5 py-2 text-xs [color:var(--app-text-muted)]">
                         Waiting for tool activity…
                       </div>
                     ) : (
@@ -505,22 +505,22 @@ function TaskRow({ task }: { task: ExecutionTask }) {
                         const showDetails = !!childError || (!!childPreview && !isLowSignalJsonFragment(childPreview));
 
                         return (
-                          <div key={`${step.step_name}:${child.step_name}`} className="rounded-md bg-white px-2 py-1.5 dark:bg-gray-950/60">
+                          <div key={`${step.step_name}:${child.step_name}`} className="theme-surface rounded-md px-2 py-1.5">
                             <div className="flex items-start gap-2">
                               <StatusIcon status={child.event_type} />
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">
+                                  <span className="theme-text truncate text-xs font-medium">
                                     {friendlyToolName(child.step_name)}
                                   </span>
                                 </div>
-                                <p className={cn("mt-0 text-[11px] leading-5", childError ? "text-red-600 dark:text-red-400" : "text-gray-500 dark:text-gray-400")}>
+                                <p className={cn("mt-0 text-[11px] leading-5", childError ? "text-red-600 dark:text-red-400" : "theme-text-muted")}>
                                   {summary}
                                 </p>
                               </div>
                             </div>
                             {showDetails && childPreview && (
-                              <div className="mt-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+                              <div className="theme-border theme-surface-muted theme-text mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded-md border px-2 py-1 text-xs">
                                 <MarkdownPreview content={childPreview} />
                               </div>
                             )}
@@ -577,17 +577,17 @@ function HistoryRow({ execution: exec }: { execution: ExecutionDetails }) {
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center justify-between w-full px-5 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+        className="flex w-full items-center justify-between px-5 py-3 text-left transition-colors hover:[background:var(--app-hover)]"
       >
         <div className="flex items-center gap-3 min-w-0">
           <Badge variant={exec.status} showDot>
             {exec.status}
           </Badge>
           <div className="min-w-0">
-            <p className="text-sm text-gray-900 truncate dark:text-gray-100">
+            <p className="theme-text truncate text-sm">
               {exec.routine_name ?? `Run #${exec.id.slice(0, 8)}`}
             </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
+            <p className="theme-text-muted text-xs">
               {exec.parallel_count} parallel ·{" "}
               {exec.task_counts.total} tasks
             </p>
@@ -596,7 +596,7 @@ function HistoryRow({ execution: exec }: { execution: ExecutionDetails }) {
         <div className="flex items-center gap-4 shrink-0">
           {tokens.total > 0 && (
             <span
-              className="hidden sm:block text-[10px] text-gray-400 tabular-nums"
+              className="theme-text-muted hidden text-[10px] tabular-nums sm:block"
               title={`In: ${tokens.input.toLocaleString()} · Out: ${tokens.output.toLocaleString()}`}
             >
               {formatTokens(tokens.total)} tok
@@ -604,7 +604,7 @@ function HistoryRow({ execution: exec }: { execution: ExecutionDetails }) {
           )}
           {exec.task_counts.total > 0 && (
             <div className="hidden sm:flex items-center gap-2">
-              <div className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+              <div className="theme-surface-muted h-1.5 w-16 overflow-hidden rounded-full">
                 <div
                   className="h-full rounded-full bg-emerald-500"
                   style={{
@@ -612,17 +612,17 @@ function HistoryRow({ execution: exec }: { execution: ExecutionDetails }) {
                   }}
                 />
               </div>
-              <span className="text-xs text-gray-500">
+              <span className="theme-text-muted text-xs">
                 {Math.round(exec.completion_percentage)}%
               </span>
             </div>
           )}
-          <span className="text-xs text-gray-400">
+          <span className="theme-text-muted text-xs">
             {formatRelativeTime(exec.created_at)}
           </span>
           <svg
             className={cn(
-              "h-3.5 w-3.5 text-gray-400 transition-transform shrink-0",
+              "theme-text-muted h-3.5 w-3.5 shrink-0 transition-transform",
               expanded && "rotate-90",
             )}
             fill="none"
@@ -636,13 +636,13 @@ function HistoryRow({ execution: exec }: { execution: ExecutionDetails }) {
       </button>
 
       {expanded && (
-        <div className="border-t border-gray-100 dark:border-gray-700">
+        <div className="theme-border border-t">
           {tasks && tasks.length > 0 ? (
             tasks.map((task) => (
               <TaskRow key={task.id} task={task} />
             ))
           ) : (
-            <div className="px-5 py-3 text-xs text-gray-400 dark:text-gray-500">
+            <div className="theme-text-muted px-5 py-3 text-xs">
               {tasks ? "No tasks in this run" : "Loading tasks..."}
             </div>
           )}
@@ -771,7 +771,7 @@ export function ExecutionPanel({
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-4 dark:border-gray-700 dark:bg-gray-800">
+      <div className="theme-surface theme-border space-y-4 rounded-xl border p-6">
         <Skeleton className="h-6 w-48" />
         <Skeleton className="h-20 w-full" />
         <Skeleton className="h-10 w-32" />
@@ -801,11 +801,11 @@ export function ExecutionPanel({
 
       {/* Active execution card */}
       {activeExecution ? (
-        <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+        <div className="theme-surface theme-border rounded-xl border">
           {/* Header */}
-          <div className="border-b border-gray-100 px-5 py-4 flex items-center justify-between dark:border-gray-700">
+          <div className="theme-border flex items-center justify-between border-b px-5 py-4">
             <div className="flex items-center gap-3">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              <h3 className="theme-text text-sm font-semibold">
                 Execution Run
               </h3>
               <Badge variant={activeExecution.status} showDot>
@@ -818,20 +818,20 @@ export function ExecutionPanel({
                     ? "bg-emerald-500 animate-pulse"
                     : activeExecution.status === "paused"
                       ? "bg-yellow-500"
-                      : "bg-gray-300",
+                      : "bg-[var(--app-border-strong)]",
                 )}
                 title="Realtime execution state"
               />
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">
+              <span className="theme-text-muted text-xs">
                 {formatRelativeTime(activeExecution.created_at)}
               </span>
               <button
                 type="button"
                 onClick={handleRefresh}
                 disabled={refreshing}
-                className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors dark:hover:bg-gray-700 dark:hover:text-gray-300 disabled:opacity-50"
+                className="theme-text-muted rounded-md p-1.5 transition-colors hover:[background:var(--app-hover)] hover:[color:var(--app-text)] disabled:opacity-50"
                 title="Refresh statuses"
               >
                 <svg
@@ -851,14 +851,14 @@ export function ExecutionPanel({
             {/* Progress bar */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-500 dark:text-gray-400">
+                <span className="theme-text-muted text-xs">
                   {doneTasks} / {activeExecution.task_counts.total} tasks complete
                 </span>
-                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                <span className="theme-text text-xs font-medium">
                   {Math.round(activeExecution.completion_percentage)}%
                 </span>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+              <div className="theme-surface-muted h-2 w-full overflow-hidden rounded-full">
                 <div
                   className="h-full rounded-full bg-deep-space-blue-500 transition-all duration-500"
                   style={{
@@ -881,10 +881,10 @@ export function ExecutionPanel({
               ].map(({ label, value }) => (
                 <div
                   key={label}
-                  className="rounded-lg bg-gray-50 px-2 py-2 dark:bg-gray-900"
+                  className="theme-surface-muted rounded-lg px-2 py-2"
                 >
-                  <p className="text-lg font-bold text-gray-900 dark:text-gray-100">{value}</p>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wider dark:text-gray-400">
+                  <p className="theme-text text-lg font-bold">{value}</p>
+                  <p className="theme-text-muted text-[10px] uppercase tracking-wider">
                     {label}
                   </p>
                 </div>
@@ -942,9 +942,9 @@ export function ExecutionPanel({
 
           {/* Task list (GitHub Actions style) */}
           {executionTasks && executionTasks.length > 0 && (
-            <div className="border-t border-gray-100 dark:border-gray-700">
+            <div className="theme-border border-t">
               <div className="px-5 py-2.5">
-                <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+                <h4 className="theme-text-muted text-xs font-medium uppercase tracking-wider">
                   Tasks
                 </h4>
               </div>
@@ -958,11 +958,11 @@ export function ExecutionPanel({
         </div>
       ) : (
         /* No active execution — creation UI */
-        <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3 dark:text-gray-100">
+        <div className="theme-surface theme-border rounded-xl border p-5">
+          <h3 className="theme-text mb-3 text-sm font-semibold">
             Start New Execution
           </h3>
-          <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
+          <p className="theme-text-muted mb-4 text-sm">
             Create an execution run to start processing tasks with AI agents.
             Each task uses its own assigned routine.
           </p>
@@ -971,7 +971,7 @@ export function ExecutionPanel({
             <div>
               <label
                 htmlFor="parallel-count"
-                className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400"
+                className="theme-text-muted mb-1 block text-xs font-medium"
               >
                 Parallel Tasks
               </label>
@@ -986,7 +986,7 @@ export function ExecutionPanel({
                     Math.max(1, Math.min(20, parseInt(e.target.value) || 1)),
                   )
                 }
-                className="w-20 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                className="theme-surface theme-border theme-text w-20 rounded-lg border px-3 py-2 text-sm focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500"
               />
             </div>
             <Button onClick={handleCreate} disabled={creating}>
@@ -1013,13 +1013,13 @@ export function ExecutionPanel({
 
       {/* Execution history */}
       {executions && executions.length > 0 && (
-        <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-          <div className="border-b border-gray-100 px-5 py-3 dark:border-gray-700">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+        <div className="theme-surface theme-border rounded-xl border">
+          <div className="theme-border border-b px-5 py-3">
+            <h3 className="theme-text text-sm font-semibold">
               Execution History
             </h3>
           </div>
-          <div className="divide-y divide-gray-50 dark:divide-gray-700">
+          <div className="theme-border divide-y">
             {executions.map((exec) => (
               <HistoryRow key={exec.id} execution={exec} />
             ))}

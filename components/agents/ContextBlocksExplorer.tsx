@@ -191,13 +191,13 @@ function DraggableFile({
       } ${
         isSelected
           ? "bg-teal-50 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300"
-          : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700/50"
+          : "theme-text hover:[background:var(--app-hover)]"
       }`}
       style={{ paddingLeft: `${depth * 16 + 8}px` }}
     >
       {/* File icon */}
       <svg
-        className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500"
+        className="theme-text-muted h-3.5 w-3.5 shrink-0"
         fill="none"
         viewBox="0 0 24 24"
         strokeWidth={1.5}
@@ -271,7 +271,7 @@ function DroppableFolder({
       >
         {/* Chevron */}
         <svg
-          className={`h-3 w-3 shrink-0 text-gray-400 transition-transform dark:text-gray-500 ${
+          className={`theme-text-muted h-3 w-3 shrink-0 transition-transform ${
             isExpanded ? "rotate-90" : ""
           }`}
           fill="none"
@@ -286,7 +286,7 @@ function DroppableFolder({
           className={`h-3.5 w-3.5 shrink-0 ${
             isExpanded
               ? "text-teal-500 dark:text-teal-400"
-              : "text-gray-400 dark:text-gray-500"
+              : "theme-text-muted"
           }`}
           fill="none"
           viewBox="0 0 24 24"
@@ -307,12 +307,12 @@ function DroppableFolder({
             />
           )}
         </svg>
-        <span className="truncate text-xs font-medium text-gray-700 dark:text-gray-300">
+        <span className="theme-text truncate text-xs font-medium">
           {folder.name}
         </span>
         {folder.isSystem && (
           <svg
-            className="h-3 w-3 shrink-0 text-gray-300 dark:text-gray-600"
+            className="theme-text-muted h-3 w-3 shrink-0"
             fill="none"
             viewBox="0 0 24 24"
             strokeWidth={1.5}
@@ -449,12 +449,12 @@ function ContextMenu({
   return (
     <div
       ref={ref}
-      className="fixed z-50 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800"
+      className="theme-surface-elevated theme-border fixed z-50 w-40 rounded-lg border py-1 shadow-lg"
       style={{ left: x, top: y }}
     >
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+        className="theme-text flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:[background:var(--app-hover)]"
         onClick={() => { onDownload(folder); onClose(); }}
       >
         Download as .zip
@@ -463,7 +463,7 @@ function ContextMenu({
         <>
           <button
             type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+            className="theme-text flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:[background:var(--app-hover)]"
             onClick={() => { onRename(folder); onClose(); }}
           >
             Rename
@@ -718,8 +718,8 @@ export function ContextBlocksExplorer() {
 
   if (isLoading) {
     return (
-      <div className="flex rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800" style={{ height: "calc(100dvh - 200px)" }}>
-        <div className="w-64 border-r border-gray-200 p-3 dark:border-gray-700">
+      <div className="theme-border theme-surface flex rounded-xl border" style={{ height: "calc(100dvh - 200px)" }}>
+        <div className="theme-border w-64 border-r p-3">
           <Skeleton className="mb-3 h-4 w-24" />
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="mb-2 h-6 w-full" />
@@ -735,10 +735,10 @@ export function ContextBlocksExplorer() {
   if (isError) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-red-200 bg-red-50 px-6 py-12 dark:border-red-900 dark:bg-red-950/50">
-        <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+        <h3 className="theme-text mt-4 text-lg font-semibold">
           Failed to load context blocks
         </h3>
-        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+        <p className="theme-text-muted mt-2 text-sm">
           Please check your connection and try again.
         </p>
       </div>
@@ -751,19 +751,19 @@ export function ContextBlocksExplorer() {
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex min-h-[400px] flex-1 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900" style={{ height: "calc(100dvh - 200px)" }}>
+      <div className="theme-border theme-surface flex min-h-[400px] flex-1 overflow-hidden rounded-xl border" style={{ height: "calc(100dvh - 200px)" }}>
         {/* Left panel — File tree */}
-        <div className="flex w-64 shrink-0 flex-col border-r border-gray-200 dark:border-gray-700">
+        <div className="theme-border theme-surface-muted flex w-64 shrink-0 flex-col border-r">
           {/* Toolbar */}
-          <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2 dark:border-gray-700">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+          <div className="theme-border flex items-center justify-between border-b px-3 py-2">
+            <span className="theme-text-muted text-xs font-semibold uppercase tracking-wider">
               Context Blocks
             </span>
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => setNewFolderOpen(true)}
-                className="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300"
+                className="rounded p-1 text-gray-400 transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
                 title="New folder"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -777,7 +777,7 @@ export function ContextBlocksExplorer() {
               <button
                 type="button"
                 onClick={() => setCreateOpen(true)}
-                className="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300"
+                className="rounded p-1 text-gray-400 transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
                 title="New block"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">

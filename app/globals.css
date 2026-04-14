@@ -161,20 +161,152 @@
     --background: 0 0% 98%;
     --foreground: 222.2 84% 4.9%;
     --border: 220 13% 91%;
+    --app-bg: #f5f7fb;
+    --app-surface: transparent;
+    --app-surface-elevated: #ffffff;
+    --app-surface-muted: rgba(15, 23, 42, 0.04);
+    --app-surface-muted-strong: rgba(15, 23, 42, 0.08);
+    --app-border-color: rgba(15, 23, 42, 0.1);
+    --app-border-strong: rgba(15, 23, 42, 0.16);
+    --app-hover: rgba(15, 23, 42, 0.04);
+    --app-hover-strong: rgba(15, 23, 42, 0.08);
+    --app-overlay: rgba(245, 247, 251, 0.88);
+    --app-overlay-strong: rgba(245, 247, 251, 0.95);
+    --app-text: #111827;
+    --app-text-muted: #6b7280;
+    --app-accent: #111827;
+    --app-accent-hover: #1f2937;
+    --app-accent-active: #030712;
+    --app-accent-foreground: #ffffff;
+    --app-selection-accent: #4d6295;
+    --app-selection-accent-foreground: #ffffff;
+    --app-selection-accent-soft: rgba(77, 98, 149, 0.14);
+    --app-selected-surface: rgba(17, 24, 39, 0.08);
+    --app-selected-surface-strong: rgba(17, 24, 39, 0.14);
+    --app-selected-border: rgba(17, 24, 39, 0.22);
+    --app-selected-text: #111827;
+    --app-danger: #dc2626;
+    --app-danger-hover: #b91c1c;
+    --app-danger-active: #991b1b;
+    --app-danger-foreground: #ffffff;
   }
 
   .dark {
     --background: 222 47% 6%;
     --foreground: 210 40% 98%;
     --border: 217 33% 17%;
+    --app-bg: #05070b;
+    --app-surface: transparent;
+    --app-surface-elevated: #05070b;
+    --app-surface-muted: rgba(255, 255, 255, 0.04);
+    --app-surface-muted-strong: rgba(255, 255, 255, 0.08);
+    --app-border-color: rgba(255, 255, 255, 0.1);
+    --app-border-strong: rgba(255, 255, 255, 0.16);
+    --app-hover: rgba(255, 255, 255, 0.06);
+    --app-hover-strong: rgba(255, 255, 255, 0.1);
+    --app-overlay: rgba(5, 7, 11, 0.88);
+    --app-overlay-strong: rgba(5, 7, 11, 0.95);
+    --app-text: #f9fafb;
+    --app-text-muted: #9ca3af;
+    --app-accent: #f9fafb;
+    --app-accent-hover: #e5e7eb;
+    --app-accent-active: #d1d5db;
+    --app-accent-foreground: #05070b;
+    --app-selection-accent: #93c5fd;
+    --app-selection-accent-foreground: #05070b;
+    --app-selection-accent-soft: rgba(147, 197, 253, 0.18);
+    --app-selected-surface: rgba(255, 255, 255, 0.08);
+    --app-selected-surface-strong: rgba(255, 255, 255, 0.14);
+    --app-selected-border: rgba(255, 255, 255, 0.24);
+    --app-selected-text: #f9fafb;
+    --app-danger: #ef4444;
+    --app-danger-hover: #dc2626;
+    --app-danger-active: #b91c1c;
+    --app-danger-foreground: #ffffff;
   }
 
   * {
     @apply border-gray-200 dark:border-gray-700;
   }
 
+  html {
+    background: var(--app-bg);
+  }
+
   body {
-    @apply bg-gray-50 text-gray-900 antialiased dark:bg-gray-900 dark:text-gray-100;
+    background: var(--app-bg);
+    @apply text-gray-900 antialiased dark:text-gray-100;
+  }
+}
+
+@layer utilities {
+  .theme-app-bg {
+    background: var(--app-bg);
+  }
+
+  .theme-surface {
+    background: var(--app-surface);
+  }
+
+  .theme-surface-elevated {
+    background: var(--app-surface-elevated);
+  }
+
+  .theme-surface-muted {
+    background: var(--app-surface-muted);
+  }
+
+  .theme-surface-muted-strong {
+    background: var(--app-surface-muted-strong);
+  }
+
+  .theme-overlay {
+    background: var(--app-overlay);
+  }
+
+  .theme-overlay-strong {
+    background: var(--app-overlay-strong);
+  }
+
+  .theme-border {
+    border-color: var(--app-border-color);
+  }
+
+  .theme-border-strong {
+    border-color: var(--app-border-strong);
+  }
+
+  .theme-text {
+    color: var(--app-text);
+  }
+
+  .theme-text-muted {
+    color: var(--app-text-muted);
+  }
+
+  .theme-selected {
+    background: var(--app-selected-surface);
+  }
+
+  .theme-selected-strong {
+    background: var(--app-selected-surface-strong);
+  }
+
+  .theme-selected-border {
+    border-color: var(--app-selected-border);
+  }
+
+  .theme-selected-text {
+    color: var(--app-selected-text);
+  }
+
+  .theme-selection-accent {
+    background: var(--app-selection-accent);
+    color: var(--app-selection-accent-foreground);
+  }
+
+  .theme-selection-accent-soft {
+    background: var(--app-selection-accent-soft);
   }
 }
 
@@ -268,7 +400,7 @@
 @media (display-mode: standalone) {
   html, body { overscroll-behavior: none; }
   body {
-    background: #07111d;
+    background: var(--app-bg);
   }
   .pwa-topbar {
     padding-top: env(safe-area-inset-top, 0px);
@@ -287,30 +419,20 @@ html, body {
   100% { background-position: -200% 0; }
 }
 
-/* Scrollbar styling */
+/* Hide scrollbars globally while preserving scroll behavior */
+html {
+  scrollbar-width: none;
+}
+
+body {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.15);
-  border-radius: 3px;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.2);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.25);
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.35);
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 /* ── ReactFlow Controls — dark mode ────────────────────────────────────────── */

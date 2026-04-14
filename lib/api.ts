@@ -1280,6 +1280,10 @@ export async function createChatStream(
   return res;
 }
 
+export function chatStreamsUrl(): string {
+  return `${API_V1}/chat-streams`;
+}
+
 export async function createExecutionEventStream(
   signal?: AbortSignal,
 ): Promise<Response> {

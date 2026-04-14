@@ -43,20 +43,20 @@ function ChatAgentDropdown({ projectId }: { projectId: string }) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+        className="theme-surface theme-border theme-text inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:[background:var(--app-hover)]"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
         </svg>
         Open in Chat
-        <svg className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+        <svg className="theme-text-muted h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
         </svg>
       </button>
 
       {open && agents && agents.length > 0 && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
-          <div className="px-3 py-2 text-xs font-medium text-gray-400 uppercase tracking-wider">
+        <div className="theme-surface-elevated theme-border absolute right-0 top-full z-50 mt-1 w-64 rounded-lg border py-1 shadow-lg">
+          <div className="theme-text-muted px-3 py-2 text-xs font-medium uppercase tracking-wider">
             Select Agent
           </div>
           <div className="max-h-64 overflow-y-auto">
@@ -65,7 +65,7 @@ function ChatAgentDropdown({ projectId }: { projectId: string }) {
                 key={agent.id}
                 type="button"
                 onClick={() => handleSelect(agent.id)}
-                className="flex items-center gap-2.5 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors dark:text-gray-300 dark:hover:bg-gray-700/50"
+                className="theme-text flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:[background:var(--app-hover)]"
               >
                 <RoleIdenticon
                   roleId={agent.id}
@@ -77,7 +77,7 @@ function ChatAgentDropdown({ projectId }: { projectId: string }) {
                 <div className="min-w-0 flex-1">
                   <p className="font-medium truncate">{agent.name}</p>
                   {agent.description && (
-                    <p className="text-xs text-gray-400 truncate dark:text-gray-500">
+                    <p className="theme-text-muted truncate text-xs">
                       {agent.description}
                     </p>
                   )}
@@ -266,7 +266,7 @@ export function ProjectHeader({
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="text-2xl font-bold text-gray-900 border-b-2 border-deep-space-blue-400 bg-transparent outline-hidden px-1 py-0.5 dark:text-gray-100"
+              className="theme-text border-b-2 border-deep-space-blue-400 bg-transparent px-1 py-0.5 text-2xl font-bold outline-hidden"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === "Enter") saveName();
@@ -288,15 +288,15 @@ export function ProjectHeader({
           </div>
         ) : (
           <h1
-            className="text-2xl font-bold text-gray-900 cursor-pointer hover:text-deep-space-blue-600 transition-colors group inline-flex items-center gap-2 dark:text-gray-100 dark:hover:text-deep-space-blue-400"
+            className="theme-text group inline-flex cursor-pointer items-center gap-2 text-2xl font-bold transition-colors hover:text-deep-space-blue-600 dark:hover:text-deep-space-blue-400"
             onClick={startEditName}
           >
             {project.name}
-            <span className="text-sm font-normal text-gray-400 dark:text-gray-500">
+            <span className="theme-text-muted text-sm font-normal">
               — {project.slug}
             </span>
             <svg
-              className="h-4 w-4 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
+              className="theme-text-muted h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100"
               fill="none"
               viewBox="0 0 24 24"
               strokeWidth={2}
@@ -320,7 +320,7 @@ export function ProjectHeader({
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="text-sm text-gray-600 border border-gray-300 rounded-lg bg-white px-3 py-2 outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400 w-full max-w-lg resize-none dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"
+            className="theme-surface theme-border theme-text h-auto w-full max-w-lg resize-none rounded-lg border px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400"
             rows={2}
             autoFocus
             disabled={saving}
@@ -341,12 +341,12 @@ export function ProjectHeader({
         </div>
       ) : (
         <p
-          className="text-sm text-gray-500 cursor-pointer hover:text-gray-700 transition-colors inline-flex items-center gap-1 group dark:text-gray-400 dark:hover:text-gray-200"
+          className="theme-text-muted group inline-flex cursor-pointer items-center gap-1 text-sm transition-colors hover:[color:var(--app-text)]"
           onClick={startEditDesc}
         >
           {project.description || "Add a description..."}
           <svg
-            className="h-3 w-3 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="theme-text-muted h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100"
             fill="none"
             viewBox="0 0 24 24"
             strokeWidth={2}
@@ -389,11 +389,11 @@ export function ProjectHeader({
             {syncStatusBadge}
             {editingBranch ? (
               <span className="inline-flex items-center gap-1.5">
-                <span className="text-xs text-gray-500 dark:text-gray-400">Target:</span>
+                <span className="theme-text-muted text-xs">Target:</span>
                 <input
                   value={branchInput}
                   onChange={(e) => setBranchInput(e.target.value)}
-                  className="w-28 rounded-sm border border-gray-300 bg-white px-1.5 py-0.5 text-xs outline-hidden focus:border-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                  className="theme-surface theme-border theme-text w-28 rounded-sm border px-1.5 py-0.5 text-xs outline-hidden focus:border-deep-space-blue-400"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === "Enter") saveBranch();
@@ -417,11 +417,11 @@ export function ProjectHeader({
               <button
                 type="button"
                 onClick={startEditBranch}
-                className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition-colors group dark:text-gray-400 dark:hover:text-gray-200"
+                className="theme-text-muted group inline-flex items-center gap-1 text-xs transition-colors hover:[color:var(--app-text)]"
               >
                 <span>Target: <span className="font-medium">{targetBranch}</span></span>
                 <svg
-                  className="h-3 w-3 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="theme-text-muted h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100"
                   fill="none"
                   viewBox="0 0 24 24"
                   strokeWidth={2}
@@ -456,7 +456,7 @@ export function ProjectHeader({
             <button
               type="button"
               onClick={() => setConfirmDisconnect(true)}
-              className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 transition-colors"
+              className="theme-text-muted inline-flex items-center gap-1 text-xs transition-colors hover:text-red-500"
             >
               <svg
                 className="h-3.5 w-3.5"
@@ -480,7 +480,7 @@ export function ProjectHeader({
           <button
             type="button"
             onClick={() => setConfirmDelete(true)}
-            className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors"
+            className="theme-text-muted inline-flex items-center gap-1.5 text-xs transition-colors hover:text-red-500"
           >
             <svg
               className="h-3.5 w-3.5"
@@ -523,7 +523,7 @@ export function ProjectHeader({
               type="button"
               onClick={() => setConfirmDelete(false)}
               disabled={deleting}
-              className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              className="theme-text-muted text-xs transition-colors hover:[color:var(--app-text)]"
             >
               Cancel
             </button>
@@ -538,7 +538,7 @@ export function ProjectHeader({
         title={repoUrl ? "Edit Repository" : "Connect Repository"}
       >
         <div className="space-y-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <p className="theme-text-muted text-sm">
             {repoUrl
               ? "Update the git repository URL for this project. This will re-sync the repo."
               : "Enter the URL of the git repository to clone for this project."}
@@ -548,7 +548,7 @@ export function ProjectHeader({
             value={repoUrlInput}
             onChange={(e) => setRepoUrlInput(e.target.value)}
             placeholder="https://github.com/owner/repo.git"
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+            className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400"
             autoFocus
             onKeyDown={(e) => {
               if (e.key === "Enter") handleSyncRepo(repoUrlInput);
@@ -582,7 +582,7 @@ export function ProjectHeader({
         title="Disconnect Repository"
       >
         <div className="space-y-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <p className="theme-text-muted text-sm">
             This will remove the synced repository and all worktrees for this
             project. Task history and project data will be preserved.
           </p>

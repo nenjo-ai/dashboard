@@ -253,7 +253,7 @@ export function TemplateVariableReference({
                     return (
                       <div
                         key={variable.name}
-                        className="rounded-sm bg-white px-2 py-1.5 dark:bg-gray-700"
+                        className="theme-surface-muted rounded-sm px-2 py-1.5"
                       >
                         <code className="text-xs font-mono text-deep-space-blue-600 dark:text-deep-space-blue-400">
                           {token}
@@ -306,13 +306,17 @@ export function TemplateVariableReference({
 // ---------------------------------------------------------------------------
 
 export function JinjaGuide() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
 
   return (
-    <div className="shrink-0 border-t border-gray-200 dark:border-gray-700">
+    <div className="theme-border shrink-0 border-t">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
         className="flex w-full items-center justify-between px-3 py-2"
       >
         <span className="text-[11px] font-semibold text-purple-700 dark:text-purple-300">
@@ -329,7 +333,7 @@ export function JinjaGuide() {
         </svg>
       </button>
       {open && (
-        <div className="border-t border-gray-100 px-3 pb-3 pt-2 dark:border-gray-800">
+        <div className="theme-border border-t px-3 pb-3 pt-2">
           <p className="mb-2 text-[10px] leading-relaxed text-purple-600/80 dark:text-purple-400/80">
             MiniJinja is supported for conditionals, loops, and filters.
           </p>

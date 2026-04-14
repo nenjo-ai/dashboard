@@ -27,7 +27,7 @@ function formatDate(iso: string): string {
 
 function EmptyState({ onCreateProject }: { onCreateProject: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white px-6 py-16 dark:border-gray-600 dark:bg-gray-800">
+    <div className="theme-border theme-surface flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-16">
       <div className="rounded-full bg-deep-space-blue-50 p-4">
         <svg
           className="h-10 w-10 text-deep-space-blue-400"
@@ -126,7 +126,7 @@ export function ProjectList({
             <CardContent>
               <div className="flex flex-wrap items-center gap-2">
                 {hasRepoUrl(project) && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                  <span className="theme-surface-muted theme-text-muted inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium">
                     <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.86-3.814a4.5 4.5 0 00-1.242-7.244l4.5-4.5a4.5 4.5 0 016.364 6.364l-1.757 1.757" />
                     </svg>

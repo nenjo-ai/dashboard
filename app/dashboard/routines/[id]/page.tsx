@@ -171,7 +171,7 @@ function RoutineDetailContent({
 
             {activeTab === "edit" && (
               <div
-                className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-gray-50 dark:bg-gray-900"
+                className="theme-border theme-surface overflow-hidden rounded-xl border"
                 style={{ height: "calc(100vh - 22rem)" }}
               >
                 <RoutineEditor
@@ -184,14 +184,14 @@ function RoutineDetailContent({
             )}
 
             {activeTab === "run" && (
-              <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-gray-50 dark:bg-gray-900">
+              <div className="theme-border theme-surface overflow-hidden rounded-xl border">
                 <RoutineRunTab routine={routine} onSaved={handleSaved} />
               </div>
             )}
           </>
         ) : (
           <div
-            className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-gray-50 dark:bg-gray-900"
+            className="theme-border theme-surface overflow-hidden rounded-xl border"
             style={{ height: "calc(100vh - 18rem)" }}
           >
             <RoutineEditor

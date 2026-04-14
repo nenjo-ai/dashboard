@@ -60,24 +60,24 @@ export function TopBar({ title, children }: TopBarProps) {
 
   return (
     <>
-      <header className="pwa-topbar sticky top-0 z-20 flex h-16 items-center justify-between border-b border-gray-200 bg-white/80 px-4 md:px-8 backdrop-blur-xs dark:border-gray-700 dark:bg-gray-900/80">
+      <header className="pwa-topbar theme-border theme-overlay sticky top-0 z-20 flex h-16 items-center justify-between border-b px-4 md:px-8 backdrop-blur-xs">
         <div className="flex items-center gap-3">
           {onMenuClick && (
             <button
               onClick={onMenuClick}
-              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors md:hidden dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              className="theme-text-muted rounded-lg p-2 transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 md:hidden dark:hover:text-gray-200"
               aria-label="Open menu"
             >
               <Menu className="h-5 w-5" />
             </button>
           )}
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{title}</h1>
+          <h1 className="theme-text text-xl font-semibold">{title}</h1>
         </div>
         <div className="flex items-center gap-3">
           <div className="hidden items-center gap-1 md:flex">
             <Link
               href="/docs"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              className="theme-text-muted inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 dark:hover:text-gray-200"
               title="Developer Docs"
             >
               <BookOpenText className="h-4 w-4" />
@@ -87,7 +87,7 @@ export function TopBar({ title, children }: TopBarProps) {
               href="https://github.com/nenjo-ai/nenjo"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              className="theme-text-muted inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 dark:hover:text-gray-200"
               title="GitHub"
             >
               <Github className="h-4 w-4" />
@@ -102,7 +102,7 @@ export function TopBar({ title, children }: TopBarProps) {
           )}
           <Link
             href="/dashboard/chat?channel=notifications"
-            className="relative flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            className="theme-text-muted relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
             title="Notifications"
           >
             <Bell className="h-4.5 w-4.5" />
@@ -114,14 +114,14 @@ export function TopBar({ title, children }: TopBarProps) {
           </Link>
           <WorkerStatusIndicator />
           {children && (
-            <div className="flex items-center gap-3 border-l border-gray-200 pl-4 dark:border-gray-700">
+            <div className="theme-border flex items-center gap-3 border-l pl-4">
               {children}
             </div>
           )}
         </div>
       </header>
       {(showInstallBanner || showPushBanner) && (
-        <div className="sticky top-16 z-10 border-b border-gray-200 bg-gray-50/95 px-4 py-2 backdrop-blur-xs md:px-8 dark:border-gray-700 dark:bg-gray-900/95">
+        <div className="theme-border theme-overlay-strong sticky top-16 z-10 border-b px-4 py-2 backdrop-blur-xs md:px-8">
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
             <div className="flex min-w-0 items-center gap-2 text-gray-700 dark:text-gray-200">
               {showInstallBanner ? (
@@ -150,7 +150,7 @@ export function TopBar({ title, children }: TopBarProps) {
                 <button
                   type="button"
                   onClick={handlePushClick}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-[11px] font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:bg-gray-700"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-full border border-black/10 bg-transparent px-3 text-[11px] font-medium text-gray-700 transition-colors hover:bg-black/[0.04] dark:border-white/10 dark:bg-transparent dark:text-gray-200 dark:hover:bg-white/[0.06]"
                 >
                   {notificationsEnabled ? (
                     <BellOff className="h-3.5 w-3.5" />

@@ -62,10 +62,10 @@ function DetailRow({
 }) {
   return (
     <div className="flex items-start gap-3 py-2">
-      <span className="w-28 shrink-0 text-xs font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">
+      <span className="theme-text-muted w-28 shrink-0 text-xs font-medium uppercase tracking-wider">
         {label}
       </span>
-      <div className="flex-1 text-sm text-gray-700 dark:text-gray-300" suppressHydrationWarning>
+      <div className="theme-text flex-1 text-sm" suppressHydrationWarning>
         {children}
       </div>
     </div>

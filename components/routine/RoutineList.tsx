@@ -122,10 +122,10 @@ export function RoutineList({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          <h3 className="theme-text text-lg font-semibold">
             Routines
           </h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="theme-text-muted text-sm">
             Configure agent execution routines that can be used across projects
           </p>
         </div>
@@ -152,7 +152,7 @@ export function RoutineList({
         <Card className="p-4">
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="theme-text-muted mb-1 block text-xs font-medium">
                 Routine Name
               </label>
               <input
@@ -160,32 +160,32 @@ export function RoutineList({
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="e.g., Code Review Routine"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                 autoFocus
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Description <span className="text-gray-400 font-normal">(optional)</span>
+              <label className="theme-text-muted mb-1 block text-xs font-medium">
+                Description <span className="font-normal text-[var(--app-text-muted)]">(optional)</span>
               </label>
               <input
                 type="text"
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
                 placeholder="What does this routine do?"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="theme-text-muted mb-1 block text-xs font-medium">
                 Trigger
               </label>
               <select
                 value={newTrigger}
                 onChange={(e) => setNewTrigger(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
               >
                 {ROUTINE_TRIGGERS.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -196,7 +196,7 @@ export function RoutineList({
             </div>
             {newTrigger === "cron" && (
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label className="theme-text-muted mb-1 block text-xs font-medium">
                   Schedule
                 </label>
                 <input
@@ -204,10 +204,10 @@ export function RoutineList({
                   value={newSchedule}
                   onChange={(e) => setNewSchedule(e.target.value)}
                   placeholder="e.g., 0 9 * * * or 30m"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                  className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
                   onKeyDown={(e) => e.key === "Enter" && handleCreate()}
                 />
-                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                <p className="theme-text-muted mt-1 text-xs">
                   Cron expression (e.g. &quot;0 9 * * *&quot;) or interval (e.g. &quot;30m&quot;, &quot;6h&quot;)
                 </p>
               </div>
@@ -236,8 +236,8 @@ export function RoutineList({
       {/* Routine list */}
       {(!routines || routines.length === 0) && !showCreateForm ? (
         <Card className="p-8 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-            <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <div className="theme-surface-muted mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full">
+            <svg className="theme-text-muted h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
             </svg>
           </div>

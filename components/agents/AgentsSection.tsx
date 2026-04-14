@@ -85,7 +85,7 @@ export function AgentsSection() {
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="rounded-xl border border-gray-200 bg-white p-5 shadow-xs dark:border-gray-700 dark:bg-gray-800"
+              className="theme-border theme-surface rounded-xl border p-5 shadow-xs"
             >
               <div className="space-y-3">
                 <Skeleton className="h-5 w-32" />
@@ -127,7 +127,7 @@ export function AgentsSection() {
 
   if (!agents || agents.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white px-6 py-16 dark:border-gray-600 dark:bg-gray-800">
+      <div className="theme-border theme-surface flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-16">
         <div className="rounded-full bg-deep-space-blue-50 p-4 dark:bg-deep-space-blue-900/50">
           <svg
             className="h-10 w-10 text-deep-space-blue-400"
@@ -174,7 +174,7 @@ export function AgentsSection() {
               <select
                 value={cloneFromId}
                 onChange={(e) => handleCloneFrom(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                className="theme-border theme-surface w-full rounded-lg border px-3 py-1.5 text-sm text-gray-900 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:text-gray-100"
               >
                 <option value="">Start from scratch</option>
                 {agents?.map((r) => (
@@ -193,7 +193,7 @@ export function AgentsSection() {
                 value={newAgentName}
                 onChange={(e) => setNewAgentName(e.target.value)}
                 placeholder="e.g., lead_developer"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                className="theme-border theme-surface w-full rounded-lg border px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:text-gray-100 dark:placeholder-gray-500"
               />
             </div>
             <div>
@@ -205,7 +205,7 @@ export function AgentsSection() {
                 value={newAgentDescription}
                 onChange={(e) => setNewAgentDescription(e.target.value)}
                 placeholder="What does this agent do?"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                className="theme-border theme-surface w-full rounded-lg border px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:text-gray-100 dark:placeholder-gray-500"
               />
             </div>
             <div>

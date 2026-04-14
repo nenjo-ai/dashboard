@@ -12,7 +12,11 @@ import { CouncilDetailModal } from "@/components/councils/CouncilDetailModal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { toast } from "@/lib/toast";
 
-export function CouncilsSection() {
+interface CouncilsSectionProps {
+  allowCreate?: boolean;
+}
+
+export function CouncilsSection({ allowCreate = true }: CouncilsSectionProps) {
   const { councils, isLoading, isError, mutate } = useCouncils();
 
   const [formOpen, setFormOpen] = useState(false);
@@ -63,22 +67,24 @@ export function CouncilsSection() {
   return (
     <>
       <div className="mb-4 flex items-center justify-between gap-4">
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <p className="theme-text-muted text-sm">
           Manage agent councils for multi-agent collaboration. Councils group agents with a leader
           and delegation strategy to work together on complex tasks.
         </p>
-        <Button className="shrink-0" onClick={handleCreate}>
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          New Council
-        </Button>
+        {allowCreate ? (
+          <Button className="shrink-0" onClick={handleCreate}>
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            New Council
+          </Button>
+        ) : null}
       </div>
 
       <CouncilList
@@ -86,11 +92,11 @@ export function CouncilsSection() {
         isLoading={isLoading}
         isError={isError}
         onView={handleView}
-        onCreate={handleCreate}
+        onCreate={allowCreate ? handleCreate : undefined}
       />
 
       <CouncilFormModal
-        open={formOpen}
+        open={allowCreate && formOpen}
         onClose={() => {
           setFormOpen(false);
           setEditingCouncil(null);

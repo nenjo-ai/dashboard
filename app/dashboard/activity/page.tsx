@@ -3,9 +3,11 @@
 import { useState, useCallback } from "react";
 import { useActivity, type ActivityEntry } from "@/lib/hooks";
 import { activityUrl, fetcher } from "@/lib/api";
+import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { TopBar } from "@/components/layout/TopBar";
 import { PageContent } from "@/components/ui/PageContent";
 import { Badge } from "@/components/ui/Badge";
+import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
 const PAGE_SIZE = 30;
 
@@ -145,8 +147,8 @@ function ActivityRow({ entry, isExpanded, onToggle }: { entry: ActivityEntry; is
 
   return (
     <div
-      className={`px-5 py-3 border-b border-gray-50 last:border-b-0 dark:border-gray-700/50 transition-colors ${
-        hasMetadata ? "cursor-pointer hover:bg-gray-50/50 dark:hover:bg-gray-700/20" : ""
+      className={`theme-border px-5 py-3 border-b last:border-b-0 transition-colors ${
+        hasMetadata ? "cursor-pointer hover:[background:var(--app-hover)]" : ""
       }`}
       onClick={hasMetadata ? onToggle : undefined}
     >
@@ -155,18 +157,18 @@ function ActivityRow({ entry, isExpanded, onToggle }: { entry: ActivityEntry; is
           <EventIcon entry={entry} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm text-gray-900 dark:text-gray-100">
+          <p className="theme-text text-sm">
             {entry.summary}
           </p>
           {progressMessage && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            <p className="theme-text-muted mt-0.5 text-xs">
               {progressMessage}
             </p>
           )}
           <div className="flex items-center gap-2 mt-1">
             <CategoryBadge category={entry.category} />
             {entry.resource_name && (
-              <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+              <span className="theme-text-muted text-xs font-medium">
                 {entry.resource_name}
               </span>
             )}
@@ -174,12 +176,12 @@ function ActivityRow({ entry, isExpanded, onToggle }: { entry: ActivityEntry; is
         </div>
         <div className="flex items-center gap-2 shrink-0 mt-0.5">
           {entry.metadata && <TokenBadge metadata={entry.metadata} />}
-          <span className="text-xs text-gray-400 dark:text-gray-500">
+          <span className="theme-text-muted text-xs">
             {formatRelativeTime(entry.created_at)}
           </span>
           {hasMetadata && (
             <svg
-              className={`h-3.5 w-3.5 text-gray-300 dark:text-gray-600 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+              className={`theme-text-muted h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
               fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
@@ -189,8 +191,8 @@ function ActivityRow({ entry, isExpanded, onToggle }: { entry: ActivityEntry; is
       </div>
 
       {isExpanded && hasMetadata && (
-        <div className="mt-3 ml-7 rounded-lg bg-gray-50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-700 p-3 overflow-x-auto">
-          <pre className="text-xs font-mono text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all">
+        <div className="theme-border theme-surface-muted mt-3 ml-7 overflow-x-auto rounded-lg border p-3">
+          <pre className="theme-text-muted whitespace-pre-wrap break-all text-xs font-mono">
             {JSON.stringify(entry.metadata, null, 2)}
           </pre>
         </div>
@@ -200,6 +202,7 @@ function ActivityRow({ entry, isExpanded, onToggle }: { entry: ActivityEntry; is
 }
 
 export default function ActivityPage() {
+  const isMobileViewport = useIsMobileViewport();
   const [category, setCategory] = useState<string | undefined>(undefined);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [olderEntries, setOlderEntries] = useState<ActivityEntry[]>([]);
@@ -243,49 +246,27 @@ export default function ActivityPage() {
 
   return (
     <>
-      <TopBar title="Activity" />
-
-      <PageContent>
-        <div className="rounded-xl border border-gray-200 bg-white shadow-xs dark:border-gray-700 dark:bg-gray-800">
-          <div className="border-b border-gray-100 px-6 py-4 dark:border-gray-700 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                Activity Feed
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Resource changes, execution progress, and system events.
-              </p>
-            </div>
-            <div className="flex gap-1">
-              {CATEGORY_FILTERS.map((f) => (
-                <button
-                  key={f.label}
-                  onClick={() => handleCategoryChange(f.value)}
-                  className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-                    category === f.value
-                      ? "bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900"
-                      : "text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-700"
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="divide-y divide-gray-50 dark:divide-gray-700/50">
-            {isLoading && (
-              <div className="px-5 py-8 text-center text-sm text-gray-400">
-                Loading activity...
-              </div>
-            )}
-
-            {!isLoading && allEntries.length === 0 && (
-              <div className="px-5 py-8 text-center text-sm text-gray-400">
-                No activity yet.
-              </div>
-            )}
-
+      {isMobileViewport ? (
+      <MobilePageShell title="Activity">
+        <div className="mb-4 flex gap-2 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {CATEGORY_FILTERS.map((f) => (
+            <button
+              key={f.label}
+              onClick={() => handleCategoryChange(f.value)}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                category === f.value
+                  ? "bg-gray-950 text-white dark:bg-white dark:text-gray-950"
+                  : "theme-border theme-surface text-gray-600 dark:text-gray-300"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="rounded-[1.5rem] border border-black/10 bg-transparent dark:border-white/10">
+          <div className="divide-y divide-black/5 dark:divide-white/10">
+            {isLoading && <div className="px-5 py-8 text-center text-sm text-gray-400">Loading activity...</div>}
+            {!isLoading && allEntries.length === 0 && <div className="px-5 py-8 text-center text-sm text-gray-400">No activity yet.</div>}
             {allEntries.map((entry) => (
               <ActivityRow
                 key={entry.id}
@@ -295,20 +276,88 @@ export default function ActivityPage() {
               />
             ))}
           </div>
-
           {!isLoading && allEntries.length > 0 && hasMore && (
-            <div className="border-t border-gray-100 dark:border-gray-700 px-6 py-3 text-center">
+            <div className="border-t border-black/5 px-6 py-3 text-center dark:border-white/10">
               <button
                 onClick={loadMore}
                 disabled={loadingMore}
-                className="text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50"
+                className="text-sm font-medium text-gray-500 dark:text-gray-400 disabled:opacity-50"
               >
                 {loadingMore ? "Loading..." : "Load more"}
               </button>
             </div>
           )}
         </div>
-      </PageContent>
+      </MobilePageShell>
+      ) : (
+      <>
+        <TopBar title="Activity" />
+        <PageContent>
+          <div className="theme-border theme-surface rounded-xl border shadow-xs">
+            <div className="theme-border flex items-center justify-between border-b px-6 py-4">
+              <div>
+                <h2 className="theme-text text-lg font-semibold">
+                  Activity Feed
+                </h2>
+                <p className="theme-text-muted text-sm">
+                  Resource changes, execution progress, and system events.
+                </p>
+              </div>
+              <div className="flex gap-1">
+                {CATEGORY_FILTERS.map((f) => (
+                  <button
+                    key={f.label}
+                    onClick={() => handleCategoryChange(f.value)}
+                    className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                      category === f.value
+                        ? "bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900"
+                        : "theme-text-muted hover:[background:var(--app-hover)] hover:[color:var(--app-text)]"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="theme-border divide-y">
+              {isLoading && (
+                <div className="theme-text-muted px-5 py-8 text-center text-sm">
+                  Loading activity...
+                </div>
+              )}
+
+              {!isLoading && allEntries.length === 0 && (
+                <div className="theme-text-muted px-5 py-8 text-center text-sm">
+                  No activity yet.
+                </div>
+              )}
+
+              {allEntries.map((entry) => (
+                <ActivityRow
+                  key={entry.id}
+                  entry={entry}
+                  isExpanded={expandedId === entry.id}
+                  onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
+                />
+              ))}
+            </div>
+
+            {!isLoading && allEntries.length > 0 && hasMore && (
+            <div className="theme-border border-t px-6 py-3 text-center">
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50"
+                >
+                  {loadingMore ? "Loading..." : "Load more"}
+                </button>
+              </div>
+            )}
+          </div>
+        </PageContent>
+      </>
+      )}
     </>
   );
 }

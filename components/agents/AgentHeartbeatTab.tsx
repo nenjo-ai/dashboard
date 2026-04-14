@@ -72,11 +72,11 @@ export function AgentHeartbeatTab({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+      <section className="theme-surface theme-border rounded-2xl border p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div className="space-y-2">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Heartbeat Schedule</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <h3 className="theme-text text-sm font-semibold">Heartbeat Schedule</h3>
+            <p className="theme-text-muted text-sm">
               Run this agent on a fixed interval. Saving updates the stored interval. Starting enables recurring runs.
             </p>
           </div>
@@ -113,36 +113,36 @@ export function AgentHeartbeatTab({
 
         <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,360px)_1fr]">
           <label className="block">
-            <span className="mb-2 block text-xs font-medium uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+            <span className="theme-text-muted mb-2 block text-xs font-medium uppercase tracking-[0.18em]">
               Interval
             </span>
             <input
               value={interval}
               onChange={(e) => setInterval(e.target.value)}
               placeholder="5m"
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-deep-space-blue-400 focus:ring-2 focus:ring-deep-space-blue-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+              className="theme-surface theme-border theme-text w-full rounded-xl border px-3 py-2 text-sm outline-none transition focus:border-deep-space-blue-400 focus:ring-2 focus:ring-deep-space-blue-200"
             />
-            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            <p className="theme-text-muted mt-2 text-xs">
               Examples: `30s`, `5m`, `1h`
             </p>
           </label>
 
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-800/70">
-              <div className="text-xs uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">Status</div>
-              <div className="mt-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+            <div className="theme-surface-muted rounded-xl p-4">
+              <div className="theme-text-muted text-xs uppercase tracking-[0.18em]">Status</div>
+              <div className="theme-text mt-2 text-sm font-semibold">
                 {heartbeat?.is_active ? "Active" : "Inactive"}
               </div>
             </div>
-            <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-800/70">
-              <div className="text-xs uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">Last Run</div>
-              <div className="mt-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+            <div className="theme-surface-muted rounded-xl p-4">
+              <div className="theme-text-muted text-xs uppercase tracking-[0.18em]">Last Run</div>
+              <div className="theme-text mt-2 text-sm font-semibold">
                 {formatTimestamp(heartbeat?.last_run_at)}
               </div>
             </div>
-            <div className="rounded-xl bg-gray-50 p-4 dark:bg-gray-800/70">
-              <div className="text-xs uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">Next Run</div>
-              <div className="mt-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+            <div className="theme-surface-muted rounded-xl p-4">
+              <div className="theme-text-muted text-xs uppercase tracking-[0.18em]">Next Run</div>
+              <div className="theme-text mt-2 text-sm font-semibold">
                 {formatTimestamp(heartbeat?.next_run_at)}
               </div>
             </div>
@@ -153,16 +153,16 @@ export function AgentHeartbeatTab({
           <Button size="sm" isLoading={saving} onClick={handleSave} disabled={!interval.trim()}>
             Save Interval
           </Button>
-          {isLoading && <span className="text-xs text-gray-500 dark:text-gray-400">Loading state…</span>}
+          {isLoading && <span className="theme-text-muted text-xs">Loading state…</span>}
           {error && <span className="text-xs text-red-500">{error}</span>}
         </div>
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+      <section className="theme-surface theme-border rounded-2xl border p-5">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Recent Runs</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <h3 className="theme-text text-sm font-semibold">Recent Runs</h3>
+            <p className="theme-text-muted text-sm">
               Execution history for heartbeat-triggered runs on this agent.
             </p>
           </div>
@@ -170,7 +170,7 @@ export function AgentHeartbeatTab({
 
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+            <thead className="theme-text-muted text-xs uppercase tracking-[0.18em]">
               <tr>
                 <th className="pb-3 pr-4">Started</th>
                 <th className="pb-3 pr-4">Status</th>
@@ -178,28 +178,28 @@ export function AgentHeartbeatTab({
                 <th className="pb-3 pr-4">ID</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            <tbody className="theme-border divide-y">
               {(executions ?? []).map((execution) => (
                 <tr key={execution.id}>
-                  <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
+                  <td className="theme-text py-3 pr-4">
                     {formatTimestamp(execution.started_at ?? execution.created_at)}
                   </td>
                   <td className="py-3 pr-4">
-                    <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                    <span className="theme-surface-muted theme-text rounded-full px-2 py-1 text-xs font-medium">
                       {execution.status}
                     </span>
                   </td>
-                  <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">
+                  <td className="theme-text py-3 pr-4">
                     {(execution.config?.trigger as string | undefined) ?? "execution"}
                   </td>
-                  <td className="py-3 pr-4 font-mono text-xs text-gray-500 dark:text-gray-400">
+                  <td className="theme-text-muted py-3 pr-4 font-mono text-xs">
                     {execution.id}
                   </td>
                 </tr>
               ))}
               {!executions?.length && (
                 <tr>
-                  <td colSpan={4} className="py-6 text-sm text-gray-500 dark:text-gray-400">
+                  <td colSpan={4} className="theme-text-muted py-6 text-sm">
                     No heartbeat executions yet.
                   </td>
                 </tr>

@@ -19,9 +19,10 @@ import { toast } from "@/lib/toast";
 
 interface RoutineSectionProps {
   triggerFilter?: RoutineTrigger[];
+  allowCreate?: boolean;
 }
 
-export function RoutineSection({ triggerFilter }: RoutineSectionProps) {
+export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSectionProps) {
   const router = useRouter();
   const { routines: allRoutines, isLoading, isError, error, mutate } = useRoutines();
 
@@ -96,7 +97,7 @@ export function RoutineSection({ triggerFilter }: RoutineSectionProps) {
     return (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+          <div key={i} className="theme-surface theme-border rounded-xl border p-5">
             <div className="flex items-start gap-3">
               <Skeleton className="h-9 w-9 rounded-lg" />
               <div className="flex-1 space-y-2">
@@ -129,28 +130,30 @@ export function RoutineSection({ triggerFilter }: RoutineSectionProps) {
     <>
       {/* Header with create button */}
       <div className="mb-4 flex items-center justify-between gap-4">
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <p className="theme-text-muted text-sm">
           {triggerFilter?.includes("cron") && triggerFilter.length === 1
             ? "Scheduled routines that run agents automatically on a cron schedule."
             : "Manage agent execution routines. Routines define the sequence of steps agents follow when processing tasks."}
         </p>
-        <Button onClick={() => setShowCreate(true)} className="shrink-0">
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          New Routine
-        </Button>
+        {allowCreate ? (
+          <Button onClick={() => setShowCreate(true)} className="shrink-0">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            New Routine
+          </Button>
+        ) : null}
       </div>
 
       {/* Create form */}
-      {showCreate && (
-        <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5 shadow-xs dark:border-gray-700 dark:bg-gray-800">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">
+      {allowCreate && showCreate && (
+        <div className="theme-surface theme-border mb-6 rounded-xl border p-5 shadow-xs">
+          <h3 className="theme-text mb-4 text-sm font-semibold">
             New Routine
           </h3>
           <div className="space-y-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">
+              <label className="theme-text-muted mb-1 block text-xs font-medium">
                 Name
               </label>
               <input
@@ -159,12 +162,12 @@ export function RoutineSection({ triggerFilter }: RoutineSectionProps) {
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="e.g., Code Review Pipeline"
                 autoFocus
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">
+              <label className="theme-text-muted mb-1 block text-xs font-medium">
                 Description
               </label>
               <input
@@ -172,19 +175,19 @@ export function RoutineSection({ triggerFilter }: RoutineSectionProps) {
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
                 placeholder="Optional description"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
               />
             </div>
 
             {availableTriggers.length > 1 && (
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">
+                <label className="theme-text-muted mb-1 block text-xs font-medium">
                   Trigger Type
                 </label>
                 <select
                   value={newTrigger}
                   onChange={(e) => setNewTrigger(e.target.value as RoutineTrigger)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                  className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
                 >
                   {availableTriggers.map((t) => (
                     <option key={t.id} value={t.id}>{t.label}</option>
@@ -195,7 +198,7 @@ export function RoutineSection({ triggerFilter }: RoutineSectionProps) {
 
             {newTrigger === "cron" && (
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">
+                <label className="theme-text-muted mb-1 block text-xs font-medium">
                   Schedule
                 </label>
                 <input
@@ -203,9 +206,9 @@ export function RoutineSection({ triggerFilter }: RoutineSectionProps) {
                   value={newSchedule}
                   onChange={(e) => setNewSchedule(e.target.value)}
                   placeholder='e.g., "30m", "1h", or "0 9 * * *"'
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-mono text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                  className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm font-mono placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
                 />
-                <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                <p className="theme-text-muted mt-1 text-[10px]">
                   Interval (30s, 5m, 1h) or cron expression. Can be set later.
                 </p>
               </div>
@@ -243,18 +246,18 @@ export function RoutineSection({ triggerFilter }: RoutineSectionProps) {
           ))}
         </MotionList>
       ) : !showCreate ? (
-        <div className="rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 py-16 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-            <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <div className="theme-border rounded-xl border-2 border-dashed py-16 text-center">
+          <div className="theme-surface-muted mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full">
+            <svg className="theme-text-muted h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
             </svg>
           </div>
-          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+          <p className="theme-text text-sm font-medium">
             {triggerFilter?.includes("cron") && triggerFilter.length === 1
               ? "No scheduled routines yet"
               : "No routines yet"}
           </p>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <p className="theme-text-muted mt-1 text-xs">
             {triggerFilter?.includes("cron") && triggerFilter.length === 1
               ? "Create a scheduled routine to run agents on a cron schedule."
               : "Create your first routine to define how agents process work."}

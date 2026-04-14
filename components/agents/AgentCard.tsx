@@ -100,7 +100,7 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
         if (editing) return;
         router.push(`/dashboard/agents/${agent.id}`);
       }}
-      className="flex h-full flex-col rounded-xl border border-gray-200 bg-white p-5 shadow-xs transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800 cursor-pointer"
+      className="theme-border theme-surface flex h-full cursor-pointer flex-col rounded-xl border p-5 shadow-xs transition-shadow hover:shadow-md"
     >
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-3 flex-1">
@@ -115,7 +115,7 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
                   value={editDisplayName}
                   onChange={(e) => setEditDisplayName(e.target.value)}
                   placeholder="e.g., Lead Developer"
-                  className="w-full rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                  className="theme-border theme-surface w-full rounded-md border px-2.5 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:text-gray-100 dark:placeholder-gray-500"
                 />
               </div>
               <div>
@@ -125,7 +125,7 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   placeholder="e.g., lead_developer"
-                  className="w-full rounded-md border border-gray-300 bg-white px-2.5 py-1 font-mono text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                  className="theme-border theme-surface w-full rounded-md border px-2.5 py-1 font-mono text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:text-gray-100 dark:placeholder-gray-500"
                 />
               </div>
               <div>
@@ -135,13 +135,13 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
                   placeholder="What does this agent do?"
-                  className="w-full rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                  className="theme-border theme-surface w-full rounded-md border px-2.5 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:text-gray-100 dark:placeholder-gray-500"
                 />
               </div>
               <div className="flex justify-end gap-1.5">
                 <button
                   onClick={handleCancelEdit}
-                  className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                  className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-500 hover:[background:var(--app-hover)] dark:text-gray-400"
                 >
                   Cancel
                 </button>
@@ -170,7 +170,7 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
                   className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                     agent.source_agent_id
                       ? "bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300"
-                      : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+                      : "theme-surface-muted theme-text-muted"
                   }`}
                 >
                   {agent.source_agent_id ? "System" : "Custom"}
@@ -189,7 +189,7 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
           {!editing && (
             <button
               onClick={() => setEditing(true)}
-              className="rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300"
+              className="rounded-lg p-1.5 text-gray-300 transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:text-gray-600 dark:hover:text-gray-300"
               title="Edit agent"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -221,7 +221,7 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
               onClick={() => setPickerOpen((v) => !v)}
               disabled={assigning}
               className="w-full flex items-center gap-2.5 rounded-lg border border-dashed px-3 py-2 text-left transition-all hover:border-solid group/model
-                border-gray-200 hover:border-deep-space-blue-300 dark:border-gray-600 dark:hover:border-deep-space-blue-500"
+                theme-border hover:border-deep-space-blue-300 dark:hover:border-deep-space-blue-500"
             >
               {assignedModel ? (
                 <>
@@ -244,7 +244,7 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
                 </>
               ) : (
                 <>
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-dashed border-gray-300 dark:border-gray-600">
+                  <div className="theme-border flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-dashed">
                     <svg className="h-3 w-3 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                     </svg>
@@ -258,11 +258,11 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
 
             {/* Dropdown picker */}
             {pickerOpen && models && (
-              <div className="absolute left-0 right-0 top-full z-20 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800 max-h-56 overflow-y-auto">
+              <div className="theme-border theme-surface absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-lg border shadow-lg">
                 {assignedModel && (
                   <button
                     onClick={() => handleAssignModel(null)}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 border-b border-gray-100 dark:border-gray-700"
+                    className="theme-border flex w-full items-center gap-2 border-b px-3 py-2 text-xs text-gray-400 hover:[background:var(--app-hover)]"
                   >
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -280,7 +280,7 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
                       className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors
                         ${isCurrent
                           ? "bg-deep-space-blue-50 dark:bg-deep-space-blue-900/30 cursor-default"
-                          : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                          : "hover:[background:var(--app-hover)]"
                         }`}
                     >
                       <div className="flex-1 min-w-0">

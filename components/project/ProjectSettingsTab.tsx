@@ -151,7 +151,7 @@ export function ProjectSettingsTab({ project, onUpdated }: ProjectSettingsTabPro
 
   if (!project) {
     return (
-      <div className="flex items-center justify-center py-12 text-sm text-gray-500 dark:text-gray-400">
+      <div className="theme-text-muted flex items-center justify-center py-12 text-sm">
         Loading...
       </div>
     );
@@ -167,7 +167,7 @@ export function ProjectSettingsTab({ project, onUpdated }: ProjectSettingsTabPro
       <Card static>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <svg className="h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <svg className="theme-text-muted h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z" />
             </svg>
             <CardTitle>Git Repository</CardTitle>
@@ -182,7 +182,7 @@ export function ProjectSettingsTab({ project, onUpdated }: ProjectSettingsTabPro
         <CardContent className="space-y-5">
           {/* Repo URL */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+            <label className="theme-text block text-xs font-medium">
               Repository URL
             </label>
             <input
@@ -190,24 +190,24 @@ export function ProjectSettingsTab({ project, onUpdated }: ProjectSettingsTabPro
               value={repoUrlInput}
               onChange={(e) => setRepoUrlInput(e.target.value)}
               placeholder="https://github.com/owner/repo.git"
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+              className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400"
               disabled={syncing}
             />
           </div>
 
           {/* Branch */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+            <label className="theme-text block text-xs font-medium">
               Branch
             </label>
             <input
               value={branchInput}
               onChange={(e) => setBranchInput(e.target.value)}
               placeholder="main"
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+              className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400"
               disabled={syncing}
             />
-            <p className="text-xs text-gray-400 dark:text-gray-500">
+            <p className="theme-text-muted text-xs">
               Agents will pull and push from this branch
             </p>
           </div>
@@ -272,7 +272,7 @@ export function ProjectSettingsTab({ project, onUpdated }: ProjectSettingsTabPro
       <Card static>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <svg className="h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <svg className="theme-text-muted h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
             </svg>
@@ -288,8 +288,8 @@ export function ProjectSettingsTab({ project, onUpdated }: ProjectSettingsTabPro
             <div className="space-y-2">
               {/* Header row */}
               <div className="flex items-center gap-2 px-1">
-                <span className="w-80 text-xs font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">Key</span>
-                <span className="flex-1 text-xs font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">Value</span>
+                <span className="theme-text-muted w-80 text-xs font-medium uppercase tracking-wider">Key</span>
+                <span className="theme-text-muted flex-1 text-xs font-medium uppercase tracking-wider">Value</span>
                 <span className="w-9" />
               </div>
               {entries.map((entry, i) => (
@@ -298,18 +298,18 @@ export function ProjectSettingsTab({ project, onUpdated }: ProjectSettingsTabPro
                     value={entry.key}
                     onChange={(e) => updateEntry(i, "key", e.target.value)}
                     placeholder="key"
-                    className="w-80 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-mono outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                    className="theme-surface theme-border theme-text w-80 rounded-lg border px-3 py-2 text-sm font-mono outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400"
                   />
                   <input
                     value={entry.value}
                     onChange={(e) => updateEntry(i, "value", e.target.value)}
                     placeholder="value"
-                    className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                    className="theme-surface theme-border theme-text flex-1 rounded-lg border px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400"
                   />
                   <button
                     type="button"
                     onClick={() => removeEntry(i)}
-                    className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors dark:hover:bg-red-950/30"
+                    className="theme-text-muted rounded-lg p-2 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
                     title="Remove"
                   >
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -322,12 +322,12 @@ export function ProjectSettingsTab({ project, onUpdated }: ProjectSettingsTabPro
           )}
 
           {entries.length === 0 && (
-            <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50/50 py-8 text-center dark:border-gray-600 dark:bg-gray-800/50">
-              <svg className="mx-auto h-8 w-8 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
+            <div className="theme-border theme-surface-muted rounded-lg border border-dashed py-8 text-center">
+              <svg className="theme-text-muted mx-auto h-8 w-8" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
               </svg>
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              <p className="theme-text-muted mt-2 text-sm">
                 No metadata yet
               </p>
             </div>
@@ -336,7 +336,7 @@ export function ProjectSettingsTab({ project, onUpdated }: ProjectSettingsTabPro
           <button
             type="button"
             onClick={addEntry}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-1.5 text-sm text-gray-600 transition-colors hover:border-deep-space-blue-400 hover:text-deep-space-blue-600 dark:border-gray-600 dark:text-gray-400 dark:hover:border-deep-space-blue-400 dark:hover:text-deep-space-blue-400"
+            className="theme-border theme-text-muted inline-flex items-center gap-1.5 rounded-lg border border-dashed px-3 py-1.5 text-sm transition-colors hover:border-deep-space-blue-400 hover:text-deep-space-blue-600 dark:hover:text-deep-space-blue-400"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />

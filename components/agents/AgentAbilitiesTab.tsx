@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useAbilities, useAgentAbilities } from "@/lib/hooks";
 import { setAgentAbilities } from "@/lib/api";
+import { agentColorAlpha } from "@/lib/agent-colors";
 import type { Ability } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -108,9 +109,10 @@ function saveExpanded(set: Set<string>) {
 
 interface AgentAbilitiesTabProps {
   agentId: string;
+  agentColor: string;
 }
 
-export function AgentAbilitiesTab({ agentId }: AgentAbilitiesTabProps) {
+export function AgentAbilitiesTab({ agentId, agentColor }: AgentAbilitiesTabProps) {
   const { abilities: allAbilities, isLoading: abilitiesLoading } = useAbilities();
   const { abilities: agentAbilities, isLoading: assignmentsLoading, mutate } = useAgentAbilities(agentId);
   const [toggling, setToggling] = useState<string | null>(null);
@@ -157,7 +159,7 @@ export function AgentAbilitiesTab({ agentId }: AgentAbilitiesTabProps) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="h-10 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
+          <div key={i} className="theme-surface-muted h-10 animate-pulse rounded-lg" />
         ))}
       </div>
     );
@@ -165,8 +167,8 @@ export function AgentAbilitiesTab({ agentId }: AgentAbilitiesTabProps) {
 
   if (!allAbilities || allAbilities.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center dark:border-gray-600">
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+      <div className="theme-border rounded-lg border border-dashed px-4 py-6 text-center">
+        <p className="theme-text-muted text-sm">
           No abilities available. Create abilities in the Abilities section first.
         </p>
       </div>
@@ -174,12 +176,12 @@ export function AgentAbilitiesTab({ agentId }: AgentAbilitiesTabProps) {
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
-      <div className="border-b border-gray-200 px-4 py-2.5 dark:border-gray-700">
-        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+    <div className="theme-surface theme-border rounded-xl border">
+      <div className="theme-border border-b px-4 py-2.5">
+        <span className="theme-text-muted text-xs font-semibold uppercase tracking-wider">
           Assign Abilities
         </span>
-        <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">
+        <span className="theme-text-muted ml-2 text-xs">
           {assignedIds.size} assigned
         </span>
       </div>
@@ -191,6 +193,7 @@ export function AgentAbilitiesTab({ agentId }: AgentAbilitiesTabProps) {
           assignedIds={assignedIds}
           togglingId={toggling}
           onToggleAssignment={handleToggle}
+          agentColor={agentColor}
         />
       </div>
     </div>
@@ -208,6 +211,7 @@ function TreeNodeList({
   assignedIds,
   togglingId,
   onToggleAssignment,
+  agentColor,
   depth = 0,
 }: {
   entries: TreeEntry[];
@@ -216,6 +220,7 @@ function TreeNodeList({
   assignedIds: Set<string>;
   togglingId: string | null;
   onToggleAssignment: (ability: Ability) => void;
+  agentColor: string;
   depth?: number;
 }) {
   return (
@@ -232,6 +237,7 @@ function TreeNodeList({
               assignedIds={assignedIds}
               togglingId={togglingId}
               onToggleAssignment={onToggleAssignment}
+              agentColor={agentColor}
             />
           );
         }
@@ -243,6 +249,7 @@ function TreeNodeList({
             isAssigned={assignedIds.has(entry.ability.id)}
             isProcessing={togglingId === entry.ability.id}
             onToggle={() => onToggleAssignment(entry.ability)}
+            agentColor={agentColor}
           />
         );
       })}
@@ -258,6 +265,7 @@ function FolderRow({
   assignedIds,
   togglingId,
   onToggleAssignment,
+  agentColor,
 }: {
   folder: FolderNode;
   depth: number;
@@ -266,6 +274,7 @@ function FolderRow({
   assignedIds: Set<string>;
   togglingId: string | null;
   onToggleAssignment: (ability: Ability) => void;
+  agentColor: string;
 }) {
   const isExpanded = expanded.has(folder.path);
 
@@ -286,17 +295,17 @@ function FolderRow({
       <button
         type="button"
         onClick={() => onToggle(folder.path)}
-        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-700/50"
+        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:[background:var(--app-hover)]"
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
         <svg
-          className={`h-3 w-3 shrink-0 text-gray-400 transition-transform dark:text-gray-500 ${isExpanded ? "rotate-90" : ""}`}
+          className={`theme-text-muted h-3 w-3 shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""}`}
           fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
         >
           <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
         </svg>
         <svg
-          className={`h-3.5 w-3.5 shrink-0 ${isExpanded ? "text-teal-500 dark:text-teal-400" : "text-gray-400 dark:text-gray-500"}`}
+          className={`h-3.5 w-3.5 shrink-0 ${isExpanded ? "theme-text" : "theme-text-muted"}`}
           fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"
         >
           {isExpanded ? (
@@ -305,15 +314,15 @@ function FolderRow({
             <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
           )}
         </svg>
-        <span className="truncate text-xs font-medium text-gray-700 dark:text-gray-300">
+        <span className="theme-text truncate text-xs font-medium">
           {folder.name}
         </span>
         {folder.isSystem && (
-          <svg className="h-3 w-3 shrink-0 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <svg className="theme-text-muted h-3 w-3 shrink-0 opacity-60" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
           </svg>
         )}
-        <span className="ml-auto text-[10px] text-gray-400 dark:text-gray-500">
+        <span className="theme-text-muted ml-auto text-[10px]">
           {assignedCount}/{totalCount}
         </span>
       </button>
@@ -325,6 +334,7 @@ function FolderRow({
           assignedIds={assignedIds}
           togglingId={togglingId}
           onToggleAssignment={onToggleAssignment}
+          agentColor={agentColor}
           depth={depth + 1}
         />
       )}
@@ -347,53 +357,67 @@ function AbilityRow({
   isAssigned,
   isProcessing,
   onToggle,
+  agentColor,
 }: {
   ability: Ability;
   depth: number;
   isAssigned: boolean;
   isProcessing: boolean;
   onToggle: () => void;
+  agentColor: string;
 }) {
+  const activeRowStyle = isAssigned
+    ? {
+        backgroundColor: agentColorAlpha(agentColor, 0.12),
+        boxShadow: `inset 0 0 0 1px ${agentColorAlpha(agentColor, 0.32)}`,
+      }
+    : undefined;
+
   return (
     <div
       className={`flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors ${
         isAssigned
-          ? "bg-teal-50/50 dark:bg-teal-900/10"
-          : ""
+          ? ""
+          : "hover:[background:var(--app-hover)]"
       }`}
-      style={{ paddingLeft: `${depth * 16 + 8}px` }}
+      style={{ paddingLeft: `${depth * 16 + 8}px`, ...activeRowStyle }}
     >
-      {/* Toggle */}
       <button
         onClick={onToggle}
         disabled={isProcessing}
         className={`relative h-4 w-8 shrink-0 rounded-full transition-colors ${
-          isAssigned ? "bg-teal-500" : "bg-gray-300 dark:bg-gray-600"
+          isAssigned ? "" : "theme-border-strong [background:var(--app-surface-muted-strong)]"
         } ${isProcessing ? "opacity-50" : ""}`}
+        style={isAssigned ? { backgroundColor: agentColor, boxShadow: `0 0 0 1px ${agentColorAlpha(agentColor, 0.35)}` } : undefined}
       >
-        <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-xs transition-transform ${isAssigned ? "left-[16px]" : "left-0.5"}`} />
+        <span
+          className={`absolute top-0.5 h-3 w-3 rounded-full shadow-xs transition-transform ${isAssigned ? "left-[16px]" : "left-0.5"}`}
+          style={!isAssigned ? { backgroundColor: "rgba(255, 255, 255, 0.9)" } : undefined}
+        />
       </button>
 
-      {/* Bolt icon */}
-      <svg className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <svg className="theme-text-muted h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
       </svg>
 
-      {/* Info */}
       <div className="min-w-0 flex-1">
-        <span className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate block">
+        <span className="theme-text block truncate text-xs font-medium">
           {ability.display_name || ability.name}
         </span>
         {ability.activation_condition && (
-          <span className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1 block">
+          <span className="theme-text-muted line-clamp-1 block text-[10px]">
             {ability.activation_condition}
           </span>
         )}
       </div>
 
-      {/* Scope count badge */}
       {ability.platform_scopes.length > 0 && (
-        <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+        <span
+          className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+            isAssigned ? "" : "theme-surface-muted theme-text"
+          }`}
+          style={isAssigned ? { backgroundColor: agentColorAlpha(agentColor, 0.14), color: agentColor } : undefined}
+        >
           {ability.platform_scopes.length} scope{ability.platform_scopes.length !== 1 ? "s" : ""}
         </span>
       )}

@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { motion, AnimatePresence } from "motion/react";
 import type { ChatSessionExtended, AgentDefinition } from "@/lib/types";
 import { useAgents } from "@/lib/hooks";
+import { MOBILE_HERO_BAR_OFFSET, MobileHeroBar } from "@/components/layout/MobileHeroBar";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
+import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
 import GlobalSessionList from "./GlobalSessionList";
 import { ChatArea } from "./ChatArea";
 import { MobileTouchButton } from "./MobileTouchButton";
@@ -14,6 +15,7 @@ interface MobileChatShellProps {
   activeSession: ChatSessionExtended | null;
   sessionsLoading: boolean;
   mobileShowChat: boolean;
+  onCreate: () => void;
   onSelectSession: (session: ChatSessionExtended) => void;
   onBack: () => void;
   onRename?: (id: string, title: string) => void;
@@ -28,6 +30,7 @@ export function MobileChatShell({
   activeSession,
   sessionsLoading,
   mobileShowChat,
+  onCreate,
   onSelectSession,
   onBack,
   onRename,
@@ -44,109 +47,80 @@ export function MobileChatShell({
   }, [activeSession, allAgents]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-x-hidden bg-white dark:bg-gray-900">
-      {/* Header */}
-      <div className="sticky top-0 z-20 flex shrink-0 items-center justify-between border-b border-gray-100 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
-        {mobileShowChat && activeSession ? (
-          <>
-            {/* Back button */}
+    <div className="flex h-full min-h-0 flex-col overflow-x-hidden bg-[#f5f7fb] dark:bg-[#05070b]">
+      <div className="fixed inset-x-0 top-0 z-30">
+        <MobileHeroBar
+          title={mobileShowChat && activeSession ? (activeSession.agent_display_name ?? activeSession.agent_name) : "Chat"}
+          leading={mobileShowChat && activeSession ? (
             <MobileTouchButton
               onPress={onBack}
-              className="flex items-center gap-1 rounded-lg p-1 text-gray-500 transition-colors active:bg-gray-100 dark:text-gray-400 dark:active:bg-gray-800"
+              className="flex h-11 min-w-0 shrink-0 items-center gap-2.5 rounded-full border border-black/10 bg-transparent px-3 py-2.5 text-gray-900 active:scale-[0.98] dark:border-white/10 dark:bg-transparent dark:text-white"
             >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <svg className="h-5 w-5 shrink-0 text-gray-600 dark:text-gray-200" fill="none" viewBox="0 0 24 24" strokeWidth={2.25} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
               </svg>
-            </MobileTouchButton>
-
-            {/* Agent identity — centered */}
-            <div className="flex items-center gap-2">
               {activeAgent ? (
-                <RoleIdenticon roleId={activeAgent.id} color={activeAgent.color} size={20} className="shrink-0" roleName={activeAgent.name} />
-              ) : null}
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                {activeSession.agent_display_name ?? activeSession.agent_name}
-              </span>
-            </div>
-
-            <div className="w-7" />
-          </>
-        ) : (
-          <>
-            {/* Logo / brand */}
-            <div className="flex items-center gap-2">
-              <img
-                src="/nenjo-logo-dark.png"
-                alt="nenjo"
-                className="h-7 w-7 dark:hidden"
-              />
-              <img
-                src="/nenjo-logo-white.png"
-                alt="nenjo"
-                className="hidden h-7 w-7 dark:block"
-              />
-              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                nenjo
-              </span>
-            </div>
-            <div className="w-7" />
-          </>
-        )}
+                <RoleIdenticon roleId={activeAgent.id} color={activeAgent.color} size={28} className="shrink-0" roleName={activeAgent.name} />
+              ) : (
+                <NenjoLogoMark className="h-7 w-7" />
+              )}
+            </MobileTouchButton>
+          ) : (
+            <NenjoLogoMark />
+          )}
+          trailing={
+            <MobileTouchButton
+              onPress={onCreate}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/10 bg-transparent text-gray-700 transition-colors active:scale-[0.98] dark:border-white/10 dark:bg-transparent dark:text-gray-100"
+              title="New chat"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.9} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75h-9A2.25 2.25 0 005.25 6v12A2.25 2.25 0 007.5 20.25h9A2.25 2.25 0 0018.75 18V8.25L16.5 3.75Z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M14.25 3.75V8.25H18.75" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 11.25v4.5M9.75 13.5h4.5" />
+              </svg>
+            </MobileTouchButton>
+          }
+        />
       </div>
 
-      {/* Content — animated panel swap */}
+      {/* Content */}
       <div className="relative flex-1 min-h-0 overflow-hidden">
-        <AnimatePresence initial={false} mode="popLayout">
-          {!mobileShowChat ? (
-            <motion.div
-              key="session-list"
-              initial={{ x: "-100%", opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: "-100%", opacity: 0 }}
-              transition={{ type: "spring", bounce: 0, duration: 0.3 }}
-              className="absolute inset-0 min-h-0"
-            >
-              <GlobalSessionList
-                sessions={sessions}
-                activeSessionId={activeSession?.id ?? null}
-                isLoading={sessionsLoading}
-                onSelect={onSelectSession}
-                onCreate={undefined}
-                onRename={onRename}
-                onDelete={onDelete}
-                channelType="chat"
-                hideHeaderControls={true}
-                mobile={true}
-              />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="chat-area"
-              initial={{ x: "100%", opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: "100%", opacity: 0 }}
-              transition={{ type: "spring", bounce: 0, duration: 0.3 }}
-              className="absolute inset-0 min-h-0"
-            >
-              {activeSession ? (
-                <div className="flex h-full min-h-0 flex-col">
-                  <div className="flex-1 min-h-0">
-                    <ChatArea
-                      key={`${activeSession.id}:${activeSession.agent_id}`}
-                      projectId={activeSession.project_id!}
-                      agentId={activeSession.agent_id}
-                      sessionId={activeSession.id}
-                      onNavigateToSession={onNavigateToSession}
-                      onSessionCreated={onSessionCreated}
-                      onSwitchAgent={onSwitchAgent}
-                      variant="mobile"
-                    />
-                  </div>
+        {!mobileShowChat ? (
+          <div className="absolute inset-x-0 bottom-0 min-h-0" style={{ top: MOBILE_HERO_BAR_OFFSET }}>
+            <GlobalSessionList
+              sessions={sessions}
+              activeSessionId={activeSession?.id ?? null}
+              isLoading={sessionsLoading}
+              onSelect={onSelectSession}
+              onCreate={onCreate}
+              onRename={onRename}
+              onDelete={onDelete}
+              channelType="chat"
+              hideHeaderControls={true}
+              mobile={true}
+            />
+          </div>
+        ) : (
+          <div className="absolute inset-x-0 bottom-0 min-h-0" style={{ top: MOBILE_HERO_BAR_OFFSET }}>
+            {activeSession ? (
+              <div className="flex h-full min-h-0 flex-col">
+                <div className="flex-1 min-h-0">
+                  <ChatArea
+                    key={`${activeSession.id}:${activeSession.agent_id}`}
+                    projectId={activeSession.project_id!}
+                    agentId={activeSession.agent_id}
+                    sessionId={activeSession.id}
+                    onNavigateToSession={onNavigateToSession}
+                    onSessionCreated={onSessionCreated}
+                    onSwitchAgent={onSwitchAgent}
+                    variant="mobile"
+                  />
                 </div>
-              ) : null}
-            </motion.div>
-          )}
-        </AnimatePresence>
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
     </div>
   );

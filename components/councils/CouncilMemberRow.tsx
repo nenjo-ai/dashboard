@@ -37,10 +37,10 @@ export function CouncilMemberRow({
   const agentTags = selectedAgent?.tags ?? [];
 
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/50">
+    <div className="theme-border theme-surface-muted flex items-start gap-3 rounded-lg border p-3">
       {/* Agent selector */}
       <div className="flex-1 min-w-0">
-        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+        <label className="theme-text-muted mb-1 block text-xs font-medium">
           Agent
         </label>
         <select
@@ -52,11 +52,10 @@ export function CouncilMemberRow({
           }}
           disabled={disabled}
           className={cn(
-            "block w-full rounded-lg border px-3 py-2 text-sm shadow-xs focus:outline-hidden focus:ring-1",
+            "theme-surface theme-text block w-full rounded-lg border px-3 py-2 text-sm shadow-xs focus:outline-hidden focus:ring-1",
             errors?.agent_id
               ? "border-red-300 focus:border-red-500 focus:ring-red-500"
-              : "border-gray-300 focus:border-deep-space-blue-500 focus:ring-deep-space-blue-500 dark:border-gray-600",
-            "dark:bg-gray-800 dark:text-gray-100",
+              : "theme-border focus:border-deep-space-blue-500 focus:ring-deep-space-blue-500",
             disabled && "opacity-50 cursor-not-allowed",
           )}
         >
@@ -74,7 +73,7 @@ export function CouncilMemberRow({
 
       {/* Role selector — populated from the selected agent's tags */}
       <div className="flex-1 min-w-0">
-        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+        <label className="theme-text-muted mb-1 block text-xs font-medium">
           Role
         </label>
         <select
@@ -82,11 +81,10 @@ export function CouncilMemberRow({
           onChange={(e) => onChange(index, "role", e.target.value)}
           disabled={disabled || !member.agent_id}
           className={cn(
-            "block w-full rounded-lg border px-3 py-2 text-sm shadow-xs focus:outline-hidden focus:ring-1",
+            "theme-surface theme-text block w-full rounded-lg border px-3 py-2 text-sm shadow-xs focus:outline-hidden focus:ring-1",
             errors?.role
               ? "border-red-300 focus:border-red-500 focus:ring-red-500"
-              : "border-gray-300 focus:border-deep-space-blue-500 focus:ring-deep-space-blue-500 dark:border-gray-600",
-            "dark:bg-gray-800 dark:text-gray-100",
+              : "theme-border focus:border-deep-space-blue-500 focus:ring-deep-space-blue-500",
             (disabled || !member.agent_id) && "opacity-50 cursor-not-allowed",
           )}
         >

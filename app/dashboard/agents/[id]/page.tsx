@@ -5,7 +5,9 @@ import { useParams } from "next/navigation";
 import { useAgent, useModels, useTabParam } from "@/lib/hooks";
 import type { PromptConfig } from "@/lib/types";
 
+import { MobileAgentDetail } from "@/components/agents/MobileAgentDetail";
 import { TopBar } from "@/components/layout/TopBar";
+import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { Tabs } from "@/components/ui/Tabs";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { PageContent } from "@/components/ui/PageContent";
@@ -18,6 +20,7 @@ import { AgentMcpPanel } from "@/components/agents/AgentMcpPanel";
 import { AgentPlatformScopesPanel } from "@/components/agents/AgentPlatformScopesPanel";
 import { AgentSettingsTab } from "@/components/agents/AgentSettingsTab";
 import { AgentHeartbeatTab } from "@/components/agents/AgentHeartbeatTab";
+import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
 // ---------------------------------------------------------------------------
 // Tab configuration
@@ -118,6 +121,7 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
 // ---------------------------------------------------------------------------
 
 export default function AgentDetailPage() {
+  const isMobileViewport = useIsMobileViewport();
   const params = useParams();
   const agentId = params.id as string;
 
@@ -144,98 +148,131 @@ export default function AgentDetailPage() {
   }, [mutateAgent]);
 
   if (isLoading) {
-    return (
-      <>
-        <TopBar title="Agent" />
-        <PageContent>
-          <div className="flex h-64 items-center justify-center">
+    return isMobileViewport ? (
+      <MobilePageShell title="Agent" backHref="/dashboard/agents" backLabel="Agents">
+          <div className="flex h-48 items-center justify-center">
             <svg className="h-6 w-6 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
           </div>
-        </PageContent>
+        </MobilePageShell>
+    ) : (
+      <>
+          <TopBar title="Agent" />
+          <PageContent>
+            <div className="flex h-64 items-center justify-center">
+              <svg className="h-6 w-6 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            </div>
+          </PageContent>
       </>
     );
   }
 
   if (!agent) {
-    return (
-      <>
-        <TopBar title="Agent" />
-        <PageContent>
-          <div className="flex h-64 flex-col items-center justify-center gap-2 text-gray-400">
+    return isMobileViewport ? (
+      <MobilePageShell title="Agent" backHref="/dashboard/agents" backLabel="Agents">
+          <div className="flex h-48 flex-col items-center justify-center gap-2 text-gray-400">
             <p className="text-sm">Agent not found</p>
           </div>
-        </PageContent>
+        </MobilePageShell>
+    ) : (
+      <>
+          <TopBar title="Agent" />
+          <PageContent>
+            <div className="flex h-64 flex-col items-center justify-center gap-2 text-gray-400">
+              <p className="text-sm">Agent not found</p>
+            </div>
+          </PageContent>
       </>
     );
   }
 
   return (
     <>
-      <TopBar title="Agent" />
-
-      <PageContent className="space-y-6">
-        <Breadcrumbs
-          items={[
-            { label: "Agents", href: "/dashboard/agents" },
-            { label: agent.display_name || agent.name },
-          ]}
-        />
-
-        <AgentDetailHeader agent={agent} models={models} />
-
-        <Tabs
-          tabs={TABS}
+      {isMobileViewport ? (
+      <MobilePageShell
+        title={agent.display_name || agent.name}
+        backHref="/dashboard/agents"
+        backLabel="Agents"
+      >
+        <MobileAgentDetail
+          agent={agent}
+          models={models}
           activeTab={activeTab}
-          onChange={(id) => setActiveTab(id as TabId)}
-          layoutId="agent-detail-tab"
+          onTabChange={(tab) => setActiveTab(tab as TabId)}
+          tabs={TABS}
         />
+      </MobilePageShell>
+      ) : (
+      <>
+        <TopBar title="Agent" />
 
-        <div className="min-h-[800px]">
-          {activeTab === "prompts" && agent && (
-            <AgentPromptEditorContent
-              role={agent}
-              promptConfig={effectivePromptConfig}
-              onSaved={handlePromptSaved}
-              onChange={handlePromptChange}
-            />
-          )}
+        <PageContent className="space-y-6">
+          <Breadcrumbs
+            items={[
+              { label: "Agents", href: "/dashboard/agents" },
+              { label: agent.display_name || agent.name },
+            ]}
+          />
 
-          {activeTab === "preview" && agent && (
-            <PromptPreviewContent roleId={agent.id} />
-          )}
+          <AgentDetailHeader agent={agent} models={models} />
 
-          {activeTab === "abilities" && agent && (
-            <AgentAbilitiesTab agentId={agent.id} />
-          )}
+          <Tabs
+            tabs={TABS}
+            activeTab={activeTab}
+            onChange={(id) => setActiveTab(id as TabId)}
+            layoutId="agent-detail-tab"
+          />
 
-          {activeTab === "domains" && agent && (
-            <AgentDomainsTab agentId={agent.id} />
-          )}
+          <div className="min-h-[800px]">
+            {activeTab === "prompts" && agent && (
+              <AgentPromptEditorContent
+                role={agent}
+                promptConfig={effectivePromptConfig}
+                onSaved={handlePromptSaved}
+                onChange={handlePromptChange}
+              />
+            )}
 
-          {activeTab === "mcp" && agent && (
-            <AgentMcpPanel agentId={agent.id} />
-          )}
+            {activeTab === "preview" && agent && (
+              <PromptPreviewContent roleId={agent.id} />
+            )}
 
-          {activeTab === "heartbeat" && agent && (
-            <AgentHeartbeatTab
-              agentId={agent.id}
-              initialInterval={agent.heartbeat?.interval ?? null}
-              onSaved={() => mutateAgent()}
-            />
-          )}
+            {activeTab === "abilities" && agent && (
+              <AgentAbilitiesTab agentId={agent.id} agentColor={agent.color} />
+            )}
 
-          {activeTab === "scopes" && agent && (
-            <AgentPlatformScopesPanel agent={agent} onSaved={() => mutateAgent()} />
-          )}
+            {activeTab === "domains" && agent && (
+              <AgentDomainsTab agentId={agent.id} agentColor={agent.color} />
+            )}
 
-          {activeTab === "settings" && agent && (
-            <AgentSettingsTab agent={agent} onUpdated={() => mutateAgent()} />
-          )}
-        </div>
-      </PageContent>
+            {activeTab === "mcp" && agent && (
+              <AgentMcpPanel agentId={agent.id} />
+            )}
+
+            {activeTab === "heartbeat" && agent && (
+              <AgentHeartbeatTab
+                agentId={agent.id}
+                initialInterval={agent.heartbeat?.interval ?? null}
+                onSaved={() => mutateAgent()}
+              />
+            )}
+
+            {activeTab === "scopes" && agent && (
+              <AgentPlatformScopesPanel agent={agent} onSaved={() => mutateAgent()} />
+            )}
+
+            {activeTab === "settings" && agent && (
+              <AgentSettingsTab agent={agent} onUpdated={() => mutateAgent()} />
+            )}
+          </div>
+        </PageContent>
+      </>
+      )}
     </>
   );
 }

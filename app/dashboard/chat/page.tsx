@@ -17,15 +17,17 @@ function ChatPageTitle() {
 
 export default function ChatPage() {
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden">
+    <div className="theme-app-bg flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-transparent">
       <Suspense fallback={<TopBar title="Chat" />}>
-        <ChatPageTitle />
+        <div className="hidden md:block">
+          <ChatPageTitle />
+        </div>
       </Suspense>
       <Suspense
         fallback={
           <div className="flex min-h-0 flex-1 items-center justify-center md:px-6 md:py-6 lg:px-8">
-            <div className="flex h-full items-center justify-center rounded-xl md:flex-1 md:border md:border-gray-200 md:bg-white md:dark:border-gray-700 md:dark:bg-gray-900">
-              <span className="text-sm text-gray-400">Loading...</span>
+            <div className="theme-border theme-surface flex h-full items-center justify-center rounded-xl md:flex-1 md:border">
+              <span className="theme-text-muted text-sm">Loading...</span>
             </div>
           </div>
         }

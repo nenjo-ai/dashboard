@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useDomains, useAgentDomains } from "@/lib/hooks";
 import { assignDomainToAgent, removeDomainFromAgent, toggleAgentDomain } from "@/lib/api";
+import { agentColorAlpha } from "@/lib/agent-colors";
 import type { Domain } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -114,9 +115,10 @@ type AssignmentState = "unassigned" | "enabled" | "disabled";
 
 interface AgentDomainsTabProps {
   agentId: string;
+  agentColor: string;
 }
 
-export function AgentDomainsTab({ agentId }: AgentDomainsTabProps) {
+export function AgentDomainsTab({ agentId, agentColor }: AgentDomainsTabProps) {
   const { domains: allDomains, isLoading: domainsLoading } = useDomains();
   const { agentDomains, isLoading: assignmentsLoading, mutate } = useAgentDomains(agentId);
   const [toggling, setToggling] = useState<string | null>(null);
@@ -189,7 +191,7 @@ export function AgentDomainsTab({ agentId }: AgentDomainsTabProps) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="h-10 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
+          <div key={i} className="theme-surface-muted h-10 animate-pulse rounded-lg" />
         ))}
       </div>
     );
@@ -197,8 +199,8 @@ export function AgentDomainsTab({ agentId }: AgentDomainsTabProps) {
 
   if (!allDomains || allDomains.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center dark:border-gray-600">
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+      <div className="theme-border rounded-lg border border-dashed px-4 py-6 text-center">
+        <p className="theme-text-muted text-sm">
           No domains available. Create domains in the Domains section first.
         </p>
       </div>
@@ -206,12 +208,12 @@ export function AgentDomainsTab({ agentId }: AgentDomainsTabProps) {
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
-      <div className="border-b border-gray-200 px-4 py-2.5 dark:border-gray-700">
-        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+    <div className="theme-surface theme-border rounded-xl border">
+      <div className="theme-border border-b px-4 py-2.5">
+        <span className="theme-text-muted text-xs font-semibold uppercase tracking-wider">
           Assign Domains
         </span>
-        <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">
+        <span className="theme-text-muted ml-2 text-xs">
           {assignedCount} assigned
         </span>
       </div>
@@ -223,6 +225,7 @@ export function AgentDomainsTab({ agentId }: AgentDomainsTabProps) {
           getState={getState}
           togglingId={toggling}
           onToggleAssignment={handleToggle}
+          agentColor={agentColor}
         />
       </div>
     </div>
@@ -240,6 +243,7 @@ function TreeNodeList({
   getState,
   togglingId,
   onToggleAssignment,
+  agentColor,
   depth = 0,
 }: {
   entries: TreeEntry[];
@@ -248,6 +252,7 @@ function TreeNodeList({
   getState: (domainId: string) => AssignmentState;
   togglingId: string | null;
   onToggleAssignment: (domain: Domain) => void;
+  agentColor: string;
   depth?: number;
 }) {
   return (
@@ -264,6 +269,7 @@ function TreeNodeList({
               getState={getState}
               togglingId={togglingId}
               onToggleAssignment={onToggleAssignment}
+              agentColor={agentColor}
             />
           );
         }
@@ -275,6 +281,7 @@ function TreeNodeList({
             state={getState(entry.domain.id)}
             isProcessing={togglingId === entry.domain.id}
             onToggle={() => onToggleAssignment(entry.domain)}
+            agentColor={agentColor}
           />
         );
       })}
@@ -290,6 +297,7 @@ function FolderRow({
   getState,
   togglingId,
   onToggleAssignment,
+  agentColor,
 }: {
   folder: FolderNode;
   depth: number;
@@ -298,6 +306,7 @@ function FolderRow({
   getState: (domainId: string) => AssignmentState;
   togglingId: string | null;
   onToggleAssignment: (domain: Domain) => void;
+  agentColor: string;
 }) {
   const isExpanded = expanded.has(folder.path);
 
@@ -318,17 +327,17 @@ function FolderRow({
       <button
         type="button"
         onClick={() => onToggle(folder.path)}
-        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-700/50"
+        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:[background:var(--app-hover)]"
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
         <svg
-          className={`h-3 w-3 shrink-0 text-gray-400 transition-transform dark:text-gray-500 ${isExpanded ? "rotate-90" : ""}`}
+          className={`theme-text-muted h-3 w-3 shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""}`}
           fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
         >
           <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
         </svg>
         <svg
-          className={`h-3.5 w-3.5 shrink-0 ${isExpanded ? "text-teal-500 dark:text-teal-400" : "text-gray-400 dark:text-gray-500"}`}
+          className={`h-3.5 w-3.5 shrink-0 ${isExpanded ? "theme-text" : "theme-text-muted"}`}
           fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"
         >
           {isExpanded ? (
@@ -337,15 +346,15 @@ function FolderRow({
             <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
           )}
         </svg>
-        <span className="truncate text-xs font-medium text-gray-700 dark:text-gray-300">
+        <span className="theme-text truncate text-xs font-medium">
           {folder.name}
         </span>
         {folder.isSystem && (
-          <svg className="h-3 w-3 shrink-0 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <svg className="theme-text-muted h-3 w-3 shrink-0 opacity-60" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
           </svg>
         )}
-        <span className="ml-auto text-[10px] text-gray-400 dark:text-gray-500">
+        <span className="theme-text-muted ml-auto text-[10px]">
           {assignedCount}/{totalCount}
         </span>
       </button>
@@ -357,6 +366,7 @@ function FolderRow({
           getState={getState}
           togglingId={togglingId}
           onToggleAssignment={onToggleAssignment}
+          agentColor={agentColor}
           depth={depth + 1}
         />
       )}
@@ -379,19 +389,20 @@ function DomainRow({
   state,
   isProcessing,
   onToggle,
+  agentColor,
 }: {
   domain: Domain;
   depth: number;
   state: AssignmentState;
   isProcessing: boolean;
   onToggle: () => void;
+  agentColor: string;
 }) {
-  // Three-state toggle colors
   const toggleColor = state === "enabled"
-    ? "bg-teal-500"
+    ? ""
     : state === "disabled"
-      ? "bg-amber-400"
-      : "bg-gray-300 dark:bg-gray-600";
+      ? "theme-border-strong [background:var(--app-surface-muted-strong)]"
+      : "theme-border-strong [background:var(--app-surface-muted-strong)]";
 
   const knobPosition = state === "enabled"
     ? "left-[16px]"
@@ -403,48 +414,60 @@ function DomainRow({
     <div
       className={`flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors ${
         state === "enabled"
-          ? "bg-teal-50/50 dark:bg-teal-900/10"
+          ? ""
           : state === "disabled"
-            ? "bg-amber-50/50 dark:bg-amber-900/10"
-            : ""
+            ? "theme-surface-muted"
+            : "hover:[background:var(--app-hover)]"
       }`}
-      style={{ paddingLeft: `${depth * 16 + 8}px` }}
+      style={{
+        paddingLeft: `${depth * 16 + 8}px`,
+        ...(state === "enabled"
+          ? {
+              backgroundColor: agentColorAlpha(agentColor, 0.12),
+              boxShadow: `inset 0 0 0 1px ${agentColorAlpha(agentColor, 0.32)}`,
+            }
+          : {}),
+      }}
     >
-      {/* Three-state toggle */}
       <button
         onClick={onToggle}
         disabled={isProcessing}
         title={state === "unassigned" ? "Assign & enable" : state === "enabled" ? "Disable" : "Unassign"}
         className={`relative h-4 w-8 shrink-0 rounded-full transition-colors ${toggleColor} ${isProcessing ? "opacity-50" : ""}`}
+        style={state === "enabled" ? { backgroundColor: agentColor, boxShadow: `0 0 0 1px ${agentColorAlpha(agentColor, 0.35)}` } : undefined}
       >
-        <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-xs transition-transform ${knobPosition}`} />
+        <span
+          className={`absolute top-0.5 h-3 w-3 rounded-full shadow-xs transition-transform ${knobPosition}`}
+          style={state !== "enabled" ? { backgroundColor: "rgba(255, 255, 255, 0.9)" } : undefined}
+        />
       </button>
 
-      {/* Globe icon */}
-      <svg className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <svg className="theme-text-muted h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
       </svg>
 
-      {/* Info */}
       <div className="min-w-0 flex-1">
-        <span className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate block">
+        <span className="theme-text block truncate text-xs font-medium">
           {domain.display_name || domain.name}
         </span>
         {domain.category && (
-          <span className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1 block">
+          <span className="theme-text-muted line-clamp-1 block text-[10px]">
             {domain.category}
           </span>
         )}
       </div>
 
-      {/* Command badge */}
-      <span className="shrink-0 rounded-sm bg-purple-50 px-1.5 py-0.5 text-[10px] font-medium font-mono text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+      <span
+        className={`shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] font-medium font-mono ${
+          state === "enabled" ? "" : "theme-surface-muted theme-text"
+        }`}
+        style={state === "enabled" ? { backgroundColor: agentColorAlpha(agentColor, 0.14), color: agentColor } : undefined}
+      >
         {domain.command}
       </span>
 
-      {/* State label */}
       {state === "disabled" && (
-        <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+        <span className="theme-surface-muted theme-text-muted shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium">
           disabled
         </span>
       )}
