@@ -1,16 +1,45 @@
 "use client";
 
+import { useState } from "react";
+import { Bell, BellOff } from "lucide-react";
 import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { TopBar } from "@/components/layout/TopBar";
 import { ApiKeysSection } from "@/components/settings/ApiKeysSection";
+import { usePwa } from "@/components/pwa/PwaProvider";
 
 import { useTheme } from "@/lib/theme";
+import { toast } from "@/lib/toast";
 import { PageContent } from "@/components/ui/PageContent";
 import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
 export default function SettingsPage() {
   const isMobileViewport = useIsMobileViewport();
   const { theme, setTheme } = useTheme();
+  const {
+    enableNotifications,
+    disableNotifications,
+    isStandalone,
+    notificationsEnabled,
+    notificationsSupported,
+  } = usePwa();
+  const [pushBusy, setPushBusy] = useState(false);
+
+  const handlePushToggle = async () => {
+    setPushBusy(true);
+    try {
+      if (notificationsEnabled) {
+        await disableNotifications();
+        toast.success("Push notifications disabled.");
+      } else {
+        await enableNotifications();
+        toast.success("Push notifications enabled.");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update push notifications.");
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   return (
     <>
@@ -36,6 +65,35 @@ export default function SettingsPage() {
                 </button>
               ))}
             </div>
+          </div>
+          <div className="rounded-[1.5rem] border border-black/10 bg-transparent p-5 dark:border-white/10">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Notifications
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-gray-500 dark:text-gray-400">
+              {notificationsSupported
+                ? notificationsEnabled
+                  ? "Agent push notifications are enabled for this device. Disable them here to remove the backend subscription."
+                  : isStandalone
+                    ? "Enable push notifications from agents for this installed app."
+                    : "Install the app to enable mobile push notifications from agents."
+                : "Push notifications are not supported on this device/browser."}
+            </p>
+            {notificationsSupported && isStandalone ? (
+              <button
+                type="button"
+                onClick={() => void handlePushToggle()}
+                disabled={pushBusy}
+                className={`mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors active:scale-[0.98] ${
+                  notificationsEnabled
+                    ? "border-red-200 bg-red-50 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300"
+                    : "border-black/10 bg-white/78 text-gray-900 backdrop-blur-xl dark:border-white/10 dark:bg-white/6 dark:text-gray-100"
+                } ${pushBusy ? "opacity-60" : ""}`}
+              >
+                {notificationsEnabled ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+                {pushBusy ? "Updating..." : notificationsEnabled ? "Disable Agent Push" : "Enable Agent Push"}
+              </button>
+            ) : null}
           </div>
           <ApiKeysSection />
         </div>
@@ -88,6 +146,37 @@ export default function SettingsPage() {
                 ))}
               </div>
             </div>
+          </div>
+
+          <div className="theme-border theme-surface rounded-xl border p-6 shadow-xs">
+            <h2 className="theme-text text-lg font-semibold">
+              Notifications
+            </h2>
+            <p className="theme-text-muted mt-1 text-sm">
+              {notificationsSupported
+                ? notificationsEnabled
+                  ? "Agent push notifications are enabled for this device. Disable them here to remove the backend subscription."
+                  : isStandalone
+                    ? "Enable push notifications from agents for this installed app."
+                    : "Install the app to enable mobile push notifications from agents."
+                : "Push notifications are not supported on this device/browser."}
+            </p>
+
+            {notificationsSupported && isStandalone ? (
+              <button
+                type="button"
+                onClick={() => void handlePushToggle()}
+                disabled={pushBusy}
+                className={`mt-4 inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors ${
+                  notificationsEnabled
+                    ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/15"
+                    : "border-black/10 bg-white/78 text-gray-900 backdrop-blur-xl hover:bg-white/90 dark:border-white/10 dark:bg-white/6 dark:text-gray-100 dark:hover:bg-white/10"
+                } ${pushBusy ? "opacity-60" : ""}`}
+              >
+                {notificationsEnabled ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+                {pushBusy ? "Updating..." : notificationsEnabled ? "Disable Agent Push" : "Enable Agent Push"}
+              </button>
+            ) : null}
           </div>
 
           <ApiKeysSection />
