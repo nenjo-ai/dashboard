@@ -136,11 +136,15 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
             : "Manage agent execution routines. Routines define the sequence of steps agents follow when processing tasks."}
         </p>
         {allowCreate ? (
-          <Button onClick={() => setShowCreate(true)} className="shrink-0">
+          <Button
+            onClick={() => setShowCreate(true)}
+            className="h-10 w-10 shrink-0 !bg-deep-space-blue-500 !px-0 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
+            title="New Routine"
+            aria-label="New Routine"
+          >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            New Routine
           </Button>
         ) : null}
       </div>
@@ -262,7 +266,13 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
               ? "Create a scheduled routine to run agents on a cron schedule."
               : "Create your first routine to define how agents process work."}
           </p>
-          <Button variant="primary" size="sm" className="mt-4" onClick={() => setShowCreate(true)}>
+          <Button
+            className="mt-6 !bg-deep-space-blue-500 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
+            onClick={() => setShowCreate(true)}
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
             Create Routine
           </Button>
         </div>

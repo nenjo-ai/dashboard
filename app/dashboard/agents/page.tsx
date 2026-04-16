@@ -234,7 +234,12 @@ function AgentsPageContent() {
                 LLM configurations assigned to agents for execution.
               </p>
               <div className="mb-4 flex justify-end">
-                <Button onClick={handleCreate}>
+                <Button
+                  onClick={handleCreate}
+                  className="h-10 w-10 !bg-deep-space-blue-500 !px-0 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
+                  title="New Agent"
+                  aria-label="New Agent"
+                >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                   </svg>

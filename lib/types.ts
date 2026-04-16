@@ -100,6 +100,8 @@ export interface TaskStepProgress {
   completed_at: string | null;
   duration_ms: number | null;
   data?: Record<string, unknown>;
+  payload?: Record<string, unknown> | null;
+  encrypted_payload?: EncryptedPayload | null;
   agent?: StepAgent | null;
 }
 
@@ -122,6 +124,8 @@ export interface ExecutionStepEvent {
   step_name: string | null;
   step_type: string | null;
   data: Record<string, unknown>;
+  payload?: Record<string, unknown> | null;
+  encrypted_payload?: EncryptedPayload | null;
   duration_ms: number | null;
   created_at: string;
 }
@@ -141,6 +145,7 @@ export interface Task {
   priority: TaskPriority;
   type: TaskType;
   metadata: Record<string, unknown>;
+  encrypted_payload?: EncryptedPayload | null;
   tags: string[];
   slug: string | null;
   complexity: number | null;
@@ -238,10 +243,111 @@ export interface ChatMessageOutbound {
 export interface ChatStreamRequest {
   id: string;
   message: string;
+  encrypted_message?: EncryptedPayload;
   session_id: string;
   domain_session_id?: string;
   agent_id: string;
   project_id?: string;
+}
+
+export interface EncryptedPayload {
+  account_id: string;
+  object_id: string;
+  object_type: string;
+  algorithm: string;
+  key_version: number;
+  nonce: string;
+  ciphertext: string;
+}
+
+export interface WorkerStatus {
+  worker_connected: boolean;
+  workers?: Array<{
+    worker_id: string;
+    capabilities: string[];
+    version?: string | null;
+  }>;
+}
+
+export interface WorkerEnrollmentRequest {
+  api_key_id: string;
+  requested_at: string;
+  crypto_version: number;
+  enc_public_key: string;
+  sign_public_key: string;
+  verification_code: string;
+}
+
+export interface WorkerApprovalKeyResponse {
+  public_key?: string | null;
+}
+
+export interface RecoveryBundlePayload {
+  version: number;
+  kdf: string;
+  iterations: number;
+  salt: string;
+  nonce: string;
+  ciphertext: string;
+  created_at: string;
+}
+
+export interface RecoveryBundleResponse {
+  recovery_bundle?: RecoveryBundlePayload | null;
+}
+
+export interface TrustedDevicePayload {
+  device_id: string;
+  device_label?: string | null;
+  enc_public_key: string;
+  sign_public_key: string;
+  wrapped_ack: WrappedAccountContentKey;
+}
+
+export interface DeviceEnrollmentPayload {
+  device_id: string;
+  device_label?: string | null;
+  enc_public_key: string;
+  verification_code: string;
+  state: "pending" | "active" | "revoked";
+  wrapped_ack?: WrappedAccountContentKey | null;
+}
+
+export interface ApproveDeviceEnrollmentRequest {
+  wrapped_ack: WrappedAccountContentKey;
+}
+
+export interface WorkerCertificate {
+  account_id: string;
+  api_key_id: string;
+  issued_at: string;
+  enc_public_key: string;
+  sign_public_key: string;
+  signature: string;
+}
+
+export interface WrappedAccountContentKey {
+  key_version: number;
+  algorithm: string;
+  ephemeral_public_key: string;
+  nonce: string;
+  ciphertext: string;
+  created_at: string;
+}
+
+export type WorkerEnrollmentState = "pending" | "active" | "revoked";
+
+export interface WorkerEnrollmentStatusResponse {
+  api_key_id: string;
+  request: WorkerEnrollmentRequest;
+  state: WorkerEnrollmentState;
+  certificate?: WorkerCertificate | null;
+  wrapped_ack?: WrappedAccountContentKey | null;
+}
+
+export interface ApproveWorkerEnrollmentRequest {
+  certificate: WorkerCertificate;
+  wrapped_ack: WrappedAccountContentKey;
 }
 
 export interface ChatDomainEnterOutbound {
@@ -314,6 +420,7 @@ export interface NotificationMetadata {
   severity?: "info" | "warning" | "action";
   link?: string;
   hidden?: boolean;
+  encrypted_payload?: EncryptedPayload;
 }
 
 export interface ChatMessagePage {

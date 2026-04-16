@@ -43,7 +43,12 @@ export default function ProjectsPage() {
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Manage your projects. Each project contains tasks, routines, and agent executions.
             </p>
-            <Button className="shrink-0" onClick={() => setModalOpen(true)}>
+            <Button
+              className="h-10 w-10 shrink-0 !bg-deep-space-blue-500 !px-0 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
+              onClick={() => setModalOpen(true)}
+              title="New Project"
+              aria-label="New Project"
+            >
               <svg
                 className="h-4 w-4"
                 fill="none"
@@ -57,7 +62,6 @@ export default function ProjectsPage() {
                   d="M12 4.5v15m7.5-7.5h-15"
                 />
               </svg>
-              New Project
             </Button>
           </div>
 

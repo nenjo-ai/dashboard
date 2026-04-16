@@ -5,6 +5,7 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
+  EncryptedPayload,
   ExecutionDetails,
   ExecutionCommand,
   ExecutionTask,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/api";
 import { subscribeExecutionRealtime } from "@/lib/executionRealtime";
 import { useExecutionTasks } from "@/lib/hooks";
+import { decryptContentPayload } from "@/lib/cryptoContent";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -168,6 +170,70 @@ function deduplicateSteps(steps: TaskStepProgress[]): TaskStepProgress[] {
 interface DisplayStep {
   step: TaskStepProgress;
   children: TaskStepProgress[];
+}
+
+type StepPayloadData = Record<string, unknown>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function extractStringFields(data: Record<string, unknown> | undefined): StepPayloadData {
+  if (!data) return {};
+
+  const extracted: StepPayloadData = {};
+  for (const key of ["error", "warning"]) {
+    if (typeof data[key] === "string" && String(data[key]).trim().length > 0) {
+      extracted[key] = data[key];
+    }
+  }
+
+  return extracted;
+}
+
+async function resolveStepPayload(
+  data: Record<string, unknown> | undefined,
+  directPayload?: Record<string, unknown> | null,
+  directEncryptedPayload?: EncryptedPayload | null,
+): Promise<StepPayloadData | null> {
+  if (!data && !directPayload && !directEncryptedPayload) return null;
+
+  const resolved: StepPayloadData = {
+    ...extractStringFields(data),
+  };
+
+  if (directPayload) {
+    Object.assign(resolved, directPayload);
+  }
+
+  if (directEncryptedPayload) {
+    try {
+      const decrypted = await decryptContentPayload(directEncryptedPayload);
+      if (decrypted) {
+        const parsed = JSON.parse(decrypted) as unknown;
+        if (isRecord(parsed)) {
+          Object.assign(resolved, parsed);
+        }
+      }
+    } catch (error) {
+      console.warn("Failed to decrypt execution step payload", {
+        objectId: directEncryptedPayload.object_id,
+        objectType: directEncryptedPayload.object_type,
+        keyVersion: directEncryptedPayload.key_version,
+        error,
+      });
+    }
+  }
+
+  return Object.keys(resolved).length > 0 ? resolved : null;
+}
+
+function getResolvedText(
+  payload: StepPayloadData | null | undefined,
+  key: string,
+): string | null {
+  const value = payload?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
 function mergeStep(prev: TaskStepProgress, next: TaskStepProgress): TaskStepProgress {
@@ -328,6 +394,7 @@ function summarizeToolActivity(toolName: string, preview?: string | null, error?
 function TaskRow({ task }: { task: ExecutionTask }) {
   const [expanded, setExpanded] = useState(false);
   const [openActivity, setOpenActivity] = useState<Record<string, boolean>>({});
+  const [resolvedPayloads, setResolvedPayloads] = useState<Record<string, StepPayloadData>>({});
 
   const displaySteps = useMemo(() => buildDisplaySteps(task.steps ?? []), [task.steps]);
   const steps = useMemo(() => deduplicateSteps(task.steps ?? []), [task.steps]);
@@ -335,6 +402,42 @@ function TaskRow({ task }: { task: ExecutionTask }) {
   const totalTokens = steps.reduce(
     (acc, s) => acc + getStepTokens(s.data as Record<string, unknown> | undefined).total, 0
   );
+
+  useEffect(() => {
+    if (!expanded) {
+      setResolvedPayloads({});
+      return;
+    }
+
+    let cancelled = false;
+
+    const stepEntries = displaySteps.flatMap(({ step, children }, parentIndex) => [
+      [`step:${parentIndex}`, step] as const,
+      ...children.map((child, childIndex) => [`step:${parentIndex}:child:${childIndex}`, child] as const),
+    ]);
+
+    void Promise.all(
+      stepEntries.map(async ([key, step]) => {
+        const resolved = await resolveStepPayload(
+          step.data as Record<string, unknown> | undefined,
+          step.payload ?? null,
+          step.encrypted_payload ?? null,
+        );
+        return [key, resolved] as const;
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      const next: Record<string, StepPayloadData> = {};
+      for (const [key, resolved] of entries) {
+        if (resolved) next[key] = resolved;
+      }
+      setResolvedPayloads(next);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, displaySteps]);
 
   return (
     <div className="theme-border border-b last:border-b-0">
@@ -373,25 +476,27 @@ function TaskRow({ task }: { task: ExecutionTask }) {
 
       {expanded && displaySteps.length > 0 && (
         <div className="pl-10 pr-4 pb-2 space-y-1">
-          {displaySteps.map(({ step, children }) => {
+          {displaySteps.map(({ step, children }, parentIndex) => {
             const d = step.data as Record<string, unknown> | undefined;
+            const resolved = resolvedPayloads[`step:${parentIndex}`];
             const metrics = d?.metrics as
               | { execution_count?: number }
               | undefined;
             const tokens = getStepTokens(d);
             const errorMsg =
               (step.event_type === "step_failed" || step.event_type === "failed") &&
-              d?.error
-                ? String(d.error)
+              (getResolvedText(resolved, "error") ?? (d?.error ? String(d.error) : null))
+                ? (getResolvedText(resolved, "error") ?? String(d?.error))
                 : null;
             const warningMsg =
-              step.event_type === "step_warning" && d?.warning
-                ? String(d.warning)
+              step.event_type === "step_warning" &&
+              (getResolvedText(resolved, "warning") ?? (d?.warning ? String(d.warning) : null))
+                ? (getResolvedText(resolved, "warning") ?? String(d?.warning))
                 : null;
             const isTerminal = step.step_type === "terminal" || step.step_type === "terminal_fail";
             const outputPreview =
-              step.event_type === "step_completed" && !isTerminal && d?.output_preview
-                ? String(d.output_preview)
+              step.event_type === "step_completed" && !isTerminal
+                ? getResolvedText(resolved, "output_preview")
                 : null;
             const agent = step.agent;
             const isRunning =
@@ -486,20 +591,19 @@ function TaskRow({ task }: { task: ExecutionTask }) {
                       </div>
                     ) : (
                     <div className="space-y-0.5">
-                      {children.map((child) => {
+                      {children.map((child, childIndex) => {
                         const childData = child.data as Record<string, unknown> | undefined;
+                        const childResolved =
+                          resolvedPayloads[`step:${parentIndex}:child:${childIndex}`];
                         const childPreview =
                           child.event_type === "step_started"
-                            ? childData?.text_preview
-                              ? String(childData.text_preview)
-                              : null
-                            : childData?.output_preview
-                              ? String(childData.output_preview)
-                              : null;
+                            ? getResolvedText(childResolved, "text_preview")
+                            : getResolvedText(childResolved, "output_preview");
                         const childError =
                           (child.event_type === "step_failed" || child.event_type === "failed") &&
-                          childData?.error
-                            ? String(childData.error)
+                          (getResolvedText(childResolved, "error")
+                            ?? (childData?.error ? String(childData.error) : null))
+                            ? (getResolvedText(childResolved, "error") ?? String(childData?.error))
                             : null;
                         const summary = summarizeToolActivity(child.step_name, childPreview, childError);
                         const showDetails = !!childError || (!!childPreview && !isLowSignalJsonFragment(childPreview));

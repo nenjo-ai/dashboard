@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
+  authRequestHeaders,
+  chatStreamsUrl,
   fetchChatMessages,
   deleteChatMessage,
   createChatStream,
@@ -21,6 +23,14 @@ import {
 } from "./api";
 import { consumeSseStream } from "./chatStream";
 import {
+  decryptContentPayload,
+  encryptContentPayload,
+  loadStoredAccountContentKey,
+  warmAccountContentKey,
+} from "./cryptoContent";
+import { useCurrentUser } from "./hooks";
+import { toast } from "./toast";
+import {
   clearChatStreamSnapshot,
   type ChatStreamSnapshot,
   loadChatStreamSnapshot,
@@ -31,6 +41,8 @@ import type {
   ChatMessage,
   ChatSession,
   DomainSession,
+  EncryptedPayload,
+  PersistedChatMessage,
 } from "./types";
 
 type NormalizedStreamEvent = {
@@ -139,7 +151,6 @@ function normalizeSseAgentEvent(event: { event: string; data: unknown }): Normal
   }
 
   const eventTypeMap: Record<string, string> = {
-    token: "Token",
     tool_calls: "ToolCalls",
     tool_completed: "ToolCompleted",
     ability_activated: "AbilityActivated",
@@ -226,7 +237,124 @@ function isLikelySameAssistantContent(existing: string, incoming: string): boole
   return incoming.startsWith(existing) || existing.startsWith(incoming);
 }
 
+async function resolvePersistedMessageContent(
+  message: Pick<PersistedChatMessage, "content" | "metadata">,
+): Promise<string> {
+  const encryptedPayload = message.metadata?.encrypted_payload;
+  if (!encryptedPayload) {
+    return message.content;
+  }
+
+  try {
+    const storedAck = await loadStoredAccountContentKey();
+    const decrypted = await decryptContentPayload(encryptedPayload);
+    if (decrypted !== null) {
+      return decrypted;
+    }
+    console.warn("Persisted chat decrypt returned null", {
+      hasAck: Boolean(storedAck),
+      accountId: encryptedPayload.account_id,
+      objectId: encryptedPayload.object_id,
+      objectType: encryptedPayload.object_type,
+      algorithm: encryptedPayload.algorithm,
+      keyVersion: encryptedPayload.key_version,
+    });
+    await warmAccountContentKey();
+    const retried = await decryptContentPayload(encryptedPayload);
+    if (retried !== null) {
+      return retried;
+    }
+    return message.content.trim()
+      ? message.content
+      : "[Encrypted assistant message could not be decrypted]";
+  } catch (error) {
+    console.warn("Failed to decrypt persisted chat content", {
+      error,
+      accountId: encryptedPayload.account_id,
+      objectId: encryptedPayload.object_id,
+      objectType: encryptedPayload.object_type,
+      algorithm: encryptedPayload.algorithm,
+      keyVersion: encryptedPayload.key_version,
+    });
+    return message.content.trim()
+      ? message.content
+      : "[Encrypted assistant message could not be decrypted]";
+  }
+}
+
+async function resolveEncryptedPreview(
+  plaintext: string | undefined,
+  encryptedPayload?: EncryptedPayload,
+): Promise<string | undefined> {
+  if (encryptedPayload) {
+    try {
+      const storedAck = await loadStoredAccountContentKey();
+      const decrypted = await decryptContentPayload(encryptedPayload);
+      if (decrypted) return decrypted;
+      console.warn("Live preview decrypt returned null", {
+        hasAck: Boolean(storedAck),
+        accountId: encryptedPayload.account_id,
+        objectId: encryptedPayload.object_id,
+        objectType: encryptedPayload.object_type,
+        algorithm: encryptedPayload.algorithm,
+        keyVersion: encryptedPayload.key_version,
+      });
+      await warmAccountContentKey();
+      const retried = await decryptContentPayload(encryptedPayload);
+      if (retried) return retried;
+    } catch (error) {
+      console.warn("Failed to decrypt live preview", {
+        error,
+        accountId: encryptedPayload.account_id,
+        objectId: encryptedPayload.object_id,
+        objectType: encryptedPayload.object_type,
+        algorithm: encryptedPayload.algorithm,
+        keyVersion: encryptedPayload.key_version,
+      });
+    }
+  }
+  const trimmed = plaintext?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+async function resolveEncryptedPayloadJson<T extends Record<string, unknown>>(
+  encryptedPayload?: EncryptedPayload,
+): Promise<Partial<T> | undefined> {
+  if (!encryptedPayload) return undefined;
+  try {
+    const storedAck = await loadStoredAccountContentKey();
+    const decrypted = await decryptContentPayload(encryptedPayload);
+    if (decrypted) {
+      return JSON.parse(decrypted) as Partial<T>;
+    }
+    console.warn("Encrypted payload JSON decrypt returned null", {
+      hasAck: Boolean(storedAck),
+      accountId: encryptedPayload.account_id,
+      objectId: encryptedPayload.object_id,
+      objectType: encryptedPayload.object_type,
+      algorithm: encryptedPayload.algorithm,
+      keyVersion: encryptedPayload.key_version,
+    });
+    await warmAccountContentKey();
+    const retried = await decryptContentPayload(encryptedPayload);
+    if (retried) {
+      return JSON.parse(retried) as Partial<T>;
+    }
+  } catch (error) {
+    console.warn("Failed to decrypt encrypted payload JSON", {
+      error,
+      accountId: encryptedPayload.account_id,
+      objectId: encryptedPayload.object_id,
+      objectType: encryptedPayload.object_type,
+      algorithm: encryptedPayload.algorithm,
+      keyVersion: encryptedPayload.key_version,
+    });
+  }
+  return undefined;
+}
+
 export function usePlannerChat(projectId: string, agentId?: string, initialSessionId?: string) {
+  const { userId } = useCurrentUser();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [livePreview, setLivePreview] = useState<string | undefined>(undefined);
   const status = "connected";
@@ -237,6 +365,10 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   const [isTyping, setIsTyping] = useState(
     () => !!agentId && readPendingAgentId() === agentId,
   );
+
+  useEffect(() => {
+    void warmAccountContentKey();
+  }, []);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -276,9 +408,8 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   const activeSessionId = initialSessionId ?? internalSessionId;
   const setActiveSessionId = setInternalSessionId;
 
-  // Stable response ID set when the user sends a message. Token and Done
-  // events both use this ID to target the same message, preventing
-  // duplication regardless of event ordering or React batching.
+  // Stable response ID set when the user sends a message so the final
+  // assistant event targets the same message consistently.
   const responseIdRef = useRef<string | null>(null);
   const responsePersistedRef = useRef(false);
   const streamAbortRef = useRef<AbortController | null>(null);
@@ -298,6 +429,13 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   // ── Stable subscriber via ref ──────────────────────────────────────────
   const handleIncomingRef = useRef<(raw: unknown) => void>(() => {});
   const optimisticUserMessageIdRef = useRef<string | null>(null);
+  const awaitingDeliveryRef = useRef(false);
+
+  const setTypingIfDelivered = useCallback(() => {
+    if (!awaitingDeliveryRef.current) {
+      setIsTyping(true);
+    }
+  }, []);
 
   const applyStreamSnapshot = useCallback((snapshot: ChatStreamSnapshot | { sessionId: string; clear: true }) => {
     if (!activeSessionId || snapshot.sessionId !== activeSessionId) {
@@ -470,22 +608,41 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     fetchChatMessages(projectId, agentId, {
       session_id: activeSessionId,
     })
-      .then((page) => {
+      .then(async (page) => {
         if (fetchId !== historyFetchIdRef.current) return;
+        const storedAck = await loadStoredAccountContentKey().catch(() => null);
+        console.warn("Chat history fetch", {
+          sessionId: activeSessionId,
+          totalMessages: page.messages.length,
+          assistantMessages: page.messages
+            .filter((message) => message.sender === "assistant")
+            .map((message) => ({
+              id: message.id,
+              content: message.content,
+              hasEncryptedPayload: Boolean(message.metadata?.encrypted_payload),
+              objectId: message.metadata?.encrypted_payload?.object_id,
+              objectType: message.metadata?.encrypted_payload?.object_type,
+            })),
+          hasAck: Boolean(storedAck),
+        });
         if (page.messages.length === 0) {
           setMessages([]);
           setHasMore(false);
         } else {
           // API returns newest-first (DESC), reverse for oldest-first display
-          const loaded: ChatMessage[] = page.messages
-            .reverse()
-            .map((m) => ({
-              id: m.id,
-              persistedId: m.id,
-              role: m.sender,
-              content: m.content,
-              timestamp: m.created_at,
-            }));
+          const loaded: ChatMessage[] = (
+            await Promise.all(
+              page.messages
+                .reverse()
+                .map(async (m) => ({
+                  id: m.id,
+                  persistedId: m.id,
+                  role: m.sender,
+                  content: await resolvePersistedMessageContent(m),
+                  timestamp: m.created_at,
+                })),
+            )
+          );
           setMessages((prev) => mergeLoadedMessages(loaded, prev));
           setHasMore(page.has_more);
         }
@@ -578,15 +735,32 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         before: oldest.timestamp,
         session_id: activeSessionId,
       });
+      const storedAck = await loadStoredAccountContentKey().catch(() => null);
+      console.warn("Chat history pagination fetch", {
+        sessionId: activeSessionId,
+        totalMessages: page.messages.length,
+        assistantMessages: page.messages
+          .filter((message) => message.sender === "assistant")
+          .map((message) => ({
+            id: message.id,
+            content: message.content,
+            hasEncryptedPayload: Boolean(message.metadata?.encrypted_payload),
+            objectId: message.metadata?.encrypted_payload?.object_id,
+            objectType: message.metadata?.encrypted_payload?.object_type,
+          })),
+        hasAck: Boolean(storedAck),
+      });
       if (page.messages.length > 0) {
-        const older: ChatMessage[] = page.messages
-          .reverse()
-          .map((m) => ({
-            id: m.id,
-            role: m.sender,
-            content: m.content,
-            timestamp: m.created_at,
-          }));
+        const older: ChatMessage[] = await Promise.all(
+          page.messages
+            .reverse()
+            .map(async (m) => ({
+              id: m.id,
+              role: m.sender,
+              content: await resolvePersistedMessageContent(m),
+              timestamp: m.created_at,
+            })),
+        );
         setMessages((prev) => [...older, ...prev]);
       }
       setHasMore(page.has_more);
@@ -615,20 +789,28 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         sender: string;
         content: string;
         created_at: string;
+        metadata?: PersistedChatMessage["metadata"];
       };
       if (!msg?.id) return;
+      void (async () => {
+        const resolvedContent = await resolvePersistedMessageContent({
+          content: msg.content,
+          metadata: msg.metadata ?? null,
+        });
 
-      setMessages((prev) => {
+        setMessages((prev) => {
         const role = msg.sender as "user" | "assistant";
         if (role === "user" && optimisticUserMessageIdRef.current) {
           const optimisticIdx = prev.findIndex((m) => m.id === optimisticUserMessageIdRef.current);
           if (optimisticIdx >= 0) {
             optimisticUserMessageIdRef.current = null;
+            awaitingDeliveryRef.current = false;
+            setTypingIfDelivered();
             return prev.map((m, i) =>
               i === optimisticIdx ? {
                 ...m,
                 persistedId: msg.id,
-                content: msg.content,
+                content: resolvedContent,
                 timestamp: msg.created_at,
                 status: "delivered",
               } : m,
@@ -644,7 +826,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
                 ...m,
                 id: msg.id,
                 persistedId: msg.id,
-                content: msg.content,
+                content: resolvedContent,
                 timestamp: msg.created_at,
               } : m,
             );
@@ -653,11 +835,11 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         if (role === "assistant") {
           const partialIdx = findLastIndexCompat(
             prev,
-            (m) =>
-              m.role === "assistant"
-              && !m.persistedId
-              && isLikelySameAssistantContent(m.content, msg.content)
-              && isRecentMatch(m, msg.created_at),
+              (m) =>
+                m.role === "assistant"
+                && !m.persistedId
+                && isLikelySameAssistantContent(m.content, resolvedContent)
+                && isRecentMatch(m, msg.created_at),
           );
           if (partialIdx >= 0) {
             return prev.map((m, i) =>
@@ -665,7 +847,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
                 ...m,
                 id: msg.id,
                 persistedId: msg.id,
-                content: msg.content,
+                content: resolvedContent,
                 timestamp: msg.created_at,
               } : m,
             );
@@ -675,7 +857,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         // already have a persistedId.
         const idx = findLastIndexCompat(
           prev,
-          (m) => m.role === role && m.content === msg.content && !m.persistedId,
+          (m) => m.role === role && m.content === resolvedContent && !m.persistedId,
         );
         if (idx >= 0) {
           if (role === "assistant" && responseIdRef.current === prev[idx].id) {
@@ -689,7 +871,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
               ...m,
               id: role === "assistant" ? msg.id : m.id,
               persistedId: msg.id,
-              content: msg.content,
+              content: resolvedContent,
               timestamp: msg.created_at,
               status: role === "user" ? "delivered" : m.status,
             } : m,
@@ -709,17 +891,22 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
             id: msg.id,
             persistedId: msg.id,
             role,
-            content: msg.content,
+            content: resolvedContent,
             timestamp: msg.created_at,
           },
         ];
-      });
+        });
+      })();
       return;
     }
 
     // ── Handle message status updates (sent/delivered) ──────────────────
     if (inner.type === "message_status") {
       const { message_id, status } = inner as { message_id: string; status: string };
+      if (message_id === optimisticUserMessageIdRef.current && status === "delivered") {
+        awaitingDeliveryRef.current = false;
+        setTypingIfDelivered();
+      }
       setMessages((prev) =>
         prev.map((m) =>
           m.id === message_id ? { ...m, status: status as ChatMessage["status"] } : m,
@@ -730,6 +917,10 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
 
     if (inner.type === "delivery_receipt") {
       const { message_id } = inner as { message_id: string };
+      if (message_id === optimisticUserMessageIdRef.current) {
+        awaitingDeliveryRef.current = false;
+        setTypingIfDelivered();
+      }
       setMessages((prev) =>
         prev.map((m) =>
           m.id === message_id ? { ...m, status: "delivered" } : m,
@@ -744,117 +935,79 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       const streamEvent = inner.payload as { event_type: string; data: Record<string, unknown> };
 
       switch (streamEvent.event_type) {
-        case "Token": {
-          let id = responseIdRef.current;
-          if (!id) {
-            // Orphan token from buffer replay — create a new slot
-            id = generateId();
-            responseIdRef.current = id;
-          }
-          const text = (streamEvent.data as { text: string }).text;
-          let nextContent = text;
-          setMessages((prev) => {
-            const existing = prev.find((m) => m.id === id);
-            if (existing) {
-              nextContent = existing.content + text;
-              return prev.map((m) =>
-                m.id === id ? { ...m, content: m.content + text } : m,
-              );
-            }
-            return [
-              ...prev,
-              {
-                id,
-                role: "assistant" as const,
-                content: text,
-                timestamp: new Date().toISOString(),
-              },
-            ];
-          });
-          if (activeSessionId) {
-            void persistChatStreamSnapshot({
-              sessionId: activeSessionId,
-              requestId: responseIdRef.current ?? id,
-              responseId: id,
-              content: nextContent,
-              status: "streaming",
-              updatedAt: Date.now(),
-            });
-            notifyChatStreamSnapshot({
-              sessionId: activeSessionId,
-              requestId: responseIdRef.current ?? id,
-              responseId: id,
-              content: nextContent,
-              status: "streaming",
-              updatedAt: Date.now(),
-            });
-          }
-          break;
-        }
-
         case "Done": {
           optimisticUserMessageIdRef.current = null;
-          const { final_output, session_id } = streamEvent.data as {
-            final_output: string;
+          const { payload, encrypted_payload, session_id } = streamEvent.data as {
+            payload?: string;
+            encrypted_payload?: EncryptedPayload;
             session_id?: string;
           };
           if (session_id && activeSessionId && session_id !== activeSessionId) {
             break;
           }
-          let id = responseIdRef.current;
-          if (!id) {
-            id = generateId();
-          }
-          responseIdRef.current = null;
-          setMessages((prev) => {
-            const existing = prev.find((m) => m.id === id);
-            if (existing) {
-              return prev.map((m) =>
-                m.id === id ? { ...m, content: final_output } : m,
+          void (async () => {
+            const resolvedFinalOutput =
+              encrypted_payload
+                ? await resolvePersistedMessageContent({
+                    content: payload ?? "",
+                    metadata: { encrypted_payload },
+                  })
+                : (payload ?? "");
+            let id = responseIdRef.current;
+            if (!id) {
+              id = generateId();
+            }
+            responseIdRef.current = null;
+            setMessages((prev) => {
+              const existing = prev.find((m) => m.id === id);
+              if (existing) {
+                return prev.map((m) =>
+                  m.id === id ? { ...m, content: resolvedFinalOutput } : m,
+                );
+              }
+              const partialIdx = findLastIndexCompat(
+                prev,
+                (m) =>
+                  m.role === "assistant"
+                  && !m.persistedId
+                  && isLikelySameAssistantContent(m.content, resolvedFinalOutput),
               );
-            }
-            const partialIdx = findLastIndexCompat(
-              prev,
-              (m) =>
-                m.role === "assistant"
-                && !m.persistedId
-                && isLikelySameAssistantContent(m.content, final_output),
-            );
-            if (partialIdx >= 0) {
-              return prev.map((m, i) =>
-                i === partialIdx ? { ...m, content: final_output } : m,
+              if (partialIdx >= 0) {
+                return prev.map((m, i) =>
+                  i === partialIdx ? { ...m, content: resolvedFinalOutput } : m,
+                );
+              }
+              const existingPersisted = findLastCompat(
+                prev,
+                (m) => m.role === "assistant" && m.content === resolvedFinalOutput,
               );
+              if (existingPersisted) {
+                return prev;
+              }
+              return [
+                ...prev,
+                {
+                  id: id!,
+                  role: "assistant" as const,
+                  content: resolvedFinalOutput,
+                  timestamp: new Date().toISOString(),
+                },
+              ];
+            });
+            if (clearTypingUiTimeoutRef.current) {
+              clearTimeout(clearTypingUiTimeoutRef.current);
             }
-            const existingPersisted = findLastCompat(
-              prev,
-              (m) => m.role === "assistant" && m.content === final_output,
-            );
-            if (existingPersisted) {
-              return prev;
+            clearTypingUiTimeoutRef.current = setTimeout(() => {
+              setActiveTools([]);
+              setLivePreview(undefined);
+              setIsTyping(false);
+              clearTypingUiTimeoutRef.current = null;
+            }, 600);
+            if (activeSessionId) {
+              void clearChatStreamSnapshot(activeSessionId);
+              notifyChatStreamSnapshot({ sessionId: activeSessionId, clear: true });
             }
-            return [
-              ...prev,
-              {
-                id: id!,
-                role: "assistant" as const,
-                content: final_output,
-                timestamp: new Date().toISOString(),
-              },
-            ];
-          });
-          if (clearTypingUiTimeoutRef.current) {
-            clearTimeout(clearTypingUiTimeoutRef.current);
-          }
-          clearTypingUiTimeoutRef.current = setTimeout(() => {
-            setActiveTools([]);
-            setLivePreview(undefined);
-            setIsTyping(false);
-            clearTypingUiTimeoutRef.current = null;
-          }, 600);
-          if (activeSessionId) {
-            void clearChatStreamSnapshot(activeSessionId);
-            notifyChatStreamSnapshot({ sessionId: activeSessionId, clear: true });
-          }
+          })();
           break;
         }
 
@@ -862,16 +1015,31 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
           optimisticUserMessageIdRef.current = null;
           responsePersistedRef.current = false;
           responseIdRef.current = null;
-          const errorMessage = (streamEvent.data as { message: string }).message;
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: generateId(),
-              role: "assistant" as const,
-              content: errorMessage === "Request cancelled" ? errorMessage : `Error: ${errorMessage}`,
-              timestamp: new Date().toISOString(),
-            },
-          ]);
+          const { message, payload, encrypted_payload } = streamEvent.data as {
+            message: string;
+            payload?: { message?: string };
+            encrypted_payload?: EncryptedPayload;
+          };
+          void (async () => {
+            const encryptedData = await resolveEncryptedPayloadJson<{ message?: string }>(
+              encrypted_payload,
+            );
+            const resolvedErrorMessage = encryptedData?.message
+              ? String(encryptedData.message)
+              : payload?.message
+                ? String(payload.message)
+                : await resolveEncryptedPreview(message, encrypted_payload);
+            const displayError = resolvedErrorMessage ?? message;
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: generateId(),
+                role: "assistant" as const,
+                content: displayError === "Request cancelled" ? displayError : `Error: ${displayError}`,
+                timestamp: new Date().toISOString(),
+              },
+            ]);
+          })();
           if (clearTypingUiTimeoutRef.current) {
             clearTimeout(clearTypingUiTimeoutRef.current);
           }
@@ -916,170 +1084,230 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         }
 
         case "AbilityActivated": {
-          const { ability_tool_name, task_preview } = streamEvent.data as {
+          const { ability_tool_name, payload, encrypted_payload } = streamEvent.data as {
             ability_tool_name: string;
-            task_preview?: string;
+            payload?: { task_preview?: string };
+            encrypted_payload?: EncryptedPayload;
           };
-          setIsTyping(true);
-          setLivePreview((prev) => appendPreview(prev, task_preview));
-          setActiveTools((prev) => {
-            const existing = prev.find((tool) => tool.name === ability_tool_name);
-            if (existing) {
+          void (async () => {
+            const encryptedData = await resolveEncryptedPayloadJson<{ task_preview?: string }>(
+              encrypted_payload,
+            );
+            const resolvedTaskPreview =
+              encryptedData?.task_preview
+                ? String(encryptedData.task_preview)
+                : payload?.task_preview
+                  ? String(payload.task_preview)
+                  : undefined;
+            setTypingIfDelivered();
+            setLivePreview((prev) => appendPreview(prev, resolvedTaskPreview));
+            setActiveTools((prev) => {
+              const existing = prev.find((tool) => tool.name === ability_tool_name);
+              if (existing) {
+                return [{
+                  ...existing,
+                  args: "",
+                  status: "running",
+                  textPreview: appendPreview(existing.textPreview, resolvedTaskPreview),
+                  outputPreview: undefined,
+                  errorPreview: undefined,
+                }];
+              }
               return [{
-                ...existing,
+                name: ability_tool_name,
                 args: "",
+                textPreview: resolvedTaskPreview,
                 status: "running",
-                textPreview: appendPreview(existing.textPreview, task_preview),
-                outputPreview: undefined,
-                errorPreview: undefined,
+                children: [],
               }];
-            }
-            return [{
-              name: ability_tool_name,
-              args: "",
-              textPreview: task_preview?.trim() || undefined,
-              status: "running",
-              children: [],
-            }];
-          });
+            });
+          })();
           break;
         }
 
         case "AbilityCompleted": {
-          const { ability_tool_name, success, result_preview } = streamEvent.data as {
+          const { ability_tool_name, success, payload, encrypted_payload } = streamEvent.data as {
             ability_tool_name: string;
             success: boolean;
-            result_preview: string;
+            payload?: { result_preview?: string };
+            encrypted_payload?: EncryptedPayload;
           };
-          setIsTyping(true);
-          setLivePreview((prev) => appendPreview(prev, result_preview));
-          setActiveTools((prev) => prev.map((tool) => tool.name === ability_tool_name ? {
-            ...tool,
-            status: success ? "completed" : "failed",
-            textPreview: appendPreview(tool.textPreview, result_preview),
-            outputPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? result_preview : tool.outputPreview),
-            errorPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? tool.errorPreview : result_preview),
-          } : tool));
+          void (async () => {
+            const encryptedData = await resolveEncryptedPayloadJson<{ result_preview?: string }>(
+              encrypted_payload,
+            );
+            const resolvedResultPreview =
+              encryptedData?.result_preview
+                ? String(encryptedData.result_preview)
+                : payload?.result_preview
+                  ? String(payload.result_preview)
+                  : undefined;
+            setTypingIfDelivered();
+            setLivePreview((prev) => appendPreview(prev, resolvedResultPreview));
+            setActiveTools((prev) => prev.map((tool) => tool.name === ability_tool_name ? {
+              ...tool,
+              status: success ? "completed" : "failed",
+              textPreview: appendPreview(tool.textPreview, resolvedResultPreview),
+              outputPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? resolvedResultPreview : tool.outputPreview),
+              errorPreview: isAbilityTool(ability_tool_name) ? undefined : (success ? tool.errorPreview : resolvedResultPreview),
+            } : tool));
+          })();
           break;
         }
 
         case "ToolCalls": {
-          const { tool_calls, text_preview, parent_tool_name } = streamEvent.data as {
+          const { tool_calls, parent_tool_name, payload, encrypted_payload } = streamEvent.data as {
             tool_calls: { tool_name: string; tool_args: string }[];
-            text_preview?: string;
             parent_tool_name?: string;
+            payload?: { text_preview?: string };
+            encrypted_payload?: EncryptedPayload;
           };
           const toolNames = tool_calls.map((call) => call.tool_name);
-          if (parent_tool_name) {
-            const newChildren = tool_calls
-              .filter((call) => call.tool_name !== parent_tool_name)
-              .map((call) => ({
-                name: call.tool_name,
-                args: call.tool_args || "",
-                textPreview: undefined,
-                status: "running" as const,
-              }));
-            if (newChildren.length === 0) {
-              break;
-            }
-            setIsTyping(true);
-            setLivePreview((prev) => appendPreview(prev, text_preview));
-            setActiveTools((prev) => {
-              const existing = prev.find((tool) => tool.name === parent_tool_name);
-              const nextTools = !existing ? [
-                ...prev,
-                {
-                  name: parent_tool_name,
-                  args: "",
-                  textPreview: text_preview?.trim() || undefined,
+          void (async () => {
+            const encryptedData = await resolveEncryptedPayloadJson<{ text_preview?: string }>(
+              encrypted_payload,
+            );
+            const resolvedTextPreview =
+              encryptedData?.text_preview
+                ? String(encryptedData.text_preview)
+                : payload?.text_preview
+                  ? String(payload.text_preview)
+                  : undefined;
+            if (parent_tool_name) {
+              const newChildren = tool_calls
+                .filter((call) => call.tool_name !== parent_tool_name)
+                .map((call) => ({
+                  name: call.tool_name,
+                  args: call.tool_args || "",
+                  textPreview: undefined,
                   status: "running" as const,
-                  children: newChildren,
-                },
-              ] : prev.map((tool) => {
-                if (tool.name !== parent_tool_name) return tool;
-                return {
-                  ...tool,
-                  textPreview: appendPreview(tool.textPreview, text_preview),
-                  children: [
-                    ...(tool.children ?? []),
-                    ...newChildren,
-                  ],
-                };
+                }));
+              if (newChildren.length === 0) {
+                return;
+              }
+              setTypingIfDelivered();
+              setLivePreview((prev) => appendPreview(prev, resolvedTextPreview));
+              setActiveTools((prev) => {
+                const existing = prev.find((tool) => tool.name === parent_tool_name);
+                const nextTools = !existing ? [
+                  ...prev,
+                  {
+                    name: parent_tool_name,
+                    args: "",
+                    textPreview: resolvedTextPreview,
+                    status: "running" as const,
+                    children: newChildren,
+                  },
+                ] : prev.map((tool) => {
+                  if (tool.name !== parent_tool_name) return tool;
+                  return {
+                    ...tool,
+                    textPreview: appendPreview(tool.textPreview, resolvedTextPreview),
+                    children: [
+                      ...(tool.children ?? []),
+                      ...newChildren,
+                    ],
+                  };
+                });
+                return nextTools;
               });
+              return;
+            }
+            setTypingIfDelivered();
+            setLivePreview((prev) => appendPreview(prev, resolvedTextPreview));
+            setActiveTools((prev) => {
+              const nextTools = toolNames.length === 1 && isAbilityTool(toolNames[0])
+                ? [{
+                  name: toolNames[0],
+                  args: "",
+                  textPreview: resolvedTextPreview,
+                  status: "running" as const,
+                  children: [],
+                }]
+                : (() => {
+                    const previousPreview = prev[0]?.textPreview?.trim() ?? "";
+                    const nextPreview = resolvedTextPreview?.trim()
+                      ? previousPreview
+                        ? `${previousPreview}\n\n${resolvedTextPreview.trim()}`
+                        : resolvedTextPreview.trim()
+                      : previousPreview;
+                    return tool_calls.map((call) => ({
+                      name: call.tool_name,
+                      args: call.tool_args || "",
+                      textPreview: nextPreview || undefined,
+                      status: "running" as const,
+                      children: [],
+                    }));
+                  })();
               return nextTools;
             });
-            break;
-          }
-          setIsTyping(true);
-          setLivePreview((prev) => appendPreview(prev, text_preview));
-          setActiveTools((prev) => {
-            const nextTools = toolNames.length === 1 && isAbilityTool(toolNames[0])
-              ? [{
-                name: toolNames[0],
-                args: "",
-                textPreview: text_preview?.trim() || undefined,
-                status: "running" as const,
-                children: [],
-              }]
-              : (() => {
-                  const previousPreview = prev[0]?.textPreview?.trim() ?? "";
-                  const nextPreview = text_preview?.trim()
-                    ? previousPreview
-                      ? `${previousPreview}\n\n${text_preview.trim()}`
-                      : text_preview.trim()
-                    : previousPreview;
-                  return tool_calls.map((call) => ({
-                    name: call.tool_name,
-                    args: call.tool_args || "",
-                    textPreview: nextPreview || undefined,
-                    status: "running" as const,
-                    children: [],
-                  }));
-                })();
-            return nextTools;
-          });
+          })();
           break;
         }
 
         case "ToolCompleted": {
-          const { tool_name, success, output_preview, error_preview, parent_tool_name } = streamEvent.data as { tool_name: string; success: boolean; output_preview?: string; error_preview?: string; parent_tool_name?: string };
-          if (parent_tool_name) {
-            if (tool_name === parent_tool_name) {
-              break;
-            }
-            setIsTyping(true);
-            setActiveTools((prev) => prev.map((tool) => {
-              if (tool.name !== parent_tool_name) return tool;
-              const children = [...(tool.children ?? [])];
-              const idx = [...children].reverse().findIndex((child) => child.name === tool_name && (!child.status || child.status === "running"));
-              if (idx !== -1) {
-                const realIdx = children.length - 1 - idx;
-                children[realIdx] = {
-                  ...children[realIdx],
-                  status: success ? "completed" : "failed",
-                  outputPreview: output_preview,
-                  errorPreview: error_preview,
-                };
+          const { tool_name, success, parent_tool_name, payload, encrypted_payload } = streamEvent.data as {
+            tool_name: string;
+            success: boolean;
+            parent_tool_name?: string;
+            payload?: { output_preview?: string; error_preview?: string };
+            encrypted_payload?: EncryptedPayload;
+          };
+          void (async () => {
+            const encryptedData = await resolveEncryptedPayloadJson<{
+              output_preview?: string;
+              error_preview?: string;
+            }>(encrypted_payload);
+            const resolvedOutputPreview =
+              encryptedData?.output_preview
+                ? String(encryptedData.output_preview)
+                : payload?.output_preview
+                  ? String(payload.output_preview)
+                  : undefined;
+            const resolvedErrorPreview =
+              encryptedData?.error_preview
+                ? String(encryptedData.error_preview)
+                : payload?.error_preview
+                  ? String(payload.error_preview)
+                  : undefined;
+            if (parent_tool_name) {
+              if (tool_name === parent_tool_name) {
+                return;
               }
-              return { ...tool, children };
-            }));
-            break;
-          }
-          if (isAbilityTool(tool_name)) {
-            setIsTyping(true);
+              setTypingIfDelivered();
+              setActiveTools((prev) => prev.map((tool) => {
+                if (tool.name !== parent_tool_name) return tool;
+                const children = [...(tool.children ?? [])];
+                const idx = [...children].reverse().findIndex((child) => child.name === tool_name && (!child.status || child.status === "running"));
+                if (idx !== -1) {
+                  const realIdx = children.length - 1 - idx;
+                  children[realIdx] = {
+                    ...children[realIdx],
+                    status: success ? "completed" : "failed",
+                    outputPreview: resolvedOutputPreview,
+                    errorPreview: resolvedErrorPreview,
+                  };
+                }
+                return { ...tool, children };
+              }));
+              return;
+            }
+            if (isAbilityTool(tool_name)) {
+              setTypingIfDelivered();
+              setActiveTools((prev) => prev.map((tool) => tool.name === tool_name ? {
+                ...tool,
+                status: success ? "completed" : "failed",
+              } : tool));
+              return;
+            }
+            setTypingIfDelivered();
             setActiveTools((prev) => prev.map((tool) => tool.name === tool_name ? {
               ...tool,
               status: success ? "completed" : "failed",
+              outputPreview: resolvedOutputPreview,
+              errorPreview: resolvedErrorPreview,
             } : tool));
-            break;
-          }
-          setIsTyping(true);
-          setActiveTools((prev) => prev.map((tool) => tool.name === tool_name ? {
-            ...tool,
-            status: success ? "completed" : "failed",
-            outputPreview: output_preview,
-            errorPreview: error_preview,
-          } : tool));
+          })();
           break;
         }
 
@@ -1160,9 +1388,30 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   }, [livePreview]);
 
   const sendMessage = useCallback(
-    (text: string) => {
+    async (text: string) => {
       const trimmed = text.trim();
       if (!trimmed || !activeSessionId) return;
+      if (!userId) {
+        toast.error("This device is not ready to encrypt messages yet.");
+        return;
+      }
+
+      const storedAck = await loadStoredAccountContentKey();
+      if (!storedAck) {
+        toast.error("Generate a local account content key in Settings before sending encrypted messages.");
+        return;
+      }
+
+      const encryptedMessage = await encryptContentPayload({
+        accountId: userId,
+        objectId: crypto.randomUUID(),
+        objectType: "agent_prompt",
+        plaintext: trimmed,
+      });
+      if (!encryptedMessage) {
+        toast.error("Failed to encrypt this message on the current device.");
+        return;
+      }
 
       const msgId = generateId();
       const userMsg: ChatMessage = {
@@ -1173,13 +1422,14 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         status: "sending",
       };
       optimisticUserMessageIdRef.current = msgId;
+      awaitingDeliveryRef.current = true;
       setMessages((prev) => [...prev, userMsg]);
 
-      // Pre-allocate a response ID so Token/Done events target the same message
+      // Pre-allocate a response ID so the final response targets the same message
       responsePersistedRef.current = false;
       responseIdRef.current = generateId();
       setLivePreview(undefined);
-      setIsTyping(true);
+      setIsTyping(false);
 
       if (activeSessionId) {
         void persistChatStreamSnapshot({
@@ -1205,7 +1455,8 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
 
       const streamBody = {
         id: msgId,
-        message: trimmed,
+        message: "[Encrypted message]",
+        encrypted_message: encryptedMessage,
         session_id: activeSessionId,
         ...(activeDomainSession ? { domain_session_id: activeDomainSession.id } : {}),
         agent_id: agentId!,
@@ -1231,12 +1482,48 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         });
       };
 
+      const markMessageDelivered = () => {
+        awaitingDeliveryRef.current = false;
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === msgId ? { ...message, status: "delivered" } : message,
+          ),
+        );
+        setTypingIfDelivered();
+      };
+
       const streamPromise = createChatStream(
         streamBody,
         controller.signal,
-      ).then((response) => consumeSseStream(response, handleStreamEvent));
+      ).then((response) => {
+        markMessageDelivered();
+        return consumeSseStream(response, handleStreamEvent);
+      });
 
       void streamPromise
+        .then(async () => {
+          const sessionId = activeSessionId;
+          const resolvedProjectId = projectId;
+          const resolvedAgentId = agentId;
+          if (!sessionId || !resolvedProjectId || !resolvedAgentId) return;
+          const page = await fetchChatMessages(resolvedProjectId, resolvedAgentId, {
+            session_id: sessionId,
+          });
+          const loaded: ChatMessage[] = await Promise.all(
+            page.messages
+              .reverse()
+              .map(async (message) => ({
+                id: message.id,
+                persistedId: message.id,
+                role: message.sender,
+                content: await resolvePersistedMessageContent(message),
+                timestamp: message.created_at,
+                status: message.sender === "user" ? "delivered" : undefined,
+              })),
+          );
+          setMessages((prev) => mergeLoadedMessages(loaded, prev));
+          setHasMore(page.has_more);
+        })
         .catch((err) => {
           console.error("Failed to stream chat:", err);
           optimisticUserMessageIdRef.current = null;
@@ -1268,7 +1555,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
           }, 0);
         });
     },
-    [projectId, agentId, activeDomainSession, activeSessionId],
+    [projectId, agentId, activeDomainSession, activeSessionId, userId],
   );
 
   // Enter a domain by command (e.g. "#creator")

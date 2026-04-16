@@ -89,7 +89,7 @@ export default function ChatSessionList({
                 key={session.id}
                 className={`group relative px-3 py-2 mx-1 rounded-md cursor-pointer transition-colors ${
                   session.id === activeSessionId
-                    ? "bg-zinc-800 text-zinc-100"
+                    ? "bg-deep-space-blue-500/18 text-deep-space-blue-50 ring-1 ring-inset ring-deep-space-blue-400/40"
                     : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
                 }`}
                 onClick={() => onSwitch(session.id)}
@@ -110,7 +110,13 @@ export default function ChatSessionList({
                 ) : (
                   <>
                     <div className="text-sm truncate pr-6">{session.title}</div>
-                    <div className="text-xs text-zinc-500 mt-0.5">
+                    <div
+                      className={`mt-0.5 text-xs ${
+                        session.id === activeSessionId
+                          ? "text-deep-space-blue-100/80"
+                          : "text-zinc-500"
+                      }`}
+                    >
                       {session.message_count} msgs &middot; {formatTokens(session.est_tokens)} tokens &middot; {timeAgo(session.updated_at)}
                     </div>
                   </>

@@ -1,17 +1,28 @@
 import { createMDX } from 'fumadocs-mdx/next';
 
+const apiProxyTarget = process.env.API_PROXY_TARGET;
+
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
   turbopack: {},
   allowedDevOrigins: ['192.168.1.228'],
   async rewrites() {
-    return [
+    const rewrites = [
       {
         source: '/docs/:path*.mdx',
         destination: '/llms.mdx/docs/:path*',
       },
     ];
+
+    if (apiProxyTarget) {
+      rewrites.unshift({
+        source: '/api/v1/:path*',
+        destination: `${apiProxyTarget.replace(/\/$/, '')}/api/v1/:path*`,
+      });
+    }
+
+    return rewrites;
   },
   webpack: (webpackConfig, { dev }) => {
     if (dev) {

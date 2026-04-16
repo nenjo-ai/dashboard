@@ -11,7 +11,7 @@ import { CouncilsSection } from "@/components/councils/CouncilsSection";
 import { PageContent } from "@/components/ui/PageContent";
 import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
-type RoutinesTab = "tasks" | "schedules" | "councils";
+type RoutinesTab = "schedules" | "tasks" | "councils";
 
 export default function RoutinesPage() {
   return (
@@ -23,15 +23,15 @@ export default function RoutinesPage() {
 
 function RoutinesPageContent() {
   const isMobileViewport = useIsMobileViewport();
-  const [activeTab, setActiveTab] = useTabParam<RoutinesTab>("tasks", [
-    "tasks",
+  const [activeTab, setActiveTab] = useTabParam<RoutinesTab>("schedules", [
     "schedules",
+    "tasks",
     "councils",
   ]);
 
   const tabs = [
-    { id: "tasks" as const, label: "Tasks" },
     { id: "schedules" as const, label: "Schedules" },
+    { id: "tasks" as const, label: "Tasks" },
     { id: "councils" as const, label: "Councils" },
   ];
 

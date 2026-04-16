@@ -72,7 +72,12 @@ export function CouncilsSection({ allowCreate = true }: CouncilsSectionProps) {
           and delegation strategy to work together on complex tasks.
         </p>
         {allowCreate ? (
-          <Button className="shrink-0" onClick={handleCreate}>
+          <Button
+            className="h-10 w-10 shrink-0 !bg-deep-space-blue-500 !px-0 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
+            onClick={handleCreate}
+            title="New Council"
+            aria-label="New Council"
+          >
             <svg
               className="h-4 w-4"
               fill="none"
@@ -82,7 +87,6 @@ export function CouncilsSection({ allowCreate = true }: CouncilsSectionProps) {
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            New Council
           </Button>
         ) : null}
       </div>
