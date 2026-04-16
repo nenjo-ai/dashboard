@@ -77,21 +77,21 @@ export function TopBar({ title, children }: TopBarProps) {
           <div className="hidden items-center gap-1 md:flex">
             <Link
               href="/docs"
-              className="theme-text-muted inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 dark:hover:text-gray-200"
+              className="theme-text-muted inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 dark:hover:text-gray-200"
               title="Developer Docs"
+              aria-label="Developer Docs"
             >
               <BookOpenText className="h-4 w-4" />
-              Docs
             </Link>
             <Link
               href="https://github.com/nenjo-ai/nenjo"
               target="_blank"
               rel="noopener noreferrer"
-              className="theme-text-muted inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 dark:hover:text-gray-200"
+              className="theme-text-muted inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 dark:hover:text-gray-200"
               title="GitHub"
+              aria-label="GitHub"
             >
               <Github className="h-4 w-4" />
-              GitHub
             </Link>
           </div>
           {!isOnline && (

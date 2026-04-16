@@ -73,7 +73,7 @@ export function MobileProjectList({
           <button
             type="button"
             onClick={onCreateProject}
-            className="mt-5 inline-flex h-10 items-center justify-center rounded-full border border-black/10 bg-white/78 px-4 text-sm font-medium text-gray-900 backdrop-blur-xl transition-colors active:scale-[0.98] dark:border-white/10 dark:bg-white/6 dark:text-gray-100"
+            className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-deep-space-blue-500 px-4 text-sm font-medium text-white transition-colors hover:bg-deep-space-blue-400 active:scale-[0.98] active:bg-deep-space-blue-600"
           >
             New Project
           </button>

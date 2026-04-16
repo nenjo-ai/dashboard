@@ -4,29 +4,67 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
+import useSWR from "swr";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { MODEL_PROVIDERS } from "@/lib/types";
-import type { ModelProvider, Model, CreateApiKeyResponse, AgentDefinition } from "@/lib/types";
+import type {
+  ModelProvider,
+  Model,
+  CreateApiKeyResponse,
+  AgentDefinition,
+  RecoveryBundlePayload,
+  WorkerEnrollmentStatusResponse,
+} from "@/lib/types";
 import {
+  approveWorkerEnrollment,
+  approveDeviceEnrollment,
   createModel,
   createApiKey,
+  deleteDeviceEnrollment,
+  fetchDeviceEnrollment,
+  fetchRecoveryBundle,
+  fetchWorkerApprovalKey,
   fetchAgents,
+  fetcher,
+  fetchCurrentUser,
+  listTrustedDevices,
   updateAgent,
   fetchSystemProject,
   createChatSession,
-  fetchCurrentUser,
+  putRecoveryBundle,
+  putWorkerApprovalKey,
+  registerDeviceEnrollment,
+  upsertTrustedDevice,
+  workerEnrollmentUrl,
 } from "@/lib/api";
 import { useWorkerStatus } from "@/lib/hooks";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Label } from "@/components/ui/Label";
+import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
+import {
+  buildRecoveryBundle,
+  buildDeviceEnrollmentPayload,
+  buildTrustedDevicePayload,
+  buildWorkerCertificate,
+  ensureAccountContentKey,
+  ensureAccountSigningKeyPair,
+  generateRecoveryPhrase,
+  importWrappedAccountContentKeyForDevice,
+  loadAccountSigningPublicKey,
+  loadStoredAccountContentKey,
+  loadStoredRecoveryBundle,
+  restoreFromRecoveryBundle,
+  storeRecoveryBundle,
+  wrapAccountContentKeyForWorker,
+} from "@/lib/cryptoContent";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const STEPS = ["Create Agent", "API Key", "Connect"] as const;
+const STEPS = ["Create Agent", "Secure", "API Key", "Connect"] as const;
 
 const PROVIDER_ENV_VARS: Record<ModelProvider, string> = {
   openai: "OPENAI_API_KEY",
@@ -42,6 +80,7 @@ const PROVIDER_ENV_VARS: Record<ModelProvider, string> = {
 };
 
 const SESSION_KEY = "nenjo_onboarding_raw_key";
+const RECOVERY_DRAFT_SESSION_KEY = "nenjo_onboarding_recovery_draft";
 const NENJI_GREETING_DELAY_MS = 6000;
 const LOCAL_CHAT_SEED_KEY = "nenjo:local_chat_seed";
 const DEFAULT_SKIP_MESSAGE =
@@ -60,12 +99,12 @@ const DEFAULT_NENJI_IDENTITY = {
 function StepIndicator({
   currentStep,
 }: {
-  currentStep: 1 | 2 | 3;
+  currentStep: 1 | 2 | 3 | 4;
 }) {
   return (
     <div className="flex items-center justify-center gap-0 mb-8">
       {STEPS.map((label, i) => {
-        const step = (i + 1) as 1 | 2 | 3;
+        const step = (i + 1) as 1 | 2 | 3 | 4;
         const isCompleted = step < currentStep;
         const isActive = step === currentStep;
         return (
@@ -112,6 +151,206 @@ function StepIndicator({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function StepSecureWorkspace({
+  userId,
+  onContinue,
+}: {
+  userId: string;
+  onContinue: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [recoveryPhrase, setRecoveryPhrase] = useState("");
+  const [recoveryBundle, setRecoveryBundle] = useState<RecoveryBundlePayload | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [confirmWordA, setConfirmWordA] = useState("");
+  const [confirmWordB, setConfirmWordB] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const phraseWords = recoveryPhrase.split(" ").filter(Boolean);
+  const promptIndexes = [2, 7] as const;
+  const expectedWordA = phraseWords[promptIndexes[0]] ?? "";
+  const expectedWordB = phraseWords[promptIndexes[1]] ?? "";
+  const confirmed =
+    confirmWordA.trim().toLowerCase() === expectedWordA &&
+    confirmWordB.trim().toLowerCase() === expectedWordB;
+
+  const initializeWorkspace = useCallback(async (regeneratePhrase = false) => {
+    setError(null);
+    setLoading(true);
+    try {
+      await ensureAccountContentKey();
+      const { publicKey } = await ensureAccountSigningKeyPair();
+      await putWorkerApprovalKey(publicKey);
+      const trustedDevice = await buildTrustedDevicePayload({
+        deviceLabel:
+          typeof navigator !== "undefined"
+            ? navigator.userAgent.slice(0, 80)
+            : "browser",
+      });
+      await upsertTrustedDevice(trustedDevice);
+
+      let nextPhrase = "";
+      let nextBundle: RecoveryBundlePayload | null = null;
+      const storedDraft = !regeneratePhrase
+        ? sessionStorage.getItem(RECOVERY_DRAFT_SESSION_KEY)
+        : null;
+
+      if (storedDraft) {
+        const parsed = JSON.parse(storedDraft) as {
+          phrase: string;
+          bundle: RecoveryBundlePayload;
+        };
+        nextPhrase = parsed.phrase;
+        nextBundle = parsed.bundle;
+      } else {
+        nextPhrase = generateRecoveryPhrase();
+        nextBundle = await buildRecoveryBundle(nextPhrase);
+        sessionStorage.setItem(
+          RECOVERY_DRAFT_SESSION_KEY,
+          JSON.stringify({ phrase: nextPhrase, bundle: nextBundle }),
+        );
+      }
+
+      setRecoveryPhrase(nextPhrase);
+      setRecoveryBundle(nextBundle);
+      setConfirmWordA("");
+      setConfirmWordB("");
+      setCopied(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to secure this workspace.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void initializeWorkspace();
+  }, [initializeWorkspace]);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(recoveryPhrase);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Could not copy the recovery phrase to your clipboard.");
+    }
+  }, [recoveryPhrase]);
+
+  const handleContinue = useCallback(async () => {
+    if (!recoveryBundle || !confirmed) return;
+    setSubmitting(true);
+    try {
+      await storeRecoveryBundle(recoveryBundle);
+      await putRecoveryBundle(recoveryBundle);
+      sessionStorage.removeItem(RECOVERY_DRAFT_SESSION_KEY);
+      onContinue();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to store the recovery bundle.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [confirmed, onContinue, recoveryBundle]);
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Secure Your Workspace</h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          This device is generating your local content key, approval signing key, and an encrypted recovery bundle for account <span className="font-medium text-gray-700 dark:text-gray-200">{userId}</span>.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="flex flex-col items-center gap-3 py-8">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-deep-space-blue-500 border-t-transparent" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Generating local encryption material and recovery bundle...
+          </p>
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="rounded-lg border border-flag-red-200 bg-flag-red-50 p-3 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-400">
+          {error}
+        </div>
+      ) : null}
+
+      {!loading && recoveryPhrase ? (
+        <>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              Save this recovery phrase now. It protects the encrypted recovery bundle this device creates during onboarding.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {phraseWords.map((word, index) => (
+              <div
+                key={`${word}-${index}`}
+                className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+              >
+                <span className="mr-2 text-xs text-gray-400 dark:text-gray-500">{index + 1}.</span>
+                {word}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleCopy()}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                copied
+                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                  : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+              }`}
+            >
+              {copied ? "Copied!" : "Copy recovery phrase"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void initializeWorkspace(true)}
+              className="rounded-md bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+            >
+              Regenerate phrase
+            </button>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label required>Type word #{promptIndexes[0] + 1}</Label>
+              <Input
+                value={confirmWordA}
+                onChange={(event) => setConfirmWordA(event.target.value)}
+                placeholder={`Enter ${promptIndexes[0] + 1}th word`}
+              />
+            </div>
+            <div>
+              <Label required>Type word #{promptIndexes[1] + 1}</Label>
+              <Input
+                value={confirmWordB}
+                onChange={(event) => setConfirmWordB(event.target.value)}
+                placeholder={`Enter ${promptIndexes[1] + 1}th word`}
+              />
+            </div>
+          </div>
+
+          <Button
+            onClick={() => void handleContinue()}
+            isLoading={submitting}
+            disabled={!confirmed || !recoveryBundle}
+            className="w-full"
+          >
+            Continue
+          </Button>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -449,18 +688,26 @@ function StepApiKey({
 function StepConnect({
   provider,
   keyPrefix,
+  accountUserId,
 }: {
   provider: ModelProvider;
   keyPrefix: string;
+  accountUserId: string;
 }) {
   const router = useRouter();
   const { user } = useUser();
   const { isConnected } = useWorkerStatus();
+  const { data: enrollments, mutate: mutateEnrollments } = useSWR<WorkerEnrollmentStatusResponse[]>(
+    user ? workerEnrollmentUrl() : null,
+    fetcher,
+    { refreshInterval: isConnected ? 3000 : 0, revalidateOnFocus: false },
+  );
   const [copied, setCopied] = useState(false);
   const [sendGreeting, setSendGreeting] = useState(true);
   const [greeting, setGreeting] = useState<"idle" | "priming" | "thinking" | "done">("idle");
   const [nenjiIdentity, setNenjiIdentity] = useState(DEFAULT_NENJI_IDENTITY);
   const hasHandledConnection = useRef(false);
+  const approvalInFlight = useRef(false);
   const navigationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const envVar = PROVIDER_ENV_VARS[provider];
@@ -475,9 +722,49 @@ export NENJO_API_KEY=${maskedKey}
 # Start the worker
 nenjo run`;
 
+  useEffect(() => {
+    if (!isConnected || !accountUserId || approvalInFlight.current) return;
+    const pendingEnrollment = (enrollments ?? []).find((item) => item.state === "pending");
+    if (!pendingEnrollment) return;
+
+    approvalInFlight.current = true;
+    void (async () => {
+      try {
+        const [ack, signingPublicKey] = await Promise.all([
+          loadStoredAccountContentKey(),
+          loadAccountSigningPublicKey(),
+        ]);
+        if (!ack || !signingPublicKey) return;
+
+        const remoteApprovalKey = await fetchWorkerApprovalKey().catch(() => ({ public_key: null }));
+        if (remoteApprovalKey.public_key !== signingPublicKey) {
+          await putWorkerApprovalKey(signingPublicKey);
+        }
+
+        const certificate = await buildWorkerCertificate({
+          accountId: accountUserId,
+          apiKeyId: pendingEnrollment.api_key_id,
+          encPublicKey: pendingEnrollment.request.enc_public_key,
+          signPublicKey: pendingEnrollment.request.sign_public_key,
+        });
+        const wrappedAck = await wrapAccountContentKeyForWorker({
+          workerPublicKey: pendingEnrollment.request.enc_public_key,
+        });
+        await approveWorkerEnrollment(pendingEnrollment.api_key_id, {
+          certificate,
+          wrapped_ack: wrappedAck,
+        });
+        await mutateEnrollments();
+      } finally {
+        approvalInFlight.current = false;
+      }
+    })();
+  }, [accountUserId, enrollments, isConnected, mutateEnrollments]);
+
   // Handle successful worker connection
   useEffect(() => {
     if (!isConnected || hasHandledConnection.current) return;
+    if ((enrollments ?? []).some((item) => item.state === "pending")) return;
     hasHandledConnection.current = true;
 
     sessionStorage.removeItem(SESSION_KEY);
@@ -528,7 +815,7 @@ nenjo run`;
         router.push("/dashboard/chat");
       }
     })();
-  }, [isConnected, sendGreeting, router, user]);
+  }, [enrollments, isConnected, sendGreeting, router, user]);
 
   useEffect(() => {
     return () => {
@@ -701,6 +988,350 @@ nenjo run`;
   );
 }
 
+function StepRestoreDevice({
+  userId,
+  onRestored,
+}: {
+  userId: string;
+  onRestored: () => void;
+}) {
+  const [recoveryPhrase, setRecoveryPhrase] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [restoring, setRestoring] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [hasBundle, setHasBundle] = useState(false);
+  const [trustedDeviceCount, setTrustedDeviceCount] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [deviceEnrollmentId, setDeviceEnrollmentId] = useState<string | null>(null);
+  const [deviceVerificationCode, setDeviceVerificationCode] = useState<string | null>(null);
+
+  const normalizeEnrollmentError = useCallback((err: unknown) => {
+    const message =
+      err instanceof Error ? err.message : "Failed to register this device for approval.";
+    if (
+      typeof window !== "undefined" &&
+      (!window.isSecureContext || typeof window.crypto?.subtle === "undefined")
+    ) {
+      return "This browser is not running in a secure context, so Web Crypto is unavailable for device enrollment. Open Nenjo over HTTPS or localhost before trying to approve this device.";
+    }
+    if (/x25519|algorithm|generatekey|derivebits/i.test(message)) {
+      return "This browser could not create the device encryption key needed for approval. On some mobile browsers, X25519 Web Crypto support is incomplete. Use the recovery phrase on this device, or approve from a browser with broader Web Crypto support.";
+    }
+    return message;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadBundle = async () => {
+      const [local, remote] = await Promise.all([
+        loadStoredRecoveryBundle(),
+        fetchRecoveryBundle().catch(() => ({ recovery_bundle: null })),
+      ]);
+      if (cancelled) return;
+      setHasBundle(Boolean(local ?? remote.recovery_bundle));
+    };
+
+    const refreshTrustedDevices = async () => {
+      try {
+        const devices = await listTrustedDevices();
+        if (cancelled) return;
+        setTrustedDeviceCount(devices.length);
+      } catch {
+        if (cancelled) return;
+        setTrustedDeviceCount(null);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadBundle();
+    void refreshTrustedDevices();
+    const interval = window.setInterval(() => {
+      void refreshTrustedDevices();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const registerForApproval = useCallback(async () => {
+    setError(null);
+    setRegistering(true);
+    try {
+      const enrollment = await buildDeviceEnrollmentPayload({
+        deviceLabel:
+          typeof navigator !== "undefined"
+            ? navigator.userAgent.slice(0, 80)
+            : "browser",
+      });
+      const registered = await registerDeviceEnrollment(enrollment);
+      setDeviceEnrollmentId(registered.device_id);
+      setDeviceVerificationCode(registered.verification_code);
+    } catch (err) {
+      setError(normalizeEnrollmentError(err));
+    } finally {
+      setRegistering(false);
+    }
+  }, [normalizeEnrollmentError]);
+
+  const cancelApprovalRequest = useCallback(async () => {
+    if (!deviceEnrollmentId) return;
+    setRegistering(true);
+    setError(null);
+    try {
+      await deleteDeviceEnrollment(deviceEnrollmentId);
+      setDeviceEnrollmentId(null);
+      setDeviceVerificationCode(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to cancel the approval request.");
+    } finally {
+      setRegistering(false);
+    }
+  }, [deviceEnrollmentId]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (registering) return;
+    if (trustedDeviceCount === null || trustedDeviceCount <= 0) return;
+    if (deviceEnrollmentId) return;
+    void registerForApproval();
+  }, [deviceEnrollmentId, loading, registerForApproval, registering, trustedDeviceCount]);
+
+  useEffect(() => {
+    if (!deviceEnrollmentId) return;
+    const interval = setInterval(() => {
+      void (async () => {
+        try {
+          const enrollment = await fetchDeviceEnrollment(deviceEnrollmentId);
+          if (enrollment.state !== "active" || !enrollment.wrapped_ack) return;
+          await importWrappedAccountContentKeyForDevice(enrollment.wrapped_ack);
+          const trustedDevice = await buildTrustedDevicePayload({
+            deviceLabel:
+              typeof navigator !== "undefined"
+                ? navigator.userAgent.slice(0, 80)
+                : "browser",
+            requireSigningKey: false,
+          });
+          await upsertTrustedDevice(trustedDevice);
+          onRestored();
+        } catch {
+          // keep polling
+        }
+      })();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [deviceEnrollmentId, onRestored]);
+
+  const handleRestore = useCallback(async () => {
+    setError(null);
+    setRestoring(true);
+    try {
+      const remote = await fetchRecoveryBundle();
+      const bundle = remote.recovery_bundle;
+      if (!bundle) {
+        throw new Error("No recovery bundle is stored for this account yet.");
+      }
+
+      const restored = await restoreFromRecoveryBundle({
+        recoveryPhrase,
+        bundle,
+      });
+      await putWorkerApprovalKey(restored.publicKey);
+      const trustedDevice = await buildTrustedDevicePayload({
+        deviceLabel:
+          typeof navigator !== "undefined"
+            ? navigator.userAgent.slice(0, 80)
+            : "browser",
+      });
+      await upsertTrustedDevice(trustedDevice);
+      onRestored();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to restore this device.");
+    } finally {
+      setRestoring(false);
+    }
+  }, [onRestored, recoveryPhrase]);
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Add This Device</h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          This Nenjo account already exists. Approve this browser from a trusted device or restore it with your recovery phrase for <span className="font-medium text-gray-700 dark:text-gray-200">{userId}</span>.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="flex flex-col items-center gap-3 py-8">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-deep-space-blue-500 border-t-transparent" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Checking for a recovery bundle...
+          </p>
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="rounded-lg border border-flag-red-200 bg-flag-red-50 p-3 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-400">
+          {error}
+        </div>
+      ) : null}
+
+      {!loading ? (
+        <>
+          <div className="space-y-4">
+            {trustedDeviceCount === null ? (
+              <div className="rounded-2xl border border-black/10 bg-white/70 p-5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
+                <div className="flex items-start gap-4 rounded-xl border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.02]">
+                  <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-deep-space-blue-50 text-deep-space-blue-600 dark:bg-deep-space-blue-500/15 dark:text-deep-space-blue-300">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      Checking trusted devices
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Nenjo is still checking whether another trusted device can approve this browser.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : trustedDeviceCount > 0 ? (
+              <div className="rounded-2xl border border-black/10 bg-white/70 p-5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-deep-space-blue-600 dark:text-deep-space-blue-300">
+                      Option 1
+                    </p>
+                    <h3 className="mt-2 text-base font-semibold text-gray-900 dark:text-gray-100">
+                      Approve from a trusted device
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                      Request approval from a device you already trust. This screen will continue automatically after approval.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-4 rounded-xl border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.02]">
+                    <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-deep-space-blue-50 text-deep-space-blue-600 dark:bg-deep-space-blue-500/15 dark:text-deep-space-blue-300">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        {deviceEnrollmentId
+                          ? "Waiting for approval"
+                          : registering
+                            ? "Preparing approval request"
+                            : "Ready to request approval"}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {deviceEnrollmentId
+                          ? "Approve this request on a trusted device."
+                          : registering
+                            ? "Sending approval request..."
+                            : "A trusted device can approve this browser."}
+                      </p>
+                      {deviceVerificationCode ? (
+                        <div className="rounded-lg border border-black/10 bg-white px-3 py-2 font-mono text-base font-semibold tracking-[0.28em] text-gray-900 dark:border-white/10 dark:bg-black/20 dark:text-gray-100">
+                          {deviceVerificationCode}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    {!deviceEnrollmentId ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void registerForApproval()}
+                        disabled={registering}
+                      >
+                        {registering ? "Requesting approval..." : "Retry approval request"}
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void cancelApprovalRequest()}
+                        disabled={registering}
+                      >
+                        {registering ? "Cancelling..." : "Cancel request"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-black/10 bg-white/70 p-5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-500 dark:text-gray-400">
+                    This device will become trusted
+                  </p>
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                    No trusted devices found
+                  </h3>
+                  <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
+                    Nenjo did not find any existing trusted devices for this account, so this browser cannot be approved by another device. Restore it here and it will become a trusted device for future approvals.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-2xl border border-black/10 bg-white/70 p-5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-500 dark:text-gray-400">
+                    Option 2
+                  </p>
+                  <h3 className="mt-2 text-base font-semibold text-gray-900 dark:text-gray-100">
+                    Restore with recovery phrase
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                    Use your recovery phrase if you want to restore this browser directly without waiting for another device to approve it.
+                  </p>
+                </div>
+
+                {hasBundle ? (
+                  <>
+                    <div>
+                      <Label required>Recovery Phrase</Label>
+                      <Input
+                        value={recoveryPhrase}
+                        onChange={(event) => setRecoveryPhrase(event.target.value)}
+                        placeholder="Enter your saved recovery phrase"
+                      />
+                    </div>
+
+                    <Button
+                      onClick={() => void handleRestore()}
+                      isLoading={restoring}
+                      disabled={!recoveryPhrase.trim()}
+                      className="w-full"
+                    >
+                      Restore This Device
+                    </Button>
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-flag-red-200 bg-flag-red-50 p-4 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-400">
+                    No recovery bundle is available for this account yet, so recovery-phrase restore is not available on this device.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Main Onboarding Wizard
 // ---------------------------------------------------------------------------
@@ -709,19 +1340,35 @@ export default function OnboardingContent() {
   const { user, isLoaded } = useUser();
   const router = useRouter();
   const redirected = useRef(false);
+  const { data: currentUser } = useSWR(user ? "/api/v1/auth/me" : null, fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 30000,
+  }) as {
+    data:
+      | {
+          user_id: string | null;
+          clerk_id?: string;
+          session_id?: string | null;
+          org_id?: string | null;
+          org_role?: string | null;
+          onboarded?: boolean;
+        }
+      | undefined;
+  };
 
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+  const [onboardingMode, setOnboardingMode] = useState<"fresh" | "restore">("fresh");
+  const [gateStatus, setGateStatus] = useState<"checking" | "ready" | "error">("checking");
+  const [gateError, setGateError] = useState<string | null>(null);
   const [, setCreatedAgent] = useState<Model | null>(null);
   const [createdKey, setCreatedKey] = useState<CreateApiKeyResponse | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<ModelProvider>("anthropic");
+  const accountUserId = currentUser?.user_id ?? undefined;
 
-  // Single redirect effect — runs once when Clerk is loaded.
-  // Checks the backend to see if the user has already completed onboarding.
   useEffect(() => {
     if (redirected.current) return;
     if (!isLoaded) return;
 
-    // Not authenticated (give Clerk a moment after OAuth callback)
     if (!user) {
       const timeout = setTimeout(() => {
         if (!user && !redirected.current) {
@@ -732,23 +1379,52 @@ export default function OnboardingContent() {
       return () => clearTimeout(timeout);
     }
 
-    // Check backend for onboarding status
     let cancelled = false;
-    fetchCurrentUser()
-      .then((me) => {
-        if (cancelled || redirected.current) return;
-        if (me.onboarded) {
-          redirected.current = true;
-          router.replace("/dashboard");
-        }
-      })
-      .catch(() => {
-        // If the API call fails, let the user proceed with onboarding
-      });
-    return () => { cancelled = true; };
-  }, [isLoaded, user, router]);
+    setGateStatus("checking");
+    setGateError(null);
 
-  const maxWidth = currentStep === 3 ? "max-w-2xl" : currentStep === 2 ? "max-w-md" : "max-w-sm";
+    (async () => {
+      try {
+        const [me, localAck] = await Promise.all([
+          fetchCurrentUser(),
+          loadStoredAccountContentKey(),
+        ]);
+        if (cancelled || redirected.current) return;
+
+        if (me.onboarded) {
+          if (localAck) {
+            redirected.current = true;
+            router.replace("/dashboard");
+            return;
+          }
+
+          setOnboardingMode("restore");
+        } else {
+          setOnboardingMode("fresh");
+        }
+
+        setGateStatus("ready");
+      } catch (err) {
+        if (cancelled || redirected.current) return;
+        setGateStatus("error");
+        setGateError(
+          err instanceof Error
+            ? err.message
+            : "Failed to determine whether this device should onboard or restore.",
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, router, user]);
+
+  const maxWidth =
+    onboardingMode === "restore"
+      ? "max-w-lg"
+      :
+    currentStep === 4 ? "max-w-2xl" : currentStep === 3 ? "max-w-md" : currentStep === 2 ? "max-w-lg" : "max-w-sm";
 
   const loadingSpinner = (
     <div className="flex items-center justify-center py-12">
@@ -756,15 +1432,51 @@ export default function OnboardingContent() {
     </div>
   );
 
+  const gateSpinner = (
+    <div className="flex flex-col items-center gap-4 py-12">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-deep-space-blue-500 border-t-transparent" />
+      <div className="space-y-1 text-center">
+        <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+          Checking your Nenjo account state
+        </p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          This decides whether this browser should start fresh or enroll as another trusted device.
+        </p>
+      </div>
+    </div>
+  );
+
+  const gateFailure = (
+    <div className="space-y-4 py-6">
+      <div className="rounded-lg border border-flag-red-200 bg-flag-red-50 p-4 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-400">
+        {gateError ?? "Failed to determine whether this device should onboard or restore."}
+      </div>
+      <Button onClick={() => window.location.reload()} className="w-full">
+        Retry account check
+      </Button>
+    </div>
+  );
+
   const stepContent = isLoaded && user ? (
     <>
-      <StepIndicator currentStep={currentStep} />
+      {gateStatus === "checking" ? gateSpinner : null}
+      {gateStatus === "error" ? gateFailure : null}
+      {gateStatus !== "ready" ? null : (
+        <>
+      {onboardingMode === "fresh" ? <StepIndicator currentStep={currentStep} /> : null}
 
       <div
-        key={currentStep}
+        key={`${onboardingMode}-${currentStep}`}
         className="animate-fade-in-up"
       >
-        {currentStep === 1 && (
+        {onboardingMode === "restore" ? (
+          <StepRestoreDevice
+            userId={accountUserId ?? user.id}
+            onRestored={() => router.replace("/dashboard")}
+          />
+        ) : null}
+
+        {onboardingMode === "fresh" && currentStep === 1 && (
           <StepCreateAgent
             onCreated={(agent) => {
               setCreatedAgent(agent);
@@ -774,28 +1486,38 @@ export default function OnboardingContent() {
           />
         )}
 
-        {currentStep === 2 && (
+        {onboardingMode === "fresh" && currentStep === 2 && (
+          <StepSecureWorkspace
+            userId={accountUserId ?? user.id}
+            onContinue={() => setCurrentStep(3)}
+          />
+        )}
+
+        {onboardingMode === "fresh" && currentStep === 3 && (
           <StepApiKey
             onContinue={(key) => {
               setCreatedKey(key);
-              setCurrentStep(3);
+              setCurrentStep(4);
             }}
           />
         )}
 
-        {currentStep === 3 && (
+        {onboardingMode === "fresh" && currentStep === 4 && (
           <StepConnect
             provider={selectedProvider}
             keyPrefix={createdKey?.key_prefix || ""}
+            accountUserId={accountUserId ?? ""}
           />
         )}
 
-        {currentStep === 1 && (
+        {onboardingMode === "fresh" && currentStep === 1 && (
           <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
             Welcome{user.firstName ? `, ${user.firstName}` : ""}! Let&apos;s get your workspace set up.
           </p>
         )}
       </div>
+        </>
+      )}
     </>
   ) : (
     loadingSpinner
@@ -810,8 +1532,14 @@ export default function OnboardingContent() {
         <div className="pointer-events-none absolute -top-20 -right-20 h-[400px] w-[400px] rounded-full bg-vivid-tangerine-500/10 blur-3xl" />
 
         <div className="relative z-10">
-          <Link href="/" className="text-2xl font-bold text-white hover:text-deep-space-blue-200 transition-colors">
-            Nenjo
+          <Link
+            href="/"
+            className="inline-flex items-center gap-3 text-white transition-colors hover:text-deep-space-blue-200"
+          >
+            <NenjoLogoMark className="h-10 w-10 rounded-lg" />
+            <span className="text-sm font-light tracking-[0.25em] text-white uppercase">
+              Nenjo
+            </span>
           </Link>
         </div>
 
@@ -857,8 +1585,12 @@ export default function OnboardingContent() {
         <div className={`w-full transition-[max-width] duration-300 ease-in-out ${maxWidth}`}>
           {/* Mobile-only logo */}
           <div className="mb-8 text-center lg:hidden">
-            <Link href="/">
-              <span className="text-3xl font-bold text-deep-space-blue-600 dark:text-deep-space-blue-400">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-3 text-deep-space-blue-600 transition-colors hover:text-deep-space-blue-500 dark:text-deep-space-blue-300 dark:hover:text-deep-space-blue-200"
+            >
+              <NenjoLogoMark className="h-10 w-10 rounded-lg" />
+              <span className="text-sm font-light uppercase tracking-[0.25em]">
                 Nenjo
               </span>
             </Link>

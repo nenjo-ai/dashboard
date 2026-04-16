@@ -1027,8 +1027,8 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
   };
 
   const placeholder = activeAgent
-    ? (isMobile ? "Ask anything..." : `Message @${activeAgent.name}... (type @ to switch agent)`)
-    : "Ask anything...";
+    ? (isMobile ? "What's next?" : `Message @${activeAgent.name}... (type @ to switch agent)`)
+    : "What's next?";
 
   // Mobile: handle agent switch — delegates to ChatView-level handler
   const handleSwitchAgent = useCallback((agent: AgentDefinition) => {
@@ -1699,7 +1699,12 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                 )}
               </button>
             )}
-            <Button onClick={handleSend} disabled={!input.trim()} size="md">
+            <Button
+              onClick={handleSend}
+              disabled={!input.trim()}
+              size="md"
+              className="!bg-deep-space-blue-500 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
+            >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
               </svg>

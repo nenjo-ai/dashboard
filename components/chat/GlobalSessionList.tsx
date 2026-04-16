@@ -202,7 +202,7 @@ export default function GlobalSessionList({
                     : "mx-1.5 rounded-xl px-3 py-3 md:rounded-md md:py-2",
                   menuOpen === session.id && "z-20",
                   session.id === activeSessionId
-                    ? "bg-gray-950 text-white dark:bg-white/[0.11]"
+                    ? "bg-deep-space-blue-500 text-white dark:bg-deep-space-blue-500"
                     : "hover:bg-gray-50 dark:hover:bg-gray-800",
                 )}
                 onClick={() => onSelect(session)}

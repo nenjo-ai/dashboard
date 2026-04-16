@@ -5,6 +5,7 @@ import { Bell, BellOff } from "lucide-react";
 import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { TopBar } from "@/components/layout/TopBar";
 import { ApiKeysSection } from "@/components/settings/ApiKeysSection";
+import { ContentEncryptionSection } from "@/components/settings/ContentEncryptionSection";
 import { usePwa } from "@/components/pwa/PwaProvider";
 
 import { useTheme } from "@/lib/theme";
@@ -96,6 +97,7 @@ export default function SettingsPage() {
             ) : null}
           </div>
           <ApiKeysSection />
+          <ContentEncryptionSection />
         </div>
       </MobilePageShell>
       ) : (
@@ -180,6 +182,7 @@ export default function SettingsPage() {
           </div>
 
           <ApiKeysSection />
+          <ContentEncryptionSection />
         </PageContent>
       </>
       )}

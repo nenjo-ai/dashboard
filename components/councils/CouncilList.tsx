@@ -114,7 +114,10 @@ function EmptyState({ onCreate }: { onCreate?: () => void }) {
         Councils group agents with a leader and configurable delegation strategies.
       </p>
       {onCreate ? (
-        <Button onClick={onCreate} className="mt-6">
+        <Button
+          onClick={onCreate}
+          className="mt-6 !bg-deep-space-blue-500 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
+        >
           <svg
             className="h-4 w-4"
             fill="none"

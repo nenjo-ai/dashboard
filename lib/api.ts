@@ -41,16 +41,29 @@ import type {
   ChatDomainExitRequest,
   ChatSessionDeleteRequest,
   ChatStreamRequest,
+  EncryptedPayload,
 } from "./types";
+import { decryptContentPayload, encryptContentPayload } from "./cryptoContent";
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-const API_V1 = `${API_BASE}/api/v1`;
+const API_BASE = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
+const API_V1 = API_BASE ? `${API_BASE}/api/v1` : "/api/v1";
 const FETCH_TIMEOUT_MS = 15000;
+
+function resolveApiUrl(url: string): string {
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+
+  if (url.startsWith("/") && API_BASE) {
+    return `${API_BASE}${url}`;
+  }
+
+  return url;
+}
 
 // ---------------------------------------------------------------------------
 // Generic fetcher (used by SWR and direct calls)
@@ -151,6 +164,7 @@ async function authFetch(
   url: string,
   init?: RequestInit,
 ): Promise<Response> {
+  const resolvedUrl = resolveApiUrl(url);
   const headers = await authHeaders();
 
   // If caller provided headers, merge them (caller wins on conflicts)
@@ -169,7 +183,7 @@ async function authFetch(
 
   let res: Response;
   try {
-    res = await fetch(url, { ...init, headers, signal: controller.signal });
+    res = await fetch(resolvedUrl, { ...init, headers, signal: controller.signal });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new ApiError(`Request timed out after ${FETCH_TIMEOUT_MS / 1000}s`, 504);
@@ -304,32 +318,188 @@ export function taskUrl(id: string): string {
   return `${API_V1}/tasks/${id}`;
 }
 
+type TaskContentPayload = {
+  title: string;
+  description?: string | null;
+  slug?: string | null;
+  acceptance_criteria?: string | null;
+  tags: string[];
+  status?: string | null;
+  priority?: string | null;
+  task_type?: string | null;
+  complexity?: string | null;
+};
+
+function extractTaskEncryptedPayload(task: Task): EncryptedPayload | null {
+  const payload = task.encrypted_payload ?? task.metadata?.encrypted_payload;
+  if (!payload || typeof payload !== "object") return null;
+  return payload as EncryptedPayload;
+}
+
+async function resolveTask(task: Task): Promise<Task> {
+  const encryptedPayload = extractTaskEncryptedPayload(task);
+  if (!encryptedPayload) return task;
+
+  try {
+    const plaintext = await decryptContentPayload(encryptedPayload);
+    if (!plaintext) return task;
+    const payload = JSON.parse(plaintext) as TaskContentPayload;
+    return {
+      ...task,
+      title: payload.title ?? task.title,
+      description: payload.description ?? task.description,
+      acceptance_criteria:
+        payload.acceptance_criteria ?? task.acceptance_criteria,
+      tags: payload.tags ?? task.tags,
+      slug: payload.slug ?? task.slug,
+      status: (payload.status as Task["status"] | undefined) ?? task.status,
+      priority:
+        (payload.priority as Task["priority"] | undefined) ?? task.priority,
+      type: (payload.task_type as Task["type"] | undefined) ?? task.type,
+      complexity:
+        payload.complexity != null
+          ? Number(payload.complexity)
+          : task.complexity,
+    };
+  } catch (error) {
+    console.warn("Failed to decrypt task content", {
+      taskId: task.id,
+      objectId: encryptedPayload.object_id,
+      error,
+    });
+    return task;
+  }
+}
+
+async function encryptTaskContent(params: {
+  taskId: string;
+  projectId: string;
+  title: string;
+  description?: string;
+  acceptanceCriteria?: string;
+  tags?: string[];
+  status?: string;
+  priority?: string;
+  taskType?: string;
+  complexity?: number | null;
+  slug?: string | null;
+}): Promise<EncryptedPayload | null> {
+  const currentUser = await fetchCurrentUser();
+  if (!currentUser.user_id) return null;
+
+  const payload: TaskContentPayload = {
+    title: params.title,
+    description: params.description ?? null,
+    slug: params.slug ?? null,
+    acceptance_criteria: params.acceptanceCriteria ?? null,
+    tags: params.tags ?? [],
+    status: params.status ?? "open",
+    priority: params.priority ?? "medium",
+    task_type: params.taskType ?? "task",
+    complexity:
+      params.complexity != null ? String(params.complexity) : null,
+  };
+
+  return encryptContentPayload({
+    accountId: currentUser.user_id,
+    objectId: params.taskId,
+    objectType: "task_content",
+    plaintext: JSON.stringify(payload),
+  });
+}
+
 export async function fetchTasks(
   projectId: string,
   status?: string,
 ): Promise<Task[]> {
-  return fetcher<Task[]>(tasksUrl(projectId, { status }));
+  const tasks = await fetcher<Task[]>(tasksUrl(projectId, { status }));
+  return Promise.all(tasks.map(resolveTask));
 }
 
 export async function createTask(
-  data: { project_id: string; title: string; description?: string },
+  data: {
+    project_id: string;
+    title: string;
+    description?: string;
+    status?: string;
+    priority?: Task["priority"];
+    type?: Task["type"];
+    complexity?: number | null;
+    tags?: string[];
+  },
 ): Promise<Task> {
+  const taskId = crypto.randomUUID();
+  const encryptedPayload = await encryptTaskContent({
+    taskId,
+    projectId: data.project_id,
+    title: data.title,
+    description: data.description,
+    tags: data.tags,
+    status: data.status,
+    priority: data.priority,
+    taskType: data.type,
+    complexity: data.complexity,
+  });
+  if (!encryptedPayload) {
+    throw new ApiError("Task encryption is required before creating a task", 400);
+  }
   const res = await authFetch(`${API_V1}/tasks`, {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      id: taskId,
+      project_id: data.project_id,
+      status: data.status,
+      priority: data.priority,
+      type: data.type,
+      complexity: data.complexity,
+      tags: data.tags,
+      encrypted_payload: encryptedPayload,
+    }),
   });
-  return res.json() as Promise<Task>;
+  return resolveTask((await res.json()) as Task);
 }
 
 export async function updateTask(
   id: string,
   data: UpdateTaskRequest,
+  currentTask?: Task,
 ): Promise<Task> {
+  if (!currentTask) {
+    throw new ApiError(
+      "Encrypted task updates require the current task content",
+      400,
+    );
+  }
+  const encryptedPayload = await encryptTaskContent({
+    taskId: id,
+    projectId: currentTask.project_id,
+    title: data.title ?? currentTask.title,
+    description: data.description ?? currentTask.description ?? undefined,
+    acceptanceCriteria:
+      data.acceptance_criteria ?? currentTask.acceptance_criteria ?? undefined,
+    tags: currentTask.tags,
+    status: data.status ?? currentTask.status,
+    priority: data.priority ?? currentTask.priority,
+    taskType: data.type ?? currentTask.type,
+    complexity: data.complexity ?? currentTask.complexity,
+    slug: currentTask.slug,
+  });
+  if (!encryptedPayload) {
+    throw new ApiError("Task encryption is required before updating a task", 400);
+  }
   const res = await authFetch(taskUrl(id), {
     method: "PATCH",
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      status: data.status,
+      priority: data.priority,
+      type: data.type,
+      complexity: data.complexity,
+      routine_id: data.routine_id,
+      assigned_agent_id: data.assigned_agent_id,
+      encrypted_payload: encryptedPayload,
+    }),
   });
-  return res.json() as Promise<Task>;
+  return resolveTask((await res.json()) as Task);
 }
 
 export async function deleteTask(id: string): Promise<void> {
@@ -699,13 +869,179 @@ export function workerPingUrl(): string {
   return `${API_V1}/workers/ping`;
 }
 
-export async function fetchWorkerStatus(): Promise<{ worker_connected: boolean }> {
-  return fetcher<{ worker_connected: boolean }>(workerStatusUrl());
+export function workerEnrollmentUrl(): string {
+  return `${API_V1}/workers/enrollment`;
 }
 
-export async function pingWorker(): Promise<{ worker_connected: boolean }> {
+export function workerApprovalKeyUrl(): string {
+  return `${API_V1}/workers/approval-key`;
+}
+
+export function recoveryBundleUrl(): string {
+  return `${API_V1}/content-encryption/recovery-bundle`;
+}
+
+export function trustedDevicesUrl(): string {
+  return `${API_V1}/content-encryption/devices`;
+}
+
+export function trustedDeviceUrl(deviceId: string): string {
+  return `${API_V1}/content-encryption/devices/${deviceId}`;
+}
+
+export function deviceEnrollmentsUrl(): string {
+  return `${API_V1}/content-encryption/device-enrollments`;
+}
+
+export function deviceEnrollmentUrl(deviceId: string): string {
+  return `${API_V1}/content-encryption/device-enrollments/${deviceId}`;
+}
+
+export function deviceEnrollmentApproveUrl(deviceId: string): string {
+  return `${API_V1}/content-encryption/device-enrollments/${deviceId}/approve`;
+}
+
+export function workerEnrollmentDetailUrl(apiKeyId: string): string {
+  return `${API_V1}/workers/enrollment/${apiKeyId}`;
+}
+
+export function workerEnrollmentApproveUrl(apiKeyId: string): string {
+  return `${API_V1}/workers/enrollment/${apiKeyId}/approve`;
+}
+
+export async function fetchWorkerStatus(): Promise<import("./types").WorkerStatus> {
+  return fetcher<import("./types").WorkerStatus>(workerStatusUrl());
+}
+
+export async function pingWorker(): Promise<import("./types").WorkerStatus> {
   const res = await authFetch(workerPingUrl(), { method: "POST" });
-  return res.json() as Promise<{ worker_connected: boolean }>;
+  return res.json() as Promise<import("./types").WorkerStatus>;
+}
+
+export async function fetchWorkerApprovalKey(): Promise<import("./types").WorkerApprovalKeyResponse> {
+  return fetcher<import("./types").WorkerApprovalKeyResponse>(workerApprovalKeyUrl());
+}
+
+export async function putWorkerApprovalKey(publicKey: string): Promise<import("./types").WorkerApprovalKeyResponse> {
+  const res = await authFetch(workerApprovalKeyUrl(), {
+    method: "PUT",
+    body: JSON.stringify({ public_key: publicKey }),
+  });
+  return res.json() as Promise<import("./types").WorkerApprovalKeyResponse>;
+}
+
+export async function deleteWorkerApprovalKey(): Promise<void> {
+  await authFetch(workerApprovalKeyUrl(), { method: "DELETE" });
+}
+
+export async function fetchRecoveryBundle(): Promise<import("./types").RecoveryBundleResponse> {
+  return fetcher<import("./types").RecoveryBundleResponse>(recoveryBundleUrl());
+}
+
+export async function putRecoveryBundle(
+  bundle: import("./types").RecoveryBundlePayload,
+): Promise<import("./types").RecoveryBundleResponse> {
+  const res = await authFetch(recoveryBundleUrl(), {
+    method: "PUT",
+    body: JSON.stringify(bundle),
+  });
+  return res.json() as Promise<import("./types").RecoveryBundleResponse>;
+}
+
+export async function deleteRecoveryBundle(): Promise<void> {
+  await authFetch(recoveryBundleUrl(), { method: "DELETE" });
+}
+
+export async function listTrustedDevices(): Promise<import("./types").TrustedDevicePayload[]> {
+  return fetcher<import("./types").TrustedDevicePayload[]>(trustedDevicesUrl());
+}
+
+export async function upsertTrustedDevice(
+  device: import("./types").TrustedDevicePayload,
+): Promise<import("./types").TrustedDevicePayload> {
+  const res = await authFetch(trustedDevicesUrl(), {
+    method: "POST",
+    body: JSON.stringify(device),
+  });
+  return res.json() as Promise<import("./types").TrustedDevicePayload>;
+}
+
+export async function deleteTrustedDevice(deviceId: string): Promise<void> {
+  await authFetch(trustedDeviceUrl(deviceId), { method: "DELETE" });
+}
+
+export async function listDeviceEnrollments(): Promise<import("./types").DeviceEnrollmentPayload[]> {
+  return fetcher<import("./types").DeviceEnrollmentPayload[]>(deviceEnrollmentsUrl());
+}
+
+export async function registerDeviceEnrollment(
+  device: import("./types").DeviceEnrollmentPayload,
+): Promise<import("./types").DeviceEnrollmentPayload> {
+  const res = await authFetch(deviceEnrollmentsUrl(), {
+    method: "POST",
+    body: JSON.stringify(device),
+  });
+  return res.json() as Promise<import("./types").DeviceEnrollmentPayload>;
+}
+
+export async function fetchDeviceEnrollment(
+  deviceId: string,
+): Promise<import("./types").DeviceEnrollmentPayload> {
+  return fetcher<import("./types").DeviceEnrollmentPayload>(deviceEnrollmentUrl(deviceId));
+}
+
+export async function approveDeviceEnrollment(
+  deviceId: string,
+  body: import("./types").ApproveDeviceEnrollmentRequest,
+): Promise<import("./types").DeviceEnrollmentPayload> {
+  const res = await authFetch(deviceEnrollmentApproveUrl(deviceId), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<import("./types").DeviceEnrollmentPayload>;
+}
+
+export async function deleteDeviceEnrollment(deviceId: string): Promise<void> {
+  await authFetch(deviceEnrollmentUrl(deviceId), { method: "DELETE" });
+}
+
+export async function createWorkerEnrollment(
+  body: import("./types").WorkerEnrollmentRequest,
+): Promise<import("./types").WorkerEnrollmentStatusResponse> {
+  const res = await authFetch(workerEnrollmentUrl(), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<import("./types").WorkerEnrollmentStatusResponse>;
+}
+
+export async function listWorkerEnrollments(): Promise<import("./types").WorkerEnrollmentStatusResponse[]> {
+  return fetcher<import("./types").WorkerEnrollmentStatusResponse[]>(
+    workerEnrollmentUrl(),
+  );
+}
+
+export async function fetchWorkerEnrollment(
+  apiKeyId: string,
+): Promise<import("./types").WorkerEnrollmentStatusResponse> {
+  return fetcher<import("./types").WorkerEnrollmentStatusResponse>(
+    workerEnrollmentDetailUrl(apiKeyId),
+  );
+}
+
+export async function approveWorkerEnrollment(
+  apiKeyId: string,
+  body: import("./types").ApproveWorkerEnrollmentRequest,
+): Promise<import("./types").WorkerEnrollmentStatusResponse> {
+  const res = await authFetch(workerEnrollmentApproveUrl(apiKeyId), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<import("./types").WorkerEnrollmentStatusResponse>;
+}
+
+export async function deleteWorkerEnrollment(apiKeyId: string): Promise<void> {
+  await authFetch(workerEnrollmentDetailUrl(apiKeyId), { method: "DELETE" });
 }
 
 // ---------------------------------------------------------------------------

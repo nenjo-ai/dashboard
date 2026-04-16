@@ -203,7 +203,7 @@ export function TaskDetailModal({
         complexity: complexity ?? undefined,
         routine_id: routineId,
         assigned_agent_id: assignedAgentId,
-      });
+      }, task);
       setEditing(false);
       onUpdated();
     } catch (err) {
