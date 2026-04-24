@@ -206,27 +206,13 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 curl -H "Authorization: Bearer $TOKEN" \
   "https://your-instance.com/api/v1/domains/sessions/active?project_id=...&role_id=..."
 
-# Update session draft
-curl -X PATCH -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"artifact_draft": {"title": "My PRD", "content": "..."}}' \
-  https://your-instance.com/api/v1/domains/sessions/:sid
-
-# Complete session (finalizes artifact)
+# Complete session
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   https://your-instance.com/api/v1/domains/sessions/:sid/complete
 
 # Cancel session
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   https://your-instance.com/api/v1/domains/sessions/:sid/cancel
-```
-
-### Artifacts
-
-```bash
-# List artifacts for a project
-curl -H "Authorization: Bearer $TOKEN" \
-  https://your-instance.com/api/v1/projects/:project_id/mode-artifacts
 ```
 
 ## Upload Formats

@@ -17,28 +17,8 @@ interface DomainFormModalProps {
 }
 
 const DEFAULT_MANIFEST: DomainManifest = {
-  schema_version: 1,
-  domain_type: "authoring",
   prompt: {
     system_addon: "",
-    guidelines: [],
-    entry_message: "",
-    exit_message: "",
-  },
-  tools: {
-    additional_scopes: [],
-  },
-  artifact: {
-    type: "document",
-    format: "markdown",
-    filename_template: "",
-    schema: {},
-    output_template: "",
-  },
-  session: {
-    max_turns: 50,
-    auto_save_interval: 5,
-    exit_commands: ["#done", "#exit", "#finish"],
   },
 };
 
@@ -49,7 +29,6 @@ export function DomainFormModal({ open, onClose, onSaved, domain }: DomainFormMo
   const [displayName, setDisplayName] = useState("");
   const [command, setCommand] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -61,13 +40,11 @@ export function DomainFormModal({ open, onClose, onSaved, domain }: DomainFormMo
         setDisplayName(domain.display_name);
         setCommand(domain.command);
         setDescription(domain.description ?? "");
-        setCategory(domain.category ?? "");
       } else {
         setName("");
         setDisplayName("");
         setCommand("");
         setDescription("");
-        setCategory("");
       }
       setError(null);
     }
@@ -111,7 +88,6 @@ export function DomainFormModal({ open, onClose, onSaved, domain }: DomainFormMo
           display_name: displayName.trim(),
           description: description.trim() || undefined,
           command: command.trim(),
-          category: category.trim() || undefined,
         });
       } else {
         await createDomain({
@@ -120,7 +96,6 @@ export function DomainFormModal({ open, onClose, onSaved, domain }: DomainFormMo
           description: description.trim() || undefined,
           command: command.trim(),
           manifest: DEFAULT_MANIFEST,
-          category: category.trim() || undefined,
         });
       }
       onSaved();
@@ -175,8 +150,8 @@ export function DomainFormModal({ open, onClose, onSaved, domain }: DomainFormMo
           </div>
         </div>
 
-        {/* Name + Category */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* Name */}
+        <div>
           <div>
             <Label className="mb-1.5 block">
               Name (identifier)
@@ -187,17 +162,6 @@ export function DomainFormModal({ open, onClose, onSaved, domain }: DomainFormMo
               onChange={(e) => setName(e.target.value)}
               placeholder="prd_authoring"
               className="font-mono"
-            />
-          </div>
-          <div>
-            <Label className="mb-1.5 block">
-              Category
-            </Label>
-            <Input
-              type="text"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              placeholder="e.g. planning, analysis"
             />
           </div>
         </div>

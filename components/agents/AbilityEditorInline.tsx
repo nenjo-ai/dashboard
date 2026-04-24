@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
-import { updateAbility } from "@/lib/api";
+import { fetchAbilityPrompt, updateAbility, updateAbilityPrompt } from "@/lib/api";
 import { useMcpServers, useContextBlocks } from "@/lib/hooks";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference } from "./TemplateVariableReference";
@@ -36,7 +36,7 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
   const [activeTab, setActiveTab] = useState<TabId>("prompt");
   const [displayName, setDisplayName] = useState(ability.display_name ?? "");
   const [name, setName] = useState(ability.name);
-  const [prompt, setPrompt] = useState(ability.prompt);
+  const [prompt, setPrompt] = useState(ability.prompt ?? "");
   const [activationCondition, setActivationCondition] = useState(ability.activation_condition);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -50,11 +50,23 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
   useEffect(() => {
     setDisplayName(ability.display_name ?? "");
     setName(ability.name);
-    setPrompt(ability.prompt);
+    setPrompt(ability.prompt ?? "");
     setActivationCondition(ability.activation_condition);
     setActiveTab("prompt");
     setError(null);
     setSaved(false);
+  }, [ability.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAbilityPrompt(ability.id)
+      .then((value) => {
+        if (!cancelled) setPrompt(value);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [ability.id]);
 
   const handleSave = useCallback(async () => {
@@ -65,8 +77,8 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
       await updateAbility(ability.id, {
         display_name: displayName || undefined,
         activation_condition: activationCondition,
-        prompt,
       });
+      await updateAbilityPrompt(ability.id, prompt);
       setSaved(true);
       onSaved();
       setTimeout(() => setSaved(false), 1500);

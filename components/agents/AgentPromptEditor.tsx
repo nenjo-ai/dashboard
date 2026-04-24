@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { updateAgentPrompt, resetAgentToDefault, applyAllSystemUpdates, updateDomain, setAgentPromptLock } from "@/lib/api";
+import { updateAgentPrompt, resetAgentToDefault, applyAllSystemUpdates, updateDomainManifest, setAgentPromptLock, fetchAgentPrompt } from "@/lib/api";
 import { useAgentDomains, useContextBlocks } from "@/lib/hooks";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference, JinjaGuide } from "./TemplateVariableReference";
@@ -224,11 +224,11 @@ const SECTIONS: Section[] = [
   { id: "system_prompt", label: "Soul", group: "Core", hint: "system prompt" },
   { id: "developer_prompt", label: "Guidance", group: "Core", hint: "developer prompt" },
   { id: "memory_profile", label: "Memory Profile", group: "Memory" },
-  { id: "chat_task", label: "Chat", group: "Task Templates" },
-  { id: "task_task", label: "Task", group: "Task Templates" },
-  { id: "gate_eval", label: "Gate", group: "Task Templates" },
-  { id: "cron_task", label: "Cron", group: "Task Templates" },
-  { id: "heartbeat_task", label: "Heartbeat", group: "Task Templates" },
+  { id: "chat", label: "Chat", group: "Task Templates" },
+  { id: "task", label: "Task", group: "Task Templates" },
+  { id: "gate", label: "Gate", group: "Task Templates" },
+  { id: "cron", label: "Cron", group: "Task Templates" },
+  { id: "heartbeat", label: "Heartbeat", group: "Task Templates" },
 ];
 
 const BASE_GROUPS = Array.from(new Set(SECTIONS.map((s) => s.group)));
@@ -250,7 +250,7 @@ function getMemoryProfile(cfg: PromptConfig): MemoryProfile {
 function getSectionValue(id: string, cfg: PromptConfig): string {
   if (id === "system_prompt") return cfg.system_prompt;
   if (id === "developer_prompt") return cfg.developer_prompt ?? "";
-  if (["task_task", "chat_task", "gate_eval", "cron_task", "heartbeat_task"].includes(id))
+  if (["task", "chat", "gate", "cron", "heartbeat"].includes(id))
     return cfg.templates?.[id] ?? "";
   return "";
 }
@@ -262,16 +262,15 @@ function setSectionValue(
 ): PromptConfig {
   if (id === "system_prompt") return { ...cfg, system_prompt: value };
   if (id === "developer_prompt") return { ...cfg, developer_prompt: value };
-  if (["chat_task", "task_task", "gate_eval", "cron_task", "heartbeat_task"].includes(id))
+  if (["chat", "task", "gate", "cron", "heartbeat"].includes(id))
     return { ...cfg, templates: { ...cfg.templates, [id]: value } };
   return cfg;
 }
 
-/** Get current value for a domain section (system_addon or guidelines). */
-function getDomainSectionValue(rm: AgentDomainAssignment, field: "system_addon" | "guidelines"): string {
+/** Get current value for a domain section. */
+function getDomainSectionValue(rm: AgentDomainAssignment, field: "system_addon"): string {
   if (!rm.domain?.manifest?.prompt) return "";
   if (field === "system_addon") return rm.domain.manifest.prompt.system_addon ?? "";
-  if (field === "guidelines") return (rm.domain.manifest.prompt.guidelines ?? []).join("\n");
   return "";
 }
 
@@ -353,19 +352,14 @@ export function AgentPromptEditor({
         }
         for (const [domainId, fields] of Array.from(grouped)) {
           const rm = enabledDomains.find((m) => m.domain!.id === domainId);
-          if (!rm?.domain) continue;
+          if (!rm?.domain?.manifest) continue;
           const manifest = { ...rm.domain.manifest };
           const prompt = { ...manifest.prompt };
           if ("system_addon" in fields) {
             prompt.system_addon = fields.system_addon;
           }
-          if ("guidelines" in fields) {
-            prompt.guidelines = fields.guidelines
-              .split("\n")
-              .filter((l) => l.trim().length > 0);
-          }
           manifest.prompt = prompt;
-          await updateDomain(domainId, { manifest });
+          await updateDomainManifest(domainId, manifest);
         }
         setDomainEdits({});
         mutateAgentDomains();
@@ -405,8 +399,9 @@ export function AgentPromptEditor({
       if (isSystemAgent) {
         await applyAllSystemUpdates();
       }
-      const updated = await resetAgentToDefault(role.id);
-      onChange(updated.prompt_config);
+      await resetAgentToDefault(role.id);
+      const promptConfig = await fetchAgentPrompt(role.id);
+      onChange(promptConfig);
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to reset to default");
@@ -478,7 +473,7 @@ export function AgentPromptEditor({
       if (domainEdits[activeSection] !== undefined) return domainEdits[activeSection];
       const parts = activeSection.split(":");
       const domainId = parts[1];
-      const field = parts[2] as "system_addon" | "guidelines";
+      const field = parts[2] as "system_addon";
       const rm = enabledDomains.find((m) => m.domain!.id === domainId);
       return rm ? getDomainSectionValue(rm, field) : "";
     }
@@ -529,7 +524,7 @@ export function AgentPromptEditor({
                 className="flex h-9 w-9 items-center justify-center rounded-full"
                 style={{ backgroundColor: agentColorBg(role.color) }}
               >
-                <RoleIdenticon roleId={role.id} color={role.color} size={28} animate roleName={role.name} />
+                <RoleIdenticon roleId={role.id} color={role.color} size={28} animate name={role.name} />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -892,9 +887,7 @@ export function AgentPromptEditor({
                         ? "You are a senior software engineer specializing in..."
                         : activeSection === "developer_prompt"
                           ? "Detailed methodology and instructions for the agent..."
-                          : isDomainSectionActive && activeSection.endsWith(":guidelines")
-                            ? "One guideline per line. These are injected into the domain context."
-                            : isDomainSectionActive && activeSection.endsWith(":system_addon")
+                          : isDomainSectionActive && activeSection.endsWith(":system_addon")
                               ? "Domain-specific instructions. Appended to the core Guidance prompt when active."
                               : "<instructions>Task instructions here...</instructions>"
                     }
@@ -1080,15 +1073,12 @@ export function AgentPromptEditorContent({
         }
         for (const [domainId, fields] of Array.from(grouped)) {
           const rm = enabledDomains.find((m) => m.domain!.id === domainId);
-          if (!rm?.domain) continue;
+          if (!rm?.domain?.manifest) continue;
           const manifest = { ...rm.domain.manifest };
           const prompt = { ...manifest.prompt };
           if ("system_addon" in fields) prompt.system_addon = fields.system_addon;
-          if ("guidelines" in fields) {
-            prompt.guidelines = fields.guidelines.split("\n").filter((l) => l.trim().length > 0);
-          }
           manifest.prompt = prompt;
-          await updateDomain(domainId, { manifest });
+          await updateDomainManifest(domainId, manifest);
         }
         setDomainEdits({});
         mutateAgentDomains();
@@ -1127,8 +1117,9 @@ export function AgentPromptEditorContent({
       if (isSystemAgent) {
         await applyAllSystemUpdates();
       }
-      const updated = await resetAgentToDefault(role.id);
-      onChange(updated.prompt_config);
+      await resetAgentToDefault(role.id);
+      const promptConfig = await fetchAgentPrompt(role.id);
+      onChange(promptConfig);
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to reset to default");
@@ -1192,7 +1183,7 @@ export function AgentPromptEditorContent({
       if (domainEdits[activeSection] !== undefined) return domainEdits[activeSection];
       const parts = activeSection.split(":");
       const domainId = parts[1];
-      const field = parts[2] as "system_addon" | "guidelines";
+      const field = parts[2] as "system_addon";
       const rm = enabledDomains.find((m) => m.domain!.id === domainId);
       return rm ? getDomainSectionValue(rm, field) : "";
     }
@@ -1356,7 +1347,6 @@ export function AgentPromptEditorContent({
                 placeholder={
                   activeSection === "system_prompt" ? "You are a senior software engineer specializing in..."
                     : activeSection === "developer_prompt" ? "Detailed methodology and instructions for the agent..."
-                    : isDomainSectionActive && activeSection.endsWith(":guidelines") ? "One guideline per line."
                     : isDomainSectionActive && activeSection.endsWith(":system_addon") ? "Domain-specific instructions."
                     : "<instructions>Task instructions here...</instructions>"
                 }

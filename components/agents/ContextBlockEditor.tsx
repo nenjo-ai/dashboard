@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { updateContextBlock } from "@/lib/api";
+import {
+  fetchContextBlockContent,
+  updateContextBlock,
+  updateContextBlockContent,
+} from "@/lib/api";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference } from "./TemplateVariableReference";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
@@ -13,7 +17,7 @@ import type { ContextBlock } from "@/lib/types";
 // ---------------------------------------------------------------------------
 
 function useBlockEditor(block: ContextBlock, onSaved: () => void) {
-  const [template, setTemplate] = useState(block.template);
+  const [template, setTemplate] = useState(block.template ?? "");
   const [name, setName] = useState(block.name);
   const [displayName, setDisplayName] = useState(block.display_name ?? "");
   const [cursorLine, setCursorLine] = useState(1);
@@ -24,10 +28,29 @@ function useBlockEditor(block: ContextBlock, onSaved: () => void) {
   const editorRef = useRef<CodeTextareaHandle>(null);
 
   useEffect(() => {
-    setTemplate(block.template);
+    setTemplate(block.template ?? "");
     setName(block.name);
     setDisplayName(block.display_name ?? "");
   }, [block]);
+
+  useEffect(() => {
+    if (typeof block.template === "string") return;
+    let cancelled = false;
+    fetchContextBlockContent(block.id)
+      .then((fullBlock) => {
+        if (!cancelled) {
+          setTemplate(fullBlock.template ?? "");
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load context block content");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [block.id, block.template]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -35,10 +58,10 @@ function useBlockEditor(block: ContextBlock, onSaved: () => void) {
     setSaved(false);
     try {
       await updateContextBlock(block.id, {
-        template,
         name: name.trim() !== block.name ? name.trim() : undefined,
         display_name: displayName.trim() || undefined,
       });
+      await updateContextBlockContent(block.id, template);
       setSaved(true);
       onSaved();
       setTimeout(() => setSaved(false), 1500);

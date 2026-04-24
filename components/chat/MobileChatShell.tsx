@@ -60,7 +60,7 @@ export function MobileChatShell({
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
               </svg>
               {activeAgent ? (
-                <RoleIdenticon roleId={activeAgent.id} color={activeAgent.color} size={28} className="shrink-0" roleName={activeAgent.name} />
+                <RoleIdenticon roleId={activeAgent.id} color={activeAgent.color} size={28} className="shrink-0" name={activeAgent.name} />
               ) : (
                 <NenjoLogoMark className="h-7 w-7" />
               )}

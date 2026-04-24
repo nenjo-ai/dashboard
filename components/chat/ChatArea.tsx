@@ -19,6 +19,7 @@ import { useUser } from "@clerk/nextjs";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { DomainSlashCommandDropdown } from "@/components/project/DomainSlashCommandDropdown";
 import { Button } from "@/components/ui/Button";
+import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
 import { motion, AnimatePresence } from "motion/react";
 import { MobileInputBar } from "./MobileInputBar";
 import { MobileEmptyState } from "./MobileEmptyState";
@@ -59,6 +60,37 @@ function formatCodeLanguageLabel(language: string | null): string | null {
     .split(/[-_]/g)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function extractMermaidChart(text: string): { chart: string | null; before: string; after: string } {
+  const fencedMatch = text.match(/```mermaid\s*([\s\S]*?)```/i);
+  if (fencedMatch) {
+    const chart = fencedMatch[1]?.trim() ?? "";
+    const [fullMatch] = fencedMatch;
+    const startIndex = text.indexOf(fullMatch);
+    const before = startIndex >= 0 ? text.slice(0, startIndex).trim() : "";
+    const after = startIndex >= 0 ? text.slice(startIndex + fullMatch.length).trim() : "";
+    return { chart: chart || null, before, after };
+  }
+
+  const normalized = text
+    .trim()
+    .replace(/^```mermaid\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/^mermaid\s*\n/i, "")
+    .trimStart();
+
+  if (!normalized) {
+    return { chart: null, before: text, after: "" };
+  }
+
+  const isMermaid = /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|quadrantChart|requirementDiagram|gitGraph|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment)\b/.test(normalized);
+
+  return {
+    chart: isMermaid ? normalized.trim() : null,
+    before: isMermaid ? "" : text,
+    after: "",
+  };
 }
 
 function getNextStreamSliceLength(remainingText: string): number {
@@ -298,6 +330,7 @@ const MessageBubble = memo(function MessageBubble({
   const isUser = message.role === "user";
   const displayContent = compact ? shortenUuids(message.content) : message.content;
   const streamedContent = useAnimatedStreamText(displayContent, animateStream, 28);
+  const mermaidContent = !isUser ? extractMermaidChart(displayContent) : { chart: null, before: displayContent, after: "" };
 
   return (
     <div className={cn(
@@ -309,7 +342,7 @@ const MessageBubble = memo(function MessageBubble({
         {isUser ? (
           <UserAvatar imageUrl={userImageUrl} initials={userInitials} />
         ) : activeAgent ? (
-          <RoleIdenticon roleId={activeAgent.id} color={activeAgent.color} size={32} className="shrink-0" roleName={activeAgent.name} />
+          <RoleIdenticon roleId={activeAgent.id} color={activeAgent.color} size={32} className="shrink-0" name={activeAgent.name} />
         ) : (
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vivid-tangerine-100 text-xs font-bold text-vivid-tangerine-700">AI</div>
         )}
@@ -325,36 +358,140 @@ const MessageBubble = memo(function MessageBubble({
         {isUser ? (
           <p className="whitespace-pre-wrap">{displayContent}</p>
         ) : (
-          <div className="prose max-w-none break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-headings:font-semibold prose-headings:tracking-[-0.02em] prose-headings:text-gray-950 dark:prose-headings:text-white prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:rounded prose-code:bg-black/[0.06] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:font-medium prose-code:text-gray-900 prose-code:break-all dark:prose-code:bg-white/[0.08] dark:prose-code:text-gray-100 prose-pre:overflow-x-auto prose-pre:rounded-[1.35rem] prose-pre:border prose-pre:border-white/10 prose-pre:bg-[#0a0d12] prose-pre:px-0 prose-pre:py-0 prose-pre:text-[13px] prose-pre:text-gray-100 dark:prose-pre:bg-[#0a0d12] [&_pre_code]:block [&_pre_code]:bg-transparent [&_pre_code]:p-4 [&_pre_code]:pt-3 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-li:my-1 prose-ul:my-2 prose-ol:my-2 prose-blockquote:border-deep-space-blue-300 prose-blockquote:text-gray-700 dark:prose-blockquote:border-deep-space-blue-700 dark:prose-blockquote:text-gray-300 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                pre({ children }) {
-                  const child = Children.count(children) === 1 ? Children.only(children) : null;
-                  const className = isValidElement<{ className?: string }>(child) ? child.props.className : undefined;
-                  const language = formatCodeLanguageLabel(getCodeLanguage(className));
+          <div className="space-y-3">
+            {mermaidContent.before ? (
+              <div className="prose max-w-none break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-headings:font-semibold prose-headings:tracking-[-0.02em] prose-headings:text-gray-950 dark:prose-headings:text-white prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:rounded prose-code:bg-black/[0.06] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:font-medium prose-code:text-gray-900 prose-code:break-all dark:prose-code:bg-white/[0.08] dark:prose-code:text-gray-100 prose-pre:overflow-x-auto prose-pre:rounded-[1.35rem] prose-pre:border prose-pre:border-white/10 prose-pre:bg-[#0a0d12] prose-pre:px-0 prose-pre:py-0 prose-pre:text-[13px] prose-pre:text-gray-100 dark:prose-pre:bg-[#0a0d12] [&_pre_code]:block [&_pre_code]:bg-transparent [&_pre_code]:p-4 [&_pre_code]:pt-3 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-li:my-1 prose-ul:my-2 prose-ol:my-2 prose-blockquote:border-deep-space-blue-300 prose-blockquote:text-gray-700 dark:prose-blockquote:border-deep-space-blue-700 dark:prose-blockquote:text-gray-300 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    pre({ children }) {
+                      const child = Children.count(children) === 1 ? Children.only(children) : null;
+                      if (
+                        child
+                        && typeof child === "object"
+                        && "type" in child
+                        && (child as React.ReactElement).type === MermaidDiagram
+                      ) {
+                        return <>{children}</>;
+                      }
+                      const className = isValidElement<{ className?: string }>(child) ? child.props.className : undefined;
+                      const language = formatCodeLanguageLabel(getCodeLanguage(className));
+                      const rawText = isValidElement<{ children?: React.ReactNode }>(child)
+                        ? String(child.props.children ?? "").replace(/\n$/, "")
+                        : String(children ?? "").replace(/\n$/, "");
 
-                  return (
-                    <div className="overflow-hidden rounded-[1.35rem] border border-black/5 bg-[#0a0d12] shadow-[0_10px_30px_rgba(2,6,23,0.2)] dark:border-white/10">
-                      {language ? (
-                        <div className="border-b border-white/8 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">
-                          {language}
+                      return (
+                        <div
+                          className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900"
+                        >
+                          {language ? (
+                            <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-slate-200 dark:text-slate-500">
+                              {language}
+                            </div>
+                          ) : null}
+                          <pre className="m-0 overflow-x-auto bg-slate-950 p-4 text-left text-slate-50 dark:bg-slate-50 dark:text-slate-900">
+                            <code
+                              className="block whitespace-pre font-mono text-[13px] leading-6 text-slate-50 dark:text-slate-900"
+                              style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace' }}
+                            >
+                              {rawText}
+                            </code>
+                          </pre>
                         </div>
-                      ) : null}
-                      <pre>{children}</pre>
-                    </div>
-                  );
-                },
-                code({ className, children, ...props }) {
-                  if (className) {
-                    return <code className={cn(className, "font-mono")} {...props}>{children}</code>;
-                  }
-                  return <code {...props}>{children}</code>;
-                },
-              }}
-            >
-              {streamedContent}
-            </ReactMarkdown>
+                      );
+                    },
+                    code({ className, children, ...props }) {
+                      const language = getCodeLanguage(className);
+                      const codeString = String(children).replace(/\n$/, "");
+
+                      if (language === "mermaid") {
+                        return <MermaidDiagram chart={codeString} />;
+                      }
+
+                      if (className) {
+                        return <code className={className} {...props}>{children}</code>;
+                      }
+                      return (
+                        <code className="font-mono text-[0.85em]" {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                  }}
+                >
+                  {mermaidContent.chart ? mermaidContent.before : streamedContent}
+                </ReactMarkdown>
+              </div>
+            ) : null}
+            {mermaidContent.chart ? (
+              <div className="not-prose">
+                <MermaidDiagram chart={mermaidContent.chart} />
+              </div>
+            ) : null}
+            {mermaidContent.after ? (
+              <div className="prose max-w-none break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-headings:font-semibold prose-headings:tracking-[-0.02em] prose-headings:text-gray-950 dark:prose-headings:text-white prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:rounded prose-code:bg-black/[0.06] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:font-medium prose-code:text-gray-900 prose-code:break-all dark:prose-code:bg-white/[0.08] dark:prose-code:text-gray-100 prose-pre:overflow-x-auto prose-pre:rounded-[1.35rem] prose-pre:border prose-pre:border-white/10 prose-pre:bg-[#0a0d12] prose-pre:px-0 prose-pre:py-0 prose-pre:text-[13px] prose-pre:text-gray-100 dark:prose-pre:bg-[#0a0d12] [&_pre_code]:block [&_pre_code]:bg-transparent [&_pre_code]:p-4 [&_pre_code]:pt-3 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-li:my-1 prose-ul:my-2 prose-ol:my-2 prose-blockquote:border-deep-space-blue-300 prose-blockquote:text-gray-700 dark:prose-blockquote:border-deep-space-blue-700 dark:prose-blockquote:text-gray-300 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    pre({ children }) {
+                      const child = Children.count(children) === 1 ? Children.only(children) : null;
+                      if (
+                        child
+                        && typeof child === "object"
+                        && "type" in child
+                        && (child as React.ReactElement).type === MermaidDiagram
+                      ) {
+                        return <>{children}</>;
+                      }
+                      const className = isValidElement<{ className?: string }>(child) ? child.props.className : undefined;
+                      const language = formatCodeLanguageLabel(getCodeLanguage(className));
+                      const rawText = isValidElement<{ children?: React.ReactNode }>(child)
+                        ? String(child.props.children ?? "").replace(/\n$/, "")
+                        : String(children ?? "").replace(/\n$/, "");
+
+                      return (
+                        <div
+                          className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900"
+                        >
+                          {language ? (
+                            <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-slate-200 dark:text-slate-500">
+                              {language}
+                            </div>
+                          ) : null}
+                          <pre className="m-0 overflow-x-auto bg-slate-950 p-4 text-left text-slate-50 dark:bg-slate-50 dark:text-slate-900">
+                            <code
+                              className="block whitespace-pre font-mono text-[13px] leading-6 text-slate-50 dark:text-slate-900"
+                              style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace' }}
+                            >
+                              {rawText}
+                            </code>
+                          </pre>
+                        </div>
+                      );
+                    },
+                    code({ className, children, ...props }) {
+                      const language = getCodeLanguage(className);
+                      const codeString = String(children).replace(/\n$/, "");
+
+                      if (language === "mermaid") {
+                        return <MermaidDiagram chart={codeString} />;
+                      }
+
+                      if (className) {
+                        return <code className={className} {...props}>{children}</code>;
+                      }
+                      return (
+                        <code className="font-mono text-[0.85em]" {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                  }}
+                >
+                  {mermaidContent.after}
+                </ReactMarkdown>
+              </div>
+            ) : null}
           </div>
         )}
         <div className="mt-1 flex items-center gap-1.5">
@@ -415,7 +552,7 @@ const TypingIndicator = memo(function TypingIndicator({
       )}
     >
       {activeAgent ? (
-        <RoleIdenticon roleId={activeAgent.id} color={activeAgent.color} size={32} className="shrink-0" animate={true} roleName={activeAgent.name} />
+        <RoleIdenticon roleId={activeAgent.id} color={activeAgent.color} size={32} className="shrink-0" animate={true} name={activeAgent.name} />
       ) : (
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vivid-tangerine-100 text-xs font-bold text-vivid-tangerine-700">AI</div>
       )}
@@ -583,8 +720,8 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
 
 
   const activeAgent = useMemo(
-    () => availableAgents.find((a: AgentDefinition) => a.id === agentId),
-    [availableAgents, agentId],
+    () => allAgents?.find((a: AgentDefinition) => a.id === agentId),
+    [allAgents, agentId],
   );
 
   useEffect(() => { setSelectedDropdownIndex(0); }, [filteredAgents]);
@@ -1336,7 +1473,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                         : "hover:[background:var(--app-hover)]",
                     )}
                   >
-                    <RoleIdenticon roleId={agent.id} color={agent.color} size={20} className="shrink-0" roleName={agent.name} />
+                    <RoleIdenticon roleId={agent.id} color={agent.color} size={20} className="shrink-0" name={agent.name} />
                     <span className="font-medium text-gray-900 dark:text-gray-100">@{agent.name}</span>
                   </button>
                 ))}
@@ -1350,7 +1487,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                 className="theme-border theme-overlay w-full max-h-72 overflow-y-auto rounded-[1.35rem] border shadow-[0_20px_50px_rgba(15,23,42,0.16)] backdrop-blur-xl"
               >
                 <div className="theme-border theme-surface-muted sticky top-0 flex items-center gap-2 border-b px-3 py-2">
-                  <RoleIdenticon roleId={selectedMentionAgent.id} color={selectedMentionAgent.color} size={18} className="shrink-0" roleName={selectedMentionAgent.name} />
+                  <RoleIdenticon roleId={selectedMentionAgent.id} color={selectedMentionAgent.color} size={18} className="shrink-0" name={selectedMentionAgent.name} />
                   <span className="text-xs font-medium text-gray-700 dark:text-gray-300">@{selectedMentionAgent.name}</span>
                   <span className="text-xs text-gray-400">— {mentionStep === "project" ? "pick a project" : "pick a session"}</span>
                   <button
@@ -1473,7 +1610,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
             >
               {/* Header showing selected agent */}
               <div className="theme-border theme-surface-muted sticky top-0 flex items-center gap-2 border-b px-3 py-2">
-                <RoleIdenticon roleId={selectedMentionAgent.id} color={selectedMentionAgent.color} size={18} className="shrink-0" roleName={selectedMentionAgent.name} />
+                <RoleIdenticon roleId={selectedMentionAgent.id} color={selectedMentionAgent.color} size={18} className="shrink-0" name={selectedMentionAgent.name} />
                 <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
                   @{selectedMentionAgent.name}
                 </span>
@@ -1622,7 +1759,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                       : "hover:[background:var(--app-hover)]",
                   )}
                 >
-                  <RoleIdenticon roleId={agent.id} color={agent.color} size={20} className="shrink-0" roleName={agent.name} />
+                  <RoleIdenticon roleId={agent.id} color={agent.color} size={20} className="shrink-0" name={agent.name} />
                   <span className="font-medium text-gray-900 dark:text-gray-100">@{agent.name}</span>
                 </button>
               ))}

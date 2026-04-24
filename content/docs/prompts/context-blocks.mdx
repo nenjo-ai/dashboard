@@ -119,19 +119,7 @@ The mode context includes:
 
 - **Session metadata**: Mode name, session ID, current turn number out of max turns
 - **Guidelines**: Behavioral rules specific to this mode
-- **Artifact schema**: Expected output format (if the mode produces artifacts)
 - **Exit commands**: Commands that end the mode session
-
-If the mode has an in-progress artifact draft, it is also appended:
-
-```xml
-<mode_artifact_draft>
-{
-  "title": "Feature Requirements",
-  "sections": [...]
-}
-</mode_artifact_draft>
-```
 
 The mode's `system_addon` prompt is handled separately -- it is appended to the developer prompt text before template rendering, not included in the XML block.
 

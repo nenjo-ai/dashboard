@@ -217,7 +217,7 @@ function ExecutionRow({ exec }: { exec: ExecutionDetails }) {
                               size={14}
                               className="shrink-0"
                               animate={isRunning}
-                              roleName={agent.agent_name ?? undefined}
+                              name={agent.agent_name ?? undefined}
                             />
                           ) : (
                             <TaskStatusIcon status={stepStatus} />

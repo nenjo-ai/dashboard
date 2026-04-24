@@ -100,7 +100,7 @@ export function MobileEmptyState({
                   : "hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
               }`}
             >
-              <RoleIdenticon roleId={agent.id} color={agent.color} size={32} className="shrink-0" roleName={agent.name} />
+              <RoleIdenticon roleId={agent.id} color={agent.color} size={32} className="shrink-0" name={agent.name} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
                   @{agent.name}

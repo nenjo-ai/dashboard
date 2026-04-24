@@ -414,6 +414,7 @@ interface CurrentUser {
   session_id?: string | null;
   org_id?: string | null;
   org_role?: string | null;
+  onboarded?: boolean;
 }
 
 export function useCurrentUser() {

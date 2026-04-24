@@ -47,12 +47,12 @@ function providerLabel(model: string): string {
   return "Custom";
 }
 
-/** Get the agents associated with this model from its tags. */
+/** Get the agents associated with this model from direct `model_id` assignment. */
 function getModelAgents(
   model: Model,
   agents: AgentDefinition[],
 ): AgentDefinition[] {
-  return agents.filter((r) => model.tags.includes(r.name));
+  return agents.filter((r) => r.model_id === model.id);
 }
 
 export function AgentDetailModal({
@@ -85,7 +85,7 @@ export function AgentDetailModal({
                 borderColor: agentColorBg(agentDef.color),
               }}
             >
-              <RoleIdenticon roleId={agentDef.id} color={agentDef.color} size={16} roleName={agentDef.name} />
+              <RoleIdenticon roleId={agentDef.id} color={agentDef.color} size={16} name={agentDef.name} />
               {agentDef.name}
             </span>
           ))}

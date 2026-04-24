@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
-import { updateDomain } from "@/lib/api";
+import { fetchDomainManifest, updateDomain, updateDomainManifest } from "@/lib/api";
 import { useAbilities, useMcpServers, useContextBlocks } from "@/lib/hooks";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference } from "./TemplateVariableReference";
@@ -49,6 +49,7 @@ export function DomainEditorInline({ domain, onSaved, onDelete }: DomainEditorIn
   const [cursorCol, setCursorCol] = useState(1);
   const editorRef = useRef<CodeTextareaHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [manifest, setManifest] = useState<DomainManifest | null>(domain.manifest ?? null);
 
   // Local editable prompt state
   const [systemAddon, setSystemAddon] = useState(domain.manifest?.prompt?.system_addon ?? "");
@@ -56,10 +57,30 @@ export function DomainEditorInline({ domain, onSaved, onDelete }: DomainEditorIn
   // Reset when domain changes
   useEffect(() => {
     setDisplayName(domain.display_name ?? "");
+    setManifest(domain.manifest ?? null);
     setSystemAddon(domain.manifest?.prompt?.system_addon ?? "");
     setActiveTab("prompt");
     setError(null);
     setSaved(false);
+  }, [domain.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const nextManifest = await fetchDomainManifest(domain.id);
+        if (cancelled) return;
+        setManifest(nextManifest);
+        setSystemAddon(nextManifest.prompt?.system_addon ?? "");
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load domain manifest");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [domain.id]);
 
   const currentValue = systemAddon;
@@ -73,15 +94,22 @@ export function DomainEditorInline({ domain, onSaved, onDelete }: DomainEditorIn
     setError(null);
     setSaved(false);
     try {
-      const manifest: DomainManifest = { ...domain.manifest };
-      manifest.prompt = {
-        ...manifest.prompt,
+      if (displayName !== (domain.display_name ?? "")) {
+        await updateDomain(domain.id, {
+          display_name: displayName || undefined,
+        });
+      }
+      const currentManifest = manifest ?? domain.manifest;
+      if (!currentManifest) {
+        throw new Error("Domain manifest is not loaded yet");
+      }
+      const nextManifest: DomainManifest = { ...currentManifest };
+      nextManifest.prompt = {
+        ...nextManifest.prompt,
         system_addon: systemAddon,
       };
-      await updateDomain(domain.id, {
-        display_name: displayName || undefined,
-        manifest,
-      });
+      const savedManifest = await updateDomainManifest(domain.id, nextManifest);
+      setManifest(savedManifest);
       setSaved(true);
       onSaved();
       setTimeout(() => setSaved(false), 1500);
@@ -90,7 +118,7 @@ export function DomainEditorInline({ domain, onSaved, onDelete }: DomainEditorIn
     } finally {
       setSaving(false);
     }
-  }, [domain.id, domain.manifest, displayName, systemAddon, onSaved]);
+  }, [displayName, domain.display_name, domain.id, domain.manifest, manifest, onSaved, systemAddon]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
@@ -154,9 +182,9 @@ export function DomainEditorInline({ domain, onSaved, onDelete }: DomainEditorIn
       {/* Tab bar */}
       <div className="theme-border flex shrink-0 items-center gap-0 border-b px-4">
         {TABS.map((tab) => {
-          const scopeCount = domain.manifest?.tools?.additional_scopes?.length ?? 0;
-          const abilityCount = domain.manifest?.tools?.activate_abilities?.length ?? 0;
-          const mcpCount = domain.manifest?.tools?.activate_mcp?.length ?? 0;
+          const scopeCount = manifest?.platform_scopes?.length ?? 0;
+          const abilityCount = manifest?.ability_ids?.length ?? 0;
+          const mcpCount = manifest?.mcp_server_ids?.length ?? 0;
           return (
             <button
               key={tab.id}
@@ -206,17 +234,17 @@ export function DomainEditorInline({ domain, onSaved, onDelete }: DomainEditorIn
         )}
         {activeTab === "scopes" && (
           <div className="flex-1 overflow-y-auto p-4">
-            <ScopesTab domain={domain} onSaved={onSaved} />
+            <ScopesTab domainId={domain.id} manifest={manifest} onManifestChange={setManifest} onSaved={onSaved} />
           </div>
         )}
         {activeTab === "abilities" && (
           <div className="flex-1 overflow-y-auto p-4">
-            <AbilitiesTab domain={domain} onSaved={onSaved} />
+            <AbilitiesTab domainId={domain.id} manifest={manifest} onManifestChange={setManifest} onSaved={onSaved} />
           </div>
         )}
         {activeTab === "mcp" && (
           <div className="flex-1 overflow-y-auto p-4">
-            <McpTab domain={domain} onSaved={onSaved} />
+            <McpTab domainId={domain.id} manifest={manifest} onManifestChange={setManifest} onSaved={onSaved} />
           </div>
         )}
       </div>
@@ -378,18 +406,25 @@ function TabbedReferencePanel({ onInsertVariable }: { onInsertVariable: (text: s
 }
 
 // ---------------------------------------------------------------------------
-// Helper: update a domain's manifest.tools field
+// Helper: update a domain's manifest assignment fields
 // ---------------------------------------------------------------------------
 
-async function updateDomainTools(
-  domain: Domain,
-  toolsUpdate: Partial<DomainManifest["tools"]>,
+async function updateDomainAssignments(
+  domainId: string,
+  manifest: DomainManifest | null,
+  manifestUpdate: Partial<Pick<DomainManifest, "platform_scopes" | "ability_ids" | "mcp_server_ids">>,
+  onManifestChange: (manifest: DomainManifest) => void,
   onSaved: () => void,
 ) {
-  const manifest = { ...domain.manifest };
-  manifest.tools = { ...manifest.tools, ...toolsUpdate };
-  await updateDomain(domain.id, { manifest });
-  domain.manifest = manifest;
+  if (!manifest) return;
+  const savedDomain = await updateDomain(domainId, manifestUpdate);
+  const nextManifest = {
+    ...manifest,
+    platform_scopes: savedDomain.manifest?.platform_scopes ?? manifestUpdate.platform_scopes ?? manifest.platform_scopes,
+    ability_ids: savedDomain.manifest?.ability_ids ?? manifestUpdate.ability_ids ?? manifest.ability_ids,
+    mcp_server_ids: savedDomain.manifest?.mcp_server_ids ?? manifestUpdate.mcp_server_ids ?? manifest.mcp_server_ids,
+  };
+  onManifestChange(nextManifest);
   onSaved();
 }
 
@@ -397,9 +432,19 @@ async function updateDomainTools(
 // Scopes tab
 // ---------------------------------------------------------------------------
 
-function ScopesTab({ domain, onSaved }: { domain: Domain; onSaved: () => void }) {
+function ScopesTab({
+  domainId,
+  manifest,
+  onManifestChange,
+  onSaved,
+}: {
+  domainId: string;
+  manifest: DomainManifest | null;
+  onManifestChange: (manifest: DomainManifest) => void;
+  onSaved: () => void;
+}) {
   const [saving, setSaving] = useState(false);
-  const scopes = domain.manifest?.tools?.additional_scopes ?? [];
+  const scopes = manifest?.platform_scopes ?? [];
   const scopeSet = new Set(scopes);
 
   const handleToggle = async (scope: string) => {
@@ -409,7 +454,7 @@ function ScopesTab({ domain, onSaved }: { domain: Domain; onSaved: () => void })
       const next = scopeSet.has(scope)
         ? scopes.filter((s) => s !== scope)
         : [...scopes, scope];
-      await updateDomainTools(domain, { additional_scopes: next }, onSaved);
+      await updateDomainAssignments(domainId, manifest, { platform_scopes: next }, onManifestChange, onSaved);
     } catch { /* */ } finally { setSaving(false); }
   };
 
@@ -432,20 +477,30 @@ function ScopesTab({ domain, onSaved }: { domain: Domain; onSaved: () => void })
 // Abilities tab
 // ---------------------------------------------------------------------------
 
-function AbilitiesTab({ domain, onSaved }: { domain: Domain; onSaved: () => void }) {
+function AbilitiesTab({
+  domainId,
+  manifest,
+  onManifestChange,
+  onSaved,
+}: {
+  domainId: string;
+  manifest: DomainManifest | null;
+  onManifestChange: (manifest: DomainManifest) => void;
+  onSaved: () => void;
+}) {
   const { abilities } = useAbilities();
   const [saving, setSaving] = useState(false);
-  const activeAbilities = new Set(domain.manifest?.tools?.activate_abilities ?? []);
+  const activeAbilities = new Set(manifest?.ability_ids ?? []);
 
   const handleToggle = async (ability: Ability) => {
     if (saving) return;
     setSaving(true);
     try {
-      const current = domain.manifest?.tools?.activate_abilities ?? [];
-      const next = activeAbilities.has(ability.name)
-        ? current.filter((n) => n !== ability.name)
-        : [...current, ability.name];
-      await updateDomainTools(domain, { activate_abilities: next }, onSaved);
+      const current = manifest?.ability_ids ?? [];
+      const next = activeAbilities.has(ability.id)
+        ? current.filter((id) => id !== ability.id)
+        : [...current, ability.id];
+      await updateDomainAssignments(domainId, manifest, { ability_ids: next }, onManifestChange, onSaved);
     } catch { /* */ } finally { setSaving(false); }
   };
 
@@ -458,7 +513,7 @@ function AbilitiesTab({ domain, onSaved }: { domain: Domain; onSaved: () => void
           key={ability.id}
           label={ability.display_name || ability.name}
           sublabel={ability.activation_condition || undefined}
-          isOn={activeAbilities.has(ability.name)}
+          isOn={activeAbilities.has(ability.id)}
           isProcessing={saving}
           onToggle={() => handleToggle(ability)}
         />
@@ -471,10 +526,20 @@ function AbilitiesTab({ domain, onSaved }: { domain: Domain; onSaved: () => void
 // MCP tab
 // ---------------------------------------------------------------------------
 
-function McpTab({ domain, onSaved }: { domain: Domain; onSaved: () => void }) {
+function McpTab({
+  domainId,
+  manifest,
+  onManifestChange,
+  onSaved,
+}: {
+  domainId: string;
+  manifest: DomainManifest | null;
+  onManifestChange: (manifest: DomainManifest) => void;
+  onSaved: () => void;
+}) {
   const { mcpServers, isLoading } = useMcpServers();
   const [saving, setSaving] = useState(false);
-  const activeMcp = new Set(domain.manifest?.tools?.activate_mcp ?? []);
+  const activeMcp = new Set(manifest?.mcp_server_ids ?? []);
 
   const externalServers = mcpServers?.filter((s: McpServer) => !s.is_system) ?? [];
 
@@ -482,11 +547,11 @@ function McpTab({ domain, onSaved }: { domain: Domain; onSaved: () => void }) {
     if (saving) return;
     setSaving(true);
     try {
-      const current = domain.manifest?.tools?.activate_mcp ?? [];
-      const next = activeMcp.has(server.name)
-        ? current.filter((n) => n !== server.name)
-        : [...current, server.name];
-      await updateDomainTools(domain, { activate_mcp: next }, onSaved);
+      const current = manifest?.mcp_server_ids ?? [];
+      const next = activeMcp.has(server.id)
+        ? current.filter((id) => id !== server.id)
+        : [...current, server.id];
+      await updateDomainAssignments(domainId, manifest, { mcp_server_ids: next }, onManifestChange, onSaved);
     } catch { /* */ } finally { setSaving(false); }
   };
 
@@ -501,7 +566,7 @@ function McpTab({ domain, onSaved }: { domain: Domain; onSaved: () => void }) {
           label={server.display_name}
           sublabel={server.description ?? undefined}
           badge={server.transport}
-          isOn={activeMcp.has(server.name)}
+          isOn={activeMcp.has(server.id)}
           isProcessing={saving}
           onToggle={() => handleToggle(server)}
         />

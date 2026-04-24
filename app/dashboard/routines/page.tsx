@@ -49,7 +49,7 @@ function RoutinesPageContent() {
         </div>
 
         {activeTab === "tasks" && (
-          <RoutineSection triggerFilter={["task.ready", "chat.message"]} allowCreate={false} />
+          <RoutineSection triggerFilter={["task"]} allowCreate={false} />
         )}
 
         {activeTab === "schedules" && (
@@ -73,7 +73,7 @@ function RoutinesPageContent() {
           </div>
 
           {activeTab === "tasks" && (
-            <RoutineSection triggerFilter={["task.ready", "chat.message"]} />
+            <RoutineSection triggerFilter={["task"]} />
           )}
 
           {activeTab === "schedules" && (

@@ -81,12 +81,14 @@ function MetadataRow({
 
 export function MobileAgentDetail({
   agent,
+  promptConfig,
   models,
   activeTab,
   onTabChange,
   tabs,
 }: {
   agent: AgentDefinition;
+  promptConfig: PromptConfig;
   models: Array<{ id: string; model: string }> | undefined;
   activeTab: MobileAgentTab;
   onTabChange: (tab: MobileAgentTab) => void;
@@ -98,11 +100,6 @@ export function MobileAgentDetail({
   const { executions } = useAgentExecutions(agent.id, 5);
   const assignedModel = models?.find((item) => item.id === agent.model_id);
   const enabledDomains = agentDomains?.filter((item) => item.enabled) ?? [];
-  const promptConfig: PromptConfig = {
-    system_prompt: agent.prompt_config?.system_prompt ?? "",
-    developer_prompt: agent.prompt_config?.developer_prompt ?? "",
-    templates: agent.prompt_config?.templates ?? {},
-  };
 
   return (
     <div className="space-y-4 md:hidden">
@@ -113,7 +110,7 @@ export function MobileAgentDetail({
             color={agent.color}
             size={56}
             className="shrink-0"
-            roleName={agent.name}
+            name={agent.name}
           />
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-lg font-semibold text-gray-950 dark:text-gray-50">

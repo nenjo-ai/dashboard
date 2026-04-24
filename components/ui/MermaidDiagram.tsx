@@ -6,28 +6,84 @@ interface MermaidDiagramProps {
   chart: string;
 }
 
+function normalizeMermaidChart(source: string): string {
+  const fencedBlockMatch = source.match(/```mermaid\s*([\s\S]*?)```/i);
+  const mermaidSource = fencedBlockMatch ? fencedBlockMatch[1] : source;
+
+  const withoutFences = mermaidSource
+    .trim()
+    .replace(/^```mermaid\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  return withoutFences.replace(/^mermaid\s*\n/i, "").trim();
+}
+
 export function MermaidDiagram({ chart }: MermaidDiagramProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const uniqueId = useId().replace(/:/g, "-");
 
   useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const root = document.documentElement;
+    const syncTheme = () => setIsDarkMode(root.classList.contains("dark"));
+
+    syncTheme();
+
+    const observer = new MutationObserver(syncTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
+    const normalizedChart = normalizeMermaidChart(chart);
 
     async function renderDiagram() {
       try {
         const mermaid = (await import("mermaid")).default;
         mermaid.initialize({
           startOnLoad: false,
-          theme: "default",
+          theme: isDarkMode ? "dark" : "default",
           securityLevel: "loose",
           fontFamily: "Inter, system-ui, sans-serif",
+          themeVariables: {
+            background: isDarkMode ? "#020617" : "#f8fafc",
+            mainBkg: isDarkMode ? "#0f172a" : "#ffffff",
+            secondBkg: isDarkMode ? "#1e293b" : "#e2e8f0",
+            tertiaryBkg: isDarkMode ? "#334155" : "#f1f5f9",
+            primaryColor: isDarkMode ? "#0f172a" : "#ffffff",
+            secondaryColor: isDarkMode ? "#1e293b" : "#e2e8f0",
+            tertiaryColor: isDarkMode ? "#334155" : "#f1f5f9",
+            primaryTextColor: isDarkMode ? "#f8fafc" : "#0f172a",
+            secondaryTextColor: isDarkMode ? "#f8fafc" : "#0f172a",
+            tertiaryTextColor: isDarkMode ? "#f8fafc" : "#0f172a",
+            textColor: isDarkMode ? "#f8fafc" : "#0f172a",
+            lineColor: isDarkMode ? "#cbd5e1" : "#334155",
+            primaryBorderColor: isDarkMode ? "#94a3b8" : "#334155",
+            secondaryBorderColor: isDarkMode ? "#cbd5e1" : "#475569",
+            tertiaryBorderColor: isDarkMode ? "#e2e8f0" : "#64748b",
+            clusterBkg: isDarkMode ? "#020617" : "#ffffff",
+            clusterBorder: isDarkMode ? "#64748b" : "#94a3b8",
+            edgeLabelBackground: isDarkMode ? "#020617" : "#ffffff",
+            nodeBorder: isDarkMode ? "#cbd5e1" : "#334155",
+            actorBorder: isDarkMode ? "#cbd5e1" : "#334155",
+            actorBkg: isDarkMode ? "#0f172a" : "#f8fafc",
+            actorTextColor: isDarkMode ? "#f8fafc" : "#0f172a",
+            labelTextColor: isDarkMode ? "#f8fafc" : "#0f172a",
+          },
         });
 
+        await mermaid.parse(normalizedChart, { suppressErrors: false });
         const { svg: renderedSvg } = await mermaid.render(
           `mermaid-${uniqueId}`,
-          chart.trim(),
+          normalizedChart,
         );
 
         if (!cancelled) {
@@ -49,7 +105,7 @@ export function MermaidDiagram({ chart }: MermaidDiagramProps) {
     return () => {
       cancelled = true;
     };
-  }, [chart, uniqueId]);
+  }, [chart, isDarkMode, uniqueId]);
 
   if (error) {
     return (
@@ -119,7 +175,7 @@ export function MermaidDiagram({ chart }: MermaidDiagramProps) {
   return (
     <div
       ref={containerRef}
-      className="flex justify-center overflow-x-auto rounded-lg bg-white p-4 dark:bg-gray-950 [&_svg]:max-w-full"
+      className="not-prose flex justify-center overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-4 text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 [&_svg]:max-w-full [&_svg]:h-auto"
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

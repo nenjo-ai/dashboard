@@ -13,7 +13,7 @@ export function AgentDetailHeader({ agent, models }: AgentDetailHeaderProps) {
 
   return (
     <div className="flex items-start gap-4">
-      <RoleIdenticon roleId={agent.id} color={agent.color} size={48} roleName={agent.name} />
+      <RoleIdenticon roleId={agent.id} color={agent.color} size={48} name={agent.name} />
 
       <div className="min-w-0 flex-1">
         {/* Name row */}

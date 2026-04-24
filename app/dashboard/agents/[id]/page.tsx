@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { useAgent, useModels, useTabParam } from "@/lib/hooks";
+import { fetchAgentPrompt } from "@/lib/api";
 import type { PromptConfig } from "@/lib/types";
 
 import { MobileAgentDetail } from "@/components/agents/MobileAgentDetail";
@@ -129,11 +130,32 @@ export default function AgentDetailPage() {
   const { agent, isLoading, mutate: mutateAgent } = useAgent(agentId);
   const { models } = useModels();
 
-  // Prompt editor state — initialized from agent.prompt_config
+  // Prompt editor state — loaded from the dedicated prompt endpoint.
   const [promptConfig, setPromptConfig] = useState<PromptConfig | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPrompt() {
+      if (!agentId) return;
+      try {
+        const nextPromptConfig = await fetchAgentPrompt(agentId);
+        if (!cancelled) {
+          setPromptConfig(nextPromptConfig);
+        }
+      } catch {
+        // Keep the fallback prompt state if prompt fetch fails.
+      }
+    }
+
+    loadPrompt();
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId]);
+
   // Initialize promptConfig when agent loads (only once)
-  const effectivePromptConfig = promptConfig ?? agent?.prompt_config ?? {
+  const effectivePromptConfig = promptConfig ?? {
     system_prompt: "",
     developer_prompt: "",
     templates: {},
@@ -201,6 +223,7 @@ export default function AgentDetailPage() {
       >
         <MobileAgentDetail
           agent={agent}
+          promptConfig={effectivePromptConfig}
           models={models}
           activeTab={activeTab}
           onTabChange={(tab) => setActiveTab(tab as TabId)}

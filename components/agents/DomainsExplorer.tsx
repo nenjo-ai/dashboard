@@ -985,7 +985,6 @@ function CreateDomainModal({
   const [displayName, setDisplayName] = useState("");
   const [command, setCommand] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1000,14 +999,12 @@ function CreateDomainModal({
         display_name: displayName.trim() || name.trim(),
         command: cmd,
         description: description.trim() || undefined,
-        category: category.trim() || undefined,
       });
       setName("");
       setPath("");
       setDisplayName("");
       setCommand("");
       setDescription("");
-      setCategory("");
       onSaved();
     } catch { /* */ } finally {
       setSaving(false);
@@ -1071,10 +1068,6 @@ function CreateDomainModal({
         <div>
           <Label htmlFor="dm-desc">Description</Label>
           <Textarea id="dm-desc" value={description} onChange={(e) => setDescription(e.target.value.slice(0, 280))} placeholder="What this domain does..." rows={2} maxLength={280} />
-        </div>
-        <div>
-          <Label htmlFor="dm-category">Category</Label>
-          <Input id="dm-category" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="workflow" />
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>

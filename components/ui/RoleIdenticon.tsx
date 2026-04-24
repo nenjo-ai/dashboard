@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { createAvatar } from "@dicebear/core";
 import { rings } from "@dicebear/collection";
 import { AnimatedRoleIdenticon } from "./AnimatedRoleIdenticon";
+import { SystemRoleIcon } from "./SystemRoleIcon";
 
 interface RoleIdenticonProps {
   roleId: string;
@@ -11,7 +12,9 @@ interface RoleIdenticonProps {
   size?: number;
   className?: string;
   animate?: boolean;
-  /** When the role name is "system", renders the hardcoded system icon instead. */
+  /** When the agent name is "system", renders the hardcoded system icon instead. */
+  name?: string;
+  /** Deprecated alias for `name`. */
   roleName?: string;
 }
 
@@ -21,8 +24,22 @@ export function RoleIdenticon({
   size = 32,
   className,
   animate = false,
+  name,
   roleName,
 }: RoleIdenticonProps) {
+  const resolvedName = name ?? roleName;
+  const isSystemRole = resolvedName?.trim().toLowerCase() === "system";
+
+  if (isSystemRole) {
+    return (
+      <SystemRoleIcon
+        size={size}
+        className={className}
+        animate={animate}
+      />
+    );
+  }
+
   const dataUri = useMemo(() => {
     // DiceBear expects hex colors without the '#' prefix
     const hex = color.startsWith("#") ? color.slice(1) : color;

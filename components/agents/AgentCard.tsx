@@ -104,7 +104,7 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
     >
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-3 flex-1">
-          <RoleIdenticon roleId={agent.id} color={agent.color} size={40} className="shrink-0 mt-0.5" roleName={agent.name} />
+          <RoleIdenticon roleId={agent.id} color={agent.color} size={40} className="shrink-0 mt-0.5" name={agent.name} />
           {editing ? (
             /* Edit mode */
             <div className="flex-1 space-y-2">

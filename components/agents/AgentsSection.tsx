@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAgents } from "@/lib/hooks";
-import { createAgent, updateAgentPrompt, deleteAgent } from "@/lib/api";
+import { createAgent, fetchAgentPrompt, updateAgentPrompt, deleteAgent } from "@/lib/api";
 import { AgentCard } from "./AgentCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
@@ -63,7 +63,8 @@ export function AgentsSection() {
         color: newAgentColor,
       });
       if (sourceAgent) {
-        await updateAgentPrompt(created.id, sourceAgent.prompt_config);
+        const sourcePromptConfig = await fetchAgentPrompt(sourceAgent.id);
+        await updateAgentPrompt(created.id, sourcePromptConfig);
       }
       setNewAgentName("");
       setNewAgentDescription("");

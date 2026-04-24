@@ -9,8 +9,12 @@ import { Button } from "@/components/ui/Button";
 /** Group scopes by resource for a cleaner layout. */
 const SCOPE_GROUPS = [
   { label: "Agents", scopes: ["agents:read", "agents:write"] },
+  { label: "Abilities", scopes: ["abilities:read", "abilities:write"] },
+  { label: "Domains", scopes: ["domains:read", "domains:write"] },
   { label: "Projects", scopes: ["projects:read", "projects:write"] },
   { label: "Routines", scopes: ["routines:read", "routines:write"] },
+  { label: "Councils", scopes: ["councils:read", "councils:write"] },
+  { label: "Context Blocks", scopes: ["context_blocks:read", "context_blocks:write"] },
   { label: "MCP Servers", scopes: ["mcp_servers:read", "mcp_servers:write"] },
   { label: "Chat", scopes: ["chat:read", "chat:write"] },
   { label: "Models", scopes: ["models:read", "models:write"] },

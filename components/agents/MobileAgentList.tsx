@@ -43,7 +43,7 @@ function MobileAgentRow({ agent }: { agent: AgentDefinition }) {
           color={agent.color}
           size={48}
           className="shrink-0"
-          roleName={agent.name}
+          name={agent.name}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
