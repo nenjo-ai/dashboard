@@ -36,7 +36,7 @@ export function RoutineList({
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [newTrigger, setNewTrigger] = useState("task.ready");
+  const [newTrigger, setNewTrigger] = useState("task");
   const [newSchedule, setNewSchedule] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);

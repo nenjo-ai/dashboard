@@ -72,7 +72,7 @@ function ChatAgentDropdown({ projectId }: { projectId: string }) {
                   color={agent.color}
                   size={22}
                   className="shrink-0"
-                  roleName={agent.name}
+                  name={agent.name}
                 />
                 <div className="min-w-0 flex-1">
                   <p className="font-medium truncate">{agent.name}</p>

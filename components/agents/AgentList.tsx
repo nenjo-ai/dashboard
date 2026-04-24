@@ -22,12 +22,12 @@ interface AgentListProps {
   onCreate?: () => void;
 }
 
-/** Check if a model has a given agent (via tag match). */
+/** Check if a model is assigned directly to an agent. */
 function modelHasAgent(
   model: Model,
-  agentName: string,
+  agentId: string,
 ): boolean {
-  return model.tags.includes(agentName);
+  return model.id === agentId;
 }
 
 function CardSkeleton() {
@@ -102,7 +102,7 @@ export function AgentList({
     for (const agentDef of roles) {
       let count = 0;
       for (const a of agents) {
-        if (modelHasAgent(a, agentDef.name)) {
+        if (modelHasAgent(a, agentDef.model_id ?? "")) {
           count++;
         }
       }
@@ -123,7 +123,8 @@ export function AgentList({
     if (agentFilter === "all") return agents;
     const agentDef = roles.find((r) => r.id === agentFilter);
     if (!agentDef) return agents;
-    return agents.filter((a) => modelHasAgent(a, agentDef.name));
+    if (!agentDef.model_id) return [];
+    return agents.filter((a) => modelHasAgent(a, agentDef.model_id ?? ""));
   }, [agents, agentFilter, roles]);
 
   if (isLoading) {
@@ -194,7 +195,7 @@ export function AgentList({
                     : { color: agentColorText(agentDef.color) }
                 }
               >
-                <RoleIdenticon roleId={agentDef.id} color={agentDef.color} size={14} roleName={agentDef.name} />
+                <RoleIdenticon roleId={agentDef.id} color={agentDef.color} size={14} name={agentDef.name} />
                 {agentDef.name}
                 <span
                   className="rounded-full px-1.5 py-0.5 text-[10px]"

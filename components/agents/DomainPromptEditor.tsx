@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { updateDomain } from "@/lib/api";
+import { fetchDomainManifest, updateDomainManifest } from "@/lib/api";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference } from "./TemplateVariableReference";
 import { Button } from "@/components/ui/Button";
 import { Globe } from "lucide-react";
-import type { Domain } from "@/lib/types";
+import type { Domain, DomainManifest } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,14 +50,35 @@ export function DomainPromptEditor({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const editorRef = useRef<CodeTextareaHandle>(null);
+  const [manifest, setManifest] = useState<DomainManifest | null>(domain.manifest ?? null);
 
   // Local editable state
   const [systemAddon, setSystemAddon] = useState(domain.manifest?.prompt?.system_addon ?? "");
 
   // Reset when domain changes
   useEffect(() => {
+    setManifest(domain.manifest ?? null);
     setSystemAddon(domain.manifest?.prompt?.system_addon ?? "");
   }, [domain]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const nextManifest = await fetchDomainManifest(domain.id);
+        if (cancelled) return;
+        setManifest(nextManifest);
+        setSystemAddon(nextManifest.prompt?.system_addon ?? "");
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load domain manifest");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [domain.id]);
 
   // --- Save ----------------------------------------------------------------
 
@@ -66,12 +87,17 @@ export function DomainPromptEditor({
     setError(null);
     setSaved(false);
     try {
-      const manifest = { ...domain.manifest };
-      manifest.prompt = {
-        ...manifest.prompt,
+      const currentManifest = manifest ?? domain.manifest;
+      if (!currentManifest) {
+        throw new Error("Domain manifest is not loaded yet");
+      }
+      const nextManifest: DomainManifest = { ...currentManifest };
+      nextManifest.prompt = {
+        ...nextManifest.prompt,
         system_addon: systemAddon,
       };
-      await updateDomain(domain.id, { manifest });
+      const savedManifest = await updateDomainManifest(domain.id, nextManifest);
+      setManifest(savedManifest);
       setSaved(true);
       onSaved();
       setTimeout(() => setSaved(false), 1500);
@@ -80,7 +106,7 @@ export function DomainPromptEditor({
     } finally {
       setSaving(false);
     }
-  }, [domain, systemAddon, onSaved]);
+  }, [domain, manifest, systemAddon, onSaved]);
 
   // Escape to close, Cmd/Ctrl+S to save
   useEffect(() => {

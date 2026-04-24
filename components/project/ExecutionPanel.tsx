@@ -515,7 +515,7 @@ function TaskRow({ task }: { task: ExecutionTask }) {
                       size={14}
                       className="shrink-0"
                       animate={isRunning}
-                      roleName={agent.agent_name ?? undefined}
+                      name={agent.agent_name ?? undefined}
                     />
                   ) : (
                     <StatusIcon status={step.event_type} />

@@ -213,7 +213,7 @@ export default function GlobalSessionList({
                   return editingId === session.id ? (
                     <div className="flex min-w-0 items-center gap-2.5">
                       {agent && (
-                        <RoleIdenticon roleId={agent.id} color={agent.color} size={26} className="shrink-0" roleName={agent.name} />
+                        <RoleIdenticon roleId={agent.id} color={agent.color} size={26} className="shrink-0" name={agent.name} />
                       )}
                       <input
                         ref={editRef}
@@ -231,7 +231,7 @@ export default function GlobalSessionList({
                   ) : (
                     <div className="flex items-center gap-2.5">
                       {agent ? (
-                        <RoleIdenticon roleId={agent.id} color={agent.color} size={26} className="shrink-0" roleName={agent.name} />
+                        <RoleIdenticon roleId={agent.id} color={agent.color} size={26} className="shrink-0" name={agent.name} />
                       ) : (
                         <div className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-gray-200 text-[10px] font-bold text-gray-500 dark:bg-gray-700 dark:text-gray-400">
                           {displayAgentName(session).charAt(0).toUpperCase()}

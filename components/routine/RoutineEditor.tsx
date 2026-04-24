@@ -56,7 +56,7 @@ const TEMP_PREFIX = "__temp_";
 // Edge styling helpers
 // ---------------------------------------------------------------------------
 
-/** Edge styling based on condition. Gate/cron/lambda edges show pass/fail labels. */
+/** Edge styling based on condition. Gate/cron edges show pass/fail labels. */
 function conditionEdgeStyle(condition: RoutineEdgeCondition, isFromGate: boolean): {
   stroke: string;
   animated: boolean;
@@ -64,10 +64,8 @@ function conditionEdgeStyle(condition: RoutineEdgeCondition, isFromGate: boolean
 } {
   switch (condition) {
     case "on_pass":
-    case "on_review_pass":
       return { stroke: "#34d399", animated: false, label: isFromGate ? "pass" : undefined };
     case "on_fail":
-    case "on_review_fail":
       return { stroke: "#f87171", animated: true, label: isFromGate ? "fail" : undefined };
     default:
       return { stroke: "#9ca3af", animated: false, label: undefined };
@@ -115,7 +113,6 @@ function stepsToNodes(
         agentRole: roleName,
         councilId: step.council_id ?? null,
         councilName: council?.name ?? null,
-        lambdaId: step.lambda_id ?? null,
         delegationStrategy: council?.delegation_strategy ?? null,
         memberCount: council?.members?.length ?? null,
         config: step.config,
@@ -166,7 +163,7 @@ function routineEdgesToFlowEdges(edges: RoutineEdgeType[], steps: RoutineStep[])
     // For gate/cron edges, map condition back to the correct source handle
     let sourceHandle: string | undefined;
     if (isFromGateOrCron) {
-      if (edge.condition === "on_fail" || edge.condition === "on_review_fail") {
+      if (edge.condition === "on_fail") {
         sourceHandle = HANDLE_GATE_FAIL;
       } else {
         sourceHandle = HANDLE_GATE_PASS;
@@ -197,7 +194,6 @@ interface StepUpdatePayload {
   step_type?: RoutineStepType;
   agent_id?: string | null;
   council_id?: string;
-  lambda_id?: string | null;
   config?: Record<string, unknown>;
 }
 
@@ -452,7 +448,7 @@ function RoutineEditorInner({
   // ── Add Step (local only) ──────────────────────────────────────────────
 
   const handleAddStep = useCallback(
-    (stepType: RoutineStepType, roleId?: string, councilId?: string, lambdaId?: string) => {
+    (stepType: RoutineStepType, roleId?: string, councilId?: string) => {
       const council = councilId ? councils?.find((c) => c.id === councilId) : null;
       const role = roleId ? roles.find(r => r.id === roleId) : null;
       const roleName = role?.name ?? null;
@@ -464,9 +460,7 @@ function RoutineEditorInner({
             ? "Agent Step"
             : stepType === "cron"
               ? "Cron Step"
-              : stepType === "lambda"
-                ? "Lambda Step"
-                : stepType === "gate"
+              : stepType === "gate"
                   ? "Quality Gate"
                   : stepType === "terminal_fail"
                     ? "Failed"
@@ -478,8 +472,6 @@ function RoutineEditorInner({
 
       const config: Record<string, unknown> = {};
       if (roleId) config.agent_id = roleId;
-      if (lambdaId && stepType === "cron") config.lambda_id = lambdaId;
-
       const tempId = nextTempId("step");
 
       const newNode: Node = {
@@ -494,7 +486,6 @@ function RoutineEditorInner({
           agentRole: roleName,
           councilId: councilId ?? null,
           councilName: council?.name ?? null,
-          lambdaId: lambdaId ?? null,
           delegationStrategy: council?.delegation_strategy ?? null,
           memberCount: council?.members?.length ?? null,
           config,
@@ -509,7 +500,6 @@ function RoutineEditorInner({
           step_type: stepType,
           agent_id: roleId ?? null,
           council_id: councilId,
-          lambda_id: lambdaId ?? null,
           config,
         });
         return next;
@@ -556,7 +546,6 @@ function RoutineEditorInner({
               agentRole: role ? role.name : (data.agent_id !== undefined ? null : d.agentRole),
               councilId: data.council_id !== undefined ? (data.council_id ?? null) : d.councilId,
               councilName: council ? council.name : (data.council_id !== undefined ? null : d.councilName),
-              lambdaId: data.lambda_id !== undefined ? data.lambda_id : d.lambdaId,
               delegationStrategy: council?.delegation_strategy ?? d.delegationStrategy,
               memberCount: council?.members?.length ?? d.memberCount,
               config: data.config ?? d.config,
@@ -612,7 +601,6 @@ function RoutineEditorInner({
           step_type: (pendingUpdate?.step_type ?? data.stepType) as RoutineStepType,
           agent_id: pendingUpdate?.agent_id ?? (data.config?.agent_id as string) ?? data.agentId ?? undefined,
           council_id: pendingUpdate?.council_id ?? data.councilId ?? undefined,
-          lambda_id: pendingUpdate?.lambda_id ?? data.lambdaId ?? undefined,
           config: pendingUpdate?.config ?? data.config ?? {},
           position_x: Math.round(node.position.x),
           position_y: Math.round(node.position.y),
@@ -787,7 +775,6 @@ function RoutineEditorInner({
             stepType={selectedNodeData.stepType}
             agentId={selectedNodeData.agentId}
             councilId={selectedNodeData.councilId}
-            lambdaId={selectedNodeData.lambdaId}
             config={selectedNodeData.config}
             agents={agents}
             councils={councils}

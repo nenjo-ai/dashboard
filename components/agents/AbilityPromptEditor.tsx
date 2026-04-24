@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { updateAbility } from "@/lib/api";
+import { fetchAbilityPrompt, updateAbilityPrompt } from "@/lib/api";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference } from "./TemplateVariableReference";
 import { Button } from "@/components/ui/Button";
@@ -52,12 +52,24 @@ export function AbilityPromptEditor({
   const editorRef = useRef<CodeTextareaHandle>(null);
 
   // Local editable state
-  const [instructions, setInstructions] = useState(initialAbility.prompt);
+  const [instructions, setInstructions] = useState(initialAbility.prompt ?? "");
 
   // Reset when ability changes
   useEffect(() => {
-    setInstructions(initialAbility.prompt);
+    setInstructions(initialAbility.prompt ?? "");
   }, [initialAbility]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAbilityPrompt(initialAbility.id)
+      .then((value) => {
+        if (!cancelled) setInstructions(value);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [initialAbility.id]);
 
   // --- Save ----------------------------------------------------------------
 
@@ -66,9 +78,7 @@ export function AbilityPromptEditor({
     setError(null);
     setSaved(false);
     try {
-      await updateAbility(initialAbility.id, {
-        prompt: instructions,
-      });
+      await updateAbilityPrompt(initialAbility.id, instructions);
       setSaved(true);
       onSaved();
       setTimeout(() => setSaved(false), 1500);

@@ -129,7 +129,7 @@ const MessageBubble = memo(function MessageBubble({
           color={activeAgent.color}
           size={32}
           className="shrink-0"
-          roleName={activeAgent.name}
+          name={activeAgent.name}
         />
       ) : (
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vivid-tangerine-100 text-xs font-bold text-vivid-tangerine-700">
@@ -215,7 +215,7 @@ const TypingIndicator = memo(function TypingIndicator({ activeAgent, tools, prev
           size={32}
           className="shrink-0"
           animate={true}
-          roleName={activeAgent.name}
+          name={activeAgent.name}
         />
       ) : (
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vivid-tangerine-100 text-xs font-bold text-vivid-tangerine-700">
@@ -871,7 +871,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
                       color={agent.color}
                       size={20}
                       className="shrink-0"
-                      roleName={agent.name}
+                      name={agent.name}
                     />
                     <span className="font-medium text-gray-900 dark:text-gray-100">
                       @{agent.name}

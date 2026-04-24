@@ -147,7 +147,7 @@ async function downloadFolderAsZip(folder: FolderNode) {
     const filePath = relativePath
       ? `${relativePath}/${block.name}.md`
       : `${block.name}.md`;
-    zip.file(filePath, block.template);
+    zip.file(filePath, block.template ?? "");
   }
   const blob = await zip.generateAsync({ type: "blob" });
   const url = URL.createObjectURL(blob);

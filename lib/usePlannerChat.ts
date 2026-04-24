@@ -237,19 +237,42 @@ function isLikelySameAssistantContent(existing: string, incoming: string): boole
   return incoming.startsWith(existing) || existing.startsWith(incoming);
 }
 
+function normalizeResolvedAssistantContent(content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) return content;
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (typeof parsed === "string") {
+      return parsed;
+    }
+    if (parsed && typeof parsed === "object") {
+      const record = parsed as Record<string, unknown>;
+      const finalOutput = record.final_output ?? record.message ?? record.text ?? record.output;
+      if (typeof finalOutput === "string") {
+        return finalOutput;
+      }
+    }
+  } catch {
+    // Keep the original plaintext if it is not JSON-encoded.
+  }
+
+  return content;
+}
+
 async function resolvePersistedMessageContent(
   message: Pick<PersistedChatMessage, "content" | "metadata">,
 ): Promise<string> {
   const encryptedPayload = message.metadata?.encrypted_payload;
   if (!encryptedPayload) {
-    return message.content;
+    return normalizeResolvedAssistantContent(message.content);
   }
 
   try {
     const storedAck = await loadStoredAccountContentKey();
     const decrypted = await decryptContentPayload(encryptedPayload);
     if (decrypted !== null) {
-      return decrypted;
+      return normalizeResolvedAssistantContent(decrypted);
     }
     console.warn("Persisted chat decrypt returned null", {
       hasAck: Boolean(storedAck),
@@ -262,10 +285,10 @@ async function resolvePersistedMessageContent(
     await warmAccountContentKey();
     const retried = await decryptContentPayload(encryptedPayload);
     if (retried !== null) {
-      return retried;
+      return normalizeResolvedAssistantContent(retried);
     }
     return message.content.trim()
-      ? message.content
+      ? normalizeResolvedAssistantContent(message.content)
       : "[Encrypted assistant message could not be decrypted]";
   } catch (error) {
     console.warn("Failed to decrypt persisted chat content", {
@@ -277,7 +300,7 @@ async function resolvePersistedMessageContent(
       keyVersion: encryptedPayload.key_version,
     });
     return message.content.trim()
-      ? message.content
+      ? normalizeResolvedAssistantContent(message.content)
       : "[Encrypted assistant message could not be decrypted]";
   }
 }
@@ -290,7 +313,7 @@ async function resolveEncryptedPreview(
     try {
       const storedAck = await loadStoredAccountContentKey();
       const decrypted = await decryptContentPayload(encryptedPayload);
-      if (decrypted) return decrypted;
+      if (decrypted) return normalizeResolvedAssistantContent(decrypted);
       console.warn("Live preview decrypt returned null", {
         hasAck: Boolean(storedAck),
         accountId: encryptedPayload.account_id,
@@ -301,7 +324,7 @@ async function resolveEncryptedPreview(
       });
       await warmAccountContentKey();
       const retried = await decryptContentPayload(encryptedPayload);
-      if (retried) return retried;
+      if (retried) return normalizeResolvedAssistantContent(retried);
     } catch (error) {
       console.warn("Failed to decrypt live preview", {
         error,
@@ -314,7 +337,7 @@ async function resolveEncryptedPreview(
     }
   }
   const trimmed = plaintext?.trim();
-  return trimmed ? trimmed : undefined;
+  return trimmed ? normalizeResolvedAssistantContent(trimmed) : undefined;
 }
 
 async function resolveEncryptedPayloadJson<T extends Record<string, unknown>>(
@@ -666,28 +689,58 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       const raw = sessionStorage.getItem(LOCAL_CHAT_SEED_KEY);
       if (!raw) return;
 
-      const seeded = JSON.parse(raw) as { session_id: string; message: string };
+      const seeded = JSON.parse(raw) as {
+        session_id: string;
+        message: string;
+        timestamp?: string;
+      };
       if (seeded.session_id !== activeSessionId) return;
 
       setMessages((prev) => {
+        const sessionCreatedAt =
+          sessions.find((session) => session.id === activeSessionId)?.created_at;
+        const seededTimestamp =
+          seeded.timestamp
+          ?? sessionCreatedAt
+          ?? prev[prev.length - 1]?.timestamp
+          ?? new Date().toISOString();
+
+        const existingSeedIndex = prev.findIndex(
+          (m) => m.id === `local-seed-${activeSessionId}`,
+        );
+        if (existingSeedIndex >= 0) {
+          return prev.map((m, index) =>
+            index === existingSeedIndex
+              ? {
+                  ...m,
+                  content: seeded.message,
+                  timestamp: seededTimestamp,
+                }
+              : m,
+          ).sort(
+            (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+          );
+        }
+
         if (prev.some((m) => m.role === "assistant" && m.content === seeded.message)) {
           return prev;
         }
 
-        return [
-          {
-            id: `local-seed-${activeSessionId}`,
-            role: "assistant",
-            content: seeded.message,
-            timestamp: new Date().toISOString(),
-          },
-          ...prev,
-        ];
+        const seededMessage: ChatMessage = {
+          id: `local-seed-${activeSessionId}`,
+          role: "assistant",
+          content: seeded.message,
+          timestamp: seededTimestamp,
+        };
+
+        return [...prev, seededMessage].sort(
+          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+        );
       });
     } catch {
       // ignore malformed seed data
     }
-  }, [activeSessionId, isLoadingHistory]);
+  }, [activeSessionId, isLoadingHistory, sessions]);
 
   // Restore active domain session from backend on mount/role switch
   useEffect(() => {

@@ -795,8 +795,12 @@ export const EXCLUSIVE_CAPABILITIES = ["chat", "cron"] as const;
 
 export const MCP_RESOURCE_SCOPES = [
   "agents:read", "agents:write",
+  "abilities:read", "abilities:write",
+  "domains:read", "domains:write",
   "projects:read", "projects:write",
   "routines:read", "routines:write",
+  "councils:read", "councils:write",
+  "context_blocks:read", "context_blocks:write",
   "mcp_servers:read", "mcp_servers:write",
   "chat:read", "chat:write",
   "models:read", "models:write",
@@ -851,7 +855,7 @@ export interface ContextBlock {
   path: string;
   display_name: string | null;
   description: string | null;
-  template: string;
+  template?: string;
   is_system: boolean;
   source_block_id: string | null;
   created_by: string | null;
@@ -871,7 +875,6 @@ export interface UpdateContextBlockRequest {
   name?: string;
   display_name?: string;
   description?: string;
-  template?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -885,13 +888,15 @@ export interface Ability {
   display_name: string | null;
   description: string | null;
   activation_condition: string;
-  prompt: string;
+  prompt?: string;
   platform_scopes: string[];
   mcp_server_ids: string[];
   is_system: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  customized?: boolean;
+  source_ability_id?: string | null;
 }
 
 export interface CreateAbilityRequest {
@@ -909,7 +914,6 @@ export interface UpdateAbilityRequest {
   display_name?: string;
   description?: string;
   activation_condition?: string;
-  prompt?: string;
   platform_scopes?: string[];
   mcp_server_ids?: string[];
 }
@@ -947,24 +951,21 @@ export interface CreateApiKeyResponse {
 // ---------------------------------------------------------------------------
 
 export type RoutineTrigger =
-  | "task.ready"
-  | "chat.message"
+  | "task"
   | "cron";
 
 export const ROUTINE_TRIGGERS: { id: RoutineTrigger; label: string }[] = [
-  { id: "task.ready", label: "Task Ready" },
-  { id: "chat.message", label: "Chat Message" },
+  { id: "task", label: "Task" },
   { id: "cron", label: "Cron / Scheduled" },
 ];
 
-export type RoutineStepType = "agent" | "gate" | "terminal" | "terminal_fail" | "council" | "cron" | "lambda";
+export type RoutineStepType = "agent" | "gate" | "terminal" | "terminal_fail" | "council" | "cron";
 
 export const ROUTINE_STEP_TYPES: { id: RoutineStepType; label: string }[] = [
   { id: "agent", label: "Agent" },
   { id: "council", label: "Council" },
   { id: "cron", label: "Cron" },
   { id: "gate", label: "Gate" },
-  { id: "lambda", label: "Lambda" },
   { id: "terminal", label: "Terminal" },
   { id: "terminal_fail", label: "Terminal (Fail)" },
 ];
@@ -972,16 +973,12 @@ export const ROUTINE_STEP_TYPES: { id: RoutineStepType; label: string }[] = [
 export type RoutineEdgeCondition =
   | "always"
   | "on_pass"
-  | "on_fail"
-  | "on_review_pass"
-  | "on_review_fail";
+  | "on_fail";
 
 export const ROUTINE_EDGE_CONDITIONS: { id: RoutineEdgeCondition; label: string }[] = [
   { id: "always", label: "Always" },
   { id: "on_pass", label: "On Pass" },
   { id: "on_fail", label: "On Fail" },
-  { id: "on_review_pass", label: "On Review Pass" },
-  { id: "on_review_fail", label: "On Review Fail" },
 ];
 
 export interface Routine {
@@ -1006,10 +1003,8 @@ export interface RoutineStep {
   routine_id: string;
   name: string;
   step_type: RoutineStepType;
-  model_id: string | null;
   council_id: string | null;
   agent_id: string | null;
-  lambda_id: string | null;
   config: Record<string, unknown>;
   position_x: number; // i32 from backend
   position_y: number; // i32 from backend
@@ -1070,10 +1065,8 @@ export interface UpdateRoutineRequest {
 export interface CreateStepRequest {
   name: string;
   step_type?: RoutineStepType;
-  model_id?: string;
   council_id?: string;
   agent_id?: string;
-  lambda_id?: string;
   config?: Record<string, unknown>;
   position_x?: number;
   position_y?: number;
@@ -1083,10 +1076,8 @@ export interface CreateStepRequest {
 export interface UpdateStepRequest {
   name?: string;
   step_type?: RoutineStepType;
-  model_id?: string;
   council_id?: string;
   agent_id?: string | null;
-  lambda_id?: string | null;
   config?: Record<string, unknown>;
   position_x?: number;
   position_y?: number;
@@ -1104,10 +1095,8 @@ export interface SaveRoutineGraphStepRequest {
   id?: string;
   name: string;
   step_type: RoutineStepType;
-  model_id?: string;
   council_id?: string;
   agent_id?: string | null;
-  lambda_id?: string | null;
   config?: Record<string, unknown>;
   position_x: number;
   position_y: number;
@@ -1172,8 +1161,8 @@ export interface AgentDefinition {
   description: string | null;
   created_by: string | null;
   is_system: boolean;
-  /** Prompt configuration (JSONB) */
-  prompt_config: PromptConfig;
+  /** Prompt configuration. Loaded separately from the prompt endpoint when needed. */
+  prompt_config?: PromptConfig;
   color: string;
   created_at: string;
   updated_at: string;
@@ -1185,7 +1174,16 @@ export interface AgentDefinition {
   platform_scopes: string[];
   /** The model assigned directly to this agent. */
   model_id: string | null;
+  model_name?: string | null;
+  domain_ids?: string[];
+  mcp_server_ids?: string[];
+  ability_ids?: string[];
   heartbeat?: AgentHeartbeat | null;
+}
+
+export interface PromptConfigResponse {
+  prompt_config?: PromptConfig | null;
+  encrypted_payload?: EncryptedPayload | null;
 }
 
 export interface AgentHeartbeat {
@@ -1246,7 +1244,9 @@ export interface PromptConfig {
   system_prompt: string;
   /** Developer prompt — sent as a separate `developer` message to OpenAI-spec models, combined with system prompt for others. */
   developer_prompt: string;
-  /** Task-specific templates (task_task, gate_eval, cron_task, heartbeat_task). */
+  /** Task-specific templates keyed by Nenjo's accepted wire names:
+   * `task`, `chat`, `gate`, `cron`, `heartbeat`.
+   */
   templates: Record<string, string>;
   /** Memory profile — guides what agents remember and retrieval priorities. */
   memory_profile?: MemoryProfile;
@@ -1395,7 +1395,7 @@ export interface Domain {
   display_name: string;
   description: string | null;
   command: string;
-  manifest: DomainManifest;
+  manifest?: DomainManifest;
   category: string | null;
   tags: string[];
   is_system: boolean;
@@ -1405,36 +1405,15 @@ export interface Domain {
 }
 
 export interface DomainManifest {
-  schema_version: number;
-  domain_type: string;
   prompt: DomainPromptConfig;
-  tools: DomainToolConfig;
-  artifact?: DomainArtifactConfig;
-  session: DomainSessionConfig;
+  platform_scopes?: string[];
+  ability_ids?: string[];
+  mcp_server_ids?: string[];
+  session?: DomainSessionConfig;
 }
 
 export interface DomainPromptConfig {
   system_addon?: string;
-  guidelines: string[];
-  entry_message?: string;
-  exit_message?: string;
-}
-
-export interface DomainToolConfig {
-  /** Platform scopes escalated when this domain is active (e.g. "routines:write"). */
-  additional_scopes?: string[];
-  /** External MCP server names to activate for this domain. */
-  activate_mcp?: string[];
-  /** Ability names to activate for this domain. */
-  activate_abilities?: string[];
-}
-
-export interface DomainArtifactConfig {
-  type: string;
-  format: string;
-  filename_template?: string;
-  schema?: Record<string, unknown>;
-  output_template?: string;
 }
 
 export interface DomainSessionConfig {
@@ -1461,19 +1440,9 @@ export interface DomainSession {
   domain_id: string;
   user_id: string;
   status: "active" | "completed" | "cancelled";
-  artifact_draft: Record<string, unknown>;
   turn_count: number;
   created_at: string;
   updated_at: string;
-}
-
-export interface DomainArtifact {
-  id: string;
-  session_id: string;
-  document_id: string;
-  artifact_type: string;
-  metadata: Record<string, unknown>;
-  created_at: string;
 }
 
 export interface CreateDomainRequest {
@@ -1492,9 +1461,11 @@ export interface UpdateDomainRequest {
   display_name?: string;
   description?: string;
   command?: string;
-  manifest?: DomainManifest;
   category?: string;
   tags?: string[];
+  platform_scopes?: string[];
+  ability_ids?: string[];
+  mcp_server_ids?: string[];
 }
 
 // ---------------------------------------------------------------------------

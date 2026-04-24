@@ -17,7 +17,6 @@ export interface StepNodeData {
   agentRole: string | null; // role_id from DB
   councilId: string | null;
   councilName: string | null;
-  lambdaId: string | null;
   delegationStrategy: string | null;
   memberCount: number | null;
   config: Record<string, unknown>;
@@ -58,12 +57,6 @@ const STEP_STYLES: Record<RoutineStepType, { bg: string; border: string; icon: s
     border: "border-cyan-300 dark:border-cyan-600",
     icon: "⟳",
     iconBg: "bg-cyan-100 text-cyan-600 dark:bg-cyan-900/50 dark:text-cyan-300",
-  },
-  lambda: {
-    bg: "theme-surface",
-    border: "border-orange-300 dark:border-orange-600",
-    icon: "\u03BB",
-    iconBg: "bg-orange-100 text-orange-600 dark:bg-orange-900/50 dark:text-orange-300",
   },
   terminal_fail: {
     bg: "theme-surface",
@@ -140,7 +133,7 @@ function RoutineStepNodeInner({ data, selected }: NodeProps) {
       </div>
 
       {/* Output handles */}
-      {nodeData.stepType === "gate" || nodeData.stepType === "cron" || nodeData.stepType === "lambda" ? (
+      {nodeData.stepType === "gate" || nodeData.stepType === "cron" ? (
         <>
           {/* Gate: pass-out (bottom-left, green) */}
           <Handle

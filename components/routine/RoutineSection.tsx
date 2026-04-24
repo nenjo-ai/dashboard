@@ -38,7 +38,7 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
   const availableTriggers = triggerFilter
     ? ROUTINE_TRIGGERS.filter((t) => triggerFilter.includes(t.id))
     : ROUTINE_TRIGGERS;
-  const [newTrigger, setNewTrigger] = useState<RoutineTrigger>(availableTriggers[0]?.id ?? "task.ready");
+  const [newTrigger, setNewTrigger] = useState<RoutineTrigger>(availableTriggers[0]?.id ?? "task");
   const [newSchedule, setNewSchedule] = useState("");
 
   // ── Delete state ────────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
   const resetForm = () => {
     setNewName("");
     setNewDescription("");
-    setNewTrigger(availableTriggers[0]?.id ?? "task.ready");
+    setNewTrigger(availableTriggers[0]?.id ?? "task");
     setNewSchedule("");
     setShowCreate(false);
   };

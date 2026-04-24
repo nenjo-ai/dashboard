@@ -76,10 +76,10 @@ interface PromptPreviewModalProps {
 }
 
 const TASK_TYPES = [
-  { id: "task_task", label: "Task" },
-  { id: "gate_eval", label: "Gate" },
-  { id: "cron_task", label: "Cron" },
-  { id: "heartbeat_task", label: "Heartbeat" },
+  { id: "task", label: "Task" },
+  { id: "gate", label: "Gate" },
+  { id: "cron", label: "Cron" },
+  { id: "heartbeat", label: "Heartbeat" },
 ];
 
 const PROMPT_TABS = [
@@ -95,7 +95,7 @@ export function PromptPreviewModal({
   onClose,
   roleId,
 }: PromptPreviewModalProps) {
-  const [selectedTaskType, setSelectedTaskType] = useState("task_task");
+  const [selectedTaskType, setSelectedTaskType] = useState("task");
   const [activeTab, setActiveTab] = useState<PromptTab>("system");
   const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
   const [selectedAbilityId, setSelectedAbilityId] = useState<string | null>(null);
@@ -460,7 +460,7 @@ function AbilityItem({
 // ---------------------------------------------------------------------------
 
 export function PromptPreviewContent({ roleId }: { roleId: string }) {
-  const [selectedTaskType, setSelectedTaskType] = useState("task_task");
+  const [selectedTaskType, setSelectedTaskType] = useState("task");
   const [activeTab, setActiveTab] = useState<PromptTab>("system");
   const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
   const [selectedAbilityId, setSelectedAbilityId] = useState<string | null>(null);

@@ -18,14 +18,15 @@ import type {
   AddCouncilMemberRequest,
   AgentDefinition,
   AgentHeartbeat,
+  PromptConfig,
   CreateAgentRequest,
   UpdateAgentRequest,
   Domain,
+  DomainManifest,
   CreateDomainRequest,
   UpdateDomainRequest,
   AgentDomainAssignment,
   DomainSession,
-  DomainArtifact,
   PersistedChatMessage,
   ChatMessagePage,
   ChatSession,
@@ -42,6 +43,7 @@ import type {
   ChatSessionDeleteRequest,
   ChatStreamRequest,
   EncryptedPayload,
+  PromptConfigResponse,
 } from "./types";
 import { decryptContentPayload, encryptContentPayload } from "./cryptoContent";
 
@@ -195,6 +197,17 @@ async function authFetch(
 
   if (!res.ok) {
     const body = await res.text().catch(() => "Unknown error");
+    const contentType = res.headers.get("content-type") ?? "";
+    if (
+      res.status === 404 &&
+      contentType.includes("text/html") &&
+      resolvedUrl.includes("/api/v1/")
+    ) {
+      throw new ApiError(
+        "Dashboard API request hit the Next app instead of the platform API. Set `NEXT_PUBLIC_API_URL` or configure `API_PROXY_TARGET` for the dashboard dev server.",
+        res.status,
+      );
+    }
     throw new ApiError(body, res.status);
   }
 
@@ -319,19 +332,12 @@ export function taskUrl(id: string): string {
 }
 
 type TaskContentPayload = {
-  title: string;
   description?: string | null;
-  slug?: string | null;
   acceptance_criteria?: string | null;
-  tags: string[];
-  status?: string | null;
-  priority?: string | null;
-  task_type?: string | null;
-  complexity?: string | null;
 };
 
 function extractTaskEncryptedPayload(task: Task): EncryptedPayload | null {
-  const payload = task.encrypted_payload ?? task.metadata?.encrypted_payload;
+  const payload = task.encrypted_payload;
   if (!payload || typeof payload !== "object") return null;
   return payload as EncryptedPayload;
 }
@@ -346,20 +352,9 @@ async function resolveTask(task: Task): Promise<Task> {
     const payload = JSON.parse(plaintext) as TaskContentPayload;
     return {
       ...task,
-      title: payload.title ?? task.title,
       description: payload.description ?? task.description,
       acceptance_criteria:
         payload.acceptance_criteria ?? task.acceptance_criteria,
-      tags: payload.tags ?? task.tags,
-      slug: payload.slug ?? task.slug,
-      status: (payload.status as Task["status"] | undefined) ?? task.status,
-      priority:
-        (payload.priority as Task["priority"] | undefined) ?? task.priority,
-      type: (payload.task_type as Task["type"] | undefined) ?? task.type,
-      complexity:
-        payload.complexity != null
-          ? Number(payload.complexity)
-          : task.complexity,
     };
   } catch (error) {
     console.warn("Failed to decrypt task content", {
@@ -373,31 +368,15 @@ async function resolveTask(task: Task): Promise<Task> {
 
 async function encryptTaskContent(params: {
   taskId: string;
-  projectId: string;
-  title: string;
   description?: string;
   acceptanceCriteria?: string;
-  tags?: string[];
-  status?: string;
-  priority?: string;
-  taskType?: string;
-  complexity?: number | null;
-  slug?: string | null;
 }): Promise<EncryptedPayload | null> {
   const currentUser = await fetchCurrentUser();
   if (!currentUser.user_id) return null;
 
   const payload: TaskContentPayload = {
-    title: params.title,
     description: params.description ?? null,
-    slug: params.slug ?? null,
     acceptance_criteria: params.acceptanceCriteria ?? null,
-    tags: params.tags ?? [],
-    status: params.status ?? "open",
-    priority: params.priority ?? "medium",
-    task_type: params.taskType ?? "task",
-    complexity:
-      params.complexity != null ? String(params.complexity) : null,
   };
 
   return encryptContentPayload({
@@ -421,6 +400,7 @@ export async function createTask(
     project_id: string;
     title: string;
     description?: string;
+    acceptance_criteria?: string;
     status?: string;
     priority?: Task["priority"];
     type?: Task["type"];
@@ -429,18 +409,17 @@ export async function createTask(
   },
 ): Promise<Task> {
   const taskId = crypto.randomUUID();
-  const encryptedPayload = await encryptTaskContent({
-    taskId,
-    projectId: data.project_id,
-    title: data.title,
-    description: data.description,
-    tags: data.tags,
-    status: data.status,
-    priority: data.priority,
-    taskType: data.type,
-    complexity: data.complexity,
-  });
-  if (!encryptedPayload) {
+  const needsEncryptedContent =
+    Boolean(data.description?.trim()) ||
+    Boolean(data.acceptance_criteria?.trim());
+  const encryptedPayload = needsEncryptedContent
+    ? await encryptTaskContent({
+        taskId,
+        description: data.description,
+        acceptanceCriteria: data.acceptance_criteria,
+      })
+    : null;
+  if (needsEncryptedContent && !encryptedPayload) {
     throw new ApiError("Task encryption is required before creating a task", 400);
   }
   const res = await authFetch(`${API_V1}/tasks`, {
@@ -448,6 +427,7 @@ export async function createTask(
     body: JSON.stringify({
       id: taskId,
       project_id: data.project_id,
+      title: data.title,
       status: data.status,
       priority: data.priority,
       type: data.type,
@@ -464,32 +444,31 @@ export async function updateTask(
   data: UpdateTaskRequest,
   currentTask?: Task,
 ): Promise<Task> {
-  if (!currentTask) {
+  const needsEncryptedContent =
+    data.description !== undefined || data.acceptance_criteria !== undefined;
+  if (needsEncryptedContent && !currentTask) {
     throw new ApiError(
       "Encrypted task updates require the current task content",
       400,
     );
   }
-  const encryptedPayload = await encryptTaskContent({
-    taskId: id,
-    projectId: currentTask.project_id,
-    title: data.title ?? currentTask.title,
-    description: data.description ?? currentTask.description ?? undefined,
-    acceptanceCriteria:
-      data.acceptance_criteria ?? currentTask.acceptance_criteria ?? undefined,
-    tags: currentTask.tags,
-    status: data.status ?? currentTask.status,
-    priority: data.priority ?? currentTask.priority,
-    taskType: data.type ?? currentTask.type,
-    complexity: data.complexity ?? currentTask.complexity,
-    slug: currentTask.slug,
-  });
-  if (!encryptedPayload) {
+  const encryptedPayload = needsEncryptedContent
+    ? await encryptTaskContent({
+        taskId: id,
+        description: data.description ?? currentTask?.description ?? undefined,
+        acceptanceCriteria:
+          data.acceptance_criteria ??
+          currentTask?.acceptance_criteria ??
+          undefined,
+      })
+    : undefined;
+  if (needsEncryptedContent && !encryptedPayload) {
     throw new ApiError("Task encryption is required before updating a task", 400);
   }
   const res = await authFetch(taskUrl(id), {
     method: "PATCH",
     body: JSON.stringify({
+      title: data.title,
       status: data.status,
       priority: data.priority,
       type: data.type,
@@ -1269,6 +1248,21 @@ export function agentUrl(agentId: string): string {
   return `${API_V1}/agents/${agentId}`;
 }
 
+async function encryptAgentPromptConfig(
+  agentId: string,
+  promptConfig: PromptConfig,
+): Promise<EncryptedPayload | null> {
+  const currentUser = await fetchCurrentUser();
+  if (!currentUser.user_id) return null;
+
+  return encryptContentPayload({
+    accountId: currentUser.user_id,
+    objectId: agentId,
+    objectType: "manifest.agent.prompt",
+    plaintext: JSON.stringify(promptConfig),
+  });
+}
+
 export async function fetchAgents(): Promise<AgentDefinition[]> {
   return fetcher<AgentDefinition[]>(agentsUrl());
 }
@@ -1359,18 +1353,57 @@ export function agentPreviewUrl(agentId: string): string {
 export async function fetchAgentPrompt(
   agentId: string,
 ): Promise<import("./types").PromptConfig> {
-  return fetcher<import("./types").PromptConfig>(agentPromptUrl(agentId));
+  const response = await fetcher<PromptConfigResponse>(agentPromptUrl(agentId));
+  if (response.encrypted_payload) {
+    try {
+      const plaintext = await decryptContentPayload(response.encrypted_payload);
+      if (!plaintext) {
+        throw new Error("Encrypted prompt payload could not be decrypted");
+      }
+      return JSON.parse(plaintext) as import("./types").PromptConfig;
+    } catch (error) {
+      console.warn("Failed to decrypt agent prompt config", {
+        agentId,
+        objectId: response.encrypted_payload.object_id,
+        error,
+      });
+      throw error instanceof Error
+        ? error
+        : new Error("Failed to decrypt agent prompt config");
+    }
+  }
+
+  if (response.prompt_config) {
+    return response.prompt_config;
+  }
+
+  throw new ApiError("Agent prompt is not available in encrypted form yet", 409);
 }
 
 export async function updateAgentPrompt(
   agentId: string,
   promptConfig: import("./types").PromptConfig,
 ): Promise<import("./types").PromptConfig> {
+  const encryptedPayload = await encryptAgentPromptConfig(agentId, promptConfig);
   const res = await authFetch(agentPromptUrl(agentId), {
     method: "PATCH",
-    body: JSON.stringify({ prompt_config: promptConfig }),
+    body: JSON.stringify({
+      prompt_config: promptConfig,
+      encrypted_payload: encryptedPayload,
+    }),
   });
-  return res.json() as Promise<import("./types").PromptConfig>;
+  const response = (await res.json()) as PromptConfigResponse;
+  if (response.encrypted_payload) {
+    const plaintext = await decryptContentPayload(response.encrypted_payload);
+    if (!plaintext) {
+      throw new ApiError("Updated agent prompt could not be decrypted", 500);
+    }
+    return JSON.parse(plaintext) as import("./types").PromptConfig;
+  }
+  if (response.prompt_config) {
+    return response.prompt_config;
+  }
+  throw new ApiError("Updated agent prompt was not returned", 500);
 }
 
 export async function previewAgentPrompt(
@@ -1761,6 +1794,10 @@ export function domainUrl(id: string): string {
   return `${API_V1}/domains/${id}`;
 }
 
+export function domainPromptUrl(id: string): string {
+  return `${domainUrl(id)}/prompt`;
+}
+
 export async function fetchDomains(): Promise<Domain[]> {
   const res = await authFetch(domainsUrl());
   return res.json() as Promise<Domain[]>;
@@ -1771,11 +1808,43 @@ export async function fetchDomain(id: string): Promise<Domain> {
   return res.json() as Promise<Domain>;
 }
 
+export async function fetchDomainManifest(id: string): Promise<DomainManifest> {
+  const [domainRes, promptRes] = await Promise.all([
+    authFetch(domainUrl(id)),
+    authFetch(domainPromptUrl(id)),
+  ]);
+  const domain = await domainRes.json() as {
+    platform_scopes?: string[];
+    ability_ids?: string[];
+    mcp_server_ids?: string[];
+  };
+  const promptData = await promptRes.json() as {
+    prompt_config?: DomainManifest["prompt"];
+  };
+  return {
+    prompt: promptData.prompt_config ?? {},
+    platform_scopes: domain.platform_scopes ?? [],
+    ability_ids: domain.ability_ids ?? [],
+    mcp_server_ids: domain.mcp_server_ids ?? [],
+  };
+}
+
 export async function createDomain(data: CreateDomainRequest): Promise<Domain> {
+  const manifest = data.manifest;
   const res = await authFetch(domainsUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      name: data.name,
+      path: data.path ?? "",
+      display_name: data.display_name,
+      description: data.description,
+      command: data.command,
+      prompt_config: manifest?.prompt,
+      platform_scopes: manifest?.platform_scopes,
+      ability_ids: manifest?.ability_ids,
+      mcp_server_ids: manifest?.mcp_server_ids,
+    }),
   });
   return res.json() as Promise<Domain>;
 }
@@ -1790,6 +1859,24 @@ export async function updateDomain(
     body: JSON.stringify(data),
   });
   return res.json() as Promise<Domain>;
+}
+
+export async function updateDomainManifest(
+  id: string,
+  manifest: DomainManifest,
+): Promise<DomainManifest> {
+  const res = await authFetch(domainPromptUrl(id), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt_config: manifest.prompt }),
+  });
+  const data = await res.json() as {
+    prompt_config?: DomainManifest["prompt"];
+  };
+  return {
+    ...manifest,
+    prompt: data.prompt_config ?? manifest.prompt,
+  };
 }
 
 export async function deleteDomain(id: string): Promise<void> {
@@ -1892,18 +1979,6 @@ export async function fetchDomainSession(
   return res.json() as Promise<DomainSession>;
 }
 
-export async function updateDomainSessionDraft(
-  sessionId: string,
-  artifactDraft: Record<string, unknown>,
-): Promise<DomainSession> {
-  const res = await authFetch(`${API_V1}/domains/sessions/${sessionId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ artifact_draft: artifactDraft }),
-  });
-  return res.json() as Promise<DomainSession>;
-}
-
 export async function completeDomainSession(
   sessionId: string,
 ): Promise<DomainSession> {
@@ -1933,19 +2008,6 @@ export async function fetchActiveDomainSession(
   );
   if (res.status === 204) return null;
   return res.json() as Promise<DomainSession>;
-}
-
-// ---------------------------------------------------------------------------
-// Domain Artifacts
-// ---------------------------------------------------------------------------
-
-export async function fetchProjectDomainArtifacts(
-  projectId: string,
-): Promise<DomainArtifact[]> {
-  const res = await authFetch(
-    `${API_V1}/projects/${projectId}/domain-artifacts`,
-  );
-  return res.json() as Promise<DomainArtifact[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -2181,6 +2243,10 @@ export function contextBlockUrl(id: string): string {
   return `${API_V1}/context-blocks/${id}`;
 }
 
+export function contextBlockContentUrl(id: string): string {
+  return `${API_V1}/context-blocks/${id}/content`;
+}
+
 export async function fetchContextBlocks(): Promise<import("./types").ContextBlock[]> {
   return fetcher(contextBlocksUrl());
 }
@@ -2206,6 +2272,23 @@ export async function updateContextBlock(
   return res.json() as Promise<import("./types").ContextBlock>;
 }
 
+export async function fetchContextBlockContent(
+  id: string,
+): Promise<{ template?: string }> {
+  return fetcher<{ template?: string }>(contextBlockContentUrl(id));
+}
+
+export async function updateContextBlockContent(
+  id: string,
+  template: string,
+): Promise<{ template?: string }> {
+  const res = await authFetch(contextBlockContentUrl(id), {
+    method: "PATCH",
+    body: JSON.stringify({ template }),
+  });
+  return res.json() as Promise<{ template?: string }>;
+}
+
 export async function deleteContextBlock(id: string): Promise<void> {
   await authFetch(contextBlockUrl(id), { method: "DELETE" });
 }
@@ -2222,8 +2305,9 @@ export async function moveContextBlock(
 }
 
 export async function deleteFolder(path: string): Promise<void> {
-  await authFetch(`${API_V1}/context-blocks/folders/${encodeURIComponent(path)}`, {
+  await authFetch(`${API_V1}/context-blocks/folders/delete`, {
     method: "DELETE",
+    body: JSON.stringify({ path }),
   });
 }
 
@@ -2249,6 +2333,10 @@ export function abilityUrl(id: string): string {
   return `${API_V1}/abilities/${id}`;
 }
 
+export function abilityPromptUrl(id: string): string {
+  return `${API_V1}/abilities/${id}/prompt`;
+}
+
 export function agentAbilitiesUrl(agentId: string): string {
   return `${API_V1}/agents/${agentId}/abilities`;
 }
@@ -2266,7 +2354,12 @@ export async function createAbility(
 ): Promise<import("./types").Ability> {
   const res = await authFetch(abilitiesUrl(), {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      ...data,
+      prompt_config: {
+        developer_prompt: data.prompt ?? "",
+      },
+    }),
   });
   return res.json() as Promise<import("./types").Ability>;
 }
@@ -2280,6 +2373,31 @@ export async function updateAbility(
     body: JSON.stringify(data),
   });
   return res.json() as Promise<import("./types").Ability>;
+}
+
+export async function fetchAbilityPrompt(id: string): Promise<string> {
+  const response = await fetcher<{
+    prompt_config?: { developer_prompt?: string };
+  }>(abilityPromptUrl(id));
+  return response.prompt_config?.developer_prompt ?? "";
+}
+
+export async function updateAbilityPrompt(
+  id: string,
+  prompt: string,
+): Promise<string> {
+  const res = await authFetch(abilityPromptUrl(id), {
+    method: "PATCH",
+    body: JSON.stringify({
+      prompt_config: {
+        developer_prompt: prompt,
+      },
+    }),
+  });
+  const data = await res.json() as {
+    prompt_config?: { developer_prompt?: string };
+  };
+  return data.prompt_config?.developer_prompt ?? "";
 }
 
 export async function deleteAbility(id: string): Promise<void> {

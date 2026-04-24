@@ -700,7 +700,7 @@ function StepConnect({
   const { data: enrollments, mutate: mutateEnrollments } = useSWR<WorkerEnrollmentStatusResponse[]>(
     user ? workerEnrollmentUrl() : null,
     fetcher,
-    { refreshInterval: isConnected ? 3000 : 0, revalidateOnFocus: false },
+    { refreshInterval: 3000, revalidateOnFocus: false },
   );
   const [copied, setCopied] = useState(false);
   const [sendGreeting, setSendGreeting] = useState(true);
@@ -723,7 +723,7 @@ export NENJO_API_KEY=${maskedKey}
 nenjo run`;
 
   useEffect(() => {
-    if (!isConnected || !accountUserId || approvalInFlight.current) return;
+    if (!accountUserId || approvalInFlight.current) return;
     const pendingEnrollment = (enrollments ?? []).find((item) => item.state === "pending");
     if (!pendingEnrollment) return;
 
@@ -759,7 +759,7 @@ nenjo run`;
         approvalInFlight.current = false;
       }
     })();
-  }, [accountUserId, enrollments, isConnected, mutateEnrollments]);
+  }, [accountUserId, enrollments, mutateEnrollments]);
 
   // Handle successful worker connection
   useEffect(() => {
@@ -803,6 +803,7 @@ nenjo run`;
           LOCAL_CHAT_SEED_KEY,
           JSON.stringify({
             session_id: session.id,
+            timestamp: session.created_at,
             message: `Welcome to Nenjo, ${displayName}. ${DEFAULT_CONNECTED_GREETING.slice("Welcome to Nenjo. ".length)}`,
           }),
         );
@@ -858,6 +859,7 @@ nenjo run`;
         LOCAL_CHAT_SEED_KEY,
         JSON.stringify({
           session_id: session.id,
+          timestamp: session.created_at,
           message: DEFAULT_SKIP_MESSAGE,
         }),
       );
@@ -920,7 +922,7 @@ nenjo run`;
                     size={72}
                     animate={sendGreeting && greeting !== "idle" && greeting !== "done"}
                     className="relative ring-4 ring-white/80 dark:ring-gray-900/70"
-                    roleName="Nenji"
+                    name="Nenji"
                   />
                 </div>
                 <div className="space-y-1">
