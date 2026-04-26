@@ -575,6 +575,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   useEffect(() => {
     const previousAgentId = prevAgentIdRef.current;
     const previousSessionId = prevSessionIdRef.current;
+    const sessionChanged = previousAgentId !== agentId || previousSessionId !== activeSessionId;
     const pendingAgentId = readPendingAgentId();
     const persistedActiveTools = readPersistedTools() as { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string; children?: { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string }[] }[];
     const persistedLivePreview = readPersistedLivePreview();
@@ -599,8 +600,10 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     responseIdRef.current = null;
 
     // Clear stale domain session only when the role or chat session actually changes.
-    if (previousAgentId !== agentId || previousSessionId !== activeSessionId) {
+    if (sessionChanged) {
       setActiveDomainSession(null);
+      setMessages([]);
+      setHasMore(false);
     }
 
     if (!projectId || !agentId) {
@@ -666,7 +669,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
                 })),
             )
           );
-          setMessages((prev) => mergeLoadedMessages(loaded, prev));
+          setMessages(loaded);
           setHasMore(page.has_more);
         }
       })

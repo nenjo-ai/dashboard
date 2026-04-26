@@ -760,11 +760,54 @@ export interface ProjectDocument {
   id: string;
   project_id: string;
   filename: string;
+  path: string | null;
+  title: string | null;
+  kind: ProjectDocumentKind | null;
+  authority: ProjectDocumentAuthority;
+  summary: string | null;
+  status: string | null;
+  tags: string[];
   content_type: string;
   size_bytes: number;
   created_at: string;
   updated_at: string;
 }
+
+export type ProjectDocumentKind =
+  | "guide"
+  | "reference"
+  | "taxonomy"
+  | "domain"
+  | "entity"
+  | "policy";
+
+export type ProjectDocumentAuthority =
+  | "canonical"
+  | "supporting"
+  | "reference"
+  | "draft"
+  | "deprecated";
+
+export interface ProjectDocumentEdge {
+  id: string;
+  project_id: string;
+  source_document_id: string;
+  target_document_id: string;
+  edge_type: ProjectDocumentEdgeType;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProjectDocumentEdgeType =
+  | "part_of"
+  | "defines"
+  | "governs"
+  | "classifies"
+  | "references"
+  | "depends_on"
+  | "extends"
+  | "related_to";
 
 // ---------------------------------------------------------------------------
 // API Keys
