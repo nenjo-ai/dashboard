@@ -264,6 +264,7 @@ export function ChatView() {
                   />
                 ) : (
                   <ChatArea
+                    key={`${activeSession.id}:${activeSession.agent_id}`}
                     projectId={activeSession.project_id!}
                     agentId={activeSession.agent_id}
                     sessionId={activeSession.id}

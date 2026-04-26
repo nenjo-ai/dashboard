@@ -720,9 +720,17 @@ export async function fetchProjectDocuments(
 export async function uploadProjectDocument(
   projectId: string,
   file: File,
+  metadata?: Partial<Pick<import("./types").ProjectDocument, "path" | "title" | "kind" | "authority" | "summary" | "status" | "tags">>,
 ): Promise<import("./types").ProjectDocument> {
   const formData = new FormData();
   formData.append("file", file);
+  if (metadata?.path) formData.append("path", metadata.path);
+  if (metadata?.title) formData.append("title", metadata.title);
+  if (metadata?.kind) formData.append("kind", metadata.kind);
+  if (metadata?.authority) formData.append("authority", metadata.authority);
+  if (metadata?.summary) formData.append("summary", metadata.summary);
+  if (metadata?.status) formData.append("status", metadata.status);
+  if (metadata?.tags) formData.append("tags", JSON.stringify(metadata.tags));
 
   // For file uploads, we need to let the browser set the Content-Type
   // (with boundary), so we override the default JSON content type.
@@ -784,6 +792,53 @@ export async function updateDocumentContent(
   });
 
   return res.json() as Promise<import("./types").ProjectDocument>;
+}
+
+export async function updateProjectDocumentMetadata(
+  projectId: string,
+  docId: string,
+  data: Partial<Pick<import("./types").ProjectDocument, "path" | "title" | "kind" | "authority" | "summary" | "status" | "tags">>,
+): Promise<import("./types").ProjectDocument> {
+  const res = await authFetch(projectDocumentUrl(projectId, docId), {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+
+  return res.json() as Promise<import("./types").ProjectDocument>;
+}
+
+export function projectDocumentEdgesUrl(projectId: string, docId: string): string {
+  return `${API_V1}/projects/${projectId}/documents/${docId}/edges`;
+}
+
+export async function fetchProjectDocumentEdges(
+  projectId: string,
+  docId: string,
+): Promise<import("./types").ProjectDocumentEdge[]> {
+  return fetcher(projectDocumentEdgesUrl(projectId, docId));
+}
+
+export async function createProjectDocumentEdge(
+  projectId: string,
+  docId: string,
+  data: Pick<import("./types").ProjectDocumentEdge, "target_document_id" | "edge_type"> & { note?: string | null },
+): Promise<import("./types").ProjectDocumentEdge> {
+  const res = await authFetch(projectDocumentEdgesUrl(projectId, docId), {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+  return res.json() as Promise<import("./types").ProjectDocumentEdge>;
+}
+
+export async function deleteProjectDocumentEdge(
+  projectId: string,
+  docId: string,
+  edgeId: string,
+): Promise<void> {
+  await authFetch(`${projectDocumentEdgesUrl(projectId, docId)}/${edgeId}`, {
+    method: "DELETE",
+  });
 }
 
 // ---------------------------------------------------------------------------
