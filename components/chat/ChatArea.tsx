@@ -10,10 +10,8 @@ import {
   useAgents,
   useAgentDomains,
   useProjects,
-  useSystemProject,
 } from "@/lib/hooks";
 import { fetcher, allChatSessionsUrl, createChatSession } from "@/lib/api";
-import type { Project } from "@/lib/types";
 import { usePlannerChat } from "@/lib/usePlannerChat";
 import { formatToolCallSignature } from "@/lib/toolCallDisplay";
 import { useUser } from "@clerk/nextjs";
@@ -26,7 +24,7 @@ import { MobileInputBar } from "./MobileInputBar";
 import { MobileEmptyState } from "./MobileEmptyState";
 
 interface ChatAreaProps {
-  projectId: string;
+  projectId: string | null;
   agentId: string;
   sessionId: string | null;
   /** Navigate to a different session (from @mention agent→session picker). */
@@ -38,6 +36,11 @@ interface ChatAreaProps {
   /** Switch to a different agent's general chat (handled at ChatView level). */
   onSwitchAgent?: (agent: AgentDefinition) => void;
 }
+
+type ChatProjectOption = {
+  id: string | null;
+  name: string;
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -691,15 +694,15 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
   const { agents: allAgents } = useAgents();
   const { agentDomains } = useAgentDomains(agentId);
   const { projects } = useProjects();
-  const { project: systemProject } = useSystemProject();
 
-  // All projects including system (shown as "General") for the new chat project picker
-  const userProjects = useMemo<Project[]>(() => {
-    const list: Project[] = [];
-    if (systemProject) list.push(systemProject);
-    if (projects) list.push(...projects);
+  // Projectless "General" chats run in the worker's root workspace.
+  const userProjects = useMemo<ChatProjectOption[]>(() => {
+    const list: ChatProjectOption[] = [{ id: null, name: "General" }];
+    if (projects) {
+      list.push(...projects.map((project) => ({ id: project.id, name: project.name })));
+    }
     return list;
-  }, [projects, systemProject]);
+  }, [projects]);
 
   // All sessions (for the session picker after @mention agent selection)
   const { data: allSessions, mutate: mutateSessions } = useSWR<ChatSessionExtended[]>(
@@ -1049,7 +1052,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
   }, []);
 
   // Step 3: user selects a project → create session and navigate
-  const handleProjectSelect = useCallback(async (project: Project) => {
+  const handleProjectSelect = useCallback(async (project: ChatProjectOption) => {
     if (!selectedMentionAgent || isCreatingChat) return;
     setIsCreatingChat(true);
     try {
@@ -1061,7 +1064,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
       const title = `${agentName.charAt(0).toUpperCase() + agentName.slice(1)} #${existingCount + 1}`;
 
       const newSession = await createChatSession({
-        project_id: project.id,
+        ...(project.id ? { project_id: project.id } : {}),
         agent_id: selectedMentionAgent.id,
         title,
       });
@@ -1538,7 +1541,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                       >
                         <span className={cn("truncate text-sm font-medium", index + 1 === sessionPickerIndex ? "text-white" : "text-gray-900 dark:text-gray-100")}>{session.title}</span>
                         <span className={cn("mt-0.5 flex items-center gap-1.5 text-[11px]", index + 1 === sessionPickerIndex ? "text-deep-space-blue-100" : "text-gray-500 dark:text-gray-400")}>
-                          <span className="truncate">{session.project_name === "__system__" ? "General" : session.project_name}</span>
+                          <span className="truncate">{session.project_name}</span>
                           <span>·</span>
                           <span className="shrink-0">{timeAgo(session.updated_at)}</span>
                         </span>
@@ -1555,15 +1558,15 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                     ) : (
                       userProjects.map((project, index) => (
                         <button
-                          key={project.id}
+                          key={project.id ?? "general"}
                           type="button"
                           onMouseDown={(e) => { e.preventDefault(); handleProjectSelect(project); }}
                           className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors", index === sessionPickerIndex ? "bg-deep-space-blue-500 text-white" : "hover:[background:var(--app-hover)]")}
                         >
                           <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold", index === sessionPickerIndex ? "bg-deep-space-blue-500 text-white" : "theme-surface-muted theme-text-muted")}>
-                            {project.is_system ? "G" : project.name.charAt(0).toUpperCase()}
+                            {project.id === null ? "G" : project.name.charAt(0).toUpperCase()}
                           </span>
-                          <span className="truncate font-medium text-gray-900 dark:text-gray-100">{project.is_system ? "General" : project.name}</span>
+                          <span className="truncate font-medium text-gray-900 dark:text-gray-100">{project.name}</span>
                         </button>
                       ))
                     )}
@@ -1692,7 +1695,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                         "mt-0.5 flex items-center gap-1.5 text-[11px]",
                         index + 1 === sessionPickerIndex ? "text-deep-space-blue-100" : "text-gray-500 dark:text-gray-400",
                       )}>
-                        <span className="truncate">{session.project_name === "__system__" ? "General" : session.project_name}</span>
+                        <span className="truncate">{session.project_name}</span>
                         <span>·</span>
                         <span className="shrink-0">{timeAgo(session.updated_at)}</span>
                       </span>
@@ -1715,7 +1718,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                   ) : (
                     userProjects.map((project, index) => (
                       <button
-                        key={project.id}
+                        key={project.id ?? "general"}
                         type="button"
                         onMouseDown={(e) => { e.preventDefault(); handleProjectSelect(project); }}
                         className={cn(
@@ -1731,10 +1734,10 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                             ? "bg-deep-space-blue-500 text-white"
                             : "theme-surface-muted theme-text-muted",
                         )}>
-                          {project.is_system ? "G" : project.name.charAt(0).toUpperCase()}
+                          {project.id === null ? "G" : project.name.charAt(0).toUpperCase()}
                         </span>
                         <span className="truncate font-medium text-gray-900 dark:text-gray-100">
-                          {project.is_system ? "General" : project.name}
+                          {project.name}
                         </span>
                       </button>
                     ))

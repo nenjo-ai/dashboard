@@ -20,7 +20,7 @@ interface GlobalSessionListProps {
 }
 
 function displayProjectName(name: string): string {
-  return name === "__system__" ? "General" : name;
+  return name;
 }
 
 function displayAgentName(session: ChatSessionExtended): string {

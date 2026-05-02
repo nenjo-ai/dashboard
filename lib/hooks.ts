@@ -3,6 +3,7 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import useSWR from "swr";
 import {
   fetcher,
+  fetchTasks,
   projectsUrl,
   projectUrl,
   tasksUrl,
@@ -24,7 +25,6 @@ import {
   agentUrl,
   domainsUrl,
   agentDomainsUrl,
-  systemProjectUrl,
   lambdasUrl,
   mcpServersUrl,
   agentMcpUrl,
@@ -172,22 +172,6 @@ export function useProjects() {
   };
 }
 
-export function useSystemProject() {
-  const { data, error, isLoading, mutate } = useSWR<Project>(
-    systemProjectUrl(),
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 30000 },
-  );
-
-  return {
-    project: data,
-    isLoading,
-    isError: !!error,
-    error,
-    mutate,
-  };
-}
-
 export function useContextBlocks() {
   const { data, error, isLoading, mutate } = useSWR<ContextBlock[]>(
     contextBlocksUrl(),
@@ -247,7 +231,7 @@ export function useTasks(projectId: string | undefined, status?: string) {
 
   const { data, error, isLoading, mutate } = useSWR<Task[]>(
     url,
-    fetcher,
+    () => fetchTasks(projectId!, status),
     { revalidateOnFocus: false, dedupingInterval: 3000 },
   );
 
