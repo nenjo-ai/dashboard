@@ -45,7 +45,10 @@ import type {
   EncryptedPayload,
   PromptConfigResponse,
 } from "./types";
-import { decryptContentPayload, encryptContentPayload } from "./cryptoContent";
+import {
+  decryptContentPayload,
+  encryptOrgContentPayload,
+} from "./cryptoContent";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -96,6 +99,7 @@ export class ApiError extends Error {
  * ```
  */
 let _getToken: (() => Promise<string | null>) | null = null;
+let _getActiveOrgId: (() => string | null) | null = null;
 let _tokenGetterReady: Promise<void> | null = null;
 let _resolveTokenGetterReady: (() => void) | null = null;
 
@@ -121,6 +125,12 @@ export function setAuthTokenGetter(
     _tokenGetterReady = null;
     _resolveTokenGetterReady = null;
   }
+}
+
+export function setActiveOrgIdGetter(
+  getter: (() => string | null) | null,
+) {
+  _getActiveOrgId = getter;
 }
 
 /**
@@ -149,6 +159,22 @@ async function authHeaders(
     }
   }
 
+  const activeOrgId = _getActiveOrgId?.()?.trim();
+  if (activeOrgId) {
+    headers["X-Nenjo-Org-Id"] = activeOrgId;
+  }
+
+  return headers;
+}
+
+async function authHeadersWithOptions(options?: {
+  extra?: Record<string, string>;
+  includeOrgHeader?: boolean;
+}): Promise<Record<string, string>> {
+  const headers = await authHeaders(options?.extra);
+  if (options?.includeOrgHeader === false) {
+    delete headers["X-Nenjo-Org-Id"];
+  }
   return headers;
 }
 
@@ -167,9 +193,14 @@ async function authFetch(
   init?: RequestInit,
 ): Promise<Response> {
   const resolvedUrl = resolveApiUrl(url);
-  const headers = await authHeaders();
+  const includeOrgHeader =
+    !resolvedUrl.endsWith("/api/v1/auth/me")
+    && !resolvedUrl.endsWith("/api/v1/auth/bootstrap-status")
+    && !resolvedUrl.endsWith("/api/v1/orgs")
+    && !resolvedUrl.endsWith("/api/v1/orgs/")
+    && !resolvedUrl.endsWith("/api/v1/orgs/current");
+  const headers = await authHeadersWithOptions({ includeOrgHeader });
 
-  // If caller provided headers, merge them (caller wins on conflicts)
   if (init?.headers) {
     const extra =
       init.headers instanceof Headers
@@ -352,9 +383,8 @@ async function resolveTask(task: Task): Promise<Task> {
     const payload = JSON.parse(plaintext) as TaskContentPayload;
     return {
       ...task,
-      description: payload.description ?? task.description,
-      acceptance_criteria:
-        payload.acceptance_criteria ?? task.acceptance_criteria,
+      description: payload.description ?? null,
+      acceptance_criteria: payload.acceptance_criteria ?? null,
     };
   } catch (error) {
     console.warn("Failed to decrypt task content", {
@@ -372,15 +402,15 @@ async function encryptTaskContent(params: {
   acceptanceCriteria?: string;
 }): Promise<EncryptedPayload | null> {
   const currentUser = await fetchCurrentUser();
-  if (!currentUser.user_id) return null;
+  if (!currentUser.org_id) return null;
 
   const payload: TaskContentPayload = {
     description: params.description ?? null,
     acceptance_criteria: params.acceptanceCriteria ?? null,
   };
 
-  return encryptContentPayload({
-    accountId: currentUser.user_id,
+  return encryptOrgContentPayload({
+    orgId: currentUser.org_id,
     objectId: params.taskId,
     objectType: "task_content",
     plaintext: JSON.stringify(payload),
@@ -731,6 +761,25 @@ export async function uploadProjectDocument(
   if (metadata?.summary) formData.append("summary", metadata.summary);
   if (metadata?.status) formData.append("status", metadata.status);
   if (metadata?.tags) formData.append("tags", JSON.stringify(metadata.tags));
+  if (isTextDocumentFile(file)) {
+    const currentUser = await fetchCurrentUser();
+    if (!currentUser.org_id) {
+      throw new ApiError("An active org is required before uploading shared documents", 400);
+    }
+    const encryptedPayload = await encryptOrgContentPayload({
+      orgId: currentUser.org_id,
+      objectId: crypto.randomUUID(),
+      objectType: "manifest.document.content",
+      plaintext: JSON.stringify(await file.text()),
+    });
+    if (!encryptedPayload) {
+      throw new ApiError(
+        "Shared document encryption is not available on this device for the current org",
+        409,
+      );
+    }
+    formData.append("encrypted_payload", JSON.stringify(encryptedPayload));
+  }
 
   // For file uploads, we need to let the browser set the Content-Type
   // (with boundary), so we override the default JSON content type.
@@ -778,7 +827,43 @@ export async function fetchDocumentContent(
   projectId: string,
   docId: string,
 ): Promise<{ content: string; filename: string; content_type: string; size_bytes: number }> {
-  return fetcher(projectDocumentContentUrl(projectId, docId));
+  const response = await fetcher<{
+    content?: string | null;
+    filename: string;
+    content_type: string;
+    size_bytes: number;
+    encrypted_payload?: EncryptedPayload | null;
+  }>(projectDocumentContentUrl(projectId, docId));
+
+  if (response.encrypted_payload) {
+    const plaintext = await decryptContentPayload(response.encrypted_payload);
+    if (!plaintext) {
+      throw new ApiError("Shared document content could not be decrypted on this device", 409);
+    }
+
+    try {
+      return {
+        content: JSON.parse(plaintext) as string,
+        filename: response.filename,
+        content_type: response.content_type,
+        size_bytes: response.size_bytes,
+      };
+    } catch (error) {
+      console.warn("Failed to parse decrypted document content payload", {
+        docId,
+        objectId: response.encrypted_payload.object_id,
+        error,
+      });
+      throw new ApiError("Shared document content was not encoded correctly", 500);
+    }
+  }
+
+  return {
+    content: response.content ?? "",
+    filename: response.filename,
+    content_type: response.content_type,
+    size_bytes: response.size_bytes,
+  };
 }
 
 export async function updateDocumentContent(
@@ -786,12 +871,55 @@ export async function updateDocumentContent(
   docId: string,
   content: string,
 ): Promise<import("./types").ProjectDocument> {
+  const currentUser = await fetchCurrentUser();
+  if (!currentUser.org_id) {
+    throw new ApiError("An active org is required before updating shared documents", 400);
+  }
+  const encryptedPayload = await encryptOrgContentPayload({
+    orgId: currentUser.org_id,
+    objectId: docId,
+    objectType: "manifest.document.content",
+    plaintext: JSON.stringify(content),
+  });
+  if (!encryptedPayload) {
+    throw new ApiError(
+      "Shared document encryption is not available on this device for the current org",
+      409,
+    );
+  }
   const res = await authFetch(projectDocumentContentUrl(projectId, docId), {
     method: "PUT",
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, encrypted_payload: encryptedPayload }),
   });
 
   return res.json() as Promise<import("./types").ProjectDocument>;
+}
+
+function isTextDocumentFile(file: File): boolean {
+  const contentType = file.type.toLowerCase();
+  if (
+    contentType.startsWith("text/") ||
+    contentType === "application/json" ||
+    contentType === "application/xml"
+  ) {
+    return true;
+  }
+
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return [
+    "txt",
+    "md",
+    "markdown",
+    "json",
+    "xml",
+    "yaml",
+    "yml",
+    "toml",
+    "csv",
+    "log",
+    "rst",
+    "adoc",
+  ].includes(ext);
 }
 
 export async function updateProjectDocumentMetadata(
@@ -854,10 +982,160 @@ export async function fetchCurrentUser(): Promise<{
   clerk_id?: string;
   session_id?: string | null;
   org_id?: string | null;
+  org_name?: string | null;
   org_role?: string | null;
+  org_scopes?: string[] | null;
   onboarded?: boolean;
 }> {
   return fetcher(authMeUrl());
+}
+
+// ---------------------------------------------------------------------------
+// Organizations
+// ---------------------------------------------------------------------------
+
+export function orgsUrl(): string {
+  return `${API_V1}/orgs`;
+}
+
+export function currentOrgUrl(): string {
+  return `${API_V1}/orgs/current`;
+}
+
+export function bootstrapStatusUrl(): string {
+  return `${API_V1}/auth/bootstrap-status`;
+}
+
+export function orgMembersUrl(orgId: string): string {
+  return `${API_V1}/orgs/${orgId}/members`;
+}
+
+export function orgMemberUrl(orgId: string, userId: string): string {
+  return `${API_V1}/orgs/${orgId}/members/${userId}`;
+}
+
+export function orgInvitationsUrl(orgId: string): string {
+  return `${API_V1}/orgs/${orgId}/invitations`;
+}
+
+export function orgInvitationUrl(orgId: string, invitationId: string): string {
+  return `${API_V1}/orgs/${orgId}/invitations/${invitationId}`;
+}
+
+export function orgInvitationPreviewUrl(token: string): string {
+  return `${API_V1}/orgs/invitations/${token}`;
+}
+
+export function orgInvitationAcceptUrl(token: string): string {
+  return `${API_V1}/orgs/invitations/${token}/accept`;
+}
+
+export function orgInvitationResendUrl(orgId: string, invitationId: string): string {
+  return `${orgInvitationUrl(orgId, invitationId)}/resend`;
+}
+
+export function orgContentKeyRequestsUrl(orgId: string): string {
+  return `${API_V1}/orgs/${orgId}/org-content-key-requests`;
+}
+
+export function orgContentKeyRequestApproveUrl(orgId: string, requestId: string): string {
+  return `${orgContentKeyRequestsUrl(orgId)}/${requestId}/approve`;
+}
+
+export async function updateOrgMember(
+  orgId: string,
+  userId: string,
+  data: { role: string; scopes?: string[] },
+): Promise<import("./types").OrgMember> {
+  const res = await authFetch(orgMemberUrl(orgId, userId), {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return res.json() as Promise<import("./types").OrgMember>;
+}
+
+export async function removeOrgMember(orgId: string, userId: string): Promise<void> {
+  await authFetch(orgMemberUrl(orgId, userId), { method: "DELETE" });
+}
+
+export async function createOrgInvitation(
+  orgId: string,
+  data: { email: string; role: string; scopes?: string[]; expires_in_days?: number },
+): Promise<import("./types").OrgInvitation & { invite_token: string }> {
+  const res = await authFetch(orgInvitationsUrl(orgId), {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return res.json() as Promise<import("./types").OrgInvitation & { invite_token: string }>;
+}
+
+export async function revokeOrgInvitation(orgId: string, invitationId: string): Promise<void> {
+  await authFetch(orgInvitationUrl(orgId, invitationId), { method: "DELETE" });
+}
+
+export async function resendOrgInvitation(
+  orgId: string,
+  invitationId: string,
+): Promise<import("./types").OrgInvitation & { invite_token: string }> {
+  const res = await authFetch(orgInvitationResendUrl(orgId, invitationId), {
+    method: "POST",
+  });
+  return res.json() as Promise<import("./types").OrgInvitation & { invite_token: string }>;
+}
+
+export async function updateCurrentOrg(
+  data: { name: string },
+): Promise<import("./types").CurrentOrg> {
+  const res = await authFetch(currentOrgUrl(), {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return res.json() as Promise<import("./types").CurrentOrg>;
+}
+
+export async function createOrganization(
+  data: { name: string },
+): Promise<import("./types").CurrentOrg> {
+  const res = await authFetch(orgsUrl(), {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return res.json() as Promise<import("./types").CurrentOrg>;
+}
+
+export async function fetchOrgInvitationPreview(
+  token: string,
+): Promise<import("./types").OrgInvitationPreview> {
+  return fetcher(orgInvitationPreviewUrl(token));
+}
+
+export async function acceptOrgInvitation(
+  token: string,
+): Promise<import("./types").CurrentOrg> {
+  const res = await authFetch(orgInvitationAcceptUrl(token), { method: "POST" });
+  return res.json() as Promise<import("./types").CurrentOrg>;
+}
+
+export async function fetchOrgContentKeyRequests(
+  orgId: string,
+): Promise<import("./types").OrgContentKeyAccessRequest[]> {
+  return fetcher<import("./types").OrgContentKeyAccessRequest[]>(orgContentKeyRequestsUrl(orgId));
+}
+
+export async function approveOrgContentKeyRequest(
+  orgId: string,
+  requestId: string,
+  wrappedOck: import("./types").WrappedOrgContentKey,
+): Promise<import("./types").OrgContentKeyAccessRequest> {
+  const res = await authFetch(orgContentKeyRequestApproveUrl(orgId, requestId), {
+    method: "POST",
+    body: JSON.stringify({ wrapped_ock: wrappedOck }),
+  });
+  return res.json() as Promise<import("./types").OrgContentKeyAccessRequest>;
+}
+
+export async function fetchBootstrapStatus(): Promise<import("./types").BootstrapStatus> {
+  return fetcher<import("./types").BootstrapStatus>(bootstrapStatusUrl());
 }
 
 // ---------------------------------------------------------------------------
@@ -933,6 +1211,18 @@ export function deviceEnrollmentUrl(deviceId: string): string {
 
 export function deviceEnrollmentApproveUrl(deviceId: string): string {
   return `${API_V1}/content-encryption/device-enrollments/${deviceId}/approve`;
+}
+
+export function currentOrgContentKeyUrl(): string {
+  return `${API_V1}/content-encryption/org-content-key`;
+}
+
+export function currentOrgContentKeyRecoveryUrl(): string {
+  return `${API_V1}/content-encryption/org-content-key/recovery`;
+}
+
+export function currentOrgContentKeyRequestUrl(deviceId: string): string {
+  return `${API_V1}/content-encryption/org-content-key/request/${deviceId}`;
 }
 
 export function workerEnrollmentDetailUrl(apiKeyId: string): string {
@@ -1039,6 +1329,40 @@ export async function deleteDeviceEnrollment(deviceId: string): Promise<void> {
   await authFetch(deviceEnrollmentUrl(deviceId), { method: "DELETE" });
 }
 
+export async function fetchCurrentOrgContentKeyStatus(): Promise<import("./types").CurrentOrgContentKeyStatus> {
+  return fetcher<import("./types").CurrentOrgContentKeyStatus>(currentOrgContentKeyUrl());
+}
+
+export async function bootstrapCurrentOrgContentKey(
+  body: import("./types").BootstrapCurrentOrgContentKeyRequest,
+): Promise<import("./types").CurrentOrgContentKeyStatus> {
+  const res = await authFetch(currentOrgContentKeyUrl(), {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<import("./types").CurrentOrgContentKeyStatus>;
+}
+
+export async function fetchCurrentOrgContentKeyRecovery(): Promise<import("./types").CurrentOrgContentKeyRecovery> {
+  return fetcher<import("./types").CurrentOrgContentKeyRecovery>(currentOrgContentKeyRecoveryUrl());
+}
+
+export async function requestCurrentOrgContentKeyAccess(
+  deviceId: string,
+): Promise<import("./types").OrgContentKeyAccessRequestStatus> {
+  const res = await authFetch(`${API_V1}/content-encryption/org-content-key/request`, {
+    method: "POST",
+    body: JSON.stringify({ device_id: deviceId }),
+  });
+  return res.json() as Promise<import("./types").OrgContentKeyAccessRequestStatus>;
+}
+
+export async function fetchCurrentOrgContentKeyAccessRequest(
+  deviceId: string,
+): Promise<import("./types").OrgContentKeyAccessRequestStatus> {
+  return fetcher<import("./types").OrgContentKeyAccessRequestStatus>(currentOrgContentKeyRequestUrl(deviceId));
+}
+
 export async function createWorkerEnrollment(
   body: import("./types").WorkerEnrollmentRequest,
 ): Promise<import("./types").WorkerEnrollmentStatusResponse> {
@@ -1076,6 +1400,31 @@ export async function approveWorkerEnrollment(
 
 export async function deleteWorkerEnrollment(apiKeyId: string): Promise<void> {
   await authFetch(workerEnrollmentDetailUrl(apiKeyId), { method: "DELETE" });
+}
+
+export async function listWorkerAccountKeyTargets(): Promise<import("./types").WorkerAccountKeyTarget[]> {
+  return fetcher<import("./types").WorkerAccountKeyTarget[]>(
+    `${workerEnrollmentUrl().replace(/\/enrollment$/, "")}/account-key-targets`,
+  );
+}
+
+export async function syncWorkerAccountKeys(
+  body: { workers: Array<{ api_key_id: string; wrapped_ack: import("./types").WrappedAccountContentKey }> },
+): Promise<void> {
+  await authFetch(`${workerEnrollmentUrl().replace(/\/enrollment$/, "")}/account-key/sync`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function syncWorkerAccountKey(
+  apiKeyId: string,
+  body: { wrapped_ack: import("./types").WrappedAccountContentKey },
+): Promise<void> {
+  await authFetch(`${workerEnrollmentDetailUrl(apiKeyId)}/account-key`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1308,13 +1657,58 @@ async function encryptAgentPromptConfig(
   promptConfig: PromptConfig,
 ): Promise<EncryptedPayload | null> {
   const currentUser = await fetchCurrentUser();
-  if (!currentUser.user_id) return null;
+  if (!currentUser.org_id) return null;
 
-  return encryptContentPayload({
-    accountId: currentUser.user_id,
+  return encryptOrgContentPayload({
+    orgId: currentUser.org_id,
     objectId: agentId,
     objectType: "manifest.agent.prompt",
     plaintext: JSON.stringify(promptConfig),
+  });
+}
+
+async function encryptAbilityPromptConfig(
+  abilityId: string,
+  prompt: string,
+): Promise<EncryptedPayload | null> {
+  const currentUser = await fetchCurrentUser();
+  if (!currentUser.org_id) return null;
+
+  return encryptOrgContentPayload({
+    orgId: currentUser.org_id,
+    objectId: abilityId,
+    objectType: "manifest.ability.prompt",
+    plaintext: JSON.stringify({ developer_prompt: prompt }),
+  });
+}
+
+async function encryptDomainPromptConfig(
+  domainId: string,
+  promptConfig: DomainManifest["prompt"],
+): Promise<EncryptedPayload | null> {
+  const currentUser = await fetchCurrentUser();
+  if (!currentUser.org_id) return null;
+
+  return encryptOrgContentPayload({
+    orgId: currentUser.org_id,
+    objectId: domainId,
+    objectType: "manifest.domain.prompt",
+    plaintext: JSON.stringify(promptConfig),
+  });
+}
+
+async function encryptContextBlockTemplate(
+  contextBlockId: string,
+  template: string,
+): Promise<EncryptedPayload | null> {
+  const currentUser = await fetchCurrentUser();
+  if (!currentUser.org_id) return null;
+
+  return encryptOrgContentPayload({
+    orgId: currentUser.org_id,
+    objectId: contextBlockId,
+    objectType: "manifest.context_block.content",
+    plaintext: JSON.stringify(template),
   });
 }
 
@@ -1875,9 +2269,18 @@ export async function fetchDomainManifest(id: string): Promise<DomainManifest> {
   };
   const promptData = await promptRes.json() as {
     prompt_config?: DomainManifest["prompt"];
+    encrypted_payload?: EncryptedPayload | null;
   };
+  let prompt = promptData.prompt_config ?? {};
+  if (promptData.encrypted_payload) {
+    const plaintext = await decryptContentPayload(promptData.encrypted_payload);
+    if (!plaintext) {
+      throw new ApiError("Domain prompt payload could not be decrypted", 409);
+    }
+    prompt = JSON.parse(plaintext) as DomainManifest["prompt"];
+  }
   return {
-    prompt: promptData.prompt_config ?? {},
+    prompt,
     platform_scopes: domain.platform_scopes ?? [],
     ability_ids: domain.ability_ids ?? [],
     mcp_server_ids: domain.mcp_server_ids ?? [],
@@ -1901,7 +2304,21 @@ export async function createDomain(data: CreateDomainRequest): Promise<Domain> {
       mcp_server_ids: manifest?.mcp_server_ids,
     }),
   });
-  return res.json() as Promise<Domain>;
+  const domain = await res.json() as Domain;
+  if (manifest?.prompt) {
+    const promptEncryptedPayload = await encryptDomainPromptConfig(domain.id, manifest.prompt);
+    if (promptEncryptedPayload) {
+      await authFetch(domainPromptUrl(domain.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt_config: manifest.prompt,
+          encrypted_payload: promptEncryptedPayload,
+        }),
+      });
+    }
+  }
+  return domain;
 }
 
 export async function updateDomain(
@@ -1920,17 +2337,30 @@ export async function updateDomainManifest(
   id: string,
   manifest: DomainManifest,
 ): Promise<DomainManifest> {
+  const encryptedPayload = await encryptDomainPromptConfig(id, manifest.prompt);
   const res = await authFetch(domainPromptUrl(id), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt_config: manifest.prompt }),
+    body: JSON.stringify({
+      prompt_config: manifest.prompt,
+      encrypted_payload: encryptedPayload,
+    }),
   });
   const data = await res.json() as {
     prompt_config?: DomainManifest["prompt"];
+    encrypted_payload?: EncryptedPayload | null;
   };
+  let prompt = data.prompt_config ?? manifest.prompt;
+  if (data.encrypted_payload) {
+    const plaintext = await decryptContentPayload(data.encrypted_payload);
+    if (!plaintext) {
+      throw new ApiError("Updated domain prompt could not be decrypted", 500);
+    }
+    prompt = JSON.parse(plaintext) as DomainManifest["prompt"];
+  }
   return {
     ...manifest,
-    prompt: data.prompt_config ?? manifest.prompt,
+    prompt,
   };
 }
 
@@ -2311,9 +2741,25 @@ export async function createContextBlock(
 ): Promise<import("./types").ContextBlock> {
   const res = await authFetch(contextBlocksUrl(), {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      ...data,
+      template: data.template ?? "",
+    }),
   });
-  return res.json() as Promise<import("./types").ContextBlock>;
+  const block = await res.json() as import("./types").ContextBlock;
+  if (data.template) {
+    const encryptedPayload = await encryptContextBlockTemplate(block.id, data.template);
+    if (encryptedPayload) {
+      await authFetch(contextBlockContentUrl(block.id), {
+        method: "PATCH",
+        body: JSON.stringify({
+          template: data.template,
+          encrypted_payload: encryptedPayload,
+        }),
+      });
+    }
+  }
+  return block;
 }
 
 export async function updateContextBlock(
@@ -2330,18 +2776,41 @@ export async function updateContextBlock(
 export async function fetchContextBlockContent(
   id: string,
 ): Promise<{ template?: string }> {
-  return fetcher<{ template?: string }>(contextBlockContentUrl(id));
+  const response = await fetcher<{
+    template?: string;
+    encrypted_payload?: EncryptedPayload | null;
+  }>(contextBlockContentUrl(id));
+  if (response.encrypted_payload) {
+    const plaintext = await decryptContentPayload(response.encrypted_payload);
+    if (!plaintext) {
+      throw new ApiError("Context block payload could not be decrypted", 409);
+    }
+    return { template: JSON.parse(plaintext) as string };
+  }
+  return { template: response.template };
 }
 
 export async function updateContextBlockContent(
   id: string,
   template: string,
 ): Promise<{ template?: string }> {
+  const encryptedPayload = await encryptContextBlockTemplate(id, template);
   const res = await authFetch(contextBlockContentUrl(id), {
     method: "PATCH",
-    body: JSON.stringify({ template }),
+    body: JSON.stringify({ template, encrypted_payload: encryptedPayload }),
   });
-  return res.json() as Promise<{ template?: string }>;
+  const response = await res.json() as {
+    template?: string;
+    encrypted_payload?: EncryptedPayload | null;
+  };
+  if (response.encrypted_payload) {
+    const plaintext = await decryptContentPayload(response.encrypted_payload);
+    if (!plaintext) {
+      throw new ApiError("Updated context block payload could not be decrypted", 500);
+    }
+    return { template: JSON.parse(plaintext) as string };
+  }
+  return { template: response.template };
 }
 
 export async function deleteContextBlock(id: string): Promise<void> {
@@ -2416,7 +2885,22 @@ export async function createAbility(
       },
     }),
   });
-  return res.json() as Promise<import("./types").Ability>;
+  const ability = await res.json() as import("./types").Ability;
+  if (data.prompt) {
+    const encryptedPayload = await encryptAbilityPromptConfig(ability.id, data.prompt);
+    if (encryptedPayload) {
+      await authFetch(abilityPromptUrl(ability.id), {
+        method: "PATCH",
+        body: JSON.stringify({
+          prompt_config: {
+            developer_prompt: data.prompt,
+          },
+          encrypted_payload: encryptedPayload,
+        }),
+      });
+    }
+  }
+  return ability;
 }
 
 export async function updateAbility(
@@ -2433,7 +2917,16 @@ export async function updateAbility(
 export async function fetchAbilityPrompt(id: string): Promise<string> {
   const response = await fetcher<{
     prompt_config?: { developer_prompt?: string };
+    encrypted_payload?: EncryptedPayload | null;
   }>(abilityPromptUrl(id));
+  if (response.encrypted_payload) {
+    const plaintext = await decryptContentPayload(response.encrypted_payload);
+    if (!plaintext) {
+      throw new ApiError("Ability prompt payload could not be decrypted", 409);
+    }
+    const promptConfig = JSON.parse(plaintext) as { developer_prompt?: string };
+    return promptConfig.developer_prompt ?? "";
+  }
   return response.prompt_config?.developer_prompt ?? "";
 }
 
@@ -2441,17 +2934,28 @@ export async function updateAbilityPrompt(
   id: string,
   prompt: string,
 ): Promise<string> {
+  const encryptedPayload = await encryptAbilityPromptConfig(id, prompt);
   const res = await authFetch(abilityPromptUrl(id), {
     method: "PATCH",
     body: JSON.stringify({
       prompt_config: {
         developer_prompt: prompt,
       },
+      encrypted_payload: encryptedPayload,
     }),
   });
   const data = await res.json() as {
     prompt_config?: { developer_prompt?: string };
+    encrypted_payload?: EncryptedPayload | null;
   };
+  if (data.encrypted_payload) {
+    const plaintext = await decryptContentPayload(data.encrypted_payload);
+    if (!plaintext) {
+      throw new ApiError("Updated ability prompt could not be decrypted", 500);
+    }
+    const promptConfig = JSON.parse(plaintext) as { developer_prompt?: string };
+    return promptConfig.developer_prompt ?? "";
+  }
   return data.prompt_config?.developer_prompt ?? "";
 }
 

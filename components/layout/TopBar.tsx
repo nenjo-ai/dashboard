@@ -4,7 +4,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { useAuth } from "@clerk/nextjs";
 import { Bell, BellOff, BookOpenText, Download, Github, Menu, WifiOff } from "lucide-react";
-import { WorkerStatusIndicator } from "./WorkerStatusIndicator";
+import { OrgSwitcher } from "./OrgSwitcher";
 import { useMobileMenu } from "@/lib/MobileMenuContext";
 import { usePwa } from "@/components/pwa/PwaProvider";
 import { fetcher, notificationsUnreadUrl } from "@/lib/api";
@@ -74,6 +74,7 @@ export function TopBar({ title, children }: TopBarProps) {
           <h1 className="theme-text text-xl font-semibold">{title}</h1>
         </div>
         <div className="flex items-center gap-3">
+          <OrgSwitcher />
           <div className="hidden items-center gap-1 md:flex">
             <Link
               href="/docs"
@@ -112,7 +113,6 @@ export function TopBar({ title, children }: TopBarProps) {
               </span>
             )}
           </Link>
-          <WorkerStatusIndicator />
           {children && (
             <div className="theme-border flex items-center gap-3 border-l pl-4">
               {children}

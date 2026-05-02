@@ -1,26 +1,26 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { SignIn, useAuth } from "@clerk/nextjs";
-import { useEffect } from "react";
 import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
 
 const CLERK_ENABLED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 function LoginContent() {
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isLoaded, isSignedIn } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const error = searchParams.get("error");
+  const redirectUrl = searchParams.get("redirect_url") || "/dashboard/onboarding";
 
-  // If already signed in, redirect to onboarding/dashboard
   useEffect(() => {
     if (isLoaded && isSignedIn) {
-      router.replace("/dashboard/onboarding");
+      router.replace(redirectUrl);
     }
-  }, [isLoaded, isSignedIn, router]);
+  }, [isLoaded, isSignedIn, redirectUrl, router]);
 
   return (
     <>
@@ -41,6 +41,7 @@ function LoginContent() {
       {/* Clerk SignIn component — configured for GitHub OAuth only */}
       <SignIn
         routing="hash"
+        withSignUp={false}
         appearance={{
           elements: {
             rootBox: "w-full",
@@ -61,8 +62,8 @@ function LoginContent() {
             socialButtonsVariant: "blockButton",
           },
         }}
-        forceRedirectUrl="/dashboard/onboarding"
-        signUpForceRedirectUrl="/dashboard/onboarding"
+        forceRedirectUrl={redirectUrl}
+        signUpForceRedirectUrl={redirectUrl}
       />
 
       {/* Clerk CAPTCHA widget mount point (bot protection) */}

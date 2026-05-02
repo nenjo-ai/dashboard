@@ -15,6 +15,7 @@ import {
 import { fetcher, allChatSessionsUrl, createChatSession } from "@/lib/api";
 import type { Project } from "@/lib/types";
 import { usePlannerChat } from "@/lib/usePlannerChat";
+import { formatToolCallSignature } from "@/lib/toolCallDisplay";
 import { useUser } from "@clerk/nextjs";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { DomainSlashCommandDropdown } from "@/components/project/DomainSlashCommandDropdown";
@@ -526,6 +527,38 @@ const MessageBubble = memo(function MessageBubble({
 
 type ToolEntry = { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string; children?: ToolEntry[] };
 
+function ToolCallLine({ tool, compact = false }: { tool: ToolEntry; compact?: boolean }) {
+  const signature = formatToolCallSignature(tool.name, tool.args);
+  const statusLabel = tool.status === "completed" ? "done" : tool.status === "failed" ? "failed" : null;
+  return (
+    <div className={cn("flex items-start gap-2", compact ? "text-[10px]" : "text-[11px]")}>
+      <span className={cn(
+        "mt-[5px] inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+        tool.status === "failed"
+          ? "bg-flag-red-400"
+          : tool.status === "completed"
+            ? "bg-emerald-400"
+            : "animate-pulse bg-deep-space-blue-400",
+      )} />
+      <div className="min-w-0 flex-1">
+        <div className="rounded-md border border-gray-200/80 bg-gray-50 px-2 py-1.5 font-mono leading-relaxed text-gray-600 shadow-sm dark:border-gray-700/80 dark:bg-gray-900/45 dark:text-gray-300">
+          <span className="whitespace-pre-wrap break-words">{signature}</span>
+          {statusLabel && (
+            <span className={cn(
+              "ml-2 font-sans text-[10px] font-medium",
+              tool.status === "failed"
+                ? "text-flag-red-500/80 dark:text-flag-red-400/80"
+                : "text-emerald-500/80 dark:text-emerald-400/80",
+            )}>
+              {statusLabel}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const TypingIndicator = memo(function TypingIndicator({
   activeAgent,
   tools,
@@ -577,52 +610,28 @@ const TypingIndicator = memo(function TypingIndicator({
             <AnimatePresence initial={false}>
               {tools.map((tool, i) => (
                 <motion.div
-                  key={`${tool.name}-${tool.args}-${i}`}
+                  key={`${tool.name}-${i}`}
                   initial={{ opacity: 0, y: 8, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -6, scale: 0.98 }}
                   transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-                  className="flex items-start gap-1.5 text-[11px] leading-tight"
+                  className="leading-tight"
                 >
-                  <span className="mt-[3px] inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-deep-space-blue-400 animate-pulse" />
-                  <div className="min-w-0">
-                    <span className="font-medium text-gray-500 dark:text-gray-400">{tool.name}</span>
-                    {tool.status === "completed" && <span className="ml-1.5 text-emerald-500/80 dark:text-emerald-400/80">done</span>}
-                    {tool.status === "failed" && <span className="ml-1.5 text-flag-red-500/80 dark:text-flag-red-400/80">failed</span>}
-                    {tool.args && (
-                      <div className="mt-0.5 break-all text-[10px] text-gray-400/70 dark:text-gray-500/70">{tool.args}</div>
-                    )}
-                    {(tool.outputPreview || tool.errorPreview) && (
-                      <div className="mt-0.5 text-[10px] text-gray-400/80 dark:text-gray-500/80">
-                        {tool.errorPreview ?? tool.outputPreview}
-                      </div>
-                    )}
+                  <div className="min-w-0 space-y-1">
+                    <ToolCallLine tool={tool} />
                     {tool.children && tool.children.length > 0 && (
                       <div className="theme-border mt-1.5 ml-3 flex flex-col gap-1 border-l pl-3">
                         <AnimatePresence initial={false}>
                           {tool.children.map((child, childIndex) => (
                             <motion.div
-                              key={`${child.name}-${child.args}-${childIndex}`}
+                              key={`${child.name}-${childIndex}`}
                               initial={{ opacity: 0, x: -6 }}
                               animate={{ opacity: 1, x: 0 }}
                               exit={{ opacity: 0, x: -4 }}
                               transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
-                              className="flex items-start gap-1.5 text-[10px] leading-tight"
+                              className="leading-tight"
                             >
-                              <span className="mt-[3px] inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-vivid-tangerine-400" />
-                              <div className="min-w-0">
-                                <span className="font-medium text-gray-500 dark:text-gray-400">{child.name}</span>
-                                {child.status === "completed" && <span className="ml-1 text-emerald-500/80 dark:text-emerald-400/80">done</span>}
-                                {child.status === "failed" && <span className="ml-1 text-flag-red-500/80 dark:text-flag-red-400/80">failed</span>}
-                                {child.args && (
-                                  <div className="mt-0.5 break-all text-[10px] text-gray-400/70 dark:text-gray-500/70">{child.args}</div>
-                                )}
-                                {(child.outputPreview || child.errorPreview) && (
-                                  <div className="mt-0.5 text-[10px] text-gray-400/80 dark:text-gray-500/80">
-                                    {child.errorPreview ?? child.outputPreview}
-                                  </div>
-                                )}
-                              </div>
+                              <ToolCallLine tool={child} compact />
                             </motion.div>
                           ))}
                         </AnimatePresence>

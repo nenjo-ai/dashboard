@@ -1,18 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
 import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { PageTransition } from "@/components/ui/motion";
-import { setAuthTokenGetter } from "@/lib/api";
+import { fetchBootstrapStatus, fetchCurrentUser, setAuthTokenGetter } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { loadStoredAccountContentKey } from "@/lib/cryptoContent";
 import { MobileMenuProvider } from "@/lib/MobileMenuContext";
+import { OrgProvider } from "@/lib/org-context";
 
 /** Routes under /dashboard that should NOT show the sidebar chrome. */
-const CHROMELESS_ROUTES = ["/dashboard/login", "/dashboard/onboarding"];
+const CHROMELESS_ROUTES = ["/dashboard/login", "/dashboard/onboarding", "/dashboard/invitations"];
 const CLERK_ENABLED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 export default function DashboardLayout({
@@ -39,11 +41,13 @@ function DashboardLayoutWithClerk({
   children: React.ReactNode;
   pathname: string;
 }) {
-  const { getToken, isLoaded } = useAuth();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const router = useRouter();
   const isChromeless = CHROMELESS_ROUTES.some((r) => pathname.startsWith(r));
   const isChatRoute = pathname.startsWith("/dashboard/chat");
   const showMobileNav = !isChatRoute;
   const [authReady, setAuthReady] = useState(false);
+  const [routeReady, setRouteReady] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== "undefined"
@@ -98,6 +102,53 @@ function DashboardLayoutWithClerk({
     };
   }, [getToken, isLoaded]);
 
+  useEffect(() => {
+    if (isChromeless) {
+      setRouteReady(true);
+      return;
+    }
+    if (!authReady || !isLoaded || !isSignedIn) {
+      setRouteReady(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRouteReady(false);
+
+    void (async () => {
+      try {
+        const [me, localAck, bootstrap] = await Promise.all([
+          fetchCurrentUser(),
+          loadStoredAccountContentKey(),
+          fetchBootstrapStatus().catch(() => null),
+        ]);
+        if (cancelled) return;
+
+        const hasOrg = Boolean(me.org_id);
+        const hasExistingWorkspace =
+          Boolean(me.onboarded) ||
+          Boolean(bootstrap?.has_recovery_bundle) ||
+          (bootstrap?.trusted_device_count ?? 0) > 0;
+        const needsRestore = hasOrg && hasExistingWorkspace && !localAck;
+
+        if (needsRestore) {
+          router.replace("/dashboard/onboarding");
+          return;
+        }
+      } catch {
+        // Fall through and let the dashboard render; onboarding has its own gate.
+      }
+
+      if (!cancelled) {
+        setRouteReady(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, isChromeless, isLoaded, isSignedIn, router]);
+
   if (isChromeless) {
     // Wait for Clerk to load so the auth token getter is wired up
     // before children (like onboarding) make API calls.
@@ -141,27 +192,45 @@ function DashboardLayoutWithClerk({
     );
   }
 
-  return (
-    <div className="min-h-screen bg-[#f5f7fb] dark:bg-[#05070b]">
-      <Sidebar
-        collapsed={sidebarCollapsed}
-        onToggleCollapse={toggleSidebar}
-        mobileOpen={false}
-        onMobileClose={() => {}}
-      />
-      {/* Main content — offset by sidebar width on desktop */}
-      <div className={mainPadding}>
-        <main className={cn("min-h-screen bg-[#f5f7fb] dark:bg-[#05070b] md:bg-transparent md:dark:bg-transparent", showMobileNav && "pb-[calc(5.25rem+env(safe-area-inset-bottom,0px))] md:pb-0")}>
-          <MobileMenuProvider onMenuClick={() => {}}>
-            {isMobileViewport ? (
-              children
-            ) : (
-              <PageTransition pageKey={pathname}>{children}</PageTransition>
-            )}
-          </MobileMenuProvider>
+  if (!routeReady) {
+    return (
+      <div className="min-h-screen bg-[#f5f7fb] dark:bg-[#05070b]">
+        <main className="min-h-screen flex items-center justify-center">
+          <div className="flex items-center gap-3 text-gray-400">
+            <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-sm">Loading…</span>
+          </div>
         </main>
       </div>
-      {showMobileNav && <MobileTabBar />}
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#f5f7fb] dark:bg-[#05070b]">
+      <OrgProvider>
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={toggleSidebar}
+          mobileOpen={false}
+          onMobileClose={() => {}}
+        />
+        {/* Main content — offset by sidebar width on desktop */}
+        <div className={mainPadding}>
+          <main className={cn("min-h-screen bg-[#f5f7fb] dark:bg-[#05070b] md:bg-transparent md:dark:bg-transparent", showMobileNav && "pb-[calc(5.25rem+env(safe-area-inset-bottom,0px))] md:pb-0")}>
+            <MobileMenuProvider onMenuClick={() => {}}>
+              {isMobileViewport ? (
+                children
+              ) : (
+                <PageTransition pageKey={pathname}>{children}</PageTransition>
+              )}
+            </MobileMenuProvider>
+          </main>
+        </div>
+        {showMobileNav && <MobileTabBar />}
+      </OrgProvider>
     </div>
   );
 }

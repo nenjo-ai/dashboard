@@ -5,11 +5,13 @@ import useSWR from "swr";
 import {
   approveDeviceEnrollment,
   approveWorkerEnrollment,
+  bootstrapCurrentOrgContentKey,
   deleteDeviceEnrollment,
   deleteRecoveryBundle,
   deleteTrustedDevice,
   deleteWorkerApprovalKey,
   deleteWorkerEnrollment,
+  fetchCurrentOrgContentKeyRecovery,
   fetchRecoveryBundle,
   fetchWorkerApprovalKey,
   listDeviceEnrollments,
@@ -19,6 +21,7 @@ import {
   upsertTrustedDevice,
 } from "@/lib/api";
 import {
+  buildCurrentOrgContentKeyBootstrap,
   buildTrustedDevicePayload,
   buildWorkerCertificate,
   clearAccountSigningKeyPair,
@@ -27,6 +30,7 @@ import {
   ensureAccountSigningKeyPair,
   generateAccountContentKey,
   importWrappedAccountContentKeyForDevice,
+  importWrappedOrgContentKeyFromRecovery,
   loadAccountSigningPublicKey,
   loadStoredRecoveryBundle,
   loadStoredAccountContentKey,
@@ -34,12 +38,14 @@ import {
   storeRecoveryBundle,
   warmAccountSigningKeyPair,
   wrapAccountContentKeyForWorker,
+  wrapOrgContentKeyForWorker,
 } from "@/lib/cryptoContent";
 import { useCurrentUser } from "@/lib/hooks";
 import { fetcher, workerEnrollmentUrl } from "@/lib/api";
 import type {
   DeviceEnrollmentPayload,
   TrustedDevicePayload,
+  WorkerHarnessMetadata,
   WorkerEnrollmentStatusResponse,
 } from "@/lib/types";
 import { toast } from "@/lib/toast";
@@ -53,6 +59,24 @@ function summarizeKey(base64Key: string | null): string {
   return `${base64Key.slice(0, 8)}...${base64Key.slice(-6)}`;
 }
 
+function harnessTitle(enrollment: WorkerEnrollmentStatusResponse): string {
+  return enrollment.metadata?.name || enrollment.api_key_id;
+}
+
+function harnessDescription(
+  enrollment: WorkerEnrollmentStatusResponse,
+  stateLabel: string,
+): string {
+  const metadata = enrollment.metadata;
+  const parts = [
+    stateLabel,
+    metadata?.host,
+    metadata?.version,
+    metadata?.labels?.length ? metadata.labels.join(", ") : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : enrollment.api_key_id;
+}
+
 function SectionCard({
   title,
   description,
@@ -63,7 +87,7 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="theme-border theme-surface rounded-xl border p-5 shadow-xs">
+    <section className="theme-border theme-surface overflow-hidden rounded-2xl border p-5">
       <div className="mb-4">
         <h3 className="theme-text text-base font-semibold">{title}</h3>
         <p className="theme-text-muted mt-1 text-sm">{description}</p>
@@ -83,7 +107,7 @@ function ItemRow({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="theme-border rounded-lg border p-4">
+    <div className="theme-border rounded-2xl border px-4 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="theme-text text-sm font-medium">{title}</p>
@@ -97,7 +121,7 @@ function ItemRow({
 
 function VerificationWarning({ code }: { code: string }) {
   return (
-    <div className="rounded-lg border border-amber-300/80 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200">
+    <div className="rounded-2xl border border-amber-300/80 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200">
       Check that this code matches the one shown on the requesting device or harness before approving:{" "}
       <span className="font-mono font-semibold tracking-[0.2em]">{code}</span>
     </div>
@@ -116,7 +140,7 @@ function DangerActionRow({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-red-200/70 bg-red-50/60 p-4 dark:border-red-500/20 dark:bg-red-500/6">
+    <div className="border border-red-200/70 bg-red-50/60 p-4 dark:border-red-500/20 dark:bg-red-500/6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 max-w-2xl space-y-2">
           <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{title}</p>
@@ -133,8 +157,14 @@ function DangerActionRow({
   );
 }
 
-export function ContentEncryptionSection() {
-  const { userId } = useCurrentUser();
+type ContentEncryptionSectionMode = "all" | "devices" | "workers";
+
+export function ContentEncryptionSection({
+  mode = "all",
+}: {
+  mode?: ContentEncryptionSectionMode;
+}) {
+  const { userId, currentUser } = useCurrentUser();
   const [busyWorkerId, setBusyWorkerId] = useState<string | null>(null);
   const [removingWorkerId, setRemovingWorkerId] = useState<string | null>(null);
   const [removingDeviceId, setRemovingDeviceId] = useState<string | null>(null);
@@ -178,7 +208,7 @@ export function ContentEncryptionSection() {
         confirmLabel: string;
       }
     | {
-        kind: "remove_harness_request";
+        kind: "remove_harness";
         apiKeyId: string;
         title: string;
         message: string;
@@ -278,10 +308,20 @@ export function ContentEncryptionSection() {
           setSigningKeySynced(!!stored && stored === (remote.public_key ?? null));
         }
         if (stored && stored !== (remote.public_key ?? null)) {
-          await putWorkerApprovalKey(stored);
-          if (!cancelled) {
-            setSigningKeySynced(true);
+          try {
+            await putWorkerApprovalKey(stored);
+            if (!cancelled) {
+              setSigningKeySynced(true);
+            }
+          } catch {
+            if (!cancelled) {
+              setSigningKeySynced(false);
+            }
           }
+        }
+      } catch {
+        if (!cancelled) {
+          setSigningKeySynced(false);
         }
       } finally {
         if (!cancelled) {
@@ -333,6 +373,8 @@ export function ContentEncryptionSection() {
     () => deviceEnrollments.filter((item) => item.state === "pending"),
     [deviceEnrollments],
   );
+  const showDevices = mode === "all" || mode === "devices";
+  const showWorkers = mode === "all" || mode === "workers";
 
   const handleGenerateKey = async () => {
     const next = await generateAccountContentKey();
@@ -391,6 +433,18 @@ export function ContentEncryptionSection() {
         keyVersion,
       });
       await upsertTrustedDevice(trustedDevice);
+      const orgRecovery = await fetchCurrentOrgContentKeyRecovery().catch(() => null);
+      if (orgRecovery?.recovery_wrapped_ock) {
+        await importWrappedOrgContentKeyFromRecovery({
+          orgId: orgRecovery.org_id,
+          wrappedOck: orgRecovery.recovery_wrapped_ock,
+        });
+        const bootstrap = await buildCurrentOrgContentKeyBootstrap({
+          orgId: orgRecovery.org_id,
+          keyVersion: orgRecovery.key_version,
+        });
+        await bootstrapCurrentOrgContentKey(bootstrap);
+      }
       setTrustedDevices(await listTrustedDevices().catch(() => [trustedDevice]));
       setAckPreview(restored.accountContentKey);
       setSigningKeyPreview(restored.publicKey);
@@ -412,13 +466,13 @@ export function ContentEncryptionSection() {
   };
 
   const handleApproveHarness = async (enrollment: WorkerEnrollmentStatusResponse) => {
-    if (!userId) {
+    if (!userId || !currentUser?.org_id) {
       toast.error("Could not resolve the current account.");
       return;
     }
 
     const certificate = await buildWorkerCertificate({
-      accountId: userId,
+      accountId: currentUser.org_id,
       apiKeyId: enrollment.api_key_id,
       encPublicKey: enrollment.request.enc_public_key,
       signPublicKey: enrollment.request.sign_public_key,
@@ -430,9 +484,15 @@ export function ContentEncryptionSection() {
         workerPublicKey: certificate.enc_public_key,
         keyVersion,
       });
+      const wrappedOck = await wrapOrgContentKeyForWorker({
+        orgId: currentUser.org_id,
+        keyVersion,
+        workerPublicKey: certificate.enc_public_key,
+      });
       await approveWorkerEnrollment(enrollment.api_key_id, {
         certificate,
         wrapped_ack: wrappedAck,
+        wrapped_ock: wrappedOck,
       });
       toast.success("Harness approved.");
       await mutate();
@@ -482,14 +542,14 @@ export function ContentEncryptionSection() {
     }
   };
 
-  const handleRemoveHarnessRequest = async (workerId: string) => {
+  const handleRemoveHarness = async (workerId: string) => {
     setRemovingWorkerId(workerId);
     try {
       await deleteWorkerEnrollment(workerId);
-      toast.success("Harness request removed.");
+      toast.success("Harness removed.");
       await mutate();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to remove harness request.");
+      toast.error(error instanceof Error ? error.message : "Failed to remove harness.");
     } finally {
       setRemovingWorkerId(null);
     }
@@ -513,8 +573,8 @@ export function ContentEncryptionSection() {
         case "remove_trusted_device":
           await handleRemoveTrustedDevice(action.device);
           break;
-        case "remove_harness_request":
-          await handleRemoveHarnessRequest(action.apiKeyId);
+        case "remove_harness":
+          await handleRemoveHarness(action.apiKeyId);
           break;
       }
     } finally {
@@ -524,125 +584,130 @@ export function ContentEncryptionSection() {
 
   return (
     <div className="space-y-6">
-      <SectionCard
-        title="Content"
-        description="Manage the account content key used to encrypt prompts, responses, and saved content, plus the recovery bundle for restoring access."
-      >
-        <ItemRow
-          title="Account Content Key"
-          description={`Version ${keyVersion} · ${summarizeKey(ackPreview)}`}
+      {showDevices && (
+        <SectionCard
+          title="Content"
+          description="Manage the account content key used to encrypt prompts, responses, and saved content, plus the recovery bundle for restoring access."
         >
-          <Button variant="primary" size="md" onClick={() => void handleGenerateKey()}>
-            {ackLoading ? "Loading..." : ackPreview ? "Rotate Key" : "Generate Key"}
-          </Button>
-        </ItemRow>
-
-        <div>
-          <label className="theme-text-muted block text-xs font-medium uppercase tracking-[0.2em]">
-            Key Version
-          </label>
-          <Input
-            type="number"
-            min={1}
-            value={String(keyVersion)}
-            onChange={(event) => setKeyVersion(Math.max(1, Number(event.target.value) || 1))}
-            className="mt-2 w-28"
-          />
-        </div>
-
-        <ItemRow
-          title="Recovery Bundle"
-          description={
-            hasRecoveryBundle
-              ? "An encrypted recovery bundle is stored for this account."
-              : "No recovery bundle detected yet."
-          }
-        />
-
-        <div>
-          <label className="theme-text-muted block text-xs font-medium uppercase tracking-[0.2em]">
-            Recovery Phrase
-          </label>
-          <Input
-            value={recoveryPhrase}
-            onChange={(event) => setRecoveryPhrase(event.target.value)}
-            placeholder="Enter your saved recovery phrase"
-            className="mt-2"
-          />
-          <div className="mt-3">
-            <Button
-              variant="primary"
-              size="md"
-              isLoading={recoveryBusy}
-              disabled={!recoveryPhrase.trim()}
-              onClick={() => void handleRestore()}
-            >
-              Restore This Device
+          <ItemRow
+            title="Account Content Key"
+            description={`Version ${keyVersion} · ${summarizeKey(ackPreview)}`}
+          >
+            <Button variant="primary" size="md" onClick={() => void handleGenerateKey()}>
+              {ackLoading ? "Loading..." : ackPreview ? "Rotate Key" : "Generate Key"}
             </Button>
+          </ItemRow>
+
+          <div>
+            <label className="theme-text-muted block text-xs font-medium uppercase tracking-[0.2em]">
+              Key Version
+            </label>
+            <Input
+              type="number"
+              min={1}
+              value={String(keyVersion)}
+              onChange={(event) => setKeyVersion(Math.max(1, Number(event.target.value) || 1))}
+              className="mt-2 w-28"
+            />
           </div>
-        </div>
-      </SectionCard>
 
-      <SectionCard
-        title="Devices"
-        description="Trusted devices hold a wrapped copy of the account content key. New devices should register themselves automatically and wait here for approval."
-      >
-        <ItemRow
-          title="Current Device"
-          description={
-            autoRegisteringDevice
-              ? "Registering or refreshing this device automatically."
-              : "This device is registered automatically when local encryption is available."
-          }
-        />
+          <ItemRow
+            title="Recovery Bundle"
+            description={
+              hasRecoveryBundle
+                ? "An encrypted recovery bundle is stored for this account."
+                : "No recovery bundle detected yet."
+            }
+          />
 
-        {pendingDeviceApprovals.length > 0 ? (
-          <div className="space-y-3">
-            <p className="theme-text text-sm font-medium">Pending Device Approvals</p>
-            {pendingDeviceApprovals.map((device) => (
-              <ItemRow
-                key={device.device_id}
-                title={device.device_label || device.device_id}
-                description={device.device_id}
+          <div>
+            <label className="theme-text-muted block text-xs font-medium uppercase tracking-[0.2em]">
+              Recovery Phrase
+            </label>
+            <Input
+              value={recoveryPhrase}
+              onChange={(event) => setRecoveryPhrase(event.target.value)}
+              placeholder="Enter your saved recovery phrase"
+              className="mt-2"
+            />
+            <div className="mt-3">
+              <Button
+                variant="primary"
+                size="md"
+                isLoading={recoveryBusy}
+                disabled={!recoveryPhrase.trim()}
+                onClick={() => void handleRestore()}
               >
-                <VerificationWarning code={device.verification_code} />
-                <Button variant="primary" size="sm" onClick={() => void handleApproveDevice(device)}>
-                  Approve
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={removingPendingDeviceId === device.device_id}
-                  onClick={() => void handleRemovePendingDeviceRequest(device.device_id)}
+                Restore This Device
+              </Button>
+            </div>
+          </div>
+        </SectionCard>
+      )}
+
+      {showDevices && (
+        <SectionCard
+          title="Devices"
+          description="Trusted devices hold a wrapped copy of the account content key. New devices should register themselves automatically and wait here for approval."
+        >
+          <ItemRow
+            title="Current Device"
+            description={
+              autoRegisteringDevice
+                ? "Registering or refreshing this device automatically."
+                : "This device is registered automatically when local encryption is available."
+            }
+          />
+
+          {pendingDeviceApprovals.length > 0 ? (
+            <div className="space-y-3">
+              <p className="theme-text text-sm font-medium">Pending Device Approvals</p>
+              {pendingDeviceApprovals.map((device) => (
+                <ItemRow
+                  key={device.device_id}
+                  title={device.device_label || device.device_id}
+                  description={device.device_id}
                 >
-                  {removingPendingDeviceId === device.device_id ? "Removing..." : "Remove"}
-                </Button>
-              </ItemRow>
-            ))}
-          </div>
-        ) : null}
+                  <VerificationWarning code={device.verification_code} />
+                  <Button variant="primary" size="sm" onClick={() => void handleApproveDevice(device)}>
+                    Approve
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={removingPendingDeviceId === device.device_id}
+                    onClick={() => void handleRemovePendingDeviceRequest(device.device_id)}
+                  >
+                    {removingPendingDeviceId === device.device_id ? "Removing..." : "Remove"}
+                  </Button>
+                </ItemRow>
+              ))}
+            </div>
+          ) : null}
 
-        {trustedDevices.length === 0 ? (
-          <div className="theme-border theme-surface-muted rounded-lg border border-dashed px-4 py-6 text-sm text-gray-500 dark:text-gray-400">
-            No trusted devices registered yet.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {trustedDevices.map((device) => (
-              <ItemRow
-                key={device.device_id}
-                title={device.device_label || device.device_id}
-                description={device.device_id}
-              />
-            ))}
-          </div>
-        )}
-      </SectionCard>
+          {trustedDevices.length === 0 ? (
+            <div className="theme-border theme-surface-muted rounded-2xl border border-dashed px-4 py-6 text-sm text-gray-500 dark:text-gray-400">
+              No trusted devices registered yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {trustedDevices.map((device) => (
+                <ItemRow
+                  key={device.device_id}
+                  title={device.device_label || device.device_id}
+                  description={device.device_id}
+                />
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      )}
 
-      <SectionCard
-        title="Harnesses"
-        description="Harness approvals use a local signing key and a wrapped copy of the account content key. Pending requests appear here after a harness connects."
-      >
+      {showWorkers && (
+        <SectionCard
+          title="Approvals"
+          description="Harness approvals use a local signing key and a wrapped copy of the account content key. Pending requests appear here after a harness connects."
+        >
         <ItemRow
           title="Harness Approval Key"
           description={
@@ -667,8 +732,8 @@ export function ContentEncryptionSection() {
             {pendingEnrollments.map((enrollment) => (
               <HarnessRow
                 key={enrollment.api_key_id}
-                title={enrollment.api_key_id}
-                description="Pending approval"
+                title={harnessTitle(enrollment)}
+                description={harnessDescription(enrollment, "Pending approval")}
                 verificationCode={enrollment.request.verification_code}
                 primaryLabel={busyWorkerId === enrollment.api_key_id ? "Approving..." : "Approve"}
                 primaryDisabled={
@@ -684,21 +749,35 @@ export function ContentEncryptionSection() {
             {activeEnrollments.map((enrollment) => (
               <HarnessRow
                 key={enrollment.api_key_id}
-                title={enrollment.api_key_id}
-                description="Approved"
+                title={harnessTitle(enrollment)}
+                description={harnessDescription(enrollment, "Approved")}
                 primaryLabel="Approved"
                 primaryDisabled
+                secondaryLabel={removingWorkerId === enrollment.api_key_id ? "Removing..." : "Remove"}
+                secondaryDisabled={removingWorkerId === enrollment.api_key_id}
+                onSecondary={() =>
+                  setDangerConfirm({
+                    kind: "remove_harness",
+                    apiKeyId: enrollment.api_key_id,
+                    title: "Remove Harness?",
+                    message:
+                      "This removes the approved harness enrollment. That harness will need to reconnect and be approved again before it can run.",
+                    confirmLabel: "Remove Harness",
+                  })
+                }
               />
             ))}
           </div>
         )}
       </SectionCard>
+      )}
 
-      <SectionCard
-        title="Danger Zone"
-        description="These actions remove key material or trust relationships. Use them only when you intentionally want to break access, revoke a device, or reset recovery state."
-      >
-        {ackPreview ? (
+      {(showDevices || showWorkers) && (
+        <SectionCard
+          title="Danger Zone"
+          description="These actions remove key material or trust relationships. Use them only when you intentionally want to break access, revoke a device, or reset recovery state."
+        >
+        {showDevices && ackPreview ? (
           <DangerActionRow
             title="Clear Local Content Key"
             danger="This removes the account content key from this device, so encrypted prompts, responses, and saved content can no longer be decrypted here until the device is restored or approved again."
@@ -722,7 +801,7 @@ export function ContentEncryptionSection() {
           </DangerActionRow>
         ) : null}
 
-        {hasRecoveryBundle ? (
+        {showDevices && hasRecoveryBundle ? (
           <DangerActionRow
             title="Delete Recovery Bundle"
             danger="This removes the encrypted recovery bundle stored for the account. If every trusted device is lost after this, account recovery may become impossible."
@@ -746,7 +825,7 @@ export function ContentEncryptionSection() {
           </DangerActionRow>
         ) : null}
 
-        {signingKeyPreview ? (
+        {showWorkers && signingKeyPreview ? (
           <DangerActionRow
             title="Clear Local Harness Approval Key"
             danger="This removes the signing key this device uses to approve harness requests. This browser will stop being able to approve harnesses until a new approval key is generated and registered."
@@ -770,7 +849,7 @@ export function ContentEncryptionSection() {
           </DangerActionRow>
         ) : null}
 
-        {trustedDevices.map((device) => (
+        {showDevices && trustedDevices.map((device) => (
           <DangerActionRow
             key={`danger-device-${device.device_id}`}
             title={`Remove Trusted Device${device.device_label ? ` · ${device.device_label}` : ""}`}
@@ -797,7 +876,7 @@ export function ContentEncryptionSection() {
           </DangerActionRow>
         ))}
 
-        {pendingEnrollments.map((enrollment) => (
+        {showWorkers && pendingEnrollments.map((enrollment) => (
           <DangerActionRow
             key={`danger-worker-${enrollment.api_key_id}`}
             title={`Remove Harness Request · ${enrollment.api_key_id}`}
@@ -809,7 +888,7 @@ export function ContentEncryptionSection() {
               size="sm"
               onClick={() =>
                 setDangerConfirm({
-                  kind: "remove_harness_request",
+                  kind: "remove_harness",
                   apiKeyId: enrollment.api_key_id,
                   title: "Remove Harness Request?",
                   message:
@@ -824,6 +903,7 @@ export function ContentEncryptionSection() {
           </DangerActionRow>
         ))}
       </SectionCard>
+      )}
 
       <ConfirmDialog
         open={dangerConfirm !== null}
@@ -846,6 +926,9 @@ function HarnessRow({
   primaryLabel,
   primaryDisabled,
   onPrimary,
+  secondaryLabel,
+  secondaryDisabled,
+  onSecondary,
 }: {
   title: string;
   description: string;
@@ -853,6 +936,9 @@ function HarnessRow({
   primaryLabel: string;
   primaryDisabled?: boolean;
   onPrimary?: () => void;
+  secondaryLabel?: string;
+  secondaryDisabled?: boolean;
+  onSecondary?: () => void;
 }) {
   return (
     <ItemRow title={title} description={description}>
@@ -860,6 +946,11 @@ function HarnessRow({
       <Button variant={primaryDisabled ? "secondary" : "primary"} size="sm" disabled={primaryDisabled} onClick={onPrimary}>
         {primaryLabel}
       </Button>
+      {secondaryLabel ? (
+        <Button variant="danger" size="sm" disabled={secondaryDisabled} onClick={onSecondary}>
+          {secondaryLabel}
+        </Button>
+      ) : null}
     </ItemRow>
   );
 }
