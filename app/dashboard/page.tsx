@@ -1,20 +1,47 @@
 "use client";
 
 import Link from "next/link";
+import { TokenUsagePanel } from "@/components/dashboard/TokenUsagePanel";
 import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { TopBar } from "@/components/layout/TopBar";
 import { PageContent } from "@/components/ui/PageContent";
-import { useProjects, useAgents, useRecentExecutions, useActivity, type ActivityEntry } from "@/lib/hooks";
+import { useProjects, useAgents, useRecentExecutions, useActivity, useTokenUsage, type ActivityEntry } from "@/lib/hooks";
+import { formatCompactTokens, formatExactTokens } from "@/lib/formatTokens";
 import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
-function StatCard({ label, value, href }: { label: string; value: string | number; href: string }) {
+function StatCard({
+  label,
+  value,
+  href,
+  title,
+  secondary,
+  badge,
+}: {
+  label: string;
+  value: string | number;
+  href: string;
+  title?: string;
+  secondary?: string;
+  badge?: string;
+}) {
   return (
     <Link
       href={href}
+      title={title}
       className="theme-border theme-surface rounded-xl border p-5 transition-colors hover:[border-color:var(--app-border-strong)] md:shadow-xs"
     >
-      <p className="theme-text-muted text-sm">{label}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="theme-text-muted text-sm">{label}</p>
+        {badge && (
+          <span className="theme-border theme-text-muted rounded-full border px-2 py-0.5 text-[11px] font-medium">
+            {badge}
+          </span>
+        )}
+      </div>
       <p className="theme-text mt-1 text-2xl font-semibold">{value}</p>
+      {secondary && (
+        <p className="theme-text-muted mt-1 truncate text-xs">{secondary}</p>
+      )}
     </Link>
   );
 }
@@ -49,11 +76,19 @@ export default function DashboardPage() {
   const { projects } = useProjects();
   const { agents } = useAgents();
   const { executions } = useRecentExecutions(undefined, 50);
-  const { activity } = useActivity({ limit: 8 });
+  const { activity } = useActivity({ limit: 20 });
+  const { usage: tokenUsage } = useTokenUsage();
 
   const runningExecutions = executions?.filter(
     (e) => e.status === "running" || e.status === "pending",
   ).length ?? 0;
+  const tokenCardValue = tokenUsage ? formatCompactTokens(tokenUsage.total_tokens) : "-";
+  const tokenCardTitle = tokenUsage
+    ? `Input: ${formatExactTokens(tokenUsage.input_tokens)} · Output: ${formatExactTokens(tokenUsage.output_tokens)}`
+    : undefined;
+  const tokenCardSecondary = tokenUsage
+    ? `${formatCompactTokens(tokenUsage.input_tokens)} in / ${formatCompactTokens(tokenUsage.output_tokens)} out`
+    : undefined;
 
   return isMobileViewport ? (
     <MobilePageShell title="Dashboard">
@@ -62,7 +97,17 @@ export default function DashboardPage() {
           <StatCard label="Agents" value={agents?.length ?? "-"} href="/dashboard/agents" />
           <StatCard label="Running" value={runningExecutions} href="/dashboard/activity" />
           <StatCard label="Executions" value={executions?.length ?? "-"} href="/dashboard/executions" />
+          <StatCard
+            label="Tokens"
+            value={tokenCardValue}
+            href="#token-usage"
+            title={tokenCardTitle}
+            secondary={tokenCardSecondary}
+            badge="Estimated"
+          />
         </div>
+
+        <TokenUsagePanel />
 
         <div className="mt-4 rounded-[1.5rem] border border-black/10 bg-transparent dark:border-white/10">
           <div className="flex items-center justify-between border-b border-black/5 px-4 py-3 dark:border-white/10">
@@ -84,7 +129,7 @@ export default function DashboardPage() {
     <>
       <TopBar title="Dashboard" />
       <PageContent>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
           <StatCard
             label="Projects"
             value={projects?.length ?? "-"}
@@ -105,7 +150,17 @@ export default function DashboardPage() {
             value={executions?.length ?? "-"}
             href="/dashboard/activity"
           />
+          <StatCard
+            label="Tokens"
+            value={tokenCardValue}
+            href="#token-usage"
+            title={tokenCardTitle}
+            secondary={tokenCardSecondary}
+            badge="Estimated"
+          />
         </div>
+
+        <TokenUsagePanel />
 
         <div className="theme-border theme-surface mt-6 rounded-xl border shadow-xs">
           <div className="theme-border flex items-center justify-between border-b px-5 py-3.5">
