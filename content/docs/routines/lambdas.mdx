@@ -1,37 +1,13 @@
 ---
 title: Lambdas
-description: Deterministic scripts that run without an LLM, used in lambda and cron routine steps.
+description: Deterministic scripts that run without an LLM—write, store, and reuse scripts in your routines.
 ---
 
-Lambdas are **deterministic scripts** that run without an LLM. Use them for tasks like:
+Your routine is built—now make it run. Sometimes you need to execute deterministic tasks that don't need an LLM—running tests, checking git status, calling APIs, or performing file operations. **Lambdas** are reusable scripts stored in the database and executed on the worker.
 
-- Running tests or linters
-- Checking git status
-- Calling external APIs
-- Performing file operations
-- Polling for external conditions (in cron steps)
+Think of lambdas as utility functions: they're reusable, parameterized, and run the same way every time.
 
-Think of lambdas as the **utility functions** of your routine—they do specific, repeatable tasks reliably.
-
-## Creating a lambda
-
-### Via API
-
-```bash
-curl -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Run Tests",
-    "description": "Execute the project test suite",
-    "path": "scripts/run-tests.sh",
-    "body": "#!/bin/bash\nset -e\nnpm test",
-    "interpreter": "bash"
-  }' \
-  https://your-instance.com/api/v1/lambdas
-```
-
-### Data model
+## Data model
 
 | Field | Type | Description |
 |---|---|---|
@@ -41,6 +17,8 @@ curl -X POST \
 | `path` | string | Relative path within `~/.nenjo/lambdas/` |
 | `body` | string | The script source code |
 | `interpreter` | string | How to execute: `auto`, `bash`, `sh`, `python3`, or `node` |
+| `is_system` | boolean | Whether this is a built-in system lambda |
+| `created_by` | UUID? | Owner user ID (null for system lambdas) |
 
 ### Interpreters
 
@@ -52,49 +30,13 @@ curl -X POST \
 | `python3` | Run with `python3` |
 | `node` | Run with `node` |
 
-## Using lambdas in routines
-
-### Lambda steps
-
-A lambda step runs once and determines the next step based on exit code:
-
-```json
-{
-  "name": "Run Tests",
-  "step_type": "lambda",
-  "lambda_id": "LAMBDA_UUID",
-  "config": {
-    "timeout": "10m"
-  }
-}
-```
-
-- Exit code `0` → takes `on_pass` edge
-- Non-zero exit → takes `on_fail` edge
-
-### Cron steps (polling)
-
-A cron step runs repeatedly until a condition is met:
-
-```json
-{
-  "name": "Wait for Deployment",
-  "step_type": "cron",
-  "lambda_id": "CHECK_DEPLOY_LAMBDA",
-  "config": {
-    "interval": "30s",
-    "timeout": "1h"
-  }
-}
-```
-
-The lambda signals completion via JSON output (see [Cron and Scheduling](/docs/routines/cron-and-scheduling)).
+Default is `auto`.
 
 ## Environment variables
 
-Lambdas receive context via environment variables:
+When a lambda runs as part of a routine, the executor injects `NENJO_*` environment variables:
 
-| Variable | Description |
+| Variable | Source |
 |---|---|
 | `NENJO_ROUTINE_ID` | Routine ID |
 | `NENJO_STEP_ID` | Current step ID |
@@ -105,27 +47,46 @@ Lambdas receive context via environment variables:
 | `NENJO_TICKET_TITLE` | Task title |
 | `NENJO_TICKET_SLUG` | URL-safe task identifier |
 | `NENJO_GIT_BRANCH` | Current working branch |
-| `NENJO_GIT_WORK_DIR` | Worktree directory path |
 | `NENJO_GIT_TARGET_BRANCH` | Target branch for merges/PRs |
+| `NENJO_GIT_WORK_DIR` | Worktree directory path |
 | `NENJO_GIT_REPO_URL` | Remote repository URL |
-| `NENJO_GIT_COMMON_DIR` | Main `.git/` directory path |
-| `NENJO_CONTEXT_FILE` | Path to JSON file with full context |
+| `NENJO_CONTEXT_FILE` | Path to JSON file with full routine context |
+| `NENJO_GIT_COMMON_DIR` | Path to main `.git/` directory |
 
 ### Context file
 
-For complex data, read from `NENJO_CONTEXT_FILE`:
+A JSON file with the full routine context is written to a temporary path and available via `NENJO_CONTEXT_FILE`. Scripts that need structured data beyond environment variables can read from here.
 
-```python
-import json
-import os
+## Exit codes
 
-with open(os.environ['NENJO_CONTEXT_FILE']) as f:
-    context = json.load(f)
+| Exit code | Result |
+|---|---|
+| `0` | `passed: true` |
+| Non-zero | `passed: false` |
 
-pr_number = context.get('pr_number')
+Stdout is captured as the step's `output` text.
+
+## Step configuration
+
+```json
+{
+  "name": "Run Tests",
+  "step_type": "lambda",
+  "lambda_id": "LAMBDA_UUID",
+  "config": {
+    "interpreter_override": "bash",
+    "timeout": "10m"
+  }
+}
 ```
 
-## Lambda patterns with code examples
+| Config field | Type | Default | Description |
+|---|---|---|---|
+| `lambda_id` | UUID | -- | Can also be set as top-level step field |
+| `interpreter_override` | string | -- | Override the lambda's default interpreter |
+| `timeout` | string | `"5m"` | Maximum execution time |
+
+## Lambda script patterns
 
 ### Pattern 1: Git status check
 
@@ -149,6 +110,8 @@ exit 0
 
 ### Pattern 2: Run test suite
 
+Run tests and exit with appropriate code:
+
 ```bash
 #!/bin/bash
 # Lambda: run-tests.sh
@@ -156,7 +119,7 @@ exit 0
 cd "$NENJO_GIT_WORK_DIR" || exit 1
 
 echo "Running test suite..."
-npm test -- --ci
+npm test
 
 if [ $? -eq 0 ]; then
   echo "All tests passed"
@@ -167,12 +130,52 @@ else
 fi
 ```
 
-### Pattern 3: PR merge check (cron lambda)
+### Pattern 3: Call external API
+
+```bash
+#!/bin/bash
+# Lambda: fetch-data.sh
+
+API_URL="https://api.example.com/data"
+OUTPUT_FILE="$NENJO_GIT_WORK_DIR/data.json"
+
+response=$(curl -s -w "%{http_code}" -o "$OUTPUT_FILE" "$API_URL")
+
+if [ "$response" = "200" ]; then
+  echo "Data fetched successfully"
+  exit 0
+else
+  echo "API request failed with status: $response"
+  exit 1
+fi
+```
+
+### Pattern 4: Read context and make decision
+
+```bash
+#!/bin/bash
+# Lambda: decide-route.sh
+
+cd "$NENJO_GIT_WORK_DIR" || exit 1
+
+# Read task complexity from context
+COMPLEXITY=$(cat "$NENJO_CONTEXT_FILE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('task',{}).get('complexity',0))")
+
+if [ "$COMPLEXITY" -gt 8 ]; then
+  echo "Complex task - route to senior reviewer"
+  exit 0
+else
+  echo "Simple task - route to junior reviewer"
+  exit 1
+fi
+```
+
+### Pattern 5: PR merge check (for cron steps)
 
 ```bash
 #!/bin/bash
 # Lambda: check-pr-merged.sh
-# For use in cron steps - polls until PR is merged
+# For use in a cron step - polls until a PR is merged
 
 cd "$NENJO_GIT_WORK_DIR" || exit 1
 
@@ -199,86 +202,84 @@ case "$STATE" in
 esac
 ```
 
-### Pattern 4: External API call
+## API
 
-```python
-#!/usr/bin/env python3
-# Lambda: notify-slack.py
+Lambda routes are under `/api/v1/lambdas`.
 
-import os
-import json
-import urllib.request
-
-SLACK_WEBHOOK = os.environ.get('SLACK_WEBHOOK_URL')
-MESSAGE = os.environ.get('NENJO_TICKET_TITLE', 'Task completed')
-
-data = json.dumps({'text': MESSAGE}).encode('utf-8')
-req = urllib.request.Request(
-    SLACK_WEBHOOK,
-    data=data,
-    headers={'Content-Type': 'application/json'}
-)
-
-try:
-    urllib.request.urlopen(req)
-    print("Notification sent")
-    exit(0)
-except Exception as e:
-    print(f"Failed to send notification: {e}")
-    exit(1)
-```
-
-### Pattern 5: Database operation
+### Create a lambda
 
 ```bash
-#!/bin/bash
-# Lambda: seed-database.sh
-
-cd "$NENJO_GIT_WORK_DIR" || exit 1
-
-# Run database migrations
-npx prisma db push --accept-data-loss
-
-if [ $? -eq 0 ]; then
-  # Seed data
-  npx prisma db seed
-  
-  if [ $? -eq 0 ]; then
-    echo "Database seeded successfully"
-    exit 0
-  fi
-fi
-
-echo "Database seeding failed"
-exit 1
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Run Tests",
+    "description": "Execute the project test suite",
+    "path": "scripts/run-tests.sh",
+    "body": "#!/bin/bash\nset -e\nnpm test",
+    "interpreter": "bash"
+  }' \
+  https://your-instance.com/api/v1/lambdas
 ```
 
-## Debugging: my lambda fails silently
+### List lambdas
 
-- **Check exit code** — Non-zero exits are treated as failures
-- **Check stdout** — Output is captured as the step's `output` field
-- **Check stderr** — Stderr is included in the output
-- **Check environment** — Variables like `NENJO_GIT_WORK_DIR` may be missing if the routine wasn't triggered from a git context
-
-## Debugging: timeout errors
-
-Set a timeout in the step config:
-
-```json
-{
-  "name": "Long Running Task",
-  "step_type": "lambda",
-  "lambda_id": "LAMBDA_UUID",
-  "config": {
-    "timeout": "30m"
-  }
-}
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/lambdas
 ```
 
-Default timeout is 5 minutes. For long operations, increase this value.
+### Update a lambda
 
-## Related topics
+```bash
+curl -X PATCH \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "body": "#!/bin/bash\nset -e\nnpm run test:ci"
+  }' \
+  https://your-instance.com/api/v1/lambdas/$LAMBDA_ID
+```
 
-- [Executions](/docs/routines/executions) — How lambdas integrate with routine execution
-- [Cron and Scheduling](/docs/routines/cron-and-scheduling) — Using lambdas in cron steps
-- [Step Types](/docs/routines/step-types) — All step types including lambda
+### Delete a lambda
+
+```bash
+curl -X DELETE \
+  -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/lambdas/$LAMBDA_ID
+```
+
+## Integration with routines
+
+### Lambda steps
+
+Direct execution within the routine flow. The script runs once, exit code determines `on_pass` or `on_fail` edge.
+
+### Cron steps in lambda mode
+
+A cron step can use a lambda instead of an agent for polling. The lambda runs repeatedly at the configured interval and signals completion via `cron_status` JSON.
+
+## Debugging: my lambda fails with "command not found"
+
+1. **Use absolute paths** — Don't rely on PATH being set
+2. **Check interpreter** — Ensure the lambda's interpreter matches your script
+3. **Use `which`** — Add `which npm || which node || echo "not found"` to debug
+
+## Debugging: my lambda hangs
+
+1. **Check timeout** — Default is 5 minutes; increase in step config
+2. **Check for interactive prompts** — Use `curl -s` not `curl` to avoid hanging
+3. **Check network** — Ensure the worker can reach external services
+
+## Debugging: my lambda runs but step fails
+
+1. **Check exit code** — Non-zero = failure
+2. **Check stdout** — The output is captured as the step's output
+3. **Check stderr** — stderr is not captured; redirect to stdout if needed: `2>&1`
+
+## Related concepts
+
+- [Executions](/docs/routines/executions) — How lambdas fit into routine execution
+- [Cron and scheduling](/docs/routines/cron-and-scheduling) — Using lambdas in cron steps
+- [Step types](/docs/routines/step-types) — Lambda step configuration
+- [System & Operations](/docs/system/worker) — Worker infrastructure that executes lambdas
