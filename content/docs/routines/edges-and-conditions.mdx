@@ -3,131 +3,171 @@ title: Edges and conditions
 description: How edge conditions control routine flow based on step results.
 ---
 
-Edges connect steps in a routine and define the execution order. Each edge has a **condition** that determines whether it should be followed based on the result of the source step.
+Edges are the decision arrows in your routine flowchart. They connect steps and determine which path to take next.
+
+Think of edges as the "if this, then that" logic:
+- "If the code compiles, run tests"
+- "If tests pass, deploy"
+- "If review fails, go back for fixes"
 
 ## Edge conditions
 
-There are five edge conditions, stored as a `routine_edge_condition` enum in the database:
+Each edge has a condition that tells the executor when to follow it:
 
-| Condition | DB value | Follows when |
+| Condition | Follows when | Use case |
 |---|---|---|
-| Always | `always` | Always follows, regardless of pass/fail |
-| On Pass | `on_pass` | Source step returned `passed: true` |
-| On Fail | `on_fail` | Source step returned `passed: false` |
-| On Review Pass | `on_review_pass` | Source step returned `passed: true` (review context) |
-| On Review Fail | `on_review_fail` | Source step returned `passed: false` (review context) |
+| `always` | Every time | Linear flow, parallel branches |
+| `on_pass` | Step returned `passed: true` | Success path |
+| `on_fail` | Step returned `passed: false` | Error handling, retry |
+| `on_review_pass` | Step passed in review context | Review workflows |
+| `on_review_fail` | Step failed in review context | Review correction |
 
-### Condition evaluation
+### How conditions work
 
-The executor evaluates conditions using a simple boolean check:
-
-- `always` -- always satisfied
-- `on_pass` and `on_review_pass` -- satisfied when `passed == true`
-- `on_fail` and `on_review_fail` -- satisfied when `passed == false`
-
-When a step completes, the executor filters outgoing edges to those whose condition is satisfied and follows the **first matching edge**. If no edge matches, execution ends.
+When a step finishes, the executor looks at its outgoing edges:
 
 ```
-// Pseudocode
-for edge in outgoing_edges(current_step):
-    if edge.condition.is_satisfied(result.passed):
-        next_step = edge.target_step
-        break
+1. Get all edges leaving the current step
+2. Find the first edge whose condition matches the result
+3. Follow that edge to the next step
+4. If no edge matches, execution ends
 ```
 
-### Default condition
-
-When creating an edge via the API, the `condition` field defaults to `always` if omitted.
-
-## Gate feedback flow
-
-Gate steps play a special role in edge condition evaluation. When a gate step fails:
-
-1. The gate's evaluation output is stored as `gate_feedback` in the routine context.
-2. The `task_source` is updated to the gate's role name (e.g., `"reviewer"`).
-3. The `on_fail` edge is followed to the next step.
-4. If the next step is an agent, it receives the gate feedback so it knows what to fix.
-
-This pattern enables review-and-revise loops without creating actual graph cycles (which are forbidden). Instead of looping back, you chain multiple agent-gate pairs:
-
-```
-Developer --> Gate --> (on_fail) --> Developer2 --> Gate2 --> Terminal
-                      (on_pass) --> Terminal
+```json
+{
+  "source_step_id": "developer-uuid",
+  "target_step_id": "reviewer-uuid",
+  "condition": "on_pass"
+}
 ```
 
-The same feedback mechanism applies to **cron** and **lambda** steps: when they fail, their output is stored as `gate_feedback` for the next step.
+## Common flow patterns
 
-## Common DAG patterns
+### Linear flow (always)
 
-### Linear routine
-
-The simplest pattern. Steps execute in sequence.
+The simplest pattern — steps execute one after another:
 
 ```
-Agent A --always--> Agent B --always--> Terminal
+Step A --always--> Step B --always--> Terminal
+```
+
+```json
+{
+  "edges": [
+    { "source_step_id": "a", "target_step_id": "b", "condition": "always" },
+    { "source_step_id": "b", "target_step_id": "terminal", "condition": "always" }
+  ]
+}
 ```
 
 ### Pass/fail branching
 
-Route to different paths based on step results.
+Route to different steps based on results:
 
 ```
-Developer --on_pass--> Reviewer --on_pass--> Terminal (Done)
-           --on_fail--> Terminal (Failed)
-                        --on_fail--> Terminal (Failed)
+Developer --on_pass--> Reviewer --on_pass--> Deploy --> Terminal
+           --on_fail--> Fix --> Reviewer
 ```
 
-### Diamond (fan-out / fan-in)
-
-Split work across parallel paths that converge.
-
-```
-Entry --always--> Left Path  --always--> Done
-      --always--> Right Path --always--> Done
-```
-
-Note: the executor follows edges sequentially (first match), so a "diamond" pattern means the executor will take one branch based on the first matching condition, not run both in parallel. True fan-out requires `always` conditions on multiple edges from the same step, but only the first match is followed.
-
-### Gate review pattern
-
-Use gate steps to validate agent output before proceeding.
-
-```
-Developer --on_pass--> Quality Gate --on_pass--> Terminal (Done)
-                                    --on_fail--> TerminalFail (Rejected)
+```json
+{
+  "edges": [
+    { "source_step_id": "developer", "target_step_id": "reviewer", "condition": "on_pass" },
+    { "source_step_id": "developer", "target_step_id": "fix", "condition": "on_fail" },
+    { "source_step_id": "fix", "target_step_id": "reviewer", "condition": "always" }
+  ]
+}
 ```
 
-### Multi-stage review
+### Gate with review loop
 
-Chain multiple agent-gate pairs for iterative refinement:
+A classic pattern: agent does work → gate reviews → if fail, agent fixes → repeat:
 
 ```
-Implement --always--> Review Gate --on_pass--> Deploy --always--> Terminal
-                                  --on_fail--> Revise --always--> Final Gate --on_pass--> Terminal
-                                                                              --on_fail--> TerminalFail
+Implement --> Gate --on_pass--> Deploy --> Terminal
+            |
+            +--on_fail--> Fix --> Gate
 ```
+
+The gate feedback tells the fix agent what went wrong.
+
+### Diamond (fan-out)
+
+Split work across multiple paths that converge:
+
+```
+Start --always--> Left --> Merge --> Terminal
+     --always--> Right -/
+```
+
+```json
+{
+  "edges": [
+    { "source_step_id": "start", "target_step_id": "left", "condition": "always" },
+    { "source_step_id": "start", "target_step_id": "right", "condition": "always" },
+    { "source_step_id": "left", "target_step_id": "merge", "condition": "always" },
+    { "source_step_id": "right", "target_step_id": "merge", "condition": "always" }
+  ]
+}
+```
+
+> **Note:** The executor follows edges sequentially. Both `always` edges from Start will match, but only the first is followed. For true parallel execution, use separate execution runs or a council.
+
+## Gate feedback flow
+
+When a gate (or cron/lambda) fails, its output becomes `gate_feedback` in the routine context. The next agent step receives this feedback automatically.
+
+This enables the review-fix-review loop without creating actual cycles:
+
+```
+Developer → Gate (fail) → Fix → Gate (pass) → Done
+```
+
+The feedback includes what the gate rejected, so the fix agent knows exactly what to address.
 
 ## Creating edges via API
 
 ```bash
 # Create an edge with on_pass condition
-curl -X POST \
+curl -X POST https://your-instance.com/api/v1/routines/$ID/edges \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "source_step_id": "STEP_A_UUID",
-    "target_step_id": "STEP_B_UUID",
+    "source_step_id": "step-a-uuid",
+    "target_step_id": "step-b-uuid",
     "condition": "on_pass"
-  }' \
-  https://your-instance.com/api/v1/routines/$ROUTINE_ID/edges
+  }'
+
+# Create a fallback edge for failures
+curl -X POST https://your-instance.com/api/v1/routines/$ID/edges \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_step_id": "step-a-uuid",
+    "target_step_id": "fallback-uuid",
+    "condition": "on_fail"
+  }'
 ```
 
-### Validation
+## Validation rules for edges
 
-- `source_step_id` and `target_step_id` must refer to different steps (self-loops are rejected).
-- Both steps must belong to the specified routine.
+| Rule | Error | Fix |
+|---|---|---|
+| No self-loops | "Source and target must be different" | Connect to a different step |
+| Both steps must exist | "Step not found" | Check step IDs |
+| Steps must be in same routine | "Step not in routine" | Verify routine_id matches |
+
+## What happens when no edge matches?
+
+If a step completes but no outgoing edge matches the condition, execution ends:
+
+- If the final step passed → routine succeeds
+- If the final step failed → routine fails
+
+This is why every meaningful step needs at least one outgoing edge (unless it's a terminal).
 
 ## Next steps
 
-- [DAG validation](/docs/routines/dag-validation) -- All validation rules your routine must satisfy
-- [Step types](/docs/routines/step-types) -- What each step type does
+- [DAG validation](/docs/routines/dag-validation) — All validation rules your routine must satisfy
+- [Step types](/docs/routines/step-types) — What each step type does
+- [Executions](/docs/routines/executions) — Runtime context and monitoring

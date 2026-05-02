@@ -1,191 +1,278 @@
 ---
 title: Step types
-description: Reference for all routine step types -- Agent, Council, Gate, Cron, Lambda, Terminal, and TerminalFail.
+description: Reference for all routine step types — Agent, Council, Gate, Cron, Lambda, Terminal, and TerminalFail.
 ---
 
-Each step in a routine has a `step_type` that determines what it does when executed. There are seven step types.
+Steps are the building blocks of your routine. Each step type does something different — think of them as different tools in your workshop:
 
-## Agent
+- **Agent** = your worker who uses an LLM
+- **Gate** = your quality checker
+- **Lambda** = your automation script
+- **Council** = your team meeting
+- **Terminal** = the exit door
 
-Runs an LLM agent to perform a task. This is the most common step type.
+## Agent — Run an LLM task
 
-### Resolution order
+The most common step. An agent uses an LLM to accomplish a work item.
 
-The executor resolves which agent and role to use in this order:
+### When to use
 
-1. **`role_id`** on the step (or `config.role_id`) -- looks up the role's `assigned_agent_id` and uses the role as an override.
-2. **`agent_id`** on the step -- uses the agent directly (the agent's default role applies).
-3. **Fallback** -- uses the first available agent if neither is set.
+- Writing code, drafting documents, analyzing data
+- Any task that benefits from LLM reasoning
 
-### Required fields
+### How it works
 
-Either `agent_id` or `role_id` must be set. Validation rejects agent steps that have neither.
+1. The agent receives the routine context (task details, git info, previous outputs)
+2. The LLM generates a response
+3. The step returns `passed: true` (or `false` if it fails)
 
-### Config fields
+### Agent resolution order
 
-| Field | Type | Description |
-|---|---|---|
-| `role_id` | string (UUID) | Alternative to the top-level `role_id` field |
-| `metadata` | JSON | Injected into templates as `{{ step.metadata }}` |
+The system figures out which agent to run:
 
-### Behavior
+1. **`role_id`** on the step → looks up the role's assigned agent
+2. **`agent_id`** on the step → uses that agent directly
+3. **Fallback** → uses the first available agent
 
-- The agent receives the routine context (task details, git branch, previous outputs, gate feedback).
-- When the routine trigger is `cron`, the agent uses the role's `cron_task` template instead of `task_task`.
-- The result is a `StepResult` with `passed: true/false` and the agent's output text.
+```json
+{
+  "name": "Write Code",
+  "step_type": "agent",
+  "role_id": "developer-role-uuid"
+}
+```
 
-## Council
-
-Runs a multi-agent council session. Multiple [roles](/docs/agents/roles) collaborate on the task through structured conversation.
-
-### Required fields
-
-`council_id` must be set. The `agent_id` field should be null for council steps.
-
-### Config fields
-
-Same as agent steps. The council configuration (roles, orchestration mode) is defined on the council itself.
-
-### Behavior
-
-The council executor manages the multi-agent session and returns a single `StepResult`. See [Councils](/docs/councils) for details on council configuration.
-
-## Gate
-
-A quality gate that evaluates the output of the previous step against specified criteria. Gate steps use an LLM agent to perform the evaluation.
-
-### Resolution
-
-Gate steps resolve their agent the same way as agent steps (via `role_id`, `agent_id`, or fallback). The agent receives the previous step's result and the gate criteria.
-
-### Config fields
+### Config options
 
 | Field | Type | Description |
 |---|---|---|
-| `criteria` | string | Evaluation criteria. Default: `"Evaluate whether the output is correct and complete."` |
-| `metadata` | JSON | Injected into templates as `{{ step.metadata }}` |
+| `role_id` | UUID | Alternative to top-level role_id |
+| `metadata` | JSON | Extra context injected as `{{ step.metadata }}` |
 
-### Behavior
+> **Tip:** For cron-triggered routines, agents use the role's `cron_task` template instead of `task_task`.
 
-- Receives the most recent `StepResult` from the routine context.
-- The agent evaluates the output against the criteria and returns `passed: true` or `passed: false`.
-- On failure, the gate's output is stored as `gate_feedback` in the routine context. If the failing step connects to another agent via an `on_fail` edge, that agent receives the feedback so it knows what to fix.
-- The `task_source` is updated to the gate's role name, so downstream agents know the feedback came from the gate.
+## Gate — Quality check
 
-## Cron
+A gate evaluates the previous step's output using an LLM. It's your reviewer.
 
-A polling step that repeatedly executes a function (agent or lambda) at a fixed interval until it signals completion or times out. See [Cron and scheduling](/docs/routines/cron-and-scheduling) for the full reference.
+### When to use
 
-### Required fields
+- After an agent completes work
+- To decide whether to continue or retry
 
-At least one of `role_id`, `lambda_id`, or `council_id` must be set. If both `lambda_id` and `role_id` are present, lambda takes precedence.
+### How it works
 
-### Config fields
+1. Gate receives the previous step's output
+2. An LLM evaluates it against criteria
+3. Returns `passed: true` or `false`
 
-| Field | Type | Description |
-|---|---|---|
-| `interval` | string | Polling interval, e.g., `"30s"`, `"5m"`, `"1h"`. Default: `"60s"` |
-| `timeout` | string | Maximum time before the cron step aborts, e.g., `"2h"`, `"1d"`. Default: `"24h"` |
-| `role_id` | string (UUID) | Alternative to the top-level `role_id` |
-| `lambda_id` | string (UUID) | Alternative to the top-level `lambda_id` |
+```json
+{
+  "name": "Review Code",
+  "step_type": "gate",
+  "role_id": "reviewer-role-uuid",
+  "config": {
+    "criteria": "Code compiles, has tests, follows style guide"
+  }
+}
+```
 
-### Duration format
+### Config options
 
-Durations use a simple format: a number followed by a unit suffix.
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `criteria` | string | "Evaluate whether the output is correct and complete." | What to check for |
+| `metadata` | JSON | — | Extra context |
 
-| Suffix | Unit | Example |
-|---|---|---|
-| `s` | Seconds | `30s` |
-| `m` | Minutes | `5m` |
-| `h` | Hours | `1h` |
-| `d` | Days | `2d` |
+### Gate feedback
+
+When a gate fails, its output becomes `gate_feedback` in the context. The next agent (via `on_fail` edge) can read this feedback to understand what needs fixing.
+
+## Lambda — Run a script
+
+A deterministic script with no LLM. Use for automation, tests, or API calls.
+
+### When to use
+
+- Running tests or linters
+- Checking git status
+- Calling external APIs
+- Any deterministic task
+
+### How it works
+
+1. The script runs with routine context as environment variables
+2. Exit code determines pass/fail (0 = pass, non-zero = fail)
+3. stdout becomes the step's output
+
+```json
+{
+  "name": "Run Tests",
+  "step_type": "lambda",
+  "lambda_id": "lambda-uuid",
+  "config": {
+    "timeout": "5m"
+  }
+}
+```
+
+### Config options
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `lambda_id` | UUID | — | Alternative to top-level lambda_id |
+| `interpreter_override` | string | — | Force interpreter: `bash`, `python3`, `node` |
+| `timeout` | string | `"5m"` | Max execution time |
+
+See [Lambdas](/docs/routines/lambdas) for writing lambda scripts.
+
+## Council — Multi-agent team
+
+A council runs multiple roles in conversation. It's a team meeting.
+
+### When to use
+
+- Complex decisions requiring multiple perspectives
+- Code review with multiple reviewers
+- Brainstorming sessions
+
+### How it works
+
+1. Roles collaborate through structured conversation
+2. The council returns a single unified result
+3. `passed` reflects whether the council reached consensus
+
+```json
+{
+  "name": "Architecture Review",
+  "step_type": "council",
+  "council_id": "council-uuid"
+}
+```
+
+> **Note:** Councils require `council_id`. The council configuration (roles, orchestration) is defined separately.
+
+## Cron — Scheduled polling
+
+A step that repeats until it signals completion. Like an alarm that keeps ringing until you handle it.
+
+### When to use
+
+- Checking for new PRs every hour
+- Polling an external API
+- Waiting for a deployment to finish
+
+### How it works
+
+1. Runs the specified function (agent, lambda, or council)
+2. Checks the output for status signal
+3. Repeats on interval until pass, fail, or timeout
 
 ### Signaling
 
-The function signals its status using a JSON object in its output:
+The function signals status via JSON output:
 
 ```json
-{"cron_status": "pass", "reason": "PR was merged"}
+{"cron_status": "pass", "reason": "PR merged"}
 ```
 
-| Status | Meaning |
-|---|---|
-| `pass` | Work is done -- take the `on_pass` edge |
-| `fail` | Work is done but failed -- take the `on_fail` edge |
-| `wait` | Not done yet -- sleep and run again next tick |
-| `abort` | Unrecoverable error -- abort the routine immediately |
-
-A legacy format is also supported: `CRON_DONE:PASS` and `CRON_DONE:FAIL` markers in the output text.
-
-### Modes
-
-| Mode | Resolved from | Description |
+| Status | Meaning | Next step |
 |---|---|---|
-| Agent | `role_id` | Runs an LLM agent on each polling cycle |
-| Lambda | `lambda_id` | Runs a lambda script on each polling cycle |
+| `pass` | Work done successfully | Take `on_pass` edge |
+| `fail` | Work done but failed | Take `on_fail` edge |
+| `wait` | Not done yet | Sleep, then run again |
+| `abort` | Unrecoverable error | Stop routine immediately |
 
-## Lambda
+```json
+{
+  "name": "Check PRs",
+  "step_type": "cron",
+  "role_id": "pr-checker-role-uuid",
+  "config": {
+    "interval": "30s",
+    "timeout": "1h"
+  }
+}
+```
 
-Runs a deterministic script without an LLM. Use lambda steps for tasks like running tests, checking git status, or calling external APIs.
+### Config options
 
-### Required fields
-
-`lambda_id` must be set (either on the step or in `config.lambda_id`).
-
-### Config fields
-
-| Field | Type | Description |
-|---|---|---|
-| `lambda_id` | string (UUID) | Alternative to the top-level `lambda_id` |
-| `interpreter_override` | string | Override the lambda's default interpreter (`auto`, `bash`, `sh`, `python3`, `node`) |
-| `timeout` | string | Maximum execution time. Default: `"5m"` |
-
-### Behavior
-
-- The script is resolved from `~/.nenjo/lambdas/{lambda.path}`.
-- Routine context is injected via `NENJO_*` environment variables and a `NENJO_CONTEXT_FILE` JSON file.
-- The script's exit code determines `passed`: exit 0 means pass, non-zero means fail.
-- stdout is captured as the step's output.
-
-See [Lambdas](/docs/routines/lambdas) for the full reference.
-
-## Terminal
-
-Marks a successful end of the routine. Every routine must have at least one terminal step.
-
-### Required fields
-
-None. Terminal steps do not require `agent_id`, `role_id`, or any other reference.
-
-### Behavior
-
-- Returns the most recent step result from the routine context.
-- If no previous steps have run (single-step routine), returns `passed: true` with the initial input as output.
-- Terminal steps must not have outgoing edges.
-
-## TerminalFail
-
-Marks a failure end of the routine. Use this to explicitly terminate a routine with a failure status when a particular path is reached.
-
-### Config fields
-
-| Field | Type | Description |
-|---|---|---|
-| `failure_reason` | string | Reason for the failure. Default: `"Routine terminated with failure"` |
-
-### Behavior
-
-- Always returns `passed: false` with the configured failure reason as output.
-- Useful for explicit failure paths in branching routines (e.g., after exhausting retry options).
-
-## Summary table
-
-| Step type | LLM | Required reference | Purpose |
+| Field | Type | Default | Description |
 |---|---|---|---|
-| `agent` | Yes | `agent_id` or `role_id` | Run an agent task |
-| `council` | Yes | `council_id` | Multi-agent collaboration |
-| `gate` | Yes | `agent_id` or `role_id` (or fallback) | Quality evaluation |
-| `cron` | Depends | `role_id`, `lambda_id`, or `council_id` | Polling loop |
+| `interval` | string | `"60s"` | How often to poll |
+| `timeout` | string | `"24h"` | Max time before abort |
+| `role_id` | UUID | — | Agent to run each cycle |
+| `lambda_id` | UUID | — | Lambda to run each cycle |
+
+Duration format: `30s`, `5m`, `1h`, `2d`.
+
+See [Cron and scheduling](/docs/routines/cron-and-scheduling) for more.
+
+## Terminal — Success end
+
+Marks the routine as complete. The exit door for success.
+
+### When to use
+
+- End of any successful flow
+- Required for every routine
+
+### How it works
+
+- Returns `passed: true` with the final output
+- Must have no outgoing edges
+
+```json
+{
+  "name": "Done",
+  "step_type": "terminal"
+}
+```
+
+## TerminalFail — Failure end
+
+Marks the routine as failed. The exit door for errors.
+
+### When to use
+
+- Explicit failure path (e.g., after exhausting retries)
+- When a particular outcome is a failure
+
+### How it works
+
+- Always returns `passed: false`
+- Stores the failure reason as output
+
+```json
+{
+  "name": "Rejected",
+  "step_type": "terminal_fail",
+  "config": {
+    "failure_reason": "Code review rejected"
+  }
+}
+```
+
+### Config options
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `failure_reason` | string | "Routine terminated with failure" | Why it failed |
+
+## Quick reference
+
+| Step type | LLM? | Required field | Use case |
+|---|---|---|---|
+| `agent` | Yes | `agent_id` or `role_id` | Do work with an LLM |
+| `gate` | Yes | `agent_id` or `role_id` (or fallback) | Evaluate quality |
 | `lambda` | No | `lambda_id` | Run a script |
-| `terminal` | No | None | Successful end |
-| `terminal_fail` | No | None | Failure end |
+| `council` | Yes | `council_id` | Multi-agent discussion |
+| `cron` | Depends | `role_id`, `lambda_id`, or `council_id` | Repeat until done |
+| `terminal` | No | — | End successfully |
+| `terminal_fail` | No | — | End with failure |
+
+## Next steps
+
+- [Edges and conditions](/docs/routines/edges-and-conditions) — Control which path the routine takes
+- [DAG validation](/docs/routines/dag-validation) — Rules your routine must follow
+- [Executions](/docs/routines/executions) — Runtime context and monitoring

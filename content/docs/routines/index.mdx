@@ -1,185 +1,175 @@
 ---
-title: Routines
+title: Routines Fundamentals
 description: Orchestrate multi-step agent workflows using directed acyclic graphs (DAGs).
 ---
 
-Routines define the execution flow for agent work in Nenjo. Each routine is a **directed acyclic graph (DAG)** of steps connected by edges, where each step performs a unit of work -- running an agent, evaluating a gate, executing a script, or coordinating a council.
+Your routine is built — now make it run. A **routine** is a recipe for getting work done: it specifies which steps to take and in what order.
+
+Think of it like cooking:
+- **Steps** are the recipe steps (chop onions, sauté garlic, add tomatoes)
+- **Edges** are the "if this, then that" decisions (if onions are translucent, add garlic)
+- The **DAG** (directed acyclic graph) is your flowchart — a visual map of the entire cooking process
+
+## Why routines matter
+
+Agents are powerful, but real work rarely fits in a single prompt. A routine lets you:
+
+- **Chain agents together** — developer writes code → reviewer checks it → deployer ships it
+- **Handle errors gracefully** — if review fails, loop back for fixes
+- **Run on schedule** — cron routines check for new PRs every hour
+- **Parallelize where possible** — split work across branches, then merge results
+
+## A routine in action
+
+Here's a simple code review flow:
+
+```
+Developer (agent) → Gate (review) → (on_pass) → Deploy (agent) → Terminal
+                               → (on_fail) → Revise (agent) → Gate → ...
+```
+
+When the Developer finishes, the Gate evaluates the output:
+- **Pass** → continue to Deploy
+- **Fail** → route back to Revise for fixes
+
+This is a DAG: steps are nodes, edges are arrows, and the graph has no cycles (you can't loop infinitely — each revision goes through a new gate).
+
+## Real-world examples
+
+### Simple review flow
+
+A three-step routine for basic code review:
+
+1. **Implement** — Agent writes code based on task
+2. **Review** — Gate evaluates the code quality
+3. **Terminal** — Done (or fail if review rejects)
+
+```json
+{
+  "name": "Simple Review",
+  "trigger": "task.ready",
+  "steps": [
+    { "name": "Implement", "step_type": "agent", "role_id": "developer-role-uuid" },
+    { "name": "Review", "step_type": "gate", "role_id": "reviewer-role-uuid" },
+    { "name": "Done", "step_type": "terminal" }
+  ],
+  "edges": [
+    { "source_step_id": "implement-uuid", "target_step_id": "review-uuid", "condition": "always" },
+    { "source_step_id": "review-uuid", "target_step_id": "done-uuid", "condition": "on_pass" }
+  ]
+}
+```
+
+### Parallel research team
+
+Two agents research different topics simultaneously, then a third agent synthesizes:
+
+```
+Researcher A ──┐
+               ├─→ Synthesize ──→ Terminal
+Researcher B ──┘
+```
+
+```json
+{
+  "name": "Research Synthesize",
+  "trigger": "task.ready",
+  "steps": [
+    { "name": "Research A", "step_type": "agent", "role_id": "researcher-role-uuid" },
+    { "name": "Research B", "step_type": "agent", "role_id": "researcher-role-uuid" },
+    { "name": "Synthesize", "step_type": "agent", "role_id": "writer-role-uuid" },
+    { "name": "Done", "step_type": "terminal" }
+  ],
+  "edges": [
+    { "source_step_id": "research-a-uuid", "target_step_id": "synthesize-uuid", "condition": "always" },
+    { "source_step_id": "research-b-uuid", "target_step_id": "synthesize-uuid", "condition": "always" },
+    { "source_step_id": "synthesize-uuid", "target_step_id": "done-uuid", "condition": "always" }
+  ]
+}
+```
+
+> **Note:** The executor follows edges sequentially. Both `always` edges from Research A and B will trigger, but only the first matching edge is followed at each step. For true parallel execution, use separate execution runs or a council.
 
 ## Core concepts
 
-A routine consists of three primitives:
+A routine has three primitives:
 
-- **Steps** (nodes) -- Units of work such as agent tasks, quality gates, lambda scripts, cron loops, councils, or terminal states.
-- **Edges** -- Directed connections between steps that define execution order.
-- **Conditions** -- Rules on edges that determine which path to follow based on the previous step's result (`on_pass`, `on_fail`, etc.).
-
-Every routine has exactly one **entry point** (a step with no incoming edges) and at least one **terminal step** where execution ends.
-
-## Data model
-
-### Routine
-
-| Field | Type | Description |
+| Primitive | Analogy | Description |
 |---|---|---|
-| `id` | UUID | Unique identifier |
-| `name` | string | Human-readable name |
-| `description` | string? | Optional description |
-| `trigger` | string | When to execute: `task.ready` or `cron` |
-| `is_active` | boolean | Whether the routine can be executed |
-| `is_default` | boolean | Whether this is the user's default routine |
-| `max_retries` | integer | Maximum retry attempts on failure (default: 3) |
-| `metadata` | JSON | Arbitrary metadata (e.g., `schedule` for cron, `entry_step_ids` for editor) |
-| `created_by` | UUID | Owner user ID |
+| **Steps** | Recipe steps | Units of work — run an agent, evaluate a gate, execute a script |
+| **Edges** | Decision arrows | Directed connections between steps — "if this passes, go there" |
+| **Conditions** | If/then rules | Rules on edges that determine which path to follow |
 
-### Routine step
+### Entry and terminal points
 
-| Field | Type | Description |
-|---|---|---|
-| `id` | UUID | Unique identifier |
-| `routine_id` | UUID | Parent routine |
-| `name` | string | Display name |
-| `step_type` | string | One of: `agent`, `council`, `gate`, `cron`, `lambda`, `terminal` |
-| `agent_id` | UUID? | Agent to run (for `agent` steps) |
-| `council_id` | UUID? | Council to run (for `council` steps) |
-| `role_id` | UUID? | Role to use (resolves to an agent, for `agent`/`cron` steps) |
-| `lambda_id` | UUID? | Lambda script to run (for `lambda`/`cron` steps) |
-| `config` | JSON | Step-specific configuration |
-| `position_x` | float | X coordinate in the visual editor |
-| `position_y` | float | Y coordinate in the visual editor |
-| `order_index` | integer | Ordering hint for entry-point resolution |
-
-### Routine edge
-
-| Field | Type | Description |
-|---|---|---|
-| `id` | UUID | Unique identifier |
-| `routine_id` | UUID | Parent routine |
-| `source_step_id` | UUID | Step this edge originates from |
-| `target_step_id` | UUID | Step this edge points to |
-| `condition` | string | When to follow: `always`, `on_pass`, `on_fail`, `on_review_pass`, `on_review_fail` |
-| `metadata` | JSON | Optional edge metadata |
+Every routine needs:
+- **One entry point** — a step with no incoming edges (where execution starts)
+- **At least one terminal step** — where execution ends (either success or failure)
 
 ## Trigger types
 
-Routines are activated by a trigger:
+Routines activate in two ways:
 
-- **`task.ready`** -- Executes when a task transitions to the `ready` state. This is the default trigger for task-driven routines.
-- **`cron`** -- Executes on a recurring schedule. See [Cron and scheduling](/docs/routines/cron-and-scheduling) for details.
+| Trigger | When it runs | Use case |
+|---|---|---|
+| `task.ready` | A task becomes ready | Most agent workflows |
+| `cron` | On a schedule | Polling, periodic checks |
 
-## Execution lifecycle
+See [Cron and scheduling](/docs/routines/cron-and-scheduling) for cron details.
 
-1. The routine is loaded with its steps and edges.
-2. The **entry step** is identified (the step with no incoming edges, or via `metadata.entry_step_ids`).
-3. The entry step executes and produces a `StepResult` with a `passed` boolean.
-4. The executor evaluates outgoing edges from the current step. The first edge whose condition is satisfied by the step result is followed.
-5. The next step executes, and the process repeats.
-6. Execution ends when a **terminal** step is reached or no matching outgoing edge is found.
+## What makes a routine invalid?
 
-The executor is bounded to `steps.len() * 100` iterations to prevent infinite loops on misconfigured routines.
+The validator catches common mistakes before you save:
 
-## Project assignment
+| Error | What it means |
+|---|---|
+| "Routine must contain at least one step" | Add steps to your routine |
+| "Must have exactly one entry point" | Ensure one step has no incoming edges |
+| "Must have at least one terminal step" | Add a terminal or terminal_fail step |
+| "Step not reachable from entry" | All steps must connect to the flow |
+| "Contains a cycle" | No looping — use edges with conditions instead |
+| "Agent step must have agent_id or role_id" | Assign an agent or role to agent steps |
 
-Routines are assigned to projects. When a task in a project becomes ready, the project's assigned routine (or the user's default routine) is executed. One routine can be marked as the default using the `set-default` endpoint.
+See [DAG validation](/docs/routines/dag-validation) for the full ruleset.
 
-## API
-
-All routine routes are under `/api/v1/routines` and require authentication.
-
-### Routine CRUD
+## API quick reference
 
 ```bash
-# List all routines
-curl -H "Authorization: Bearer $TOKEN" \
-  https://your-instance.com/api/v1/routines
-
 # Create a routine
-curl -X POST \
+curl -X POST https://your-instance.com/api/v1/routines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Code Review Routine",
+    "name": "Code Review",
     "trigger": "task.ready",
     "max_retries": 3
-  }' \
-  https://your-instance.com/api/v1/routines
+  }'
 
-# Get routine with steps and edges
-curl -H "Authorization: Bearer $TOKEN" \
-  https://your-instance.com/api/v1/routines/$ROUTINE_ID
-
-# Update a routine
-curl -X PATCH \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"is_active": false}' \
-  https://your-instance.com/api/v1/routines/$ROUTINE_ID
-
-# Delete a routine
-curl -X DELETE \
-  -H "Authorization: Bearer $TOKEN" \
-  https://your-instance.com/api/v1/routines/$ROUTINE_ID
-
-# Set as default routine
-curl -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  https://your-instance.com/api/v1/routines/$ROUTINE_ID/set-default
-
-# Manually trigger a cron routine
-curl -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  https://your-instance.com/api/v1/routines/$ROUTINE_ID/trigger
-```
-
-### Steps CRUD
-
-```bash
 # Add a step
-curl -X POST \
+curl -X POST https://your-instance.com/api/v1/routines/$ID/steps \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Developer",
     "step_type": "agent",
-    "role_id": "ROLE_UUID"
-  }' \
-  https://your-instance.com/api/v1/routines/$ROUTINE_ID/steps
+    "role_id": "role-uuid"
+  }'
 
-# Update a step
-curl -X PATCH \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Senior Developer"}' \
-  https://your-instance.com/api/v1/routines/$ROUTINE_ID/steps/$STEP_ID
-
-# Delete a step
-curl -X DELETE \
-  -H "Authorization: Bearer $TOKEN" \
-  https://your-instance.com/api/v1/routines/$ROUTINE_ID/steps/$STEP_ID
-```
-
-### Edges CRUD
-
-```bash
-# Add an edge
-curl -X POST \
+# Connect steps with an edge
+curl -X POST https://your-instance.com/api/v1/routines/$ID/edges \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "source_step_id": "STEP_A_UUID",
-    "target_step_id": "STEP_B_UUID",
+    "source_step_id": "step-a-uuid",
+    "target_step_id": "step-b-uuid",
     "condition": "on_pass"
-  }' \
-  https://your-instance.com/api/v1/routines/$ROUTINE_ID/edges
-
-# Delete an edge
-curl -X DELETE \
-  -H "Authorization: Bearer $TOKEN" \
-  https://your-instance.com/api/v1/routines/$ROUTINE_ID/edges/$EDGE_ID
+  }'
 ```
 
 ## Next steps
 
-- [Step types](/docs/routines/step-types) -- Detailed reference for each step type
-- [Edges and conditions](/docs/routines/edges-and-conditions) -- How edge conditions control flow
-- [DAG validation](/docs/routines/dag-validation) -- Rules your routine must follow
-- [Executions](/docs/routines/executions) -- Runtime context and monitoring
+- [Step types](/docs/routines/step-types) — What each step type does (agent, gate, cron, lambda, council, terminal)
+- [Edges and conditions](/docs/routines/edges-and-conditions) — How conditions control the flow
+- [DAG validation](/docs/routines/dag-validation) — All validation rules explained
+- [Executions](/docs/routines/executions) — Runtime context and monitoring
+- [Cron and scheduling](/docs/routines/cron-and-scheduling) — Automate routines on a schedule
