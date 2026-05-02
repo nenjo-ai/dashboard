@@ -186,7 +186,6 @@ export function MobileProjectDetail({
       {activeTab === "settings" && (
         <section className="rounded-[1.4rem] border border-black/10 bg-transparent p-4 dark:border-white/10">
           <MetadataRow label="Slug" value={project.slug || "None"} />
-          <MetadataRow label="System project" value={project.is_system ? "Yes" : "No"} />
           <MetadataRow label="Repository" value={repoUrl ?? "Not linked"} />
           {repoUrl && (
             <a

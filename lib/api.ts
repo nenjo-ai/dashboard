@@ -262,14 +262,6 @@ export function projectUrl(id: string): string {
   return `${API_V1}/projects/${id}`;
 }
 
-export function systemProjectUrl(): string {
-  return `${API_V1}/projects/system`;
-}
-
-export async function fetchSystemProject(): Promise<Project> {
-  return fetcher<Project>(systemProjectUrl());
-}
-
 // ---- Prompt Context Variables -----------------------------------------------
 
 export function promptContextVariablesUrl(): string {
@@ -2009,13 +2001,13 @@ export function chatMessagesUrl(params?: {
 }
 
 export async function fetchChatMessages(
-  projectId: string,
+  projectId: string | null | undefined,
   agentId: string,
   opts?: { limit?: number; before?: string; session_id: string },
 ): Promise<ChatMessagePage> {
   return fetcher<ChatMessagePage>(
     chatMessagesUrl({
-      project_id: projectId,
+      ...(projectId ? { project_id: projectId } : {}),
       agent_id: agentId,
       limit: opts?.limit,
       before: opts?.before,
@@ -2025,7 +2017,7 @@ export async function fetchChatMessages(
 }
 
 export async function createChatMessage(body: {
-  project_id: string;
+  project_id?: string | null;
   agent_id: string;
   sender: string;
   content: string;
@@ -2058,16 +2050,17 @@ export async function deleteChatMessage(messageId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function fetchChatSessions(
-  projectId: string,
+  projectId: string | null | undefined,
   agentId: string,
 ): Promise<ChatSession[]> {
-  return fetcher<ChatSession[]>(
-    `${API_V1}/chat-sessions?project_id=${projectId}&agent_id=${agentId}`,
-  );
+  const qs = new URLSearchParams();
+  if (projectId) qs.set("project_id", projectId);
+  qs.set("agent_id", agentId);
+  return fetcher<ChatSession[]>(`${API_V1}/chat-sessions?${qs.toString()}`);
 }
 
 export async function createChatSession(body: {
-  project_id: string;
+  project_id?: string | null;
   agent_id: string;
   title?: string;
 }): Promise<ChatSession> {
@@ -2446,13 +2439,13 @@ export async function toggleAgentDomain(
 
 export async function createDomainSession(
   domainId: string,
-  projectId: string,
+  projectId: string | null | undefined,
   agentId: string,
 ): Promise<DomainSession> {
   const res = await authFetch(`${domainUrl(domainId)}/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ project_id: projectId, agent_id: agentId }),
+    body: JSON.stringify({ project_id: projectId ?? null, agent_id: agentId }),
   });
   return res.json() as Promise<DomainSession>;
 }
@@ -2485,11 +2478,13 @@ export async function cancelDomainSession(
 }
 
 export async function fetchActiveDomainSession(
-  projectId: string,
+  projectId: string | null | undefined,
   agentId: string,
 ): Promise<DomainSession | null> {
+  const qs = new URLSearchParams({ agent_id: agentId });
+  if (projectId) qs.set("project_id", projectId);
   const res = await authFetch(
-    `${API_V1}/domains/sessions/active?project_id=${projectId}&agent_id=${agentId}`,
+    `${API_V1}/domains/sessions/active?${qs.toString()}`,
   );
   if (res.status === 204) return null;
   return res.json() as Promise<DomainSession>;

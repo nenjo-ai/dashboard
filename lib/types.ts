@@ -8,7 +8,6 @@ export interface Project {
   slug: string;
   description: string | null;
   owner_id: string;
-  is_system: boolean;
   settings: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -215,7 +214,6 @@ export interface Task {
   resolved_at: string | null;
   closed_at: string | null;
   created_by: string | null;
-  assigned_to: string | null;
   assigned_agent_id: string | null;
 }
 
@@ -488,7 +486,7 @@ export interface WorkerAccountKeyTarget {
 
 export interface ChatDomainEnterOutbound {
   type: "chat.domain_enter";
-  project_id: string;
+  project_id?: string | null;
   agent_id: string;
   domain_command: string;
   session_id: string;
@@ -502,32 +500,32 @@ export interface ChatCancelOutbound {
 
 export interface ChatDomainExitOutbound {
   type: "chat.domain_exit";
-  project_id: string;
+  project_id?: string | null;
   agent_id: string;
   domain_session_id: string;
 }
 
 export interface ChatCancelRequest {
-  project_id: string;
+  project_id?: string | null;
   agent_id?: string;
   session_id?: string;
 }
 
 export interface ChatDomainEnterRequest {
-  project_id: string;
+  project_id?: string | null;
   agent_id: string;
   domain_command: string;
   session_id: string;
 }
 
 export interface ChatDomainExitRequest {
-  project_id: string;
+  project_id?: string | null;
   agent_id: string;
   domain_session_id: string;
 }
 
 export interface ChatSessionDeleteRequest {
-  project_id: string;
+  project_id?: string | null;
   agent_id: string;
   session_id: string;
 }
@@ -1614,7 +1612,7 @@ export interface AgentDomainAssignment {
 
 export interface DomainSession {
   id: string;
-  project_id: string;
+  project_id: string | null;
   agent_id: string;
   domain_id: string;
   user_id: string;

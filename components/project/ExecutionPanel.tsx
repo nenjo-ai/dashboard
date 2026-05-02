@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
+import { formatToolCallSignature } from "@/lib/toolCallDisplay";
 
 
 interface ExecutionPanelProps {
@@ -238,9 +239,19 @@ function getResolvedText(
 
 function mergeStep(prev: TaskStepProgress, next: TaskStepProgress): TaskStepProgress {
   const merged = { ...next };
+  const prevPayload = isRecord(prev.payload) ? prev.payload : null;
+  const nextPayload = isRecord(next.payload) ? next.payload : null;
   if (!merged.step_type && prev.step_type) merged.step_type = prev.step_type;
   if (!merged.agent && prev.agent) merged.agent = prev.agent;
   merged.data = { ...(prev.data ?? {}), ...(next.data ?? {}) };
+  if (prevPayload || nextPayload) {
+    merged.payload = { ...(prevPayload ?? {}), ...(nextPayload ?? {}) };
+  } else if (!merged.payload && prev.payload) {
+    merged.payload = prev.payload;
+  }
+  if (!merged.encrypted_payload && prev.encrypted_payload) {
+    merged.encrypted_payload = prev.encrypted_payload;
+  }
   return merged;
 }
 
@@ -256,6 +267,7 @@ function isCompletedStep(step: TaskStepProgress): boolean {
 function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
   const groups: DisplayStep[] = [];
   const parentIndex = new Map<string, number>();
+  const agentParentIndex = new Map<string, number>();
   let currentParentName: string | null = null;
 
   const upsertTopLevel = (step: TaskStepProgress): number => {
@@ -271,18 +283,48 @@ function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
     const nextIndex = groups.length;
     groups.push({ step, children: [] });
     parentIndex.set(step.step_name, nextIndex);
+    if (step.agent?.agent_id && step.step_type === "agent") {
+      agentParentIndex.set(step.agent.agent_id, nextIndex);
+    }
     return nextIndex;
+  };
+
+  const upsertAgentTopLevel = (step: TaskStepProgress): number => {
+    const agentId = step.agent?.agent_id;
+    if (!agentId) return upsertTopLevel(step);
+
+    const existingIndex = agentParentIndex.get(agentId);
+    if (existingIndex != null) {
+      groups[existingIndex] = {
+        ...groups[existingIndex],
+        step: mergeStep(groups[existingIndex].step, {
+          ...step,
+          step_name: groups[existingIndex].step.step_name,
+        }),
+      };
+      return existingIndex;
+    }
+
+    return upsertTopLevel(step);
   };
 
   const upsertChild = (groupIndex: number, step: TaskStepProgress) => {
     const toolNames = Array.isArray(step.data?.tool_names)
       ? step.data.tool_names.filter((value): value is string => typeof value === "string")
       : [step.step_name];
+    const toolArgs = Array.isArray(step.data?.tool_args)
+      ? step.data.tool_args
+      : [];
 
-    for (const toolName of toolNames) {
+    for (let toolIndex = 0; toolIndex < toolNames.length; toolIndex += 1) {
+      const toolName = toolNames[toolIndex];
       const childStep: TaskStepProgress = {
         ...step,
         step_name: toolName,
+        data: {
+          ...(step.data ?? {}),
+          tool_args: typeof toolArgs[toolIndex] === "string" ? toolArgs[toolIndex] : step.data?.tool_args,
+        },
       };
 
       const existingIndex = groups[groupIndex].children.findIndex(
@@ -300,9 +342,29 @@ function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
     }
   };
 
+  const createImplicitAgentParent = (step: TaskStepProgress): number | null => {
+    if (!step.agent?.agent_id) return null;
+    const implicitStep: TaskStepProgress = {
+      ...step,
+      step_name: step.agent.agent_name ?? "agent",
+      step_type: "agent",
+      event_type: step.event_type === "step_completed" ? "step_started" : step.event_type,
+      status: step.status === "passed" ? "running" : step.status,
+      duration_ms: null,
+      data: {},
+      payload: null,
+      encrypted_payload: null,
+    };
+    return upsertAgentTopLevel(implicitStep);
+  };
+
   for (const rawStep of steps) {
     if (rawStep.step_type !== "tool") {
-      upsertTopLevel(rawStep);
+      if (rawStep.step_type === "agent" && rawStep.agent?.agent_id) {
+        upsertAgentTopLevel(rawStep);
+      } else {
+        upsertTopLevel(rawStep);
+      }
       currentParentName = rawStep.step_name;
       continue;
     }
@@ -311,12 +373,28 @@ function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
       typeof rawStep.data?.parent_tool_name === "string"
         ? rawStep.data.parent_tool_name
         : null;
-    const parentName = parentToolName ?? currentParentName;
     const parentGroupIndex =
-      parentName != null ? parentIndex.get(parentName) : undefined;
+      parentToolName != null ? parentIndex.get(parentToolName) : undefined;
 
     if (parentGroupIndex != null && groups[parentGroupIndex].step.step_type !== "tool") {
       upsertChild(parentGroupIndex, rawStep);
+      continue;
+    }
+
+    const agentGroupIndex = rawStep.agent?.agent_id
+      ? agentParentIndex.get(rawStep.agent.agent_id) ?? createImplicitAgentParent(rawStep)
+      : null;
+
+    if (agentGroupIndex != null) {
+      upsertChild(agentGroupIndex, rawStep);
+      continue;
+    }
+
+    const currentParentGroupIndex =
+      currentParentName != null ? parentIndex.get(currentParentName) : undefined;
+
+    if (currentParentGroupIndex != null && groups[currentParentGroupIndex].step.step_type !== "tool") {
+      upsertChild(currentParentGroupIndex, rawStep);
       continue;
     }
 
@@ -368,27 +446,15 @@ function friendlyToolName(toolName: string): string {
   return toolName.replace(/^app\.nenjo\.platform\//, "");
 }
 
-function isLowSignalJsonFragment(text: string): boolean {
-  const normalized = text.trim();
-  return (
-    /^"[^"]+":\s.+,?$/.test(normalized) ||
-    /^(null|\[|\]|\{|\}|,)$/.test(normalized)
-  );
-}
-
-function summarizeToolActivity(toolName: string, preview?: string | null, error?: string | null): string {
-  if (error) return error;
-  if (!preview) return "Running…";
-  if (!isLowSignalJsonFragment(preview)) return preview;
-
-  const short = friendlyToolName(toolName);
-  if (short.includes("agents")) return "Returned agent records";
-  if (short.includes("projects")) return "Returned project records";
-  if (short.includes("routines")) return "Returned routine records";
-  if (short.includes("mcp_servers")) return "Returned MCP server records";
-  if (short.includes("models")) return "Returned model records";
-  if (short.includes("chat")) return "Chat query failed";
-  return "Returned structured data";
+function getToolArgs(
+  data: Record<string, unknown> | undefined,
+  payload: StepPayloadData | null | undefined,
+): string {
+  const dataArgs = data?.tool_args;
+  if (typeof dataArgs === "string") return dataArgs;
+  const payloadArgs = payload?.tool_args;
+  if (typeof payloadArgs === "string") return payloadArgs;
+  return "";
 }
 
 function TaskRow({ task }: { task: ExecutionTask }) {
@@ -405,7 +471,6 @@ function TaskRow({ task }: { task: ExecutionTask }) {
 
   useEffect(() => {
     if (!expanded) {
-      setResolvedPayloads({});
       return;
     }
 
@@ -544,7 +609,7 @@ function TaskRow({ task }: { task: ExecutionTask }) {
                   )}
                 </div>
                 {outputPreview && (
-                  <div className="theme-surface-muted theme-text ml-5 mt-0.5 mb-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-md px-2.5 py-1.5 text-xs">
+                  <div className="theme-surface-muted theme-text ml-5 mt-0.5 mb-1 max-h-40 overflow-y-auto break-words rounded-md px-2.5 py-1.5 text-xs">
                     <MarkdownPreview content={outputPreview} />
                   </div>
                 )}
@@ -595,44 +660,42 @@ function TaskRow({ task }: { task: ExecutionTask }) {
                         const childData = child.data as Record<string, unknown> | undefined;
                         const childResolved =
                           resolvedPayloads[`step:${parentIndex}:child:${childIndex}`];
-                        const childPreview =
-                          child.event_type === "step_started"
-                            ? getResolvedText(childResolved, "text_preview")
-                            : getResolvedText(childResolved, "output_preview");
                         const childError =
                           (child.event_type === "step_failed" || child.event_type === "failed") &&
                           (getResolvedText(childResolved, "error")
                             ?? (childData?.error ? String(childData.error) : null))
                             ? (getResolvedText(childResolved, "error") ?? String(childData?.error))
                             : null;
-                        const summary = summarizeToolActivity(child.step_name, childPreview, childError);
-                        const showDetails = !!childError || (!!childPreview && !isLowSignalJsonFragment(childPreview));
+                        const signature = formatToolCallSignature(
+                          friendlyToolName(child.step_name),
+                          getToolArgs(childData, childResolved),
+                        );
+                        const statusLabel = childError
+                          ? "failed"
+                          : isCompletedStep(child)
+                            ? "done"
+                            : null;
 
                         return (
                           <div key={`${step.step_name}:${child.step_name}`} className="theme-surface rounded-md px-2 py-1.5">
                             <div className="flex items-start gap-2">
                               <StatusIcon status={child.event_type} />
                               <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="theme-text truncate text-xs font-medium">
-                                    {friendlyToolName(child.step_name)}
-                                  </span>
+                                <div className="theme-border theme-surface-muted rounded-md border px-2 py-1.5 font-mono text-[11px] leading-relaxed theme-text">
+                                  <span className="whitespace-pre-wrap break-words">{signature}</span>
+                                  {statusLabel && (
+                                    <span className={cn(
+                                      "ml-2 font-sans text-[10px] font-medium",
+                                      childError
+                                        ? "text-red-500/80 dark:text-red-400/80"
+                                        : "text-emerald-500/80 dark:text-emerald-400/80",
+                                    )}>
+                                      {statusLabel}
+                                    </span>
+                                  )}
                                 </div>
-                                <p className={cn("mt-0 text-[11px] leading-5", childError ? "text-red-600 dark:text-red-400" : "theme-text-muted")}>
-                                  {summary}
-                                </p>
                               </div>
                             </div>
-                            {showDetails && childPreview && (
-                              <div className="theme-border theme-surface-muted theme-text mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded-md border px-2 py-1 text-xs">
-                                <MarkdownPreview content={childPreview} />
-                              </div>
-                            )}
-                            {childError && showDetails && (
-                              <div className="mt-1 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-400 whitespace-pre-wrap break-words">
-                                {childError}
-                              </div>
-                            )}
                           </div>
                         );
                       })}

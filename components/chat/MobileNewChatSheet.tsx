@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useAgents, useProjects, useSystemProject } from "@/lib/hooks";
+import { useAgents, useProjects } from "@/lib/hooks";
 import type { AgentDefinition, Project } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { MobileBottomSheet } from "./MobileBottomSheet";
@@ -10,7 +10,7 @@ import { MobileTouchButton } from "./MobileTouchButton";
 interface MobileNewChatSheetProps {
   open: boolean;
   onClose: () => void;
-  onCreate: (projectId: string, agentId: string, agentName: string) => void | Promise<void>;
+  onCreate: (projectId: string | null, agentId: string, agentName: string) => void | Promise<void>;
 }
 
 export function MobileNewChatSheet({
@@ -19,17 +19,13 @@ export function MobileNewChatSheet({
   onCreate,
 }: MobileNewChatSheetProps) {
   const { projects, isLoading: projectsLoading } = useProjects();
-  const { project: systemProject } = useSystemProject();
   const { agents } = useAgents();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
   const allProjects = useMemo<Project[]>(() => {
-    const list: Project[] = [];
-    if (systemProject) list.push(systemProject);
-    if (projects) list.push(...projects);
-    return list;
-  }, [projects, systemProject]);
+    return projects ?? [];
+  }, [projects]);
 
   const availableAgents = useMemo(
     () => agents?.filter((agent: AgentDefinition) => agent.model_id) ?? [],
@@ -53,10 +49,10 @@ export function MobileNewChatSheet({
               onChange={(e) => setSelectedProjectId(e.target.value || null)}
               className="w-full rounded-2xl border border-black/10 bg-[#f5f7fb] px-4 py-3 text-sm text-gray-900 outline-hidden focus:border-deep-space-blue-500 focus:ring-1 focus:ring-deep-space-blue-500 dark:border-white/10 dark:bg-[#05070b] dark:text-gray-100"
             >
-              <option value="">Select a project...</option>
+              <option value="">General</option>
               {allProjects.map((project) => (
                 <option key={project.id} value={project.id}>
-                  {project.is_system ? "General" : project.name}
+                  {project.name}
                 </option>
               ))}
             </select>
@@ -90,13 +86,13 @@ export function MobileNewChatSheet({
           </MobileTouchButton>
           <MobileTouchButton
             onPress={() => {
-              if (!selectedProjectId || !selectedAgentId || !selectedAgent) return;
+              if (!selectedAgentId || !selectedAgent) return;
               void onCreate(selectedProjectId, selectedAgentId, selectedAgent.name);
             }}
-            disabled={!selectedProjectId || !selectedAgentId}
+            disabled={!selectedAgentId}
             className={cn(
               "flex-1 rounded-2xl border px-4 py-3 text-sm font-medium transition-colors",
-              selectedProjectId && selectedAgentId
+              selectedAgentId
                 ? "border-black/10 bg-transparent text-gray-900 dark:border-white/10 dark:text-gray-100"
                 : "border-black/10 bg-transparent text-gray-400 dark:border-white/10 dark:text-gray-500",
             )}

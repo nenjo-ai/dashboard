@@ -1,26 +1,22 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useProjects, useAgents, useSystemProject } from "@/lib/hooks";
+import { useProjects, useAgents } from "@/lib/hooks";
 import type { AgentDefinition, Project } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
 interface NewChatModalProps {
   onClose: () => void;
-  onCreate: (projectId: string, agentId: string, agentName: string) => void;
+  onCreate: (projectId: string | null, agentId: string, agentName: string) => void;
 }
 
 export function NewChatModal({ onClose, onCreate }: NewChatModalProps) {
   const { projects, isLoading: projectsLoading } = useProjects();
-  const { project: systemProject } = useSystemProject();
   const { agents } = useAgents();
 
   const allProjects = useMemo<Project[]>(() => {
-    const list: Project[] = [];
-    if (systemProject) list.push(systemProject);
-    if (projects) list.push(...projects);
-    return list;
-  }, [projects, systemProject]);
+    return projects ?? [];
+  }, [projects]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
@@ -32,7 +28,7 @@ export function NewChatModal({ onClose, onCreate }: NewChatModalProps) {
   const selectedAgent = availableAgents.find((a) => a.id === selectedAgentId);
 
   const handleCreate = () => {
-    if (!selectedProjectId || !selectedAgentId || !selectedAgent) return;
+    if (!selectedAgentId || !selectedAgent) return;
     onCreate(selectedProjectId, selectedAgentId, selectedAgent.name);
   };
 
@@ -56,10 +52,10 @@ export function NewChatModal({ onClose, onCreate }: NewChatModalProps) {
               onChange={(e) => setSelectedProjectId(e.target.value || null)}
               className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-hidden focus:border-deep-space-blue-500 focus:ring-1 focus:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
             >
-              <option value="">Select a project...</option>
+              <option value="">General</option>
               {allProjects.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.is_system ? "General" : p.name}
+                  {p.name}
                 </option>
               ))}
             </select>
@@ -95,10 +91,10 @@ export function NewChatModal({ onClose, onCreate }: NewChatModalProps) {
           </button>
           <button
             onClick={handleCreate}
-            disabled={!selectedProjectId || !selectedAgentId}
+            disabled={!selectedAgentId}
             className={cn(
               "rounded-md px-3 py-1.5 text-sm font-medium text-white transition-colors",
-              selectedProjectId && selectedAgentId
+              selectedAgentId
                 ? "bg-deep-space-blue-500 hover:bg-deep-space-blue-600"
                 : "cursor-not-allowed bg-gray-300 dark:bg-gray-600",
             )}

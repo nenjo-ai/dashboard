@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   useProject,
@@ -118,6 +118,14 @@ export default function ProjectDetailPage() {
   const { documents } = useProjectDocuments(projectId);
 
   const { routines } = useRoutines();
+
+  useEffect(() => {
+    if (!selectedTask || !tasks) return;
+    const refreshedTask = tasks.find((task) => task.id === selectedTask.id);
+    if (refreshedTask && refreshedTask !== selectedTask) {
+      setSelectedTask(refreshedTask);
+    }
+  }, [selectedTask, tasks]);
   const { graph, mutate: mutateGraph } = useDependencyGraph(projectId);
 
   // Tab content with task counts

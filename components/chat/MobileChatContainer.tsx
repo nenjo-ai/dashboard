@@ -9,7 +9,6 @@ import {
   createChatSession,
   deleteChatSession,
   fetchAllChatSessions,
-  fetchSystemProject,
   fetcher,
   updateChatSession,
 } from "@/lib/api";
@@ -127,10 +126,8 @@ export function MobileChatContainer({
           return;
         }
 
-        const systemProject = await fetchSystemProject();
         const agentLabel = agent.display_name || agent.name;
         const newSession = await createChatSession({
-          project_id: systemProject.id,
           agent_id: agent.id,
           title: `${agentLabel.charAt(0).toUpperCase() + agentLabel.slice(1)} #1`,
         });
@@ -145,14 +142,14 @@ export function MobileChatContainer({
   );
 
   const handleCreateChat = useCallback(
-    async (projectId: string, agentId: string, agentName: string) => {
+    async (projectId: string | null, agentId: string, agentName: string) => {
       const existingCount =
         sessions?.filter(
           (session) => session.project_id === projectId && session.agent_id === agentId,
         ).length ?? 0;
 
       const newSession = await createChatSession({
-        project_id: projectId,
+        ...(projectId ? { project_id: projectId } : {}),
         agent_id: agentId,
         title: `${agentName.charAt(0).toUpperCase() + agentName.slice(1)} #${existingCount + 1}`,
       });

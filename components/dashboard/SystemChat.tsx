@@ -7,7 +7,6 @@ import remarkGfm from "remark-gfm";
 import type { ChatMessage, AgentDefinition } from "@/lib/types";
 import {
   useAgents,
-  useSystemProject,
   useAgentDomains,
   useDomains,
 } from "@/lib/hooks";
@@ -165,7 +164,6 @@ export function SystemChat() {
   const userImageUrl = user?.imageUrl;
   const userInitials = user?.firstName?.[0] ?? "U";
 
-  const { project: systemProject, isLoading: projectLoading } = useSystemProject();
   const { agents: allAgentDefs } = useAgents();
   const { domains: allDomains } = useDomains();
 
@@ -190,11 +188,8 @@ export function SystemChat() {
       .filter(Boolean) as NonNullable<(typeof allDomains)[number]>[];
   }, [agentDomains, allDomains]);
 
-  // usePlannerChat for the system project + system agent
-  const chat = usePlannerChat(
-    systemProject?.id ?? "",
-    systemAgentId ?? undefined,
-  );
+  // General chat is projectless and uses the worker's root workspace.
+  const chat = usePlannerChat(null, systemAgentId ?? undefined);
 
   const [showSessionList, setShowSessionList] = useState(false);
 
@@ -223,7 +218,7 @@ export function SystemChat() {
   // Handle sending a message
   const handleSend = useCallback(() => {
     const text = inputValue.trim();
-    if (!text || !systemProject?.id || !systemAgentId) return;
+    if (!text || !systemAgentId) return;
 
     // Check for domain exit commands
     if (chat.activeDomainSession && ["#exit", "#done", "#finish"].includes(text.toLowerCase())) {
@@ -239,7 +234,7 @@ export function SystemChat() {
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
-  }, [inputValue, systemProject?.id, systemAgentId, chat]);
+  }, [inputValue, systemAgentId, chat]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Handle domain dropdown keyboard navigation
@@ -294,14 +289,6 @@ export function SystemChat() {
   };
 
   // Not ready states
-  if (projectLoading) {
-    return (
-      <div className="flex h-full items-center justify-center rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-        <div className="text-sm text-gray-400">Loading...</div>
-      </div>
-    );
-  }
-
   if (!systemAgent) {
     return (
       <div className="flex h-full flex-col items-center justify-center rounded-xl border border-gray-200 bg-white p-6 text-center dark:border-gray-700 dark:bg-gray-800">

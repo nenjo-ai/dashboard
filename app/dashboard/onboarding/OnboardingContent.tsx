@@ -35,7 +35,6 @@ import {
   listTrustedDevices,
   updateCurrentOrg,
   updateAgent,
-  fetchSystemProject,
   createChatSession,
   putRecoveryBundle,
   putWorkerApprovalKey,
@@ -910,11 +909,10 @@ nenjo run`;
 
     (async () => {
       try {
-        const systemProject = await fetchSystemProject();
         const agents = await fetchAgents();
         const systemAgent = agents.find((a) => a.name === "system");
 
-        if (!systemAgent || !systemProject) {
+        if (!systemAgent) {
           router.push("/dashboard/chat");
           return;
         }
@@ -925,7 +923,6 @@ nenjo run`;
         });
 
         const session = await createChatSession({
-          project_id: systemProject.id,
           agent_id: systemAgent.id,
           title: "Welcome",
         });
@@ -974,17 +971,15 @@ nenjo run`;
     sessionStorage.removeItem(SESSION_KEY);
 
     try {
-      const systemProject = await fetchSystemProject();
       const agents = await fetchAgents();
       const systemAgent = agents.find((a) => a.name === "system");
 
-      if (!systemProject || !systemAgent) {
+      if (!systemAgent) {
         router.push("/dashboard/chat");
         return;
       }
 
       const session = await createChatSession({
-        project_id: systemProject.id,
         agent_id: systemAgent.id,
         title: "Welcome",
       });

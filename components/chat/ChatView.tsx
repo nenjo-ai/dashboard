@@ -141,7 +141,7 @@ export function ChatView() {
 
   // Create new chat
   const handleCreateChat = useCallback(
-    async (projectId: string, agentId: string, agentName: string) => {
+    async (projectId: string | null, agentId: string, agentName: string) => {
       // Count existing sessions for this project+agent to auto-name
       const existingCount =
         sessions?.filter(
@@ -151,7 +151,7 @@ export function ChatView() {
       const title = `${agentName.charAt(0).toUpperCase() + agentName.slice(1)} #${existingCount + 1}`;
 
       const newSession = await createChatSession({
-        project_id: projectId,
+        ...(projectId ? { project_id: projectId } : {}),
         agent_id: agentId,
         title,
       });
@@ -248,7 +248,7 @@ export function ChatView() {
                   <p className="truncate text-xs text-gray-500 dark:text-gray-400">
                     {isNotificationView
                       ? `@${activeSession.agent_name}`
-                      : `${activeSession.project_name === "__system__" ? "General" : activeSession.project_name} · @${activeSession.agent_name}`}
+                      : `${activeSession.project_id ? activeSession.project_name : "General"} · @${activeSession.agent_name}`}
                   </p>
                 </div>
               </div>
@@ -265,7 +265,7 @@ export function ChatView() {
                 ) : (
                   <ChatArea
                     key={`${activeSession.id}:${activeSession.agent_id}`}
-                    projectId={activeSession.project_id!}
+                    projectId={activeSession.project_id}
                     agentId={activeSession.agent_id}
                     sessionId={activeSession.id}
                     onNavigateToSession={navigateToSessionById}

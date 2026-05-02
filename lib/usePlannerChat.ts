@@ -377,7 +377,7 @@ async function resolveEncryptedPayloadJson<T extends Record<string, unknown>>(
   return undefined;
 }
 
-export function usePlannerChat(projectId: string, agentId?: string, initialSessionId?: string) {
+export function usePlannerChat(projectId: string | null | undefined, agentId?: string, initialSessionId?: string) {
   const { userId } = useCurrentUser();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [livePreview, setLivePreview] = useState<string | undefined>(undefined);
@@ -524,13 +524,13 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     [],
   );
   const domainRestoreKey = useCallback(
-    (pId: string, aId: string) => `${pId}:${aId}`,
+    (pId: string | null | undefined, aId: string) => `${pId ?? "root"}:${aId}`,
     [],
   );
 
   // ── Load sessions on mount / role change ──────────────────────────────
   useEffect(() => {
-    if (!projectId || !agentId) {
+    if (!agentId) {
       setSessions([]);
       setActiveSessionId(null);
       return;
@@ -554,7 +554,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         } else {
           try {
             const session = await createChatSession({
-              project_id: projectId,
+              ...(projectId ? { project_id: projectId } : {}),
               agent_id: agentId,
             });
             setSessions((prev) => [session, ...prev]);
@@ -608,7 +608,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       setHasMore(false);
     }
 
-    if (!projectId || !agentId) {
+    if (!agentId) {
       setMessages([]);
       setHasMore(false);
       return;
@@ -1549,10 +1549,9 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       void streamPromise
         .then(async () => {
           const sessionId = activeSessionId;
-          const resolvedProjectId = projectId;
           const resolvedAgentId = agentId;
-          if (!sessionId || !resolvedProjectId || !resolvedAgentId) return;
-          const page = await fetchChatMessages(resolvedProjectId, resolvedAgentId, {
+          if (!sessionId || !resolvedAgentId) return;
+          const page = await fetchChatMessages(projectId, resolvedAgentId, {
             session_id: sessionId,
           });
           const loaded: ChatMessage[] = await Promise.all(
@@ -1620,7 +1619,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         pendingDomainSessionRef.current = null;
 
         await enterChatDomain({
-          project_id: projectId,
+          project_id: projectId ?? null,
           agent_id: effectiveRoleId,
           domain_command: domainCommand,
           session_id: session.id,
@@ -1655,7 +1654,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       setActiveDomainSession(null);
 
       await exitChatDomain({
-        project_id: projectId,
+        project_id: projectId ?? null,
         agent_id: agentId,
         domain_session_id: activeDomainSession.id,
       });
@@ -1677,7 +1676,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       setActiveDomainSession(null);
 
       await exitChatDomain({
-        project_id: projectId,
+        project_id: projectId ?? null,
         agent_id: agentId,
         domain_session_id: activeDomainSession.id,
       });
@@ -1719,7 +1718,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
 
   // Archive the current session instead of bulk-deleting all messages
   const clearMessages = useCallback(() => {
-    if (!projectId || !agentId) return;
+    if (!agentId) return;
     setMessages([]);
     setHasMore(false);
     if (agentId) {
@@ -1732,7 +1731,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
           // Auto-create a new session to replace the archived one
           try {
             const session = await createChatSession({
-              project_id: projectId,
+              ...(projectId ? { project_id: projectId } : {}),
               agent_id: agentId,
             });
             setSessions((prev) => [session, ...prev]);
@@ -1761,13 +1760,15 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       notifyChatStreamSnapshot({ sessionId: activeSessionId, clear: true });
     }
 
-    void cancelChat({
-      project_id: projectId,
-      ...(agentId ? { agent_id: agentId } : {}),
-      ...(activeSessionId ? { session_id: activeSessionId } : {}),
-    }).catch((err) => {
-      console.error("Failed to cancel chat:", err);
-    });
+    if (projectId) {
+      void cancelChat({
+        project_id: projectId,
+        ...(agentId ? { agent_id: agentId } : {}),
+        ...(activeSessionId ? { session_id: activeSessionId } : {}),
+      }).catch((err) => {
+        console.error("Failed to cancel chat:", err);
+      });
+    }
   }, [projectId, agentId, activeSessionId, isTyping]);
 
   // ── Session management callbacks ─────────────────────────────────────
@@ -1790,7 +1791,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
     if (!agentId) return;
     try {
       const session = await createChatSession({
-        project_id: projectId,
+        ...(projectId ? { project_id: projectId } : {}),
         agent_id: agentId,
       });
       setSessions((prev) => [session, ...prev]);
@@ -1818,13 +1819,15 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   const notifyWorkerSessionDelete = useCallback(
     (sessionId: string) => {
       if (!agentId) return;
-      void notifyChatSessionDelete({
-        project_id: projectId,
-        agent_id: agentId,
-        session_id: sessionId,
-      }).catch((err) => {
-        console.error("Failed to notify worker of session delete:", err);
-      });
+      if (projectId) {
+        void notifyChatSessionDelete({
+          project_id: projectId,
+          agent_id: agentId,
+          session_id: sessionId,
+        }).catch((err) => {
+          console.error("Failed to notify worker of session delete:", err);
+        });
+      }
     },
     [projectId, agentId],
   );
@@ -1846,7 +1849,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
             // Auto-create a new session
             try {
               const session = await createChatSession({
-                project_id: projectId,
+                ...(projectId ? { project_id: projectId } : {}),
                 agent_id: agentId!,
               });
               setSessions((prev) => [session, ...prev]);
@@ -1880,7 +1883,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
           } else {
             try {
               const session = await createChatSession({
-                project_id: projectId,
+                ...(projectId ? { project_id: projectId } : {}),
                 agent_id: agentId!,
               });
               setSessions((prev) => [session, ...prev]);
