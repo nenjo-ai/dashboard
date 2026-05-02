@@ -28,6 +28,22 @@ export interface CurrentOrg {
   scopes: string[];
 }
 
+export type TokenUsageSource = "chat" | "task" | "routine" | "heartbeat";
+
+export interface TokenUsageBreakdown {
+  key: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+}
+
+export interface TokenUsageSummary {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  breakdown: TokenUsageBreakdown[];
+}
+
 export interface BootstrapStatus {
   has_recovery_bundle: boolean;
   trusted_device_count: number;

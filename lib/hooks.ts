@@ -38,6 +38,7 @@ import {
   orgContentKeyRequestsUrl,
   bootstrapStatusUrl,
   currentOrgContentKeyRequestUrl,
+  tokenUsageUrl,
 } from "./api";
 import type {
   Project,
@@ -68,6 +69,8 @@ import type {
   OrgContentKeyAccessRequest,
   OrgContentKeyAccessRequestStatus,
   BootstrapStatus,
+  TokenUsageSource,
+  TokenUsageSummary,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -339,6 +342,38 @@ export function useActivity(params?: {
 
   return {
     activity: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useTokenUsage(params?: {
+  source?: TokenUsageSource;
+  projectId?: string;
+  agentId?: string;
+  from?: string;
+  to?: string;
+  groupBy?: "source" | "day" | "agent" | "project";
+}) {
+  const url = tokenUsageUrl({
+    source: params?.source,
+    project_id: params?.projectId,
+    agent_id: params?.agentId,
+    from: params?.from,
+    to: params?.to,
+    group_by: params?.groupBy,
+  });
+
+  const { data, error, isLoading, mutate } = useSWR<TokenUsageSummary>(
+    url,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 10000 },
+  );
+
+  return {
+    usage: data,
     isLoading,
     isError: !!error,
     error,

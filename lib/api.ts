@@ -44,6 +44,7 @@ import type {
   ChatStreamRequest,
   EncryptedPayload,
   PromptConfigResponse,
+  TokenUsageSource,
 } from "./types";
 import {
   decryptContentPayload,
@@ -602,6 +603,25 @@ export function activityUrl(params?: {
   if (params?.limit) search.set("limit", String(params.limit));
   const qs = search.toString();
   return `${API_V1}/activity${qs ? `?${qs}` : ""}`;
+}
+
+export function tokenUsageUrl(params?: {
+  source?: TokenUsageSource;
+  project_id?: string;
+  agent_id?: string;
+  from?: string;
+  to?: string;
+  group_by?: "source" | "day" | "agent" | "project";
+}): string {
+  const search = new URLSearchParams();
+  if (params?.source) search.set("source", params.source);
+  if (params?.project_id) search.set("project_id", params.project_id);
+  if (params?.agent_id) search.set("agent_id", params.agent_id);
+  if (params?.from) search.set("from", params.from);
+  if (params?.to) search.set("to", params.to);
+  if (params?.group_by) search.set("group_by", params.group_by);
+  const qs = search.toString();
+  return `${API_V1}/usage/tokens${qs ? `?${qs}` : ""}`;
 }
 
 export async function fetchExecutions(
