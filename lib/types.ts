@@ -14,6 +14,64 @@ export interface Project {
   updated_at: string;
 }
 
+export interface OrganizationSummary {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+  scopes: string[];
+}
+
+export interface CurrentOrg {
+  org_id: string;
+  org_name: string;
+  role: string;
+  scopes: string[];
+}
+
+export interface BootstrapStatus {
+  has_recovery_bundle: boolean;
+  trusted_device_count: number;
+  requires_secure_workspace: boolean;
+}
+
+export interface OrgMember {
+  user_id: string;
+  email: string;
+  name: string;
+  role: string;
+  scopes: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrgInvitation {
+  id: string;
+  org_id: string;
+  email: string;
+  role: string;
+  scopes: string[];
+  invited_by: string;
+  expires_at: string;
+  last_sent_at: string | null;
+  accepted_by: string | null;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrgInvitationPreview {
+  org_id: string;
+  org_name: string;
+  org_slug: string;
+  email: string;
+  role: string;
+  scopes: string[];
+  expires_at: string;
+  invited_by: string;
+}
+
 export interface PromptContextVariable {
   name: string;
   description: string;
@@ -252,6 +310,7 @@ export interface ChatStreamRequest {
 
 export interface EncryptedPayload {
   account_id: string;
+  encryption_scope?: "user" | "org" | null;
   object_id: string;
   object_type: string;
   algorithm: string;
@@ -263,10 +322,19 @@ export interface EncryptedPayload {
 export interface WorkerStatus {
   worker_connected: boolean;
   workers?: Array<{
-    worker_id: string;
+    api_key_id: string;
+    connected: boolean;
     capabilities: string[];
+    metadata?: WorkerHarnessMetadata | null;
     version?: string | null;
   }>;
+}
+
+export interface WorkerHarnessMetadata {
+  name?: string | null;
+  labels?: string[] | null;
+  version?: string | null;
+  host?: string | null;
 }
 
 export interface WorkerEnrollmentRequest {
@@ -276,6 +344,7 @@ export interface WorkerEnrollmentRequest {
   enc_public_key: string;
   sign_public_key: string;
   verification_code: string;
+  metadata?: WorkerHarnessMetadata | null;
 }
 
 export interface WorkerApprovalKeyResponse {
@@ -335,19 +404,86 @@ export interface WrappedAccountContentKey {
   created_at: string;
 }
 
+export interface WrappedOrgContentKey {
+  key_version: number;
+  algorithm: string;
+  ephemeral_public_key?: string | null;
+  nonce: string;
+  ciphertext: string;
+  created_at: string;
+}
+
+export interface CurrentOrgContentKeyStatus {
+  org_id: string;
+  key_version: number;
+  has_user_recovery_access: boolean;
+}
+
+export interface CurrentOrgContentKeyRecovery {
+  org_id: string;
+  key_version: number;
+  recovery_wrapped_ock?: WrappedOrgContentKey | null;
+}
+
+export interface OrgContentKeyAccessRequest {
+  id: string;
+  org_id: string;
+  requester_user_id: string;
+  requester_email: string;
+  requester_name: string;
+  requester_role: string;
+  device_id: string;
+  device_label?: string | null;
+  enc_public_key: string;
+  state: string;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrgContentKeyAccessRequestStatus {
+  id: string;
+  org_id: string;
+  requester_user_id: string;
+  requester_role: string;
+  device_id: string;
+  device_label?: string | null;
+  state: string;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  wrapped_ock?: WrappedOrgContentKey | null;
+}
+
+export interface BootstrapCurrentOrgContentKeyRequest {
+  device_id: string;
+  wrapped_ock: WrappedOrgContentKey;
+  recovery_wrapped_ock: WrappedOrgContentKey;
+}
+
 export type WorkerEnrollmentState = "pending" | "active" | "revoked";
 
 export interface WorkerEnrollmentStatusResponse {
   api_key_id: string;
   request: WorkerEnrollmentRequest;
+  metadata?: WorkerHarnessMetadata | null;
   state: WorkerEnrollmentState;
   certificate?: WorkerCertificate | null;
   wrapped_ack?: WrappedAccountContentKey | null;
+  wrapped_ock?: WrappedOrgContentKey | null;
 }
 
 export interface ApproveWorkerEnrollmentRequest {
   certificate: WorkerCertificate;
   wrapped_ack: WrappedAccountContentKey;
+  wrapped_ock?: WrappedOrgContentKey | null;
+}
+
+export interface WorkerAccountKeyTarget {
+  api_key_id: string;
+  enc_public_key: string;
 }
 
 export interface ChatDomainEnterOutbound {

@@ -28,6 +28,7 @@ import {
   loadStoredAccountContentKey,
   warmAccountContentKey,
 } from "./cryptoContent";
+import { syncCurrentUserAckToActiveWorkers } from "./workerAckSync";
 import { useCurrentUser } from "./hooks";
 import { toast } from "./toast";
 import {
@@ -395,6 +396,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const workerAckSyncedRef = useRef(false);
   const [activeTools, setActiveTools] = useState<{ name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string; children?: { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string }[] }[]>(
     () => (!!agentId && readPendingAgentId() === agentId)
       ? readPersistedTools() as { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string; children?: { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string }[] }[]
@@ -1259,10 +1261,7 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
                   return {
                     ...tool,
                     textPreview: appendPreview(tool.textPreview, resolvedTextPreview),
-                    children: [
-                      ...(tool.children ?? []),
-                      ...newChildren,
-                    ],
+                    children: newChildren,
                   };
                 });
                 return nextTools;
@@ -1302,68 +1301,48 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
         }
 
         case "ToolCompleted": {
-          const { tool_name, success, parent_tool_name, payload, encrypted_payload } = streamEvent.data as {
+          const { tool_name, success, parent_tool_name } = streamEvent.data as {
             tool_name: string;
             success: boolean;
             parent_tool_name?: string;
-            payload?: { output_preview?: string; error_preview?: string };
-            encrypted_payload?: EncryptedPayload;
           };
-          void (async () => {
-            const encryptedData = await resolveEncryptedPayloadJson<{
-              output_preview?: string;
-              error_preview?: string;
-            }>(encrypted_payload);
-            const resolvedOutputPreview =
-              encryptedData?.output_preview
-                ? String(encryptedData.output_preview)
-                : payload?.output_preview
-                  ? String(payload.output_preview)
-                  : undefined;
-            const resolvedErrorPreview =
-              encryptedData?.error_preview
-                ? String(encryptedData.error_preview)
-                : payload?.error_preview
-                  ? String(payload.error_preview)
-                  : undefined;
-            if (parent_tool_name) {
-              if (tool_name === parent_tool_name) {
-                return;
+          if (parent_tool_name) {
+            if (tool_name === parent_tool_name) {
+              return;
+            }
+            setTypingIfDelivered();
+            setActiveTools((prev) => prev.map((tool) => {
+              if (tool.name !== parent_tool_name) return tool;
+              const children = [...(tool.children ?? [])];
+              const idx = [...children].reverse().findIndex((child) => child.name === tool_name && (!child.status || child.status === "running"));
+              if (idx !== -1) {
+                const realIdx = children.length - 1 - idx;
+                children[realIdx] = {
+                  ...children[realIdx],
+                  status: success ? "completed" : "failed",
+                  outputPreview: undefined,
+                  errorPreview: undefined,
+                };
               }
-              setTypingIfDelivered();
-              setActiveTools((prev) => prev.map((tool) => {
-                if (tool.name !== parent_tool_name) return tool;
-                const children = [...(tool.children ?? [])];
-                const idx = [...children].reverse().findIndex((child) => child.name === tool_name && (!child.status || child.status === "running"));
-                if (idx !== -1) {
-                  const realIdx = children.length - 1 - idx;
-                  children[realIdx] = {
-                    ...children[realIdx],
-                    status: success ? "completed" : "failed",
-                    outputPreview: resolvedOutputPreview,
-                    errorPreview: resolvedErrorPreview,
-                  };
-                }
-                return { ...tool, children };
-              }));
-              return;
-            }
-            if (isAbilityTool(tool_name)) {
-              setTypingIfDelivered();
-              setActiveTools((prev) => prev.map((tool) => tool.name === tool_name ? {
-                ...tool,
-                status: success ? "completed" : "failed",
-              } : tool));
-              return;
-            }
+              return { ...tool, children };
+            }));
+            break;
+          }
+          if (isAbilityTool(tool_name)) {
             setTypingIfDelivered();
             setActiveTools((prev) => prev.map((tool) => tool.name === tool_name ? {
               ...tool,
               status: success ? "completed" : "failed",
-              outputPreview: resolvedOutputPreview,
-              errorPreview: resolvedErrorPreview,
             } : tool));
-          })();
+            break;
+          }
+          setTypingIfDelivered();
+          setActiveTools((prev) => prev.map((tool) => tool.name === tool_name ? {
+            ...tool,
+            status: success ? "completed" : "failed",
+            outputPreview: undefined,
+            errorPreview: undefined,
+          } : tool));
           break;
         }
 
@@ -1456,6 +1435,17 @@ export function usePlannerChat(projectId: string, agentId?: string, initialSessi
       if (!storedAck) {
         toast.error("Generate a local account content key in Settings before sending encrypted messages.");
         return;
+      }
+
+      if (!workerAckSyncedRef.current) {
+        try {
+          await syncCurrentUserAckToActiveWorkers();
+          workerAckSyncedRef.current = true;
+        } catch (error) {
+          console.error("Failed to sync current user ACK to active workers", error);
+          toast.error("This device could not sync its chat encryption access to the worker yet.");
+          return;
+        }
       }
 
       const encryptedMessage = await encryptContentPayload({

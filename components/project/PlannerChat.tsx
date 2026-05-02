@@ -13,6 +13,7 @@ import {
   useQueryParam,
 } from "@/lib/hooks";
 import { usePlannerChat } from "@/lib/usePlannerChat";
+import { formatToolCallSignature } from "@/lib/toolCallDisplay";
 import { Button } from "@/components/ui/Button";
 import { useUser } from "@clerk/nextjs";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
@@ -203,6 +204,38 @@ const MessageBubble = memo(function MessageBubble({
 
 type ToolEntry = { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string; children?: ToolEntry[] };
 
+function ToolCallLine({ tool, compact = false }: { tool: ToolEntry; compact?: boolean }) {
+  const signature = formatToolCallSignature(tool.name, tool.args);
+  const statusLabel = tool.status === "completed" ? "done" : tool.status === "failed" ? "failed" : null;
+  return (
+    <div className={cn("flex items-start gap-2", compact ? "text-[10px]" : "text-[11px]")}>
+      <span className={cn(
+        "mt-[5px] inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+        tool.status === "failed"
+          ? "bg-flag-red-400"
+          : tool.status === "completed"
+            ? "bg-emerald-400"
+            : "animate-pulse bg-deep-space-blue-400",
+      )} />
+      <div className="min-w-0 flex-1">
+        <div className="rounded-md border border-gray-200/80 bg-gray-50 px-2 py-1.5 font-mono leading-relaxed text-gray-600 shadow-sm dark:border-gray-700/80 dark:bg-gray-900/45 dark:text-gray-300">
+          <span className="whitespace-pre-wrap break-words">{signature}</span>
+          {statusLabel && (
+            <span className={cn(
+              "ml-2 font-sans text-[10px] font-medium",
+              tool.status === "failed"
+                ? "text-flag-red-500/80 dark:text-flag-red-400/80"
+                : "text-emerald-500/80 dark:text-emerald-400/80",
+            )}>
+              {statusLabel}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const TypingIndicator = memo(function TypingIndicator({ activeAgent, tools, preview }: { activeAgent?: AgentDefinition; tools?: ToolEntry[]; preview?: string }) {
   const hasTools = tools && tools.length > 0;
   const textPreview = preview?.trim() || tools?.find((tool) => tool.textPreview?.trim())?.textPreview?.trim();
@@ -237,38 +270,14 @@ const TypingIndicator = memo(function TypingIndicator({ activeAgent, tools, prev
         {hasTools && (
           <div className="mt-1.5 flex flex-col gap-1">
             {tools.map((tool, i) => (
-              <div key={tool.name + i} className="flex items-start gap-1.5 text-[11px] leading-tight">
-                <span className="mt-[3px] inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-deep-space-blue-400 animate-pulse" />
-                <div className="min-w-0">
-                  <span className="font-medium text-gray-500 dark:text-gray-400">{tool.name}</span>
-                  {tool.status === "completed" && <span className="ml-1.5 text-emerald-500/80 dark:text-emerald-400/80">done</span>}
-                  {tool.status === "failed" && <span className="ml-1.5 text-flag-red-500/80 dark:text-flag-red-400/80">failed</span>}
-                  {tool.args && (
-                    <span className="ml-1.5 text-gray-400/70 dark:text-gray-500/70">{tool.args}</span>
-                  )}
-                  {(tool.outputPreview || tool.errorPreview) && (
-                    <div className="mt-0.5 text-[10px] text-gray-400/80 dark:text-gray-500/80">
-                      {tool.errorPreview ?? tool.outputPreview}
-                    </div>
-                  )}
+              <div key={tool.name + i} className="leading-tight">
+                <div className="min-w-0 space-y-1">
+                  <ToolCallLine tool={tool} />
                   {tool.children && tool.children.length > 0 && (
                     <div className="mt-1.5 ml-3 flex flex-col gap-1 border-l border-gray-200 pl-3 dark:border-gray-700">
                       {tool.children.map((child, childIndex) => (
-                        <div key={`${child.name}-${childIndex}`} className="flex items-start gap-1.5 text-[10px] leading-tight">
-                          <span className="mt-[3px] inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-vivid-tangerine-400" />
-                          <div className="min-w-0">
-                            <span className="font-medium text-gray-500 dark:text-gray-400">{child.name}</span>
-                            {child.status === "completed" && <span className="ml-1 text-emerald-500/80 dark:text-emerald-400/80">done</span>}
-                            {child.status === "failed" && <span className="ml-1 text-flag-red-500/80 dark:text-flag-red-400/80">failed</span>}
-                            {child.args && (
-                              <span className="ml-1 text-gray-400/70 dark:text-gray-500/70">{child.args}</span>
-                            )}
-                            {(child.outputPreview || child.errorPreview) && (
-                              <div className="mt-0.5 text-[10px] text-gray-400/80 dark:text-gray-500/80">
-                                {child.errorPreview ?? child.outputPreview}
-                              </div>
-                            )}
-                          </div>
+                        <div key={`${child.name}-${childIndex}`} className="leading-tight">
+                          <ToolCallLine tool={child} compact />
                         </div>
                       ))}
                     </div>

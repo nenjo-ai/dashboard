@@ -14,6 +14,7 @@ import {
   projectDocumentsUrl,
   apiKeysUrl,
   authMeUrl,
+  currentOrgUrl,
   workerStatusUrl,
   routinesUrl,
   routineUrl,
@@ -31,6 +32,12 @@ import {
   agentAbilitiesUrl,
   contextBlocksUrl,
   promptContextVariablesUrl,
+  orgsUrl,
+  orgMembersUrl,
+  orgInvitationsUrl,
+  orgContentKeyRequestsUrl,
+  bootstrapStatusUrl,
+  currentOrgContentKeyRequestUrl,
 } from "./api";
 import type {
   Project,
@@ -54,6 +61,13 @@ import type {
   Lambda,
   Ability,
   PromptContextVariableGroup,
+  OrganizationSummary,
+  CurrentOrg,
+  OrgMember,
+  OrgInvitation,
+  OrgContentKeyAccessRequest,
+  OrgContentKeyAccessRequestStatus,
+  BootstrapStatus,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -413,7 +427,9 @@ interface CurrentUser {
   clerk_id?: string;
   session_id?: string | null;
   org_id?: string | null;
+  org_name?: string | null;
   org_role?: string | null;
+  org_scopes?: string[] | null;
   onboarded?: boolean;
 }
 
@@ -430,6 +446,118 @@ export function useCurrentUser() {
     isLoading,
     isError: !!error,
     error,
+  };
+}
+
+export function useOrganizations() {
+  const { data, error, isLoading, mutate } = useSWR<OrganizationSummary[]>(
+    orgsUrl(),
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 10000 },
+  );
+
+  return {
+    organizations: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useCurrentOrg() {
+  const { data, error, isLoading, mutate } = useSWR<CurrentOrg>(
+    currentOrgUrl(),
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 10000 },
+  );
+
+  return {
+    currentOrg: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useOrgMembers(orgId: string | undefined) {
+  const { data, error, isLoading, mutate } = useSWR<OrgMember[]>(
+    orgId ? orgMembersUrl(orgId) : null,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5000 },
+  );
+
+  return {
+    members: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useOrgInvitations(orgId: string | undefined) {
+  const { data, error, isLoading, mutate } = useSWR<OrgInvitation[]>(
+    orgId ? orgInvitationsUrl(orgId) : null,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5000 },
+  );
+
+  return {
+    invitations: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useOrgContentKeyRequests(orgId: string | undefined) {
+  const { data, error, isLoading, mutate } = useSWR<OrgContentKeyAccessRequest[]>(
+    orgId ? orgContentKeyRequestsUrl(orgId) : null,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5000 },
+  );
+
+  return {
+    requests: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useCurrentOrgContentKeyAccessRequest(deviceId: string | undefined) {
+  const { data, error, isLoading, mutate } = useSWR<OrgContentKeyAccessRequestStatus>(
+    deviceId ? currentOrgContentKeyRequestUrl(deviceId) : null,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 3000, refreshInterval: 3000 },
+  );
+
+  return {
+    request: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useBootstrapStatus(enabled = true) {
+  const { data, error, isLoading, mutate } = useSWR<BootstrapStatus>(
+    enabled ? bootstrapStatusUrl() : null,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5000 },
+  );
+
+  return {
+    status: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
   };
 }
 
@@ -534,17 +662,13 @@ export function useAgentAbilities(agentId: string | undefined) {
 // Worker Status
 // ---------------------------------------------------------------------------
 
-interface WorkerStatus {
-  worker_connected: boolean;
-}
-
 /**
  * Poll the backend every 10 seconds to check if the user's agent worker
  * is connected via WebSocket. Uses Redis on the backend so it works
  * correctly across horizontally-scaled backend nodes.
  */
 export function useWorkerStatus() {
-  const { data, error, isLoading, mutate } = useSWR<WorkerStatus>(
+  const { data, error, isLoading, mutate } = useSWR<import("./types").WorkerStatus>(
     workerStatusUrl(),
     fetcher,
     { revalidateOnFocus: true, refreshInterval: 10000, dedupingInterval: 5000 },
@@ -552,6 +676,7 @@ export function useWorkerStatus() {
 
   return {
     isConnected: data?.worker_connected ?? false,
+    workers: data?.workers ?? [],
     isLoading,
     isError: !!error,
     error,

@@ -6,6 +6,7 @@ import type {
   TrustedDevicePayload,
   WorkerCertificate,
   WrappedAccountContentKey,
+  WrappedOrgContentKey,
 } from "./types";
 import { RECOVERY_WORDS } from "./recoveryWords";
 
@@ -46,6 +47,7 @@ type StoredEncryptedDeviceIdentity = {
 let dbPromise: Promise<IDBDatabase> | null = null;
 let wrapKeyPromise: Promise<CryptoKey> | null = null;
 let ackSessionCache: string | null = null;
+const orgContentKeySessionCache = new Map<string, string>();
 let accountSigningKeyPromise: Promise<CryptoKeyPair | null> | null = null;
 let accountSigningPublicKeyCache: string | null = null;
 let deviceIdentityPromise: Promise<{ deviceId: string; keyPair: CryptoKeyPair; publicKey: string } | null> | null = null;
@@ -168,6 +170,10 @@ function payloadAad(accountId: string, objectId: string, objectType: string): Ui
   return new TextEncoder().encode(`${accountId}:${objectId}:${objectType}`);
 }
 
+function normalizePayloadScope(scope?: string | null): "user" | "org" {
+  return scope === "org" ? "org" : "user";
+}
+
 async function encryptAckForStorage(base64Key: string): Promise<StoredEncryptedAck> {
   const wrapKey = await getOrCreateDeviceWrapKey();
   const nonce = crypto.getRandomValues(new Uint8Array(12));
@@ -184,6 +190,10 @@ async function encryptAckForStorage(base64Key: string): Promise<StoredEncryptedA
     nonce: bytesToBase64(nonce),
     ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
   };
+}
+
+function orgContentKeyStorageEntry(orgId: string, keyVersion: number): string {
+  return `encrypted-ock:${orgId}:${keyVersion}`;
 }
 
 async function decryptStoredAck(record: StoredEncryptedAck): Promise<string> {
@@ -260,6 +270,57 @@ export async function setStoredAccountContentKey(base64Key: string): Promise<voi
   const encrypted = await encryptAckForStorage(base64Key);
   await idbPut(db, ENCRYPTED_ACK_ENTRY, encrypted);
   ackSessionCache = base64Key;
+}
+
+export async function loadStoredOrgContentKey(
+  orgId: string,
+  keyVersion: number,
+): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const cacheKey = orgContentKeyStorageEntry(orgId, keyVersion);
+  const cached = orgContentKeySessionCache.get(cacheKey);
+  if (cached) return cached;
+
+  const db = await openDb();
+  const stored = await idbGet<StoredEncryptedAck>(db, cacheKey);
+  if (!stored) return null;
+  const decrypted = await decryptStoredAck(stored);
+  orgContentKeySessionCache.set(cacheKey, decrypted);
+  return decrypted;
+}
+
+export async function setStoredOrgContentKey(
+  orgId: string,
+  keyVersion: number,
+  base64Key: string,
+): Promise<void> {
+  if (typeof window === "undefined") return;
+  const db = await openDb();
+  const encrypted = await encryptAckForStorage(base64Key);
+  const cacheKey = orgContentKeyStorageEntry(orgId, keyVersion);
+  await idbPut(db, cacheKey, encrypted);
+  orgContentKeySessionCache.set(cacheKey, base64Key);
+}
+
+export async function ensureOrgContentKey(orgId: string, keyVersion: number): Promise<string> {
+  const existing = await loadStoredOrgContentKey(orgId, keyVersion);
+  if (existing) return existing;
+
+  const rawKey = crypto.getRandomValues(new Uint8Array(32));
+  const base64Key = bytesToBase64(rawKey);
+  await setStoredOrgContentKey(orgId, keyVersion, base64Key);
+  return base64Key;
+}
+
+export async function requireStoredOrgContentKey(
+  orgId: string,
+  keyVersion: number,
+): Promise<string> {
+  const existing = await loadStoredOrgContentKey(orgId, keyVersion);
+  if (!existing) {
+    throw new Error("This device does not currently hold the org content key. Restore org access on this device first.");
+  }
+  return existing;
 }
 
 export async function clearStoredAccountContentKey(): Promise<void> {
@@ -457,6 +518,66 @@ export async function importWrappedAccountContentKeyForDevice(
   const base64Ack = bytesToBase64(new Uint8Array(plaintext));
   await setStoredAccountContentKey(base64Ack);
   return base64Ack;
+}
+
+export async function importWrappedOrgContentKeyForDevice(params: {
+  orgId: string;
+  wrappedOck: WrappedOrgContentKey;
+}): Promise<string> {
+  const identity = await loadStoredDeviceIdentity();
+  if (!identity) {
+    throw new Error("This device does not have a local device identity yet.");
+  }
+  const privateKey = identity.keyPair.privateKey;
+  const ephemeralPublicKeyValue = params.wrappedOck.ephemeral_public_key;
+  if (!ephemeralPublicKeyValue) {
+    throw new Error("Device-wrapped OCK is missing an ephemeral public key.");
+  }
+  const ephemeralPublicKey = await crypto.subtle.importKey(
+    "raw",
+    asBufferSource(base64ToBytes(ephemeralPublicKeyValue)),
+    { name: "X25519" } as AlgorithmIdentifier,
+    false,
+    [],
+  );
+  const sharedSecret = await crypto.subtle.deriveBits(
+    {
+      name: "X25519",
+      public: ephemeralPublicKey,
+    } as AlgorithmIdentifier,
+    privateKey,
+    256,
+  );
+  const sharedSecretKey = await crypto.subtle.importKey(
+    "raw",
+    sharedSecret,
+    "HKDF",
+    false,
+    ["deriveKey"],
+  );
+  const wrapKey = await crypto.subtle.deriveKey(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: new Uint8Array(),
+      info: HKDF_INFO,
+    },
+    sharedSecretKey,
+    { name: AES_ALGORITHM, length: 256 },
+    false,
+    ["decrypt"],
+  );
+  const plaintext = await crypto.subtle.decrypt(
+    {
+      name: AES_ALGORITHM,
+      iv: asBufferSource(base64ToBytes(params.wrappedOck.nonce)),
+    },
+    wrapKey,
+    asBufferSource(base64ToBytes(params.wrappedOck.ciphertext)),
+  );
+  const base64Ock = bytesToBase64(new Uint8Array(plaintext));
+  await setStoredOrgContentKey(params.orgId, params.wrappedOck.key_version, base64Ock);
+  return base64Ock;
 }
 
 async function deriveWrapKeyForWorker(workerPublicKey: string): Promise<{
@@ -808,6 +929,92 @@ export async function wrapAccountContentKeyForWorker(params: {
   };
 }
 
+export async function wrapOrgContentKeyForWorker(params: {
+  orgId: string;
+  keyVersion?: number;
+  workerPublicKey: string;
+}): Promise<WrappedOrgContentKey> {
+  const { orgId, workerPublicKey, keyVersion = 1 } = params;
+  const base64Key = await requireStoredOrgContentKey(orgId, keyVersion);
+  const { wrapKey, ephemeralPublicKey } = await deriveWrapKeyForWorker(workerPublicKey);
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    {
+      name: AES_ALGORITHM,
+      iv: nonce,
+    },
+    wrapKey,
+    asBufferSource(base64ToBytes(base64Key)),
+  );
+
+  return {
+    key_version: keyVersion,
+    algorithm: WRAP_ALGORITHM,
+    ephemeral_public_key: ephemeralPublicKey,
+    nonce: bytesToBase64(nonce),
+    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+    created_at: new Date().toISOString(),
+  };
+}
+
+export async function wrapOrgContentKeyForRecovery(params: {
+  orgId: string;
+  keyVersion?: number;
+}): Promise<WrappedOrgContentKey> {
+  const { orgId, keyVersion = 1 } = params;
+  const accountContentKey = await loadStoredAccountContentKey();
+  if (!accountContentKey) {
+    throw new Error("No local account content key is configured on this device.");
+  }
+
+  const orgContentKey = await requireStoredOrgContentKey(orgId, keyVersion);
+  const wrapKey = await importAck(base64ToBytes(accountContentKey));
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    {
+      name: AES_ALGORITHM,
+      iv: nonce,
+    },
+    wrapKey,
+    asBufferSource(base64ToBytes(orgContentKey)),
+  );
+
+  return {
+    key_version: keyVersion,
+    algorithm: "ack-aes-256-gcm",
+    ephemeral_public_key: null,
+    nonce: bytesToBase64(nonce),
+    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+    created_at: new Date().toISOString(),
+  };
+}
+
+export async function importWrappedOrgContentKeyFromRecovery(params: {
+  orgId: string;
+  wrappedOck: WrappedOrgContentKey;
+}): Promise<string> {
+  const accountContentKey = await loadStoredAccountContentKey();
+  if (!accountContentKey) {
+    throw new Error("No local account content key is configured on this device.");
+  }
+  if (params.wrappedOck.algorithm !== "ack-aes-256-gcm") {
+    throw new Error(`Unsupported recovery-wrapped OCK algorithm: ${params.wrappedOck.algorithm}`);
+  }
+
+  const wrapKey = await importAck(base64ToBytes(accountContentKey));
+  const plaintext = await crypto.subtle.decrypt(
+    {
+      name: AES_ALGORITHM,
+      iv: asBufferSource(base64ToBytes(params.wrappedOck.nonce)),
+    },
+    wrapKey,
+    asBufferSource(base64ToBytes(params.wrappedOck.ciphertext)),
+  );
+  const base64Ock = bytesToBase64(new Uint8Array(plaintext));
+  await setStoredOrgContentKey(params.orgId, params.wrappedOck.key_version, base64Ock);
+  return base64Ock;
+}
+
 export async function buildTrustedDevicePayload(params?: {
   deviceLabel?: string | null;
   keyVersion?: number;
@@ -833,6 +1040,31 @@ export async function buildTrustedDevicePayload(params?: {
     enc_public_key: deviceIdentity.publicKey,
     sign_public_key: signingPublicKey ?? "",
     wrapped_ack: wrappedAck,
+  };
+}
+
+export async function buildCurrentOrgContentKeyBootstrap(params: {
+  orgId: string;
+  keyVersion: number;
+}): Promise<{
+  device_id: string;
+  wrapped_ock: WrappedOrgContentKey;
+  recovery_wrapped_ock: WrappedOrgContentKey;
+}> {
+  const deviceIdentity = await ensureDeviceEncryptionIdentity();
+  await ensureOrgContentKey(params.orgId, params.keyVersion);
+
+  return {
+    device_id: deviceIdentity.deviceId,
+    wrapped_ock: await wrapOrgContentKeyForWorker({
+      orgId: params.orgId,
+      keyVersion: params.keyVersion,
+      workerPublicKey: deviceIdentity.publicKey,
+    }),
+    recovery_wrapped_ock: await wrapOrgContentKeyForRecovery({
+      orgId: params.orgId,
+      keyVersion: params.keyVersion,
+    }),
   };
 }
 
@@ -888,6 +1120,35 @@ export async function encryptContentPayload(params: {
 
   const { accountId, objectId, objectType, plaintext, keyVersion = 1 } = params;
   const key = await importAck(base64ToBytes(base64Key));
+  return encryptContentPayloadWithKey({
+    key,
+    accountId,
+    encryptionScope: "user",
+    objectId,
+    objectType,
+    plaintext,
+    keyVersion,
+  });
+}
+
+async function encryptContentPayloadWithKey(params: {
+  key: CryptoKey;
+  accountId: string;
+  encryptionScope: "user" | "org";
+  objectId: string;
+  objectType: string;
+  plaintext: string;
+  keyVersion: number;
+}): Promise<EncryptedPayload> {
+  const {
+    key,
+    accountId,
+    encryptionScope,
+    objectId,
+    objectType,
+    plaintext,
+    keyVersion,
+  } = params;
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt(
     {
@@ -901,6 +1162,7 @@ export async function encryptContentPayload(params: {
 
   return {
     account_id: accountId,
+    encryption_scope: encryptionScope,
     object_id: objectId,
     object_type: objectType,
     algorithm: PAYLOAD_ALGORITHM,
@@ -910,12 +1172,38 @@ export async function encryptContentPayload(params: {
   };
 }
 
+export async function encryptOrgContentPayload(params: {
+  orgId: string;
+  objectId: string;
+  objectType: string;
+  plaintext: string;
+  keyVersion?: number;
+}): Promise<EncryptedPayload | null> {
+  const { orgId, objectId, objectType, plaintext, keyVersion = 1 } = params;
+  const base64Key = await loadStoredOrgContentKey(orgId, keyVersion);
+  if (!base64Key) return null;
+
+  const key = await importAck(base64ToBytes(base64Key));
+  return encryptContentPayloadWithKey({
+    key,
+    accountId: orgId,
+    encryptionScope: "org",
+    objectId,
+    objectType,
+    plaintext,
+    keyVersion,
+  });
+}
+
 export async function decryptContentPayload(
   payload: EncryptedPayload,
 ): Promise<string | null> {
   if (payload.algorithm !== PAYLOAD_ALGORITHM) return null;
 
-  const base64Key = await loadStoredAccountContentKey();
+  const base64Key =
+    normalizePayloadScope(payload.encryption_scope) === "org"
+      ? await loadStoredOrgContentKey(payload.account_id, payload.key_version)
+      : await loadStoredAccountContentKey();
   if (!base64Key) return null;
 
   const key = await importAck(base64ToBytes(base64Key));

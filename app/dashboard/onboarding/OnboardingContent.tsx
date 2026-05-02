@@ -18,22 +18,29 @@ import type {
 import {
   approveWorkerEnrollment,
   approveDeviceEnrollment,
+  bootstrapCurrentOrgContentKey,
+  createOrganization,
   createModel,
   createApiKey,
   deleteDeviceEnrollment,
+  fetchBootstrapStatus,
+  fetchCurrentOrgContentKeyStatus,
   fetchDeviceEnrollment,
+  fetchCurrentOrgContentKeyRecovery,
   fetchRecoveryBundle,
   fetchWorkerApprovalKey,
   fetchAgents,
   fetcher,
   fetchCurrentUser,
   listTrustedDevices,
+  updateCurrentOrg,
   updateAgent,
   fetchSystemProject,
   createChatSession,
   putRecoveryBundle,
   putWorkerApprovalKey,
   registerDeviceEnrollment,
+  setActiveOrgIdGetter,
   upsertTrustedDevice,
   workerEnrollmentUrl,
 } from "@/lib/api";
@@ -44,27 +51,32 @@ import { Select } from "@/components/ui/Select";
 import { Label } from "@/components/ui/Label";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
 import {
+  buildCurrentOrgContentKeyBootstrap,
   buildRecoveryBundle,
   buildDeviceEnrollmentPayload,
   buildTrustedDevicePayload,
   buildWorkerCertificate,
   ensureAccountContentKey,
   ensureAccountSigningKeyPair,
+  ensureDeviceEncryptionIdentity,
   generateRecoveryPhrase,
   importWrappedAccountContentKeyForDevice,
+  importWrappedOrgContentKeyFromRecovery,
   loadAccountSigningPublicKey,
   loadStoredAccountContentKey,
+  loadStoredOrgContentKey,
   loadStoredRecoveryBundle,
   restoreFromRecoveryBundle,
   storeRecoveryBundle,
   wrapAccountContentKeyForWorker,
+  wrapOrgContentKeyForWorker,
 } from "@/lib/cryptoContent";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const STEPS = ["Create Agent", "Secure", "API Key", "Connect"] as const;
+const STEPS = ["Create Org", "Secure", "Create Agent", "API Key", "Connect"] as const;
 
 const PROVIDER_ENV_VARS: Record<ModelProvider, string> = {
   openai: "OPENAI_API_KEY",
@@ -99,12 +111,12 @@ const DEFAULT_NENJI_IDENTITY = {
 function StepIndicator({
   currentStep,
 }: {
-  currentStep: 1 | 2 | 3 | 4;
+  currentStep: 1 | 2 | 3 | 4 | 5;
 }) {
   return (
     <div className="flex items-center justify-center gap-0 mb-8">
       {STEPS.map((label, i) => {
-        const step = (i + 1) as 1 | 2 | 3 | 4;
+        const step = (i + 1) as 1 | 2 | 3 | 4 | 5;
         const isCompleted = step < currentStep;
         const isActive = step === currentStep;
         return (
@@ -248,6 +260,31 @@ function StepSecureWorkspace({
     try {
       await storeRecoveryBundle(recoveryBundle);
       await putRecoveryBundle(recoveryBundle);
+      const deviceIdentity = await ensureDeviceEncryptionIdentity();
+      const trustedDevices = await listTrustedDevices();
+      const currentDeviceTrusted = trustedDevices.some(
+        (device) => device.device_id === deviceIdentity.deviceId,
+      );
+      if (!currentDeviceTrusted) {
+        throw new Error("This browser was not registered as a trusted device.");
+      }
+      const orgContentKeyStatus = await fetchCurrentOrgContentKeyStatus();
+      await loadStoredOrgContentKey(
+        orgContentKeyStatus.org_id,
+        orgContentKeyStatus.key_version,
+      );
+      const bootstrap = await buildCurrentOrgContentKeyBootstrap({
+        orgId: orgContentKeyStatus.org_id,
+        keyVersion: orgContentKeyStatus.key_version,
+      });
+      await bootstrapCurrentOrgContentKey(bootstrap);
+      const confirmedOrgKey = await loadStoredOrgContentKey(
+        orgContentKeyStatus.org_id,
+        orgContentKeyStatus.key_version,
+      );
+      if (!confirmedOrgKey) {
+        throw new Error("This browser does not have local access to shared org content yet.");
+      }
       sessionStorage.removeItem(RECOVERY_DRAFT_SESSION_KEY);
       onContinue();
     } catch (err) {
@@ -258,7 +295,7 @@ function StepSecureWorkspace({
   }, [confirmed, onContinue, recoveryBundle]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 md:space-y-6">
       <div>
         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Secure Your Workspace</h2>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -356,15 +393,80 @@ function StepSecureWorkspace({
 }
 
 // ---------------------------------------------------------------------------
-// Step 1: Create Agent
+// Step 1: Create Organization
+// ---------------------------------------------------------------------------
+
+function StepCreateOrganization({
+  onContinue,
+}: {
+  onContinue: (orgName: string) => void;
+}) {
+  const [orgName, setOrgName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = useCallback(async () => {
+    setError(null);
+    queueMicrotask(() => setLoading(true));
+    try {
+      const trimmed = orgName.trim();
+      await updateCurrentOrg({ name: trimmed });
+      onContinue(trimmed);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update organization");
+    } finally {
+      setLoading(false);
+    }
+  }, [onContinue, orgName]);
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Create Your Organization</h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Name the organization that will own your shared resources and worker access.
+        </p>
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-flag-red-200 bg-flag-red-50 p-3 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-400">
+          {error}
+        </div>
+      )}
+
+      <div>
+        <Label required>Organization Name</Label>
+        <Input
+          value={orgName}
+          onChange={(e) => setOrgName(e.target.value)}
+          placeholder="Acme"
+        />
+      </div>
+
+      <Button
+        onClick={handleSubmit}
+        isLoading={loading}
+        disabled={!orgName.trim()}
+        className="w-full"
+      >
+        Continue
+      </Button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Step 3: Create Agent
 // ---------------------------------------------------------------------------
 
 function StepCreateAgent({
   onCreated,
   onProviderSelected,
+  onSkip,
 }: {
   onCreated: (agent: Model) => void;
   onProviderSelected: (p: ModelProvider) => void;
+  onSkip: () => void;
 }) {
   const [provider, setProvider] = useState<ModelProvider>("anthropic");
   const [model, setModel] = useState(MODEL_PROVIDERS.find((p) => p.id === "anthropic")!.models[0]);
@@ -390,7 +492,6 @@ function StepCreateAgent({
     setError(null);
     queueMicrotask(() => setLoading(true));
     try {
-      // Find system role
       const roles = await fetchAgents();
       const systemRole = roles.find((r) => r.name === "system");
       if (!systemRole) {
@@ -399,7 +500,6 @@ function StepCreateAgent({
         return;
       }
 
-      // Create agent
       const agent = await createModel({
         name,
         model,
@@ -408,7 +508,6 @@ function StepCreateAgent({
         tags: ["system"],
       });
 
-      // Assign model to system agent
       await updateAgent(systemRole.id, {
         model_id: agent.id,
       });
@@ -419,7 +518,7 @@ function StepCreateAgent({
     } finally {
       setLoading(false);
     }
-  }, [name, model, provider, temperature, onCreated]);
+  }, [name, model, onCreated, provider, temperature]);
 
   const providerInfo = MODEL_PROVIDERS.find((p) => p.id === provider);
 
@@ -503,18 +602,28 @@ function StepCreateAgent({
       >
         Create Agent
       </Button>
+
+      <button
+        type="button"
+        onClick={onSkip}
+        className="w-full text-center text-sm text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+      >
+        Skip - Continue to Dashboard
+      </button>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Step 2: Generate API Key
+// Step 4: Generate API Key
 // ---------------------------------------------------------------------------
 
 function StepApiKey({
   onContinue,
+  onSkip,
 }: {
   onContinue: (key: CreateApiKeyResponse) => void;
+  onSkip: () => void;
 }) {
   const [createdKey, setCreatedKey] = useState<CreateApiKeyResponse | null>(null);
   const [rawKey, setRawKey] = useState<string | null>(null);
@@ -675,24 +784,35 @@ function StepApiKey({
           >
             {hasCopied ? "Continue" : "Copy key to continue"}
           </Button>
+
         </>
       )}
+
+      {!loading ? (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="w-full text-center text-sm text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+        >
+          Skip for now
+        </button>
+      ) : null}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Step 3: Connect Worker
+// Step 5: Connect Worker
 // ---------------------------------------------------------------------------
 
 function StepConnect({
   provider,
   keyPrefix,
-  accountUserId,
+  accountOrgId,
 }: {
   provider: ModelProvider;
   keyPrefix: string;
-  accountUserId: string;
+  accountOrgId: string;
 }) {
   const router = useRouter();
   const { user } = useUser();
@@ -723,18 +843,26 @@ export NENJO_API_KEY=${maskedKey}
 nenjo run`;
 
   useEffect(() => {
-    if (!accountUserId || approvalInFlight.current) return;
-    const pendingEnrollment = (enrollments ?? []).find((item) => item.state === "pending");
-    if (!pendingEnrollment) return;
+    if (!accountOrgId || approvalInFlight.current) return;
+    const enrollmentsNeedingOck = (enrollments ?? []).find(
+      (item) => item.state === "pending" || (item.state === "active" && !item.wrapped_ock),
+    );
+    if (!enrollmentsNeedingOck) return;
 
     approvalInFlight.current = true;
     void (async () => {
       try {
-        const [ack, signingPublicKey] = await Promise.all([
+        const [ack, signingPublicKey, orgContentStatus] = await Promise.all([
           loadStoredAccountContentKey(),
           loadAccountSigningPublicKey(),
+          fetchCurrentOrgContentKeyStatus().catch(() => null),
         ]);
-        if (!ack || !signingPublicKey) return;
+        if (!ack || !signingPublicKey || !orgContentStatus) return;
+        const localOck = await loadStoredOrgContentKey(
+          orgContentStatus.org_id,
+          orgContentStatus.key_version,
+        );
+        if (!localOck) return;
 
         const remoteApprovalKey = await fetchWorkerApprovalKey().catch(() => ({ public_key: null }));
         if (remoteApprovalKey.public_key !== signingPublicKey) {
@@ -742,24 +870,30 @@ nenjo run`;
         }
 
         const certificate = await buildWorkerCertificate({
-          accountId: accountUserId,
-          apiKeyId: pendingEnrollment.api_key_id,
-          encPublicKey: pendingEnrollment.request.enc_public_key,
-          signPublicKey: pendingEnrollment.request.sign_public_key,
+          accountId: accountOrgId,
+          apiKeyId: enrollmentsNeedingOck.api_key_id,
+          encPublicKey: enrollmentsNeedingOck.request.enc_public_key,
+          signPublicKey: enrollmentsNeedingOck.request.sign_public_key,
         });
         const wrappedAck = await wrapAccountContentKeyForWorker({
-          workerPublicKey: pendingEnrollment.request.enc_public_key,
+          workerPublicKey: enrollmentsNeedingOck.request.enc_public_key,
         });
-        await approveWorkerEnrollment(pendingEnrollment.api_key_id, {
+        const wrappedOck = await wrapOrgContentKeyForWorker({
+          orgId: accountOrgId,
+          keyVersion: orgContentStatus.key_version,
+          workerPublicKey: enrollmentsNeedingOck.request.enc_public_key,
+        });
+        await approveWorkerEnrollment(enrollmentsNeedingOck.api_key_id, {
           certificate,
           wrapped_ack: wrappedAck,
+          wrapped_ock: wrappedOck,
         });
         await mutateEnrollments();
       } finally {
         approvalInFlight.current = false;
       }
     })();
-  }, [accountUserId, enrollments, mutateEnrollments]);
+  }, [accountOrgId, enrollments, mutateEnrollments]);
 
   // Handle successful worker connection
   useEffect(() => {
@@ -993,14 +1127,18 @@ nenjo run`;
 function StepRestoreDevice({
   userId,
   onRestored,
+  onStartFresh,
 }: {
   userId: string;
   onRestored: () => void;
+  onStartFresh: (orgId: string) => void;
 }) {
   const [recoveryPhrase, setRecoveryPhrase] = useState("");
   const [loading, setLoading] = useState(true);
   const [restoring, setRestoring] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [creatingOrg, setCreatingOrg] = useState(false);
+  const [newOrgName, setNewOrgName] = useState("");
   const [hasBundle, setHasBundle] = useState(false);
   const [trustedDeviceCount, setTrustedDeviceCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1097,14 +1235,6 @@ function StepRestoreDevice({
   }, [deviceEnrollmentId]);
 
   useEffect(() => {
-    if (loading) return;
-    if (registering) return;
-    if (trustedDeviceCount === null || trustedDeviceCount <= 0) return;
-    if (deviceEnrollmentId) return;
-    void registerForApproval();
-  }, [deviceEnrollmentId, loading, registerForApproval, registering, trustedDeviceCount]);
-
-  useEffect(() => {
     if (!deviceEnrollmentId) return;
     const interval = setInterval(() => {
       void (async () => {
@@ -1152,6 +1282,18 @@ function StepRestoreDevice({
             : "browser",
       });
       await upsertTrustedDevice(trustedDevice);
+      const orgRecovery = await fetchCurrentOrgContentKeyRecovery().catch(() => null);
+      if (orgRecovery?.recovery_wrapped_ock) {
+        await importWrappedOrgContentKeyFromRecovery({
+          orgId: orgRecovery.org_id,
+          wrappedOck: orgRecovery.recovery_wrapped_ock,
+        });
+        const bootstrap = await buildCurrentOrgContentKeyBootstrap({
+          orgId: orgRecovery.org_id,
+          keyVersion: orgRecovery.key_version,
+        });
+        await bootstrapCurrentOrgContentKey(bootstrap);
+      }
       onRestored();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to restore this device.");
@@ -1159,6 +1301,31 @@ function StepRestoreDevice({
       setRestoring(false);
     }
   }, [onRestored, recoveryPhrase]);
+
+  const handleCreateNewOrg = useCallback(async () => {
+    const trimmed = newOrgName.trim();
+    if (!trimmed) {
+      setError("Organization name is required.");
+      return;
+    }
+
+    setError(null);
+    setCreatingOrg(true);
+    try {
+      const created = await createOrganization({ name: trimmed });
+      try {
+        localStorage.setItem("nenjo.active-org-id", created.org_id);
+      } catch {
+        // Ignore storage failures.
+      }
+      setActiveOrgIdGetter(() => created.org_id);
+      onStartFresh(created.org_id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create a new organization.");
+    } finally {
+      setCreatingOrg(false);
+    }
+  }, [newOrgName, onStartFresh]);
 
   return (
     <div className="space-y-5">
@@ -1186,7 +1353,7 @@ function StepRestoreDevice({
 
       {!loading ? (
         <>
-          <div className="space-y-4">
+          <div className="space-y-4 md:space-y-5">
             {trustedDeviceCount === null ? (
               <div className="rounded-2xl border border-black/10 bg-white/70 p-5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
                 <div className="flex items-start gap-4 rounded-xl border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.02]">
@@ -1214,13 +1381,17 @@ function StepRestoreDevice({
                       Approve from a trusted device
                     </h3>
                     <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                      Request approval from a device you already trust. This screen will continue automatically after approval.
+                      Request approval from another browser or device you already trust for this same account. This is optional and only works if you still have access to an existing trusted device.
                     </p>
                   </div>
 
                   <div className="flex items-start gap-4 rounded-xl border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.02]">
                     <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-deep-space-blue-50 text-deep-space-blue-600 dark:bg-deep-space-blue-500/15 dark:text-deep-space-blue-300">
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      {deviceEnrollmentId || registering ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      ) : (
+                        <div className="h-2.5 w-2.5 rounded-full bg-current/70" />
+                      )}
                     </div>
                     <div className="space-y-2">
                       <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -1232,10 +1403,10 @@ function StepRestoreDevice({
                       </p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
                         {deviceEnrollmentId
-                          ? "Approve this request on a trusted device."
+                          ? "Approve this request on another trusted device for this account."
                           : registering
                             ? "Sending approval request..."
-                            : "A trusted device can approve this browser."}
+                            : "If another trusted device is available, you can send an approval request from here."}
                       </p>
                       {deviceVerificationCode ? (
                         <div className="rounded-lg border border-black/10 bg-white px-3 py-2 font-mono text-base font-semibold tracking-[0.28em] text-gray-900 dark:border-white/10 dark:bg-black/20 dark:text-gray-100">
@@ -1249,12 +1420,12 @@ function StepRestoreDevice({
                     {!deviceEnrollmentId ? (
                       <Button
                         type="button"
-                        variant="secondary"
+                        variant="primary"
                         size="sm"
                         onClick={() => void registerForApproval()}
                         disabled={registering}
                       >
-                        {registering ? "Requesting approval..." : "Retry approval request"}
+                        {registering ? "Requesting approval..." : "Request approval from another device"}
                       </Button>
                     ) : (
                       <Button
@@ -1327,6 +1498,40 @@ function StepRestoreDevice({
                 )}
               </div>
             </div>
+
+            <div className="rounded-2xl border border-black/10 bg-white/70 p-5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-500 dark:text-gray-400">
+                    Escape hatch
+                  </p>
+                  <h3 className="mt-2 text-base font-semibold text-gray-900 dark:text-gray-100">
+                    Create a new organization instead
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                    If you lost both your trusted devices and your recovery phrase, start a fresh workspace under a new organization on this same account.
+                  </p>
+                </div>
+
+                <div>
+                  <Label required>New Organization Name</Label>
+                  <Input
+                    value={newOrgName}
+                    onChange={(event) => setNewOrgName(event.target.value)}
+                    placeholder="Acme 2"
+                  />
+                </div>
+
+                <Button
+                  onClick={() => void handleCreateNewOrg()}
+                  isLoading={creatingOrg}
+                  disabled={!newOrgName.trim()}
+                  className="w-full"
+                >
+                  Create New Organization
+                </Button>
+              </div>
+            </div>
           </div>
         </>
       ) : null}
@@ -1352,19 +1557,21 @@ export default function OnboardingContent() {
           clerk_id?: string;
           session_id?: string | null;
           org_id?: string | null;
+          org_name?: string | null;
           org_role?: string | null;
           onboarded?: boolean;
         }
       | undefined;
   };
 
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [onboardingMode, setOnboardingMode] = useState<"fresh" | "restore">("fresh");
   const [gateStatus, setGateStatus] = useState<"checking" | "ready" | "error">("checking");
   const [gateError, setGateError] = useState<string | null>(null);
   const [, setCreatedAgent] = useState<Model | null>(null);
   const [createdKey, setCreatedKey] = useState<CreateApiKeyResponse | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<ModelProvider>("anthropic");
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const accountUserId = currentUser?.user_id ?? undefined;
 
   useEffect(() => {
@@ -1382,18 +1589,28 @@ export default function OnboardingContent() {
     }
 
     let cancelled = false;
-    setGateStatus("checking");
-    setGateError(null);
+    queueMicrotask(() => {
+      if (cancelled || redirected.current) return;
+      setGateStatus("checking");
+      setGateError(null);
+    });
 
     (async () => {
       try {
-        const [me, localAck] = await Promise.all([
+        const [me, localAck, bootstrap] = await Promise.all([
           fetchCurrentUser(),
           loadStoredAccountContentKey(),
+          fetchBootstrapStatus().catch(() => null),
         ]);
         if (cancelled || redirected.current) return;
 
-        if (me.onboarded) {
+        const hasOrg = Boolean(me.org_id);
+        const hasExistingWorkspace =
+          Boolean(me.onboarded) ||
+          Boolean(bootstrap?.has_recovery_bundle) ||
+          (bootstrap?.trusted_device_count ?? 0) > 0;
+
+        if (hasOrg && hasExistingWorkspace) {
           if (localAck) {
             redirected.current = true;
             router.replace("/dashboard");
@@ -1424,9 +1641,16 @@ export default function OnboardingContent() {
 
   const maxWidth =
     onboardingMode === "restore"
-      ? "max-w-lg"
-      :
-    currentStep === 4 ? "max-w-2xl" : currentStep === 3 ? "max-w-md" : currentStep === 2 ? "max-w-lg" : "max-w-sm";
+      ? "max-w-5xl"
+      : currentStep === 5
+        ? "max-w-2xl"
+        : currentStep === 4
+          ? "max-w-md"
+          : currentStep === 3
+            ? "max-w-sm"
+            : currentStep === 2
+              ? "max-w-lg"
+              : "max-w-sm";
 
   const loadingSpinner = (
     <div className="flex items-center justify-center py-12">
@@ -1475,16 +1699,17 @@ export default function OnboardingContent() {
           <StepRestoreDevice
             userId={accountUserId ?? user.id}
             onRestored={() => router.replace("/dashboard")}
+            onStartFresh={(orgId) => {
+              setSelectedOrgId(orgId);
+              setOnboardingMode("fresh");
+              setCurrentStep(2);
+            }}
           />
         ) : null}
 
         {onboardingMode === "fresh" && currentStep === 1 && (
-          <StepCreateAgent
-            onCreated={(agent) => {
-              setCreatedAgent(agent);
-              setCurrentStep(2);
-            }}
-            onProviderSelected={setSelectedProvider}
+          <StepCreateOrganization
+            onContinue={() => setCurrentStep(2)}
           />
         )}
 
@@ -1496,25 +1721,37 @@ export default function OnboardingContent() {
         )}
 
         {onboardingMode === "fresh" && currentStep === 3 && (
-          <StepApiKey
-            onContinue={(key) => {
-              setCreatedKey(key);
+          <StepCreateAgent
+            onCreated={(agent) => {
+              setCreatedAgent(agent);
               setCurrentStep(4);
             }}
+            onProviderSelected={setSelectedProvider}
+            onSkip={() => router.replace("/dashboard")}
           />
         )}
 
         {onboardingMode === "fresh" && currentStep === 4 && (
+          <StepApiKey
+            onContinue={(key) => {
+              setCreatedKey(key);
+              setCurrentStep(5);
+            }}
+            onSkip={() => setCurrentStep(5)}
+          />
+        )}
+
+        {onboardingMode === "fresh" && currentStep === 5 && (
           <StepConnect
             provider={selectedProvider}
             keyPrefix={createdKey?.key_prefix || ""}
-            accountUserId={accountUserId ?? ""}
+            accountOrgId={selectedOrgId ?? currentUser?.org_id ?? ""}
           />
         )}
 
         {onboardingMode === "fresh" && currentStep === 1 && (
           <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
-            Welcome{user.firstName ? `, ${user.firstName}` : ""}! Let&apos;s get your workspace set up.
+            Welcome{user.firstName ? `, ${user.firstName}` : ""}! Let&apos;s get your organization set up.
           </p>
         )}
       </div>
@@ -1526,7 +1763,7 @@ export default function OnboardingContent() {
   );
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen lg:overflow-hidden">
       {/* Left panel – branding */}
       <div className="hidden lg:flex lg:w-1/2 relative flex-col justify-between bg-deep-space-blue-900 p-12 text-white overflow-hidden">
         <div className="pointer-events-none absolute inset-0 bg-linear-to-br from-deep-space-blue-800 via-deep-space-blue-900 to-gray-900" />
@@ -1583,10 +1820,9 @@ export default function OnboardingContent() {
       </div>
 
       {/* Right panel – onboarding wizard */}
-      <div className="flex w-full flex-col items-center justify-center bg-gray-100 px-6 dark:bg-gray-950 lg:w-1/2">
+      <div className="flex min-h-screen w-full flex-col items-center justify-center overflow-y-auto bg-gray-100 px-4 py-8 dark:bg-gray-950 sm:px-6 sm:py-10 lg:w-1/2 lg:px-8 lg:py-12">
         <div className={`w-full transition-[max-width] duration-300 ease-in-out ${maxWidth}`}>
-          {/* Mobile-only logo */}
-          <div className="mb-8 text-center lg:hidden">
+          <div className="mb-6 text-center lg:hidden">
             <Link
               href="/"
               className="inline-flex items-center gap-3 text-deep-space-blue-600 transition-colors hover:text-deep-space-blue-500 dark:text-deep-space-blue-300 dark:hover:text-deep-space-blue-200"
