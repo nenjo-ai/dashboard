@@ -1,13 +1,23 @@
 ---
 title: Executions
-description: Routine execution context, step results, data flow, and real-time monitoring via events.
+description: Running your routine and monitoring its progress in real time.
 ---
 
-When a routine runs, the executor creates a `RoutineContext` that flows through every step. Each step produces a `StepResult`, and events are broadcast in real time for monitoring.
+Your routine is built—now make it run. Think of a routine as a recipe: the DAG structure is the recipe card, and an **execution** is the act of cooking it. Each time you run a routine, Nenjo creates a new execution context that tracks progress, accumulates results, and broadcasts events for monitoring.
+
+## What happens when you run a routine
+
+When a routine executes, the worker:
+
+1. Creates a `RoutineContext` with project metadata, git context, and task data
+2. Starts at the entry point step
+3. Runs each step, storing results in the context
+4. Evaluates edge conditions (`on_pass`, `on_fail`) to decide the next step
+5. Continues until reaching a terminal step
 
 ## RoutineContext
 
-The execution context is created at the start of a routine run and passed to every step. Steps can read from it (e.g., to access task metadata or gate feedback) and the executor writes to it after each step completes.
+The execution context flows through every step. Steps can read from it (to access task metadata or gate feedback) and the executor writes to it after each step completes.
 
 ### Core fields
 
@@ -24,7 +34,7 @@ The execution context is created at the start of a routine run and passed to eve
 
 ### Task metadata
 
-These fields are populated from the task being executed and are available in prompt templates via `{{ task.* }}`.
+Available in prompt templates via `{{ task.* }}`.
 
 | Field | Template variable | Description |
 |---|---|---|
@@ -57,16 +67,9 @@ These fields are populated from the task being executed and are available in pro
 | `step_metadata` | `{{ step.metadata }}` | JSON from `step.config.metadata` |
 | `gate_feedback` | `{{ gate_feedback }}` | Output from the most recent failed gate/cron/lambda step |
 
-### Project context
-
-| Field | Template variable | Description |
-|---|---|---|
-| `project_name` | `{{ project.name }}` | Project name |
-| `project_description` | `{{ project.description }}` | Project description |
-
 ## StepResult
 
-Every step produces a `StepResult` that is stored in the context and used for edge condition evaluation.
+Every step produces a `StepResult` stored in the context and used for edge evaluation.
 
 | Field | Type | Description |
 |---|---|---|
@@ -82,27 +85,60 @@ Every step produces a `StepResult` that is stored in the context and used for ed
 
 Data flows through the routine context:
 
-1. **Initial input** -- The `initial_input` string (task description or user message) is available to all steps.
-2. **Step results** -- Each step's `StepResult` is stored in `step_results` keyed by step ID. The most recent result is used as input for gate steps.
-3. **Gate feedback** -- When a gate, cron, or lambda step fails, its output is stored as `gate_feedback`. The next agent step (reached via an `on_fail` edge) can use this to understand what went wrong.
-4. **Source tracking** -- When a step fails, `task_source` is updated to the failing step's role name, so downstream steps know where feedback originated.
-5. **Metrics** -- Token usage and execution counts are accumulated per step in `RoutineMetrics`.
+1. **Initial input** — The `initial_input` string (task description or user message) is available to all steps.
+2. **Step results** — Each step's `StepResult` is stored in `step_results` keyed by step ID.
+3. **Gate feedback** — When a gate, cron, or lambda step fails, its output is stored as `gate_feedback`. The next agent step (via `on_fail` edge) can use this to understand what went wrong.
+4. **Source tracking** — When a step fails, `task_source` is updated to the failing step's role name.
 
-## Routine events
+## Real-world example: error recovery flow
 
-Routine events are broadcast via `tokio::sync::broadcast` for real-time monitoring. The event channel has a capacity of 512 buffered events.
+Here's how data flow enables error recovery:
 
-### RoutineEvent structure
+```
+Analyze (agent)
+  --on_pass--> Implement (agent)
+  --on_fail--> RequestClarification (agent)
+```
 
-```json
-{
-  "task_id": "uuid",
-  "execution_run_id": "uuid",
-  "event_type": "phase_started",
-  "phase": "implementation",
-  "data": {},
-  "timestamp": "2024-01-01T00:00:00Z"
-}
+When `Analyze` fails, its output (e.g., "Missing API endpoint documentation") becomes `gate_feedback`. The `RequestClarification` step receives this via `{{ gate_feedback }}` and can prompt the user for clarification:
+
+```
+The analysis failed because: {{ gate_feedback }}
+
+What additional context can you provide?
+```
+
+## Monitoring executions
+
+Subscribe to routine events via WebSocket for real-time tracking:
+
+```javascript
+const ws = new WebSocket('wss://your-instance.com/ws');
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  
+  switch (data.event_type) {
+    case 'step_started':
+      console.log(`▶ Starting: ${data.step_name}`);
+      break;
+    case 'step_completed':
+      console.log(`✓ Completed: ${data.step_name} (${data.duration_ms}ms)`);
+      break;
+    case 'step_warning':
+      console.log(`⚠ Step failed but recovery available: ${data.step_name}`);
+      break;
+    case 'step_failed':
+      console.log(`✗ Step failed: ${data.step_name}`);
+      break;
+    case 'routine_completed':
+      console.log(`✅ Routine completed successfully`);
+      break;
+    case 'routine_failed':
+      console.log(`❌ Routine failed: ${data.error}`);
+      break;
+  }
+};
 ```
 
 ### Event types
@@ -117,42 +153,54 @@ Routine events are broadcast via `tokio::sync::broadcast` for real-time monitori
 | `routine_completed` | The entire routine completed successfully |
 | `routine_failed` | The routine failed permanently (max retries exceeded) |
 
-### Routine phases
+### Step events
 
-| Phase | Description |
+| Event | Description |
 |---|---|
-| `implementation` | Code generation, branch creation, commit |
-| `review` | LLM code review of the diff |
-| `testing` | Test execution and acceptance verification |
+| `step_started` | Step began execution. Includes role info for frontend rendering. |
+| `step_completed` | Step succeeded. Includes metrics: `execution_count`, `input_tokens`, `output_tokens`, `total_tokens`, `duration_ms`. |
+| `step_warning` | Step failed but has an `on_fail` edge (recovery path available). |
+| `step_failed` | Step failed with no recovery path. |
 
-## WebSocket step events
+## Execution status checks
 
-In addition to routine events, the executor emits richer step-level events via WebSocket for frontend execution tracking.
+Poll the API to check execution status:
 
-### Step started
+```bash
+# Get execution run details
+curl -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/execution-runs/$RUN_ID
 
-Emitted when a step begins execution. Includes role info (ID, color, name) for frontend identicon rendering.
-
-### Step completed
-
-Emitted when a step finishes. Includes:
-- **Event type**: `step_completed` (pass), `step_warning` (fail with `on_fail` edge available), or `step_failed` (fail with no recovery path)
-- **Metrics**: `execution_count`, `input_tokens`, `output_tokens`, `total_tokens`
-- **Duration**: Execution time in milliseconds
-
-The distinction between `step_warning` and `step_failed` is important: a gate failure with an `on_fail` edge is expected (the routine has a recovery path), while a failure with no matching edge is terminal.
-
-## Monitoring
-
-Subscribe to routine events by connecting to the WebSocket endpoint. Events are fire-and-forget -- if no receivers are connected, events are silently dropped.
-
-```javascript
-// Subscribe to execution events
-const ws = new WebSocket('wss://your-instance.com/ws');
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  if (data.event_type === 'step_started') {
-    console.log(`Step started: ${data.step_name}`);
-  }
-};
+# Response includes:
+# {
+#   "id": "uuid",
+#   "status": "running" | "completed" | "failed",
+#   "started_at": "2024-01-01T00:00:00Z",
+#   "completed_at": "2024-01-01T00:10:00Z",
+#   "step_results": [...]
+# }
 ```
+
+## Debugging: my routine hangs
+
+If your routine seems stuck:
+
+1. **Check WebSocket events** — Connect and watch for `step_started` without corresponding `step_completed`
+2. **Check agent availability** — The assigned agent may be offline or busy
+3. **Check for infinite loops** — Use [DAG validation](/docs/routines/dag-validation) to ensure no cycles
+4. **Check cron step timeout** — A cron step with `timeout: "infinite"` will wait forever
+
+## Debugging: my step keeps retrying
+
+If a step retries indefinitely:
+
+1. **Check max_retries** — The routine's `max_retries` setting limits attempts
+2. **Check edge conditions** — If no `on_fail` edge exists, retries continue until max
+3. **Check lambda/agent output** — Ensure the step outputs a clear signal (exit code 0 for lambdas, pass/fail for agents)
+
+## Related concepts
+
+- [Cron and scheduling](/docs/routines/cron-and-scheduling) — Automating routine runs
+- [Lambdas](/docs/routines/lambdas) — Deterministic scripts within routines
+- [Step types](/docs/routines/step-types) — Different step kinds and their behavior
+- [System & Operations](/docs/system/worker) — Worker infrastructure that executes routines

@@ -1,13 +1,26 @@
 ---
-title: Cron and scheduling
-description: Schedule recurring routine executions with cron expressions and interval-based timers.
+title: Cron and Scheduling
+description: Automating routine runs on schedules—cron expressions, interval timers, and the CronManager.
 ---
 
-Nenjo supports two forms of scheduled execution: **cron steps** within a routine (polling loops) and **cron-triggered routines** (recurring whole-routine runs via the CronManager).
+Your routine is built—now make it run. If you need a routine to run automatically—like an alarm clock going off at a set time—cron and scheduling is how you automate it.
+
+Think of it this way:
+- **Executions** are like cooking a recipe: you follow the steps once
+- **Cron** is like setting an alarm: it triggers the routine to run on a schedule
+
+## Two scheduling approaches
+
+Nenjo supports two forms of scheduled execution:
+
+| Approach | Scope | Use case |
+|---|---|---|
+| **Cron steps** | Single step within a routine | Polling/waiting for external events (e.g., wait for PR merge) |
+| **Cron-triggered routines** | Entire routine | Recurring autonomous tasks (e.g., daily data sync) |
 
 ## Cron steps
 
-A cron step is a routine step that repeatedly executes a function (agent or lambda) at a fixed interval until it signals completion or times out. This is useful for polling external systems -- for example, waiting for a PR to be merged or a deployment to finish.
+A cron step is a routine step that repeatedly executes a function at a fixed interval until it signals completion or times out. This is useful for **polling external systems**—for example, waiting for a PR to be merged or a deployment to finish.
 
 ### Configuration
 
@@ -29,17 +42,14 @@ A cron step is a routine step that repeatedly executes a function (agent or lamb
 | `role_id` | UUID | -- | Agent role to run (agent mode) |
 | `lambda_id` | UUID | -- | Lambda script to run (lambda mode) |
 
-The `role_id` and `lambda_id` can be set either as top-level step fields or inside the `config` JSON. When both are present, lambda takes precedence.
-
 ### Execution modes
 
-**Agent mode** -- An LLM agent runs on each polling cycle using the specified role. The agent should include a `cron_status` JSON signal in its output to indicate completion.
-
-**Lambda mode** -- A script runs on each polling cycle. The script communicates its status via stdout.
+- **Agent mode** — An LLM agent runs on each polling cycle using the specified role. Include a `cron_status` JSON signal in the output.
+- **Lambda mode** — A script runs on each polling cycle. Communicate status via stdout.
 
 ### Signaling
 
-On each cycle, the function's output is parsed for a status signal:
+On each cycle, parse the function's output for a status signal:
 
 ```json
 {"cron_status": "pass", "reason": "PR #42 was merged successfully"}
@@ -52,11 +62,9 @@ On each cycle, the function's output is parsed for a status signal:
 | `wait` | Sleep for `interval` and run again |
 | `abort` | Abort the routine immediately with an error |
 
-If no signal is found in the output, the step behaves as `wait` and runs again on the next cycle.
+Legacy format: `CRON_DONE:PASS` and `CRON_DONE:FAIL` are also recognized.
 
-**Legacy format:** For backward compatibility, `CRON_DONE:PASS` and `CRON_DONE:FAIL` markers in the output text are also recognized.
-
-### Example: wait for PR merge
+### Real-world example: wait for PR merge
 
 ```json
 {
@@ -70,7 +78,7 @@ If no signal is found in the output, the step behaves as `wait` and runs again o
 }
 ```
 
-The lambda script checks the PR status and outputs:
+The lambda script:
 ```bash
 #!/bin/bash
 PR_STATE=$(gh pr view "$NENJO_PR_NUMBER" --json state -q '.state')
@@ -83,13 +91,15 @@ else
 fi
 ```
 
+This step polls every 5 minutes for up to 12 hours. When the PR merges, it takes the `on_pass` edge to continue the routine.
+
 ## Cron-triggered routines
 
-Separately from cron steps, entire routines can be triggered on a recurring schedule. This is managed by the **CronManager** on the worker.
+Entire routines can be triggered on a recurring schedule. This is managed by the **CronManager** on the worker—think of it as a scheduler service that keeps track of all your alarm clocks.
 
 ### Routine configuration
 
-Set the routine's `trigger` to `cron` and add a `schedule` to the metadata:
+Set the routine's `trigger` to `cron` and add a `schedule`:
 
 ```bash
 curl -X POST \
@@ -107,9 +117,7 @@ curl -X POST \
 
 ### Schedule format
 
-The `schedule` field supports two formats:
-
-**Cron expressions** -- Standard 5-field cron syntax (minute, hour, day-of-month, month, day-of-week):
+**Cron expressions** — Standard 5-field syntax (minute, hour, day-of-month, month, day-of-week):
 
 | Expression | Meaning |
 |---|---|
@@ -117,7 +125,7 @@ The `schedule` field supports two formats:
 | `*/30 * * * *` | Every 30 minutes |
 | `0 0 * * 1` | Every Monday at midnight |
 
-**Interval strings** -- Simple duration strings for fixed-interval scheduling:
+**Interval strings** — Simple duration strings:
 
 | Interval | Meaning |
 |---|---|
@@ -126,30 +134,80 @@ The `schedule` field supports two formats:
 | `1h` | Every hour |
 | `2d` | Every 2 days |
 
-The format is auto-detected: if the string contains spaces, it is treated as a cron expression; otherwise, as an interval.
+The format is auto-detected: spaces = cron expression, otherwise = interval.
+
+### Real-world example: scheduled data sync
+
+```bash
+# Create a daily data sync routine
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Daily Sales Data Sync",
+    "trigger": "cron",
+    "metadata": {
+      "schedule": "0 2 * * *"
+    },
+    "steps": [
+      {
+        "id": "fetch-sales",
+        "name": "Fetch Sales Data",
+        "step_type": "lambda",
+        "lambda_id": "LAMBDA_UUID",
+        "edges": [{"target": "transform-data", "condition": "on_pass"}]
+      },
+      {
+        "id": "transform-data",
+        "name": "Transform and Load",
+        "step_type": "lambda",
+        "lambda_id": "LAMBDA_UUID_2",
+        "edges": [{"target": "notify-complete", "condition": "on_pass"}]
+      },
+      {
+        "id": "notify-complete",
+        "name": "Notify Team",
+        "step_type": "agent",
+        "agent_id": "AGENT_UUID",
+        "edges": []
+      }
+    ]
+  }' \
+  https://your-instance.com/api/v1/routines
+```
+
+This routine runs every day at 2 AM:
+1. **Fetch Sales Data** — Lambda pulls data from the sales API
+2. **Transform and Load** — Lambda cleans and loads data into the warehouse
+3. **Notify Team** — Agent sends a summary to Slack/email
+
+### Manual trigger
+
+You can manually trigger a cron routine (fires immediately without affecting the schedule):
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  https://your-instance.com/api/v1/routines/$ROUTINE_ID/trigger
+```
+
+Returns `202 Accepted`.
 
 ## CronManager
 
-The CronManager runs on the worker and manages the lifecycle of all cron-triggered routine schedules.
-
-### Bootstrap
-
-On worker startup, the CronManager:
-
-1. Reads all active cron **assignments** (routine-to-project mappings with trigger type `cron`) and starts a timer for each.
-2. Reads all active cron **routines** that have a `schedule` in their metadata but no active assignment, and starts standalone timers for those.
+The CronManager runs on the worker and manages all cron-triggered schedules.
 
 ### Operations
 
 | Operation | Event | Description |
 |---|---|---|
-| Enable | `cron.enable` | Start a new schedule timer. Cancels any existing timer for the same assignment. |
-| Disable | `cron.disable` | Cancel the timer for an assignment. |
-| Trigger now | `cron.trigger` | Fire a one-off execution immediately without affecting the regular schedule. |
+| Enable | `cron.enable` | Start a new schedule timer |
+| Disable | `cron.disable` | Cancel the timer |
+| Trigger now | `cron.trigger` | Fire immediately without affecting schedule |
 
 ### Router events
 
-The backend pushes events to the worker via WebSocket when schedule state changes:
+The backend pushes events to the worker:
 
 ```json
 {"type": "cron.enable", "assignment_id": "...", "routine_id": "...", "project_id": "...", "schedule": "0 9 * * *"}
@@ -163,37 +221,14 @@ The backend pushes events to the worker via WebSocket when schedule state change
 {"type": "cron.trigger", "routine_id": "...", "project_id": "..."}
 ```
 
-### Manual trigger
-
-You can manually trigger a cron routine via the API:
-
-```bash
-curl -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  https://your-instance.com/api/v1/routines/$ROUTINE_ID/trigger
-```
-
-This returns `202 Accepted` and pushes a `cron.trigger` event to the worker. Only routines with `trigger: "cron"` can be manually triggered.
-
-### Cron execution flow
-
-When a cron timer fires:
-
-1. An execution run record is created with `status: "running"`.
-2. The routine is loaded from cached bootstrap data.
-3. The routine executes with `is_cron_trigger: true` (agent steps use `cron_task` templates).
-4. On completion, a `task_completed` WebSocket message is sent so the backend can update the execution status.
-
-### Heartbeat and status
-
-The CronManager tracks:
+### Heartbeat tracking
 
 | Field | Description |
 |---|---|
-| `assignment_id` | The assignment or routine ID this schedule belongs to |
+| `assignment_id` | The assignment or routine ID |
 | `routine_id` | The routine being scheduled |
-| `last_run_at` | Timestamp of the last execution (ISO 8601) |
-| `next_fire_at` | Computed next fire time (ISO 8601) |
+| `last_run_at` | Timestamp of last execution |
+| `next_fire_at` | Computed next fire time |
 
 ## Cron steps vs. cron routines
 
@@ -204,3 +239,23 @@ The CronManager tracks:
 | Use case | Polling/waiting within a workflow | Recurring autonomous tasks |
 | Signal | Function signals pass/fail/wait/abort | Routine completes normally |
 | Manager | Executor loop | CronManager on worker |
+
+## Debugging: my scheduled routine didn't run
+
+1. **Check schedule syntax** — Use a cron parser to verify your expression
+2. **Check worker logs** — The CronManager logs when timers fire
+3. **Check routine validity** — Run [DAG validation](/docs/routines/dag-validation)
+4. **Check cron.enable event** — Ensure the backend sent the enable event to the worker
+
+## Debugging: my cron step times out
+
+1. **Check timeout value** — Default is 24h; increase if needed
+2. **Check interval** — Too-frequent polling may hit rate limits
+3. **Check external system** — The service being polled may be unavailable
+
+## Related concepts
+
+- [Executions](/docs/routines/executions) — How routines run
+- [Lambdas](/docs/routines/lambdas) — Scripts used in cron steps
+- [Step types](/docs/routines/step-types) — Cron step configuration
+- [System & Operations](/docs/system/worker) — Worker infrastructure and CronManager

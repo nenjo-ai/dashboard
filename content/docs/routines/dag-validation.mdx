@@ -1,9 +1,15 @@
 ---
-title: DAG validation
+title: DAG Validation
 description: Validation rules that every routine must satisfy before it can be saved or executed.
 ---
 
-Routines are validated as directed acyclic graphs (DAGs) before execution. The `validate_routine_graph` function checks all rules and returns the first violation found.
+Before a routine can run, the system validates that its structure is sound. This document lists the rules and what to do if validation fails.
+
+Think of validation as a **pre-flight check** — just as a plane can't take off without passing safety checks, a routine can't execute unless it passes these rules.
+
+## Why validation matters
+
+A routine is a directed acyclic graph (DAG): steps connected by edges, with no loops allowed. If the graph has problems—orphaned steps, missing endpoints, or cycles—the execution would fail unpredictably. Validation catches these issues upfront.
 
 ## Validation rules
 
@@ -15,74 +21,74 @@ The routine must contain at least one step.
 
 ### Rule 2: Single entry point
 
-Exactly one step must have no incoming edges. This step is the entry point where execution begins.
+Exactly one step must have no incoming edges. This is where execution begins.
 
-- **Zero entry points** means every step has an incoming edge, which implies a cycle.
-- **Multiple entry points** means the graph has disconnected branches.
+- **Zero entry points** → every step has an incoming edge (likely a cycle)
+- **Multiple entry points** → disconnected branches
 
-**Error (none):** `Routine has no entry point (every step has an incoming edge -- likely a cycle)`
+**Error (zero):** `Routine has no entry point (every step has an incoming edge -- likely a cycle)`
 
 **Error (multiple):** `Routine must have exactly one entry point, but found N: [id1, id2, ...]`
 
 ### Rule 3: At least one terminal step
 
-Every routine must include at least one step with `step_type = terminal`.
+Every routine must have at least one step with `step_type = terminal`. This is where execution ends.
 
 **Error:** `Routine must have at least one terminal step`
 
 ### Rule 4: All steps reachable
 
-Every step must be reachable from the entry point via a breadth-first traversal of edges. Disconnected steps are flagged.
+Every step must be reachable from the entry point. Disconnected "orphan" steps can never execute.
 
 **Error:** `The following steps are not reachable from the entry point: 'StepName' (id), ...`
 
 ### Rule 5: Agent steps must have an agent or role
 
-Every step with `step_type = agent` must have either `agent_id` or `role_id` set (or both).
+Every agent step must specify either `agent_id` or `role_id` (or both).
 
 **Error:** `Agent step 'StepName' (id=...) must have an agent_id or role_id`
 
 ### Rule 6: Terminal steps have no outgoing edges
 
-Terminal steps are sinks in the graph. They must not connect to any downstream step.
+Terminal steps are endpoints—they can't lead to more steps.
 
 **Error:** `Terminal step 'StepName' (id=...) must not have outgoing edges`
 
 ### Rule 7: Non-terminal steps must have outgoing edges
 
-Every step that is not a terminal must connect to at least one downstream step. This prevents dangling steps that cannot lead to completion.
+Every non-terminal step must connect to at least one downstream step. This prevents "dangling" steps that lead nowhere.
 
-This rule is skipped for single-step routines (a lone terminal step is valid).
+*Exception:* Single-step routines (a lone terminal step is valid).
 
 **Error:** `Non-terminal step 'StepName' (id=...) must have at least one outgoing edge`
 
 ### Rule 8: Council steps must have a council
 
-Every step with `step_type = council` must have a non-null `council_id`.
+Every council step must have a `council_id`.
 
 **Error:** `Council step 'StepName' (id=...) must have a council_id`
 
 ### Rule 9: Cron steps must have a function reference
 
-Every step with `step_type = cron` must have at least one of `role_id`, `lambda_id`, or `council_id` set.
+Every cron step must specify `role_id`, `lambda_id`, or `council_id`.
 
 **Error:** `Cron step 'StepName' (id=...) must have a role_id, lambda_id, or council_id`
 
 ### Rule 10: Lambda steps must have a lambda
 
-Every step with `step_type = lambda` must have a non-null `lambda_id`.
+Every lambda step must have a `lambda_id`.
 
 **Error:** `Lambda step 'StepName' (id=...) must have a lambda_id`
 
 ### Rule 11: No cycles
 
-The graph must be acyclic. Cycle detection uses Kahn's algorithm (BFS topological sort). If the algorithm cannot consume all nodes, a cycle exists.
+The graph must be acyclic. Cycles would cause infinite loops during execution.
 
 **Error:** `Routine graph contains a cycle`
 
 ## Validation order
 
-Rules are checked in this order:
+Rules are checked in order, stopping at the first failure:
 
 1. Not empty
 2. Agent steps have agent/role
@@ -96,21 +102,45 @@ Rules are checked in this order:
 10. No cycles
 11. All steps reachable
 
-The validator short-circuits on the first failure, so you will only see one error at a time.
+## Common validation errors and fixes
+
+### "Routine has no entry point"
+
+**Cause:** Every step has an incoming edge—usually indicates a cycle.
+
+**Fix:** Check for edges that form a loop. Add an entry point or break the cycle.
+
+### "Routine must have exactly one entry point, but found N"
+
+**Cause:** Multiple disconnected branches in your routine.
+
+**Fix:** Either merge the branches into a single flow, or create a "router" step that branches to each section.
+
+### "Steps are not reachable from the entry point"
+
+**Cause:** A step exists but no path leads to it from the start.
+
+**Fix:** Add an edge from an existing step to the unreachable step, or remove it.
+
+### "Routine graph contains a cycle"
+
+**Cause:** A loop in the graph (Step A → Step B → Step A).
+
+**Fix:** Restructure to use a [cron step](/docs/routines/cron-and-scheduling) for polling, or redesign the flow to be linear.
 
 ## Valid edge cases
 
 ### Single terminal step
 
-A routine with only one terminal step and no edges is valid. The terminal step serves as both the entry point and the endpoint.
+A routine with only one terminal step is valid. The terminal serves as both entry and exit point.
 
 ### Agent step with role only
 
-Agent steps can specify a `role_id` instead of an `agent_id`. The role's `assigned_agent_id` is resolved at execution time.
+Agent steps can specify `role_id` instead of `agent_id`. The role's `assigned_agent_id` is resolved at execution time.
 
 ### Gate and terminal steps without agents
 
-Gate steps resolve their agent the same way as agent steps, but if no `agent_id` or `role_id` is set, they fall back to the first available agent. Terminal steps never need an agent reference.
+Gate steps resolve agents the same way as agent steps. If no agent/role is set, they fall back to the first available agent. Terminal steps never need an agent.
 
 ## Example: valid routine
 
@@ -129,4 +159,10 @@ This routine satisfies all rules:
 - No cycles
 - Agent steps have role references
 - Terminal steps have no outgoing edges
-- Non-terminal steps have at least one outgoing edge
+- Non-terminal steps have outgoing edges
+
+## Related topics
+
+- [Executions](/docs/routines/executions) — What happens after validation passes
+- [Step Types](/docs/routines/step-types) — All step types and their requirements
+- [Edges and Conditions](/docs/routines/edges-and-conditions) — How steps connect
