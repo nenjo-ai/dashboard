@@ -58,6 +58,9 @@ import {
 const API_BASE = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
 const API_V1 = API_BASE ? `${API_BASE}/api/v1` : "/api/v1";
 const FETCH_TIMEOUT_MS = 15000;
+const RATE_LIMIT_MAX_ATTEMPTS = 3;
+const RATE_LIMIT_FALLBACK_DELAY_MS = 1000;
+const RATE_LIMIT_MAX_DELAY_MS = 10000;
 
 function resolveApiUrl(url: string): string {
   if (/^https?:\/\//i.test(url)) {
@@ -83,6 +86,30 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryDelayFromResponse(response: Response, attempt: number): number {
+  const retryAfter = response.headers.get("retry-after")?.trim();
+  if (retryAfter) {
+    const retryAfterSeconds = Number(retryAfter);
+    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+      return Math.min(retryAfterSeconds * 1000, RATE_LIMIT_MAX_DELAY_MS);
+    }
+
+    const retryAt = Date.parse(retryAfter);
+    if (Number.isFinite(retryAt)) {
+      return Math.min(Math.max(retryAt - Date.now(), 0), RATE_LIMIT_MAX_DELAY_MS);
+    }
+  }
+
+  return Math.min(
+    RATE_LIMIT_FALLBACK_DELAY_MS * 2 ** Math.max(attempt - 1, 0),
+    RATE_LIMIT_MAX_DELAY_MS,
+  );
 }
 
 /**
@@ -212,38 +239,47 @@ async function authFetch(
     Object.assign(headers, extra);
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  for (let attempt = 1; attempt <= RATE_LIMIT_MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  let res: Response;
-  try {
-    res = await fetch(resolvedUrl, { ...init, headers, signal: controller.signal });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new ApiError(`Request timed out after ${FETCH_TIMEOUT_MS / 1000}s`, 504);
+    let res: Response;
+    try {
+      res = await fetch(resolvedUrl, { ...init, headers, signal: controller.signal });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ApiError(`Request timed out after ${FETCH_TIMEOUT_MS / 1000}s`, 504);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
+
+    if (res.status === 429 && attempt < RATE_LIMIT_MAX_ATTEMPTS) {
+      await sleep(retryDelayFromResponse(res, attempt));
+      continue;
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "Unknown error");
+      const contentType = res.headers.get("content-type") ?? "";
+      if (
+        res.status === 404 &&
+        contentType.includes("text/html") &&
+        resolvedUrl.includes("/api/v1/")
+      ) {
+        throw new ApiError(
+          "Dashboard API request hit the Next app instead of the platform API. Set `NEXT_PUBLIC_API_URL` or configure `API_PROXY_TARGET` for the dashboard dev server.",
+          res.status,
+        );
+      }
+      throw new ApiError(body, res.status);
+    }
+
+    return res;
   }
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "Unknown error");
-    const contentType = res.headers.get("content-type") ?? "";
-    if (
-      res.status === 404 &&
-      contentType.includes("text/html") &&
-      resolvedUrl.includes("/api/v1/")
-    ) {
-      throw new ApiError(
-        "Dashboard API request hit the Next app instead of the platform API. Set `NEXT_PUBLIC_API_URL` or configure `API_PROXY_TARGET` for the dashboard dev server.",
-        res.status,
-      );
-    }
-    throw new ApiError(body, res.status);
-  }
-
-  return res;
+  throw new ApiError("Rate limit exceeded", 429);
 }
 
 export async function fetcher<T>(url: string): Promise<T> {
