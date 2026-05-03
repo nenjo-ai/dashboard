@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
+@import '../components/landing/landing-product.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -528,4 +529,195 @@ body {
 @keyframes input-border-exit {
   0%   { --input-border-pos: 100%; --input-idle-spread: 30%; opacity: 1; }
   100% { --input-border-pos: 0%; --input-idle-spread: 0%; opacity: 0; }
+}
+
+/* ── Onboarding landing theme ─────────────────────────────────────────── */
+.onboarding-landing {
+  --onboarding-void: #05070f;
+  --onboarding-void-2: #080c18;
+  --onboarding-void-3: #0d1226;
+  --onboarding-ink: #eaeef8;
+  --onboarding-ink-dim: #9aa3bc;
+  --onboarding-steel: #5c6880;
+  --onboarding-steel-dim: #3a4258;
+  --onboarding-rule: rgba(234, 238, 248, 0.08);
+  --onboarding-rule-s: rgba(234, 238, 248, 0.16);
+  --onboarding-accent: #b8841a;
+  --onboarding-warm: rgb(184 132 26 / 0.06);
+  --onboarding-glow: rgb(184 132 26 / 0.15);
+  --app-bg: var(--onboarding-void);
+  --app-surface: transparent;
+  --app-surface-elevated: var(--onboarding-void-2);
+  --app-surface-muted: rgba(234, 238, 248, 0.04);
+  --app-surface-muted-strong: rgba(234, 238, 248, 0.08);
+  --app-border-color: var(--onboarding-rule);
+  --app-border-strong: var(--onboarding-rule-s);
+  --app-hover: rgba(234, 238, 248, 0.06);
+  --app-hover-strong: rgba(234, 238, 248, 0.1);
+  --app-text: var(--onboarding-ink);
+  --app-text-muted: var(--onboarding-ink-dim);
+  --app-accent: var(--onboarding-accent);
+  --app-accent-hover: #c99628;
+  --app-accent-active: #a97817;
+  --app-accent-foreground: #05070f;
+  background: var(--onboarding-void);
+  color: var(--onboarding-ink);
+  font-family: var(--f-sans, "Space Grotesk", system-ui, sans-serif);
+}
+
+.onboarding-brand-panel {
+  background: var(--onboarding-void);
+  border-right: 1px solid var(--onboarding-rule);
+}
+
+.onboarding-brand-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--onboarding-rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--onboarding-rule) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(ellipse 80% 80% at 45% 50%, black 0%, transparent 74%);
+  opacity: 0.36;
+}
+
+.onboarding-brand-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 44% 42%, rgb(184 132 26 / 0.18), transparent 34%),
+    radial-gradient(ellipse at 50% 100%, rgb(184 132 26 / 0.08), transparent 58%);
+}
+
+.onboarding-brand-link {
+  color: var(--onboarding-ink);
+  font-family: var(--f-mono, "DM Mono", ui-monospace, monospace);
+}
+
+.onboarding-brand-link:hover {
+  color: var(--onboarding-accent);
+}
+
+.onboarding-kanji {
+  color: rgb(184 132 26 / 0.82);
+  font-family: var(--f-disp, "Cormorant Garamond", Georgia, serif);
+  text-shadow: 0 0 42px rgb(184 132 26 / 0.22);
+}
+
+.onboarding-quote {
+  font-family: var(--f-disp, "Cormorant Garamond", Georgia, serif);
+  font-weight: 500;
+  color: var(--onboarding-ink);
+}
+
+.onboarding-wizard-panel {
+  background:
+    radial-gradient(ellipse 65% 50% at 50% 0%, rgb(184 132 26 / 0.06), transparent 62%),
+    var(--onboarding-void-2);
+}
+
+.onboarding-wizard-card {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.onboarding-step-panel {
+  border: 1px solid var(--onboarding-rule-s);
+  background: color-mix(in oklab, var(--onboarding-void) 88%, transparent);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 0.3);
+  padding: clamp(24px, 4vw, 40px);
+}
+
+.onboarding-landing h2,
+.onboarding-landing h3 {
+  font-family: var(--f-disp, "Cormorant Garamond", Georgia, serif);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.onboarding-landing .text-deep-space-blue-600,
+.onboarding-landing .dark\:text-deep-space-blue-400,
+.onboarding-landing .dark\:text-deep-space-blue-300 {
+  color: var(--onboarding-accent) !important;
+}
+
+.onboarding-landing .bg-deep-space-blue-500,
+.onboarding-landing .bg-deep-space-blue-600 {
+  background-color: var(--onboarding-accent) !important;
+}
+
+.onboarding-landing .border-deep-space-blue-500 {
+  border-color: var(--onboarding-accent) !important;
+}
+
+.onboarding-landing .accent-deep-space-blue-500 {
+  accent-color: var(--onboarding-accent);
+}
+
+.onboarding-landing input,
+.onboarding-landing select,
+.onboarding-landing textarea {
+  border-color: var(--onboarding-rule-s) !important;
+  background: var(--onboarding-void-2) !important;
+  color: var(--onboarding-ink) !important;
+}
+
+.onboarding-landing input:focus,
+.onboarding-landing select:focus,
+.onboarding-landing textarea:focus {
+  border-color: var(--onboarding-accent) !important;
+  --tw-ring-color: rgb(184 132 26 / 0.32) !important;
+}
+
+.onboarding-landing pre,
+.onboarding-landing code {
+  border-color: var(--onboarding-rule-s) !important;
+  background: var(--onboarding-void-2) !important;
+  color: var(--onboarding-ink) !important;
+}
+
+.onboarding-landing .bg-gray-50,
+.onboarding-landing .dark\:bg-gray-800,
+.onboarding-landing .dark\:bg-white\/5,
+.onboarding-landing .bg-white\/70 {
+  background-color: color-mix(in oklab, var(--onboarding-void-2) 82%, transparent) !important;
+}
+
+.onboarding-landing .border-gray-200,
+.onboarding-landing .dark\:border-gray-700,
+.onboarding-landing .dark\:border-white\/10,
+.onboarding-landing .border-black\/10 {
+  border-color: var(--onboarding-rule-s) !important;
+}
+
+.onboarding-landing .text-gray-900,
+.onboarding-landing .dark\:text-white,
+.onboarding-landing .dark\:text-gray-100,
+.onboarding-landing .dark\:text-gray-200 {
+  color: var(--onboarding-ink) !important;
+}
+
+.onboarding-landing .text-gray-700,
+.onboarding-landing .text-gray-600,
+.onboarding-landing .text-gray-500,
+.onboarding-landing .dark\:text-gray-300,
+.onboarding-landing .dark\:text-gray-400,
+.onboarding-landing .dark\:text-gray-500 {
+  color: var(--onboarding-ink-dim) !important;
+}
+
+.onboarding-landing button:not([class*="tw-"]),
+.onboarding-landing a[class*="bg-gray-"],
+.onboarding-landing .rounded-md.bg-gray-200 {
+  border-color: var(--onboarding-rule-s) !important;
+}
+
+@media (max-width: 1023px) {
+  .onboarding-step-panel {
+    padding: 24px;
+  }
 }

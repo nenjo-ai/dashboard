@@ -109,7 +109,7 @@ export default function RootLayout({
     <ClerkProvider
       publishableKey={clerkKey}
       signInUrl="/dashboard/login"
-      signUpUrl="/dashboard/login"
+      signUpUrl="/dashboard/signup"
       signInFallbackRedirectUrl="/dashboard/onboarding"
       signUpFallbackRedirectUrl="/dashboard/onboarding"
       afterSignOutUrl="/"

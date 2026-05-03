@@ -2,7 +2,7 @@
 
 /**
  * Hardcoded icon for the "system" agent role.
- * Uses the DiceBear rings SVG from system-icon.svg with sunflower-gold (#ffd855).
+ * Uses the DiceBear rings SVG from system-icon.svg with Nenjo amber (#b8841a).
  */
 
 interface SystemRoleIconProps {
@@ -11,8 +11,7 @@ interface SystemRoleIconProps {
   animate?: boolean;
 }
 
-// Light: sunflower-gold-900, Dark: sunflower-gold-400
-const COLOR_CLASS = "text-sunflower-gold-900 dark:text-sunflower-gold-400";
+const SYSTEM_ROLE_COLOR = "#b8841a";
 
 // Static SVG paths (the ring geometry from system-icon.svg, recolored)
 function StaticSvg({ size }: { size: number }) {
@@ -159,7 +158,7 @@ function AnimatedSvg({ size }: { size: number }) {
 
 export function SystemRoleIcon({ size = 32, className, animate = false }: SystemRoleIconProps) {
   return (
-    <div className={`${COLOR_CLASS}${className ? ` ${className}` : ""}`} style={{ width: size, height: size, flexShrink: 0 }}>
+    <div className={className} style={{ width: size, height: size, flexShrink: 0, color: SYSTEM_ROLE_COLOR }}>
       {animate ? <AnimatedSvg size={size} /> : <StaticSvg size={size} />}
     </div>
   );

@@ -1,788 +1,779 @@
+// @ts-nocheck
 "use client";
 
-import Link from "next/link";
-import Image from "next/image";
+/* eslint-disable react/no-unescaped-entities, @next/next/no-html-link-for-pages, @next/next/no-img-element */
 import { useEffect, useRef, useState } from "react";
+import { BookOpen, Github } from "lucide-react";
 
-// ---------------------------------------------------------------------------
-// Inline SVG icons (geometric, no emojis)
-// ---------------------------------------------------------------------------
+const LANDING_LOGO_WHITE = "/landing/logo-white.png";
+const LANDING_LOGO = "/landing/logo.png";
 
-function DiamondIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M12 2L22 12L12 22L2 12Z" />
-    </svg>
-  );
-}
 
-function HexagonIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M12 2L21 7V17L12 22L3 17V7Z" />
-    </svg>
-  );
-}
+const TWEAK_DEFAULTS = {
+  "palette": "amber",
+  "accent": "amber",
+  "tagline": "a"
+};
 
-function CircleIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="12" cy="12" r="10" />
-    </svg>
-  );
-}
+// ── SECTIONS DATA ──
+const SECTIONS = [
+  {
+    id: 'intro',
+    kicker: 'AGENTIC WORKFLOWS · BETA',
+    headline: <>Define your AI workforce once.<br/><em>Run it everywhere.</em></>,
+    body: 'Nenjo removes the complexity of building agentic workflows — launch production-ready agents in hours, not months. Reusable across every app, team, and environment. No lock-in. Full control.',
+    detail: null, tags: null, highlight: null,
+    transform3d: 'rotateX(0deg) rotateY(0deg) scale(1)',
+  },
+  {
+    id: 'control',
+    kicker: '01 · CONTROL PLANE',
+    headline: <><em>Manifests, routing,</em><br/>and live policy.</>,
+    body: 'The control plane manages agent manifests, routes requests, enforces access control, and coordinates hot-swaps — all without stopping the fabric.',
+    detail: '→  MANIFESTS · ROUTER · ACCESS CONTROL · OBSERVABILITY',
+    tags: ['Agent manifests', 'Hot-swap', 'Routing', 'Access control'],
+    highlight: new Set(['ctrl']),
+    transform3d: 'rotateX(14deg) rotateY(0deg) scale(0.95)',
+  },
+  {
+    id: 'workers',
+    kicker: '02 · WORKERS',
+    headline: <>Chat & task agents,<br/><em>always on.</em></>,
+    body: 'Worker agents handle tasks end-to-end — customer messages, chat, long-running jobs. Hot-swappable while live, never dropping work.',
+    detail: '→  Hosted in your environment · ROI in weeks, not months',
+    tags: ['Ops automation', 'Chat & tasks', 'ROI in weeks'],
+    highlight: new Set(['sL2', 'sR3']),
+    transform3d: 'rotateX(6deg) rotateY(-26deg) scale(0.92)',
+  },
+  {
+    id: 'services',
+    kicker: '03 · TOOL SERVICES',
+    headline: <>Secure tool access,<br/><em>outside the harness.</em></>,
+    body: 'Services sit outside the agent harness — a security boundary between your agents and external systems. Controlled, auditable access to CRMs, APIs, and data.',
+    detail: '→  Not agents — a security boundary layer',
+    tags: ['CRM access', 'API calls', 'Data reads'],
+    highlight: new Set(['sL1', 'sL3', 'sR2', 'sR4']),
+    transform3d: 'rotateX(6deg) rotateY(22deg) scale(0.92)',
+  },
+  {
+    id: 'apps',
+    kicker: '04 · CUSTOM APPS',
+    headline: <>Your product logic,<br/><em>on the platform.</em></>,
+    body: 'Custom apps are built by your team on Nenjo — compliance agents, multi-agent pipelines, developer assistants. Nenjo handles orchestration, state, and live hot-swap.',
+    detail: '→  Requires dev + hosting skill · Nenjo handles orchestration',
+    tags: ['Onboarding flows', 'Client portals', 'Automation'],
+    highlight: new Set(['sL4', 'sR1']),
+    transform3d: 'rotateX(-6deg) rotateY(16deg) scale(0.94)',
+  },
+];
 
-function TriangleIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M12 3L22 21H2Z" />
-    </svg>
-  );
-}
+// ── HERO GRAPH ──
+const HeroGraph = ({ highlightIds }) => {
+  const CTRL={x:50,y:50};
+  const S_L1={x:18,y:78},S_L2={x:18,y:38},S_L3={x:34,y:16},S_L4={x:50,y:26},U_L={x:50,y:4};
+  const S_R1={x:82,y:22},S_R2={x:82,y:62},S_R3={x:66,y:84},S_R4={x:50,y:74},U_R={x:50,y:96};
 
-function SquareIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="3" y="3" width="18" height="18" />
-    </svg>
-  );
-}
+  const nodes = [
+    {id:'ctrl',...CTRL,r:4.2,label:'CONTROL',type:'control'},
+    {id:'uL',...U_L,r:2.2,label:'USER · IN',type:'user'},
+    {id:'sL1',...S_L1,r:2.4,label:'SERVICE',type:'service'},
+    {id:'sL2',...S_L2,r:2.2,label:'WORKER',type:'worker'},
+    {id:'sL3',...S_L3,r:2.4,label:'SERVICE',type:'service'},
+    {id:'sL4',...S_L4,r:2.2,label:'APP',type:'custom'},
+    {id:'uR',...U_R,r:2.2,label:'USER · OUT',type:'user'},
+    {id:'sR1',...S_R1,r:2.2,label:'APP',type:'custom'},
+    {id:'sR2',...S_R2,r:2.4,label:'SERVICE',type:'service'},
+    {id:'sR3',...S_R3,r:2.2,label:'WORKER',type:'worker'},
+    {id:'sR4',...S_R4,r:2.4,label:'SERVICE',type:'service'},
+  ];
+  const nm=Object.fromEntries(nodes.map(n=>[n.id,n]));
+  const ch=c=>c.slice(0,-1).map((id,i)=>[id,c[i+1]]);
+  const logoEdges=[...ch(['sL1','sL2','sL3','sL4','uL']),...ch(['sR1','sR2','sR3','sR4','uR']),...ch(['sL4','ctrl','sR4'])];
+  const ifEdges=[['sL1','sR2'],['sL2','sR1'],['sL3','sR3'],['uL','sR3'],['uR','sL3']];
+  const hasHL=highlightIds&&highlightIds.size>0;
 
-function OctagonIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M8 2H16L22 8V16L16 22H8L2 16V8Z" />
-    </svg>
-  );
-}
-
-function CrosshairIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="12" cy="12" r="8" />
-      <path d="M12 2V6M12 18V22M2 12H6M18 12H22" />
-    </svg>
-  );
-}
-
-function PentagonIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M12 2L22 9.5L18.5 21H5.5L2 9.5Z" />
-    </svg>
-  );
-}
-
-function ArrowIcon() {
-  return (
-    <svg
-      className="ml-2 inline h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
-      fill="none"
-      viewBox="0 0 24 24"
-      strokeWidth={1.5}
-      stroke="currentColor"
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-    </svg>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Clipped card — diagonal cuts on top-left and bottom-right corners
-// ---------------------------------------------------------------------------
-
-const CLIP_SIZE = 14; // px size of the corner cut
-
-function ClippedCard({
-  children,
-  className = "",
-  as: Tag = "div",
-  href,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  as?: "div" | typeof Link;
-  href?: string;
-}) {
-  // SVG polygon clip-path: rectangle with top-left and bottom-right corners sliced
-  const clipPath = `polygon(${CLIP_SIZE}px 0, 100% 0, 100% calc(100% - ${CLIP_SIZE}px), calc(100% - ${CLIP_SIZE}px) 100%, 0 100%, 0 ${CLIP_SIZE}px)`;
-
-  const content = (
-    <>
-      {/* Border layer — slightly larger, clipped the same way */}
-      <div
-        className="absolute inset-0 transition-all duration-300"
-        style={{ clipPath }}
-      >
-        <div className="absolute inset-0 border border-white/25 transition-all duration-300 group-hover:border-[#4fc3f7]/40" style={{ clipPath }} />
-      </div>
-      {/* Content */}
-      <div className="relative z-10">{children}</div>
-    </>
-  );
-
-  const baseClass = `group relative p-8 transition-all duration-300 hover:shadow-[0_0_20px_rgba(79,195,247,0.08)] ${className}`;
-
-  if (Tag === Link && href) {
-    return (
-      <Link href={href} className={baseClass} style={{ clipPath }}>
-        {content}
-      </Link>
-    );
-  }
+  const nodeOpacity=n=>{
+    if(!hasHL)return 1;
+    if(n.id==='ctrl'&&highlightIds.has('ctrl'))return 1;
+    if(n.type==='user')return 0.35;
+    if(highlightIds.has(n.id))return 1;
+    return 0.12;
+  };
 
   return (
-    <div className={baseClass} style={{ clipPath }}>
-      {content}
+    <div style={{position:'relative',width:'min(480px,88vw)',aspectRatio:'1/1',margin:'0 auto'}}>
+      <svg viewBox="0 0 100 100" style={{width:'100%',height:'100%',overflow:'visible'}}>
+        <defs>
+          <radialGradient id="hg" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.35"/>
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0"/>
+          </radialGradient>
+          <filter id="glow-f"><feGaussianBlur stdDeviation="1.1" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        <circle cx="50" cy="50" r="46" fill="none" stroke="var(--rule-s)" strokeWidth="0.08" strokeDasharray="0.3 0.9"/>
+        <circle cx="50" cy="50" r="22" fill="url(#hg)">
+          <animate attributeName="r" values="18;28;18" dur="7s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.5;0.08;0.5" dur="7s" repeatCount="indefinite"/>
+        </circle>
+        {ifEdges.map(([a,b],i)=>{const na=nm[a],nb=nm[b];return(
+          <line key={i} x1={na.x} y1={na.y} x2={nb.x} y2={nb.y}
+            stroke="var(--steel-dim)" strokeWidth="0.15" strokeDasharray="0.7 1.8"
+            opacity={hasHL?0.1:0.35} style={{transition:'opacity .7s ease'}}/>
+        );})}
+        {logoEdges.map(([a,b],i)=>{const na=nm[a],nb=nm[b];
+          const eHL=hasHL&&(highlightIds.has(a)||highlightIds.has(b));
+          const edgeOp=!hasHL?1:eHL?1:0.1;
+          return(
+            <g key={i} style={{opacity:edgeOp,transition:'opacity .7s ease'}}>
+              <line x1={na.x} y1={na.y} x2={nb.x} y2={nb.y} stroke="var(--accent)" strokeWidth="0.28" opacity="0.28"/>
+              <line x1={na.x} y1={na.y} x2={nb.x} y2={nb.y} stroke="var(--accent)"
+                strokeWidth={eHL?0.55:0.38} strokeDasharray="1.8 2.8"
+                style={{animation:`flow ${2.8+(i%4)*.35}s linear infinite`}}/>
+            </g>
+          );
+        })}
+        {nodes.map(n=>{
+          const op=nodeOpacity(n);
+          const dx=n.x-50,dy=n.y-50,mag=Math.hypot(dx,dy)||1;
+          const lx=n.x+(dx/mag)*4.6,ly=n.y+(dy/mag)*4.6+.5;
+          const isHL=hasHL&&highlightIds.has(n.id);
+          return(
+            <g key={n.id} style={{opacity:op,transition:'opacity .7s ease',filter:isHL?'url(#glow-f)':'none'}}>
+              {n.type==='control'&&(<>
+                <rect x={n.x-n.r*1.8} y={n.y-n.r*1.8} width={n.r*3.6} height={n.r*3.6} fill="none" stroke="var(--accent)" strokeWidth="0.15" opacity="0.4"/>
+                <rect x={n.x-n.r} y={n.y-n.r} width={n.r*2} height={n.r*2} fill="var(--void)" stroke="var(--accent)" strokeWidth={isHL?0.55:0.35}/>
+                <image href={LANDING_LOGO_WHITE} x={n.x-n.r*.82} y={n.y-n.r*.82} width={n.r*1.64} height={n.r*1.64} preserveAspectRatio="xMidYMid meet"/>
+                {isHL&&<circle cx={n.x} cy={n.y} r={n.r*2.2} fill="none" stroke="var(--accent)" strokeWidth="0.25" opacity="0.4"><animate attributeName="r" values={`${n.r*2};${n.r*3.4};${n.r*2}`} dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.5;0;0.5" dur="2s" repeatCount="indefinite"/></circle>}
+              </>)}
+              {n.type==='user'&&(()=>{const r=n.r,pts=Array.from({length:6}).map((_,k)=>{const a=(Math.PI/3)*k-Math.PI/2;return `${n.x+Math.cos(a)*r},${n.y+Math.sin(a)*r}`;}).join(' ');return(<><polygon points={pts} fill="var(--void-2)" stroke="var(--ink)" strokeWidth="0.24"/><circle cx={n.x} cy={n.y} r={n.r*.32} fill="var(--ink)"/></>);})()}
+              {n.type==='service'&&(<><rect x={n.x-n.r} y={n.y-n.r} width={n.r*2} height={n.r*2} fill="var(--void)" stroke={isHL?'var(--accent)':'var(--ink)'} strokeWidth="0.24"/><rect x={n.x-n.r*.32} y={n.y-n.r*.32} width={n.r*.64} height={n.r*.64} fill={isHL?'var(--accent)':'var(--ink)'}/>{isHL&&<circle cx={n.x} cy={n.y} r={n.r*1.8} fill="none" stroke="var(--accent)" strokeWidth="0.25" opacity="0.35"><animate attributeName="r" values={`${n.r*1.5};${n.r*2.5};${n.r*1.5}`} dur="2.2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.5;0;0.5" dur="2.2s" repeatCount="indefinite"/></circle>}</>)}
+              {n.type==='worker'&&(<><circle cx={n.x} cy={n.y} r={n.r} fill="var(--void)" stroke={isHL?'var(--accent)':'var(--ink)'} strokeWidth="0.24"/><circle cx={n.x} cy={n.y} r={n.r*.38} fill={isHL?'var(--accent)':'var(--ink)'}/>{isHL&&<circle cx={n.x} cy={n.y} r={n.r*1.8} fill="none" stroke="var(--accent)" strokeWidth="0.25" opacity="0.35"><animate attributeName="r" values={`${n.r*1.5};${n.r*2.5};${n.r*1.5}`} dur="1.9s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.5;0;0.5" dur="1.9s" repeatCount="indefinite"/></circle>}</>)}
+              {n.type==='custom'&&(<><rect x={n.x-n.r*.85} y={n.y-n.r*.85} width={n.r*1.7} height={n.r*1.7} fill="var(--void)" stroke={isHL?'var(--accent)':'var(--ink)'} strokeWidth="0.24" transform={`rotate(45 ${n.x} ${n.y})`}/><rect x={n.x-n.r*.28} y={n.y-n.r*.28} width={n.r*.56} height={n.r*.56} fill={isHL?'var(--accent)':'var(--ink)'} transform={`rotate(45 ${n.x} ${n.y})`}/>{isHL&&<circle cx={n.x} cy={n.y} r={n.r*1.8} fill="none" stroke="var(--accent)" strokeWidth="0.25" opacity="0.35"><animate attributeName="r" values={`${n.r*1.5};${n.r*2.5};${n.r*1.5}`} dur="2.1s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.5;0;0.5" dur="2.1s" repeatCount="indefinite"/></circle>}</>)}
+              {n.type!=='control'&&<text x={lx} y={ly} fontFamily="var(--f-mono)" fontSize="1.18" fill={isHL?'var(--accent)':'var(--steel)'} textAnchor={dx>8?'start':dx<-8?'end':'middle'} dominantBaseline={dy>8?'hanging':dy<-8?'auto':'middle'} letterSpacing="0.18" style={{transition:'fill .5s ease'}}>{n.label}</text>}
+            </g>
+          );
+        })}
+        <text x="1" y="3" fontFamily="var(--f-mono)" fontSize="1.1" fill="var(--steel-dim)">SYS·NENJO</text>
+        <text x="99" y="3" fontFamily="var(--f-mono)" fontSize="1.1" fill="var(--steel-dim)" textAnchor="end">RT·LIVE</text>
+        <text x="1" y="99" fontFamily="var(--f-mono)" fontSize="1.1" fill="var(--steel-dim)">FABRIC·ACTIVE</text>
+        <text x="99" y="99" fontFamily="var(--f-mono)" fontSize="1.1" fill="var(--steel-dim)" textAnchor="end">LAT·12ms</text>
+      </svg>
     </div>
   );
-}
+};
 
-// ---------------------------------------------------------------------------
-// Section label with ruled lines
-// ---------------------------------------------------------------------------
-
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <div className="mb-16 flex items-center justify-center gap-4">
-      <div className="h-px w-16 bg-white/20 sm:w-24" />
-      <span className="text-xs font-light tracking-[0.3em] text-white/50" style={{ fontFamily: "monospace" }}>
-        {children}
-      </span>
-      <div className="h-px w-16 bg-white/20 sm:w-24" />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Intersection Observer hook for fade-in
-// ---------------------------------------------------------------------------
-
-function useFadeIn() {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisible(true);
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.15 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  return { ref, visible };
-}
-
-// ---------------------------------------------------------------------------
-// Navbar
-// ---------------------------------------------------------------------------
-
-function Navbar() {
-  const [scrolled, setScrolled] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  return (
-    <nav
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled ? "bg-black/70 backdrop-blur-md" : "bg-transparent"
-      }`}
-      style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}
-    >
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-        <Link href="/" className="flex items-center gap-3">
-          <Image
-            src="/nenjo-logo-white.png"
-            alt="Nenjo"
-            width={28}
-            height={28}
-            style={{ height: "auto" }}
-          />
-          <span className="text-sm font-light tracking-[0.25em] text-white uppercase">Nenjo</span>
-        </Link>
-
-        <div className="hidden items-center gap-8 md:flex">
-          <a
-            href="#features"
-            className="text-xs tracking-widest text-white/60 transition-colors hover:text-white uppercase"
-          >
-            Features
-          </a>
-          <Link
-            href="/docs"
-            className="text-xs tracking-widest text-white/60 transition-colors hover:text-white uppercase"
-          >
-            Docs
-          </Link>
-          <a
-            href="https://github.com/nenjo-ai/nenjo"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-white/60 transition-colors hover:text-white"
-            aria-label="GitHub"
-          >
-            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-            </svg>
-          </a>
-        </div>
-
-        <Link
-          href="/dashboard/login"
-          className="border border-white/30 px-5 py-1.5 text-xs font-light tracking-[0.2em] text-white/70 uppercase transition-all duration-300 hover:border-[#4fc3f7]/40 hover:text-white hover:shadow-[0_0_15px_rgba(79,195,247,0.15)]"
-        >
-          Enter
-        </Link>
-      </div>
-    </nav>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Hero
-// ---------------------------------------------------------------------------
-
-function HeroSection() {
-  return (
-    <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4">
-      {/* Background radial gradient */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background: "radial-gradient(ellipse 60% 50% at 50% 40%, #0a1628 0%, #0d0d2b 40%, #000 80%)",
-        }}
-      />
-
-      <div className="relative z-10 mx-auto flex w-full max-w-4xl flex-col items-center">
-        {/* Logo */}
-        <div className="mb-12 self-center">
-          <Image
-            src="/nenjo-logo-white.png"
-            alt="Nenjo"
-            width={200}
-            height={200}
-            priority
-            style={{ height: "auto" }}
-          />
-        </div>
-
-        {/* Beta badge */}
-        <div
-          className="mb-6 border border-white/25 px-4 py-1"
-          style={{ fontFamily: "monospace" }}
-        >
-          <span className="text-[10px] tracking-[0.4em] text-white/50 uppercase">Beta</span>
-        </div>
-
-        <div className="flex w-full max-w-3xl flex-col items-center text-center">
-          {/* Headline */}
-          <h1 className="mb-6 text-4xl font-extralight leading-tight tracking-tight text-white sm:text-5xl md:text-6xl lg:text-7xl">
-            The agent-first
-            <br />
-            platform.
-          </h1>
-
-          {/* Subheadline */}
-          <p className="mb-10 max-w-3xl text-base font-light text-white/60 sm:text-lg">
-            Nenjo is an agent-first platform for teams building real agent products. Define agents
-            as files, update them live while the system runs, and build environments where agents
-            can work within the platform itself.
-          </p>
-        </div>
-
-        {/* CTA */}
-        <div className="flex flex-col gap-4 sm:flex-row">
-          <Link
-            href="/dashboard/login"
-            className="border border-white/30 px-10 py-3 text-xs font-light tracking-[0.3em] text-white/80 uppercase transition-all duration-300 hover:border-[#4fc3f7]/40 hover:text-white hover:shadow-[0_0_25px_rgba(79,195,247,0.2)]"
-          >
-            Enter Nenjo
-          </Link>
-          <Link
-            href="/docs/getting-started/architecture"
-            className="border border-white/10 px-10 py-3 text-xs font-light tracking-[0.3em] text-white/55 uppercase transition-all duration-300 hover:border-white/25 hover:text-white"
-          >
-            Read Architecture
-          </Link>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-const proofPoints = [
-  { label: "Platform model", value: "Agent-first" },
-  { label: "Configuration", value: "Agents as files" },
-  { label: "Update model", value: "Real-time hot-swap" },
-  { label: "Coordination", value: "Multi-agent by design" },
+// ── SPLASH HERO ──
+const TAGLINES = [
+  { id: 'a', text: <>The AI infrastructure between<br/><em>knowing and doing.</em></> },
+  { id: 'b', text: <>Give your agents a mind.<br/><em>Give them a mission.</em></> },
+  { id: 'c', text: <>Two layers.<br/><em>Infinite agents.</em></> },
+  { id: 'd', text: <>Your agents.<br/><em>Taught to know. Built to act.</em></> },
 ];
 
-function ProofStrip() {
-  const { ref, visible } = useFadeIn();
-
+const SplashHero = ({ taglineId = 'a' }) => {
+  const tagline = TAGLINES.find(t => t.id === taglineId) || TAGLINES[0];
   return (
-    <section className="-mt-20 px-4 pb-8">
-      <div
-        ref={ref}
-        className={`mx-auto grid max-w-5xl gap-4 sm:grid-cols-2 lg:grid-cols-4 transition-all duration-700 ${
-          visible ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
-        }`}
-      >
-        {proofPoints.map((item) => (
-          <ClippedCard key={item.label} className="bg-white/[0.02] p-5">
-            <div className="mb-2 text-[10px] tracking-[0.25em] text-white/35 uppercase" style={{ fontFamily: "monospace" }}>
-              {item.label}
-            </div>
-            <div className="text-sm font-light tracking-wide text-white">{item.value}</div>
-          </ClippedCard>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Features
-// ---------------------------------------------------------------------------
-
-const features = [
-  {
-    icon: <DiamondIcon />,
-    title: "Agent-First By Design",
-    description:
-      "Built so agents can inspect, coordinate, and operate within the platform itself, not just answer prompts inside a hosted runtime.",
-  },
-  {
-    icon: <HexagonIcon />,
-    title: "Agents As Files",
-    description:
-      "Define agents in manifest files that can be versioned, reviewed, reproduced, and moved with your codebase instead of disappearing into vendor-managed state.",
-  },
-  {
-    icon: <TriangleIcon />,
-    title: "Real-Time Hot-Swap",
-    description:
-      "Push agent and routine updates live so long-running workers pick up new configuration without full redeploys or cold restarts.",
-  },
-  {
-    icon: <OctagonIcon />,
-    title: "Multi-Agent Orchestration",
-    description:
-      "Go beyond single-agent hosting with delegation, routines, gates, councils, cron, and event-driven coordination.",
-  },
-  {
-    icon: <CircleIcon />,
-    title: "Portable In Nature",
-    description:
-      "Stay flexible across providers, runtimes, and environments instead of rebuilding product behavior around a single hosted stack.",
-  },
-  {
-    icon: <PentagonIcon />,
-    title: "Durable Agent Context",
-    description:
-      "Give long-running workers memory, resource access, and execution context that survives beyond one stateless session.",
-  },
-];
-
-function FeaturesSection() {
-  const { ref, visible } = useFadeIn();
-
-  return (
-    <section id="features" className="scroll-mt-20 px-4 py-32">
-      <div className="mx-auto max-w-6xl">
-        <SectionLabel>CAPABILITIES</SectionLabel>
-
-        <div
-          ref={ref}
-          className={`grid gap-6 sm:grid-cols-2 lg:grid-cols-3 transition-all duration-700 ${
-            visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-          }`}
-        >
-          {features.map((f) => (
-            <ClippedCard key={f.title}>
-              <div className="mb-5 text-white/50 transition-colors group-hover:text-[#4fc3f7]/70">
-                {f.icon}
-              </div>
-              <h3 className="mb-2 flex items-center gap-2 text-sm font-light tracking-wide text-white">
-                {f.title}
-              </h3>
-              <p className="text-xs font-light leading-relaxed text-white/40">
-                {f.description}
-              </p>
-            </ClippedCard>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-const positioningPoints = [
-  {
-    icon: <CrosshairIcon />,
-    title: "More than hosted agents",
-    description:
-      "Nenjo manages agents, routines, scopes, tools, manifests, and live runtime behavior. The product is the operating model, not just the interface wrapped around it.",
-  },
-  {
-    icon: <SquareIcon />,
-    title: "Live systems, not static setup",
-    description:
-      "Nenjo is built for systems that keep running. Agents, routines, and workers can evolve through live hot-swapped updates instead of rigid redeploy cycles.",
-  },
-  {
-    icon: <DiamondIcon />,
-    title: "Nenji makes it concrete",
-    description:
-      "Nenjo is the platform. Nenji shows what it enables: an agent that can work within the system itself and make the agent-first model tangible.",
-  },
-];
-
-function WhyNenjoSection() {
-  const { ref, visible } = useFadeIn();
-
-  return (
-    <section className="px-4 py-32">
-      <div className="mx-auto max-w-6xl">
-        <SectionLabel>POSITIONING</SectionLabel>
-
-        <div className="mb-14 max-w-3xl">
-          <h2 className="mb-5 text-3xl font-extralight tracking-tight text-white sm:text-4xl">
-            Built beyond single-agent hosting
-          </h2>
-          <p className="text-base font-light leading-relaxed text-white/55 sm:text-lg">
-            Most platforms help you launch agents. Nenjo is for teams building living systems:
-            agents defined as files, updated in real time, and embedded in the operating model of
-            the product itself.
-          </p>
-        </div>
-
-        <div
-          ref={ref}
-          className={`grid gap-6 lg:grid-cols-3 transition-all duration-700 ${
-            visible ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
-          }`}
-        >
-          {positioningPoints.map((item) => (
-            <ClippedCard key={item.title} className="bg-white/[0.02]">
-              <div className="mb-5 text-white/50 transition-colors group-hover:text-[#4fc3f7]/70">
-                {item.icon}
-              </div>
-              <h3 className="mb-3 text-sm font-light tracking-wide text-white">{item.title}</h3>
-              <p className="text-sm font-light leading-relaxed text-white/42">{item.description}</p>
-            </ClippedCard>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Architecture diagram
-// ---------------------------------------------------------------------------
-
-function ArchitectureSection() {
-  const { ref, visible } = useFadeIn();
-
-  return (
-    <section className="px-4 py-32">
-      <div className="mx-auto max-w-4xl">
-        <SectionLabel>ARCHITECTURE</SectionLabel>
-
-        <div
-          ref={ref}
-          className={`flex items-center justify-center gap-0 transition-all duration-700 ${
-            visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-          }`}
-        >
-          {/* User node */}
-          <div className="flex flex-col items-center">
-            <div className="flex h-20 w-20 items-center justify-center border border-white/25 sm:h-24 sm:w-24">
-              <span className="text-[10px] tracking-[0.2em] text-white/50 uppercase">User</span>
-            </div>
+    <section className="splash">
+      <div className="splash-kanji-bg">念</div>
+      <div className="splash-grid"/>
+      <div className="splash-glow-1"/>
+      <div className="splash-glow-2"/>
+      <div className="splash-inner">
+        <div className="splash-eyebrow">NENJO · BETA</div>
+        <img
+          className="splash-logo"
+          src={LANDING_LOGO_WHITE}
+          alt="Nenjo"
+        />
+        <div className="splash-headline">{tagline.text}</div>
+        <div className="splash-layers">
+          <div className="splash-layer">
+            <div className="splash-layer-dot"/>
+            Knowledge Layer
           </div>
-
-          {/* Connector line */}
-          <div className="h-px w-10 bg-white/25 sm:w-16" />
-
-          {/* Nenjo node (highlighted) */}
-          <div className="flex flex-col items-center">
-            <div className="flex h-20 w-20 items-center justify-center border border-[#4fc3f7]/25 shadow-[0_0_20px_rgba(79,195,247,0.1)] sm:h-24 sm:w-24">
-              <span className="text-[10px] tracking-[0.2em] text-[#4fc3f7]/70 uppercase">Control</span>
-            </div>
-          </div>
-
-          {/* Connector line */}
-          <div className="h-px w-10 bg-white/25 sm:w-16" />
-
-          {/* Agents node */}
-          <div className="flex flex-col items-center">
-            <div className="flex h-20 w-20 items-center justify-center border border-white/25 sm:h-24 sm:w-24">
-              <span className="text-[10px] tracking-[0.2em] text-white/50 uppercase">Workers</span>
-            </div>
+          <div className="splash-layer-sep"/>
+          <div className="splash-layer">
+            <div className="splash-layer-dot"/>
+            Behavioral Layer
           </div>
         </div>
-
-        <p className="mx-auto mt-8 max-w-2xl text-center text-xs font-light leading-relaxed tracking-wide text-white/30">
-          Nenjo sits above the worker network so agents can coordinate, receive live
-          manifest-driven updates, and keep operating without waiting for the whole system to be
-          redeployed.
+        <p className="splash-subtitle">
+          Nenjo is a modular agentic control plane for building, deploying, and evolving AI workers across your own apps and infrastructure.
         </p>
       </div>
-    </section>
-  );
-}
-
-function NenjiSection() {
-  const { ref, visible } = useFadeIn();
-
-  return (
-    <section className="px-4 py-32">
-      <div className="mx-auto max-w-5xl">
-        <SectionLabel>NENJI</SectionLabel>
-
-        <div
-          ref={ref}
-          className={`grid gap-8 lg:grid-cols-[1.1fr_0.9fr] transition-all duration-700 ${
-            visible ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
-          }`}
-        >
-          <ClippedCard className="bg-white/[0.02]">
-            <h2 className="mb-5 text-3xl font-extralight tracking-tight text-white sm:text-4xl">
-              Nenjo is the platform.
-              <br />
-              Nenji shows what it enables.
-            </h2>
-            <p className="max-w-2xl text-base font-light leading-relaxed text-white/55 sm:text-lg">
-              Nenji gives the agent-first idea a concrete shape. It is the example of an agent that
-              does more than answer prompts: it can inspect, configure, coordinate, and operate
-              within the system itself.
-            </p>
-          </ClippedCard>
-
-          <ClippedCard className="bg-white/[0.02]">
-            <div className="mb-3 text-[10px] tracking-[0.25em] text-[#4fc3f7]/70 uppercase" style={{ fontFamily: "monospace" }}>
-              Why It Matters
-            </div>
-            <div className="space-y-4 text-sm font-light leading-relaxed text-white/48">
-              <p>Nenji makes the platform feel real instead of theoretical.</p>
-              <p>It gives users a concrete picture of an agent that can inspect, coordinate, and operate within the system it lives in.</p>
-              <p>That turns the idea of an agent-first platform from an abstract claim into something legible, memorable, and easy to imagine building with.</p>
-            </div>
-          </ClippedCard>
-        </div>
+      <div className="splash-scroll">
+        <div className="splash-scroll-line"/>
+        scroll
       </div>
     </section>
   );
-}
+};
 
-const comparisonRows = [
-  {
-    label: "Primary product shape",
-    nenjo: "An agent-first platform for multi-agent systems, live updates, and platform-level operability",
-    generic: "A hosted agent product, managed runtime, or agent framework focused on getting one agent running quickly",
-  },
-  {
-    label: "Configuration model",
-    nenjo: "Agents can be defined in manifest files, versioned in your repo, and moved across environments",
-    generic: "Configuration often lives in hosted settings, templates, dashboards, or framework-specific runtime code",
-  },
-  {
-    label: "Update model",
-    nenjo: "Long-running workers can pick up hot-swapped agent and routine changes while the system stays live",
-    generic: "Configuration changes often depend on manual redeploys, restarts, or hosted platform update flows",
-  },
-  {
-    label: "Portability",
-    nenjo: "Portable across providers, runtimes, and deployment models without locking product behavior to one vendor",
-    generic: "Often centered on one vendor runtime, one hosting model, or one framework's assumptions",
-  },
-];
-
-function ComparisonSection() {
-  const { ref, visible } = useFadeIn();
+// ── KNOWLEDGE GRAPH ──
+const KnowledgeGraph = () => {
+  const nodes = [
+    { id:'doc1', x:50,  y:6,  label:'Policy',    r:4.8, type:'doc'   },
+    { id:'doc2', x:88,  y:26, label:'Guide',      r:4.6, type:'doc'   },
+    { id:'doc3', x:88,  y:70, label:'Reference',  r:4.6, type:'doc'   },
+    { id:'doc4', x:50,  y:92, label:'Entity',     r:4.6, type:'doc'   },
+    { id:'doc5', x:12,  y:70, label:'Taxonomy',   r:4.6, type:'doc'   },
+    { id:'doc6', x:12,  y:26, label:'Domain',     r:4.6, type:'doc'   },
+    { id:'c5',   x:50,  y:50, label:'KNOWLEDGE',  r:9.5, type:'center'},
+  ];
+  // spokes to center + ring between adjacent outer nodes
+  const outerIds = ['doc1','doc2','doc3','doc4','doc5','doc6'];
+  const edges = [
+    ...outerIds.map(id => [id,'c5']),
+    ...outerIds.map((id,i) => [id, outerIds[(i+1)%outerIds.length]]),
+  ];
+  const nm = Object.fromEntries(nodes.map(n=>[n.id,n]));
 
   return (
-    <section className="px-4 py-32">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-14 max-w-3xl">
-          <h2 className="mb-5 text-3xl font-extralight tracking-tight text-white sm:text-4xl">
-            Built for teams who want more than setup speed
-          </h2>
-          <p className="text-base font-light leading-relaxed text-white/55 sm:text-lg">
-            Some products optimize for managed convenience, templates, or framework ergonomics.
-            Nenjo is for teams that want agent configuration as files, live runtime evolution, and a
-            system architecture that does not collapse into vendor lock-in.
-          </p>
-        </div>
+    <div className="kgraph-wrap">
+      <svg viewBox="0 0 100 100" style={{width:'100%',height:'100%',overflow:'visible'}}>
+        <defs>
+          <radialGradient id="kg-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.2"/>
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0"/>
+          </radialGradient>
+          <filter id="kg-blur"><feGaussianBlur stdDeviation="1.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
 
-        <div
-          ref={ref}
-          className={`overflow-hidden border border-white/10 transition-all duration-700 ${
-            visible ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
-          }`}
-        >
-          <div className="grid grid-cols-1 border-b border-white/10 bg-white/[0.02] text-[11px] tracking-[0.25em] text-white/35 uppercase md:grid-cols-[1.1fr_1fr_1fr]" style={{ fontFamily: "monospace" }}>
-            <div className="px-5 py-4">Axis</div>
-            <div className="px-5 py-4 text-[#4fc3f7]/70">Nenjo</div>
-            <div className="px-5 py-4">Typical Alternative</div>
-          </div>
-          {comparisonRows.map((row) => (
-            <div key={row.label} className="grid grid-cols-1 border-b border-white/10 last:border-b-0 md:grid-cols-[1.1fr_1fr_1fr]">
-              <div className="px-5 py-5 text-sm font-light text-white">{row.label}</div>
-              <div className="px-5 py-5 text-sm font-light leading-relaxed text-white/70">{row.nenjo}</div>
-              <div className="px-5 py-5 text-sm font-light leading-relaxed text-white/38">{row.generic}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
+        {/* ambient glow */}
+        <circle cx="50" cy="50" r="40" fill="url(#kg-glow)">
+          <animate attributeName="r" values="36;44;36" dur="5s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.8;0.4;0.8" dur="5s" repeatCount="indefinite"/>
+        </circle>
 
-// ---------------------------------------------------------------------------
-// Docs
-// ---------------------------------------------------------------------------
+        {/* edges */}
+        {edges.map(([a,b],i) => {
+          const na=nm[a], nb=nm[b];
+          const isSpoke = a==='c5'||b==='c5';
+          return (
+            <g key={i}>
+              <line x1={na.x} y1={na.y} x2={nb.x} y2={nb.y}
+                stroke="var(--accent)" strokeWidth={isSpoke?0.28:0.16}
+                opacity={isSpoke?0.18:0.1}/>
+              <line x1={na.x} y1={na.y} x2={nb.x} y2={nb.y}
+                stroke="var(--accent)" strokeWidth={isSpoke?0.45:0.24}
+                opacity={isSpoke?0.5:0.28}
+                strokeDasharray={isSpoke?"1.6 2.4":"0.8 3.2"}
+                style={{animation:`flow ${3.0+(i%6)*.38}s linear infinite`}}/>
+            </g>
+          );
+        })}
 
-const docLinks = [
-  {
-    title: "Quickstart Guide",
-    description: "Start the stack, connect a worker, and boot your first agent.",
-    href: "/docs/getting-started/quickstart",
-  },
-  {
-    title: "Architecture",
-    description: "See how the control plane, workers, NATS, and storage fit together.",
-    href: "/docs/getting-started/architecture",
-  },
-  {
-    title: "MCP Integration",
-    description: "Understand how agents get scoped platform access and external MCP tools.",
-    href: "/docs/agents/mcp-integration",
-  },
-  {
-    title: "Worker Runtime",
-    description: "Learn how workers bootstrap, hot-swap config, and execute long-running tasks.",
-    href: "/docs/system/worker",
-  },
-];
-
-function DocsSection() {
-  const { ref, visible } = useFadeIn();
-
-  return (
-    <section id="docs" className="scroll-mt-20 px-4 py-32">
-      <div className="mx-auto max-w-4xl">
-        <SectionLabel>DOCUMENTATION</SectionLabel>
-
-        <div
-          ref={ref}
-          className={`grid gap-4 sm:grid-cols-2 transition-all duration-700 ${
-            visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-          }`}
-        >
-          {docLinks.map((link) => (
-            <ClippedCard key={link.title} as={Link} href={link.href} className="flex items-center justify-between p-6">
-              <div>
-                <h3 className="mb-1 text-sm font-light tracking-wide text-white">
-                  {link.title}
-                </h3>
-                <p className="text-xs font-light text-white/40">
-                  {link.description}
-                </p>
-              </div>
-              <ArrowIcon />
-            </ClippedCard>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function FinalCtaSection() {
-  return (
-    <section className="px-4 py-32">
-      <div className="mx-auto max-w-5xl">
-        <ClippedCard className="bg-white/[0.03] px-8 py-14 text-center sm:px-14">
-          <h2 className="mb-5 text-3xl font-extralight tracking-tight text-white sm:text-5xl">
-            Own the agent stack.
-            <br />
-            Build beyond hosted agents.
-          </h2>
-          <p className="mx-auto mb-10 max-w-3xl text-base font-light leading-relaxed text-white/52 sm:text-lg">
-            Nenjo gives teams an agent-first platform with agents defined as files, real-time hot-swapped
-            updates, and durable multi-agent coordination. Build systems where agents do more than
-            run. Build systems they can help operate.
-          </p>
-          <div className="flex flex-col justify-center gap-4 sm:flex-row">
-            <Link
-              href="/dashboard/login"
-              className="border border-white/30 px-10 py-3 text-xs font-light tracking-[0.3em] text-white/80 uppercase transition-all duration-300 hover:border-[#4fc3f7]/40 hover:text-white hover:shadow-[0_0_25px_rgba(79,195,247,0.2)]"
-            >
-              Enter Nenjo
-            </Link>
-            <Link
-              href="/docs/getting-started/quickstart"
-              className="border border-white/10 px-10 py-3 text-xs font-light tracking-[0.3em] text-white/55 uppercase transition-all duration-300 hover:border-white/25 hover:text-white"
-            >
-              Read Quickstart
-            </Link>
-          </div>
-        </ClippedCard>
-      </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Footer
-// ---------------------------------------------------------------------------
-
-function Footer() {
-  return (
-    <footer style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }} className="px-6 py-8">
-      <div className="mx-auto flex max-w-7xl items-center justify-between">
-        <span className="text-xs font-light tracking-[0.25em] text-white/50 uppercase">Nenjo</span>
-        <span className="text-xs font-light text-white/40">&copy; {new Date().getFullYear()} Boon Labs LLC</span>
-      </div>
-    </footer>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main LandingPage
-// ---------------------------------------------------------------------------
-
-export function LandingPage() {
-  return (
-    <div className="min-h-screen bg-[#000000] text-white" style={{ background: "linear-gradient(180deg, #050510 0%, #000 100%)" }}>
-      <Navbar />
-      <HeroSection />
-      <ProofStrip />
-      <FeaturesSection />
-      <WhyNenjoSection />
-      <ArchitectureSection />
-      <NenjiSection />
-      <ComparisonSection />
-      <DocsSection />
-      <FinalCtaSection />
-      <Footer />
+        {/* nodes */}
+        {nodes.map((n,i) => {
+          const isCenter = n.type==='center';
+          const isCore   = n.type==='core';
+          const isDoc    = n.type==='doc';
+          const delay    = `${(i*0.7)%3.5}s`;
+          return (
+            <g key={n.id} filter={isCenter?'url(#kg-blur)':undefined}>
+              {/* outer ring for center */}
+              {isCenter && (
+                <circle cx={n.x} cy={n.y} r={n.r*1.7}
+                  fill="none" stroke="var(--accent)" strokeWidth="0.2" opacity="0.3"
+                  strokeDasharray="1 1.5">
+                  <animateTransform attributeName="transform" type="rotate"
+                    from={`0 ${n.x} ${n.y}`} to={`360 ${n.x} ${n.y}`}
+                    dur="18s" repeatCount="indefinite"/>
+                </circle>
+              )}
+              <circle cx={n.x} cy={n.y} r={n.r}
+                fill={isCenter?'var(--void-3)':isCore?'var(--void-2)':'var(--void)'}
+                stroke="var(--accent)"
+                strokeWidth={isCenter?0.45:isCore?0.32:0.22}
+                opacity={isCenter?1:isCore?0.85:0.65}>
+                <animate attributeName="r"
+                  values={`${n.r};${n.r*1.08};${n.r}`}
+                  dur={`${3.5+(i%3)}s`} begin={delay} repeatCount="indefinite"/>
+              </circle>
+              {isCenter && (
+                <circle cx={n.x} cy={n.y} r={n.r*0.55}
+                  fill="none" stroke="var(--accent)" strokeWidth="0.3" opacity="0.5"/>
+              )}
+              {/* label */}
+              {(() => {
+                const dx = n.x - 50, dy = n.y - 50;
+                const mag = Math.hypot(dx, dy) || 1;
+                const offset = n.r + 2.8;
+                const lx = isDoc ? n.x + (dx/mag)*offset : n.x;
+                const ly = isDoc ? n.y + (dy/mag)*offset : n.y + 0.5;
+                const anchor = isDoc ? (dx > 4 ? 'start' : dx < -4 ? 'end' : 'middle') : 'middle';
+                const baseline = isDoc ? (dy > 4 ? 'hanging' : dy < -4 ? 'auto' : 'middle') : 'middle';
+                return (
+                  <text
+                    x={lx} y={ly}
+                    fontFamily="var(--f-mono)"
+                    fontSize={isCenter?2.6:isDoc?1.7:1.9}
+                    fill={isCenter?'var(--accent)':isCore?'var(--ink)':'var(--ink-dim)'}
+                    textAnchor={anchor}
+                    dominantBaseline={baseline}
+                    letterSpacing="0.15"
+                    fontWeight={isCenter?"500":"400"}>
+                    {n.label}
+                  </text>
+                );
+              })()}
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
-}
+};
 
-export default LandingPage;
+// ── LAYERS SECTION ──
+const LayersSections = () => (
+  <div className="layers-wrap">
+    {/* KNOWLEDGE LAYER */}
+    <div style={{borderBottom:'1px solid var(--rule)'}}>
+      <div className="layer-panel sr">
+        <div className="layer-text">
+          <div className="layer-pip"><div className="layer-pip-dot"/>&nbsp;Knowledge Layer</div>
+          <div className="layer-h">Documents that<br/><em>think in graphs.</em></div>
+          <div className="layer-body">
+            Your knowledge isn't flat — it's a living graph of concepts, relationships, and context. Nenjo organises your documents into a structured network so agents always have the right understanding, not just the right text.
+          </div>
+          <div className="layer-attrs">
+            {[
+              { t:'Concept graphs', d:'Documents linked by meaning, not just keyword. Agents navigate relationships the way a team member would.' },
+              { t:'Always current', d:'Knowledge updates propagate through the graph in real time. Agents never act on stale context.' },
+              { t:'Structured context', d:'Organize project knowledge, docs, and domain rules into a graph agents can reference consistently.' },
+            ].map((a,i) => (
+              <div key={i} className="layer-attr">
+                <div className="layer-attr-mark"/>
+                <div><strong>{a.t} — </strong>{a.d}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="layer-visual">
+          <KnowledgeGraph/>
+        </div>
+      </div>
+    </div>
+
+    {/* BEHAVIORAL LAYER */}
+    <div>
+      <div className="layer-panel reverse sr sr-d1">
+        <div className="layer-text">
+          <div className="layer-pip"><div className="layer-pip-dot"/>&nbsp;Behavioral Layer</div>
+          <div className="layer-h">Context engineered.<br/><em>Behavior portable.</em></div>
+          <div className="layer-body">
+            How an agent acts is defined in a manifest — a portable, version-controlled file that describes its model, tools, context window, and runtime policy. Update it live. Agents adapt without restarting.
+          </div>
+          <div className="layer-attrs">
+            {[
+              { t:'Context engineering', d:'Precisely shape what each agent knows at runtime — no prompt guesswork, no leaking context across boundaries.' },
+              { t:'Portable manifests', d:'Agent behaviour defined as files. Deploy to any environment, hot-swap while live, roll back in seconds.' },
+              { t:'Runtime policy', d:'Enforce access, routing, and coordination rules at the layer level — not scattered across application code.' },
+            ].map((a,i) => (
+              <div key={i} className="layer-attr">
+                <div className="layer-attr-mark"/>
+                <div><strong>{a.t} — </strong>{a.d}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="layer-visual">
+          <div className="manifest-wrap">
+            <div className="manifest-header">
+              <div className="manifest-title">agent.manifest.json</div>
+              <div className="manifest-badge">LIVE · v2.4</div>
+            </div>
+            {[
+              { key:'"name":', val:'"customer-support-agent"', type:'bright' },
+              { key:'"description":', val:'"Handles inbound tickets,', type:'normal' },
+              { key:'', val:' resolves issues, escalates."', type:'normal' },
+              { divider:true },
+              { key:'"prompt_config":', val:'{', type:'normal' },
+              { key:'"system_prompt":', val:'"You are a support agent.', type:'normal', indent:true },
+              { key:'', val:' Be concise and helpful."', type:'normal', indent:true },
+              { key:'"developer_prompt":', val:'"{{project.documents}}"', type:'accent', indent:true },
+              { divider:true },
+              { key:'"templates":', val:'{', type:'normal', indent:true },
+              { key:'"task":', val:'"{{task}}"', type:'accent', indent:true, indent2:true },
+              { key:'"chat":', val:'"Handle customer inquiry."', type:'normal', indent:true, indent2:true },
+              { divider:true },
+              { key:'"memory_profile":', val:'{', type:'normal', indent:true },
+              { key:'"core_focus":', val:'["support-kb", "policies"]', type:'normal', indent:true, indent2:true },
+              { key:'"project_focus":', val:'["tickets", "customers"]', type:'normal', indent:true, indent2:true },
+            ].map((l,i) => {
+              if(l.divider) return <div key={i} className="layer-divider" style={{margin:'6px 0'}}/>;
+              const leftPad = l.indent2 ? 28 : l.indent ? 14 : 0;
+              return (
+                <div key={i} className="manifest-line">
+                  {l.key && <span className="ml-key" style={{minWidth:'76px', paddingLeft:leftPad, flexShrink:0, whiteSpace:'nowrap'}}>{l.key}</span>}
+                  {!l.key && <span style={{minWidth: leftPad + 76 + 'px', flexShrink:0}}/>}
+                  {l.val && <span className={`ml-val${l.type==='accent'?' accent':l.type==='bright'?' bright':''}`}>{l.val}</span>}
+                </div>
+              );
+            })}
+            <div className="manifest-line" style={{marginTop:8}}>
+              <span className="ml-key" style={{color:'var(--steel-dim)',minWidth:'76px'}}>status:</span>
+              <span className="ml-val accent">running<span className="manifest-cursor"/></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+// ── USE CASES SECTION ──
+const UseCasesSection = () => (
+  <div className="usecases-wrap">
+    <div className="usecases-inner">
+      <div className="usecases-hd section-hd sr">
+        <div className="section-kicker">BUILT FOR EVERY BUILDER</div>
+        <div className="section-title">One platform.<br/><em>Every scope of ambition.</em></div>
+        <div className="section-sub">From embedding agents in your product to launching a standalone AI assistant or delivering solutions to clients — Nenjo gives every builder the same powerful foundation.</div>
+      </div>
+      <div className="uc-grid sr sr-d1">
+        {[
+          {
+            persona: 'Product Developers',
+            name: <>Embed agents<br/><em>inside your product.</em></>,
+            body: 'Use the Nenjo SDK to wire agents directly into your application. Your knowledge graph keeps them informed; manifests keep their behaviour consistent across every user and environment.',
+            builds: [
+              { t: 'Custom AI features', d: 'built with the Nenjo SDK — agents that live inside your product.' },
+              { t: 'Context-aware co-pilots', d: "scoped to each user's permissions and session." },
+              { t: 'Onboarding & support agents', d: 'that stay current as your product evolves.' },
+            ],
+          },
+          {
+            persona: 'AI Product Builders',
+            name: <>Launch a standalone<br/><em>AI assistant.</em></>,
+            body: 'Build OpenClaw-style long-running agent products on Nenjo. Persistent memory, portable manifests, and a live runtime give you everything needed to ship a fully-featured AI assistant.',
+            builds: [
+              { t: 'Long-running agent products', d: 'with persistent memory and continuous operation.' },
+              { t: 'Multi-agent coordination', d: 'for complex tasks that span tools, time, and context.' },
+              { t: 'White-label AI assistants', d: 'deployable to any environment with full observability.' },
+            ],
+          },
+          {
+            persona: 'Businesses & Consultants',
+            name: <>Deliver AI solutions<br/><em>to your clients.</em></>,
+            body: "Whether you're a solo entrepreneur or a growing agency, Nenjo gives you the infrastructure to build, deploy, and maintain AI solutions for clients — without reinventing the stack each time.",
+            builds: [
+              { t: 'Repeatable client deployments', d: 'using portable manifests that adapt to each business.' },
+              { t: 'Operations automation', d: 'for support, workflows, and internal processes.' },
+              { t: 'Managed agent services', d: 'you maintain centrally, hot-swap without client downtime.' },
+            ],
+          },
+        ].map((c, i) => (
+          <div key={i} className="uc-card">
+            <div className="uc-persona">{c.persona}</div>
+            <div className="uc-name">{c.name}</div>
+            <div className="uc-body">{c.body}</div>
+            <div className="uc-builds">
+              {c.builds.map((b, j) => (
+                <div key={j} className="uc-build">
+                  <div className="uc-build-mark"/>
+                  <div><strong>{b.t}</strong> — {b.d}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+// ── SCROLL HERO ──
+const HeroScroll = () => {
+  const stageRef = useRef(null);
+  const [sectionIdx, setSectionIdx] = useState(0);
+  const [showDots, setShowDots] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const el = stageRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const totalH = el.offsetHeight - window.innerHeight;
+      const scrolled = -rect.top;
+      const progress = Math.max(0, Math.min(1, scrolled / totalH));
+      const idx = Math.min(SECTIONS.length - 1, Math.floor(progress * SECTIONS.length));
+      setSectionIdx(idx);
+      setShowDots(scrolled > 60 && scrolled < totalH + window.innerHeight * 0.5);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  const sec = SECTIONS[sectionIdx];
+  const kanjiLabels = ['念', '制', '働', '具', '創'];
+
+  return (
+    <>
+      <div className={`prog-dots${showDots?' show':''}`}>
+        {SECTIONS.map((s,i) => (
+          <div key={i} className={`prog-dot${i===sectionIdx?' on':''}`}
+               onClick={() => {
+                 const el = stageRef.current;
+                 if (!el) return;
+                 const totalH = el.offsetHeight - window.innerHeight;
+                 const target = el.offsetTop + (i / SECTIONS.length) * totalH + 20;
+                 window.scrollTo({ top: target, behavior: 'smooth' });
+               }}/>
+        ))}
+      </div>
+
+      <div ref={stageRef} className="scroll-stage" style={{height:`${SECTIONS.length * 100}vh`}}>
+        <div className="scroll-sticky">
+          <div className="scroll-bg-grid"/>
+          <div className="scroll-bg-glow"/>
+          <div className="scroll-kanji" style={{opacity: sectionIdx===0?1:0.6}}>
+            {kanjiLabels[sectionIdx]}
+          </div>
+          <div className="scroll-inner">
+            <div className="graph-stage">
+              <div className="graph-3d" style={{transform:sec.transform3d}}>
+                <HeroGraph highlightIds={sec.highlight}/>
+              </div>
+            </div>
+            <div className="text-panels">
+              {SECTIONS.map((s,i) => (
+                <div key={s.id} className={`tpanel${i===sectionIdx?' on':''}`}>
+                  <div className="tp-kicker">{s.kicker}</div>
+                  <div className="tp-h">{s.headline}</div>
+                  <div className="tp-b">{s.body}</div>
+                  {s.detail && <div className="tp-detail">{s.detail}</div>}
+                  {s.tags && <div className="tp-tags">{s.tags.map((t,j)=><span key={j} className="tp-tag">{t}</span>)}</div>}
+                  {i===0 && (
+                    <div className="tp-btns">
+                      <a className="btn-a" href="/dashboard/login">Start building →</a>
+                      <a className="btn-b" href="#how">How it works</a>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+// ── NAV ──
+const Nav = () => (
+  <nav className="nav">
+    <div className="nav-brand">
+      <img src={LANDING_LOGO} width="17" height="17" style={{opacity:.8}} alt=""/>
+      NENJO
+    </div>
+    <div className="nav-links">
+      <a href="/docs" aria-label="Developer documentation" title="Developer documentation">
+        <BookOpen size={16} strokeWidth={1.7} />
+      </a>
+      <a
+        href="https://github.com/nenjo-ai/nenjo"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Nenjo GitHub repository"
+        title="Nenjo GitHub repository"
+      >
+        <Github size={16} strokeWidth={1.7} />
+      </a>
+    </div>
+    <a className="nav-cta" href="/dashboard/login">ENTER</a>
+  </nav>
+);
+
+// ── MANIFESTO ──
+const Manifesto = () => (
+  <div className="manifesto sr">
+    <div className="manifesto-bg"/>
+    <div className="manifesto-kanji">念助</div>
+    <div className="manifesto-inner">
+      <div className="manifesto-eyebrow">NENJO · PHILOSOPHY</div>
+      <div className="manifesto-quote">
+        "Mindful assistance — agents that work<br/>with purpose and precision."
+      </div>
+      <div className="manifesto-etymology">
+        <div className="etym-item">
+          <div className="etym-char">念</div>
+          <div className="etym-text">
+            <div className="etym-rom">NEN</div>
+            <div className="etym-def">Thought, mindfulness, attention.<br/>The focused intention behind every action.</div>
+          </div>
+        </div>
+        <div className="etym-item">
+          <div className="etym-char">助</div>
+          <div className="etym-text">
+            <div className="etym-rom">JO</div>
+            <div className="etym-def">Help, assistance, support.<br/>The act of empowering others to achieve more.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+// ── VALUE PROP ──
+const ValueProp = () => (
+  <section className="section sr" style={{borderTop:'1px solid var(--rule)'}}>
+    <div className="section-hd">
+      <div className="section-kicker">WHY NENJO</div>
+      <div className="section-title">Your next advantage<br/><em>isn't headcount — it's agents.</em></div>
+    </div>
+    <div className="vp-grid" style={{background:'var(--rule)'}}>
+      {[
+        {n:'01', title:'Launch in hours, not months', body:'Bootstrap agentic workflows without deep technical expertise. Automate repetitive work, reduce overhead, and give your team back time for what matters.', tags:['Cost reduction','Time saving','Easy to bootstrap']},
+        {n:'02', title:'Secure by default', body:'Zero trust architecture, end-to-end encryption. The platform never sees your agent prompts or context — your business logic stays yours, always.', tags:['Zero trust','E2E encryption','Private by design']},
+        {n:'03', title:'Built for interoperability', body:'A peer-to-peer mesh network connects your agents for seamless interoperability, full observability across every call, and a living system that improves continuously.', tags:['Peer mesh','Observability','Continuous improvement']},
+      ].map((c,i) => (
+        <div key={i} className="vp-card">
+          <div className="vp-n">{c.n}</div>
+          <div className="vp-title">{c.title}</div>
+          <div className="vp-body">{c.body}</div>
+          <div className="vp-tags">{c.tags.map((t,j)=><span key={j} className="vp-tag">{t}</span>)}</div>
+        </div>
+      ))}
+    </div>
+  </section>
+);
+
+// ── HOW IT WORKS ──
+const HowItWorks = () => (
+  <section className="section sr" id="how" style={{borderTop:'1px solid var(--rule)'}}>
+    <div className="section-hd">
+      <div className="section-kicker">HOW IT WORKS</div>
+      <div className="section-title">Up and running <em>fast.</em></div>
+      <div className="section-sub">Three steps from signup to a live agentic system in your environment.</div>
+    </div>
+    <div className="how-grid">
+      {[
+        {n:'01', title:'Run your workers', body:'Deploy worker agents to your own environment. They handle chat, tasks, and long-running jobs continuously — hot-swappable while live, never dropping work.', ex:'> nenjo run'},
+        {n:'02', title:'Chat with Nenji', body:'Use Nenji to rapidly bootstrap workflows by translating operational goals into agents, manifests, routines, and the context they need to run reliably.', ex:'→  "Create a customer support workflow for my SaaS"'},
+        {n:'03', title:'Evolve without downtime', body:"Update your agent's behaviour any time. Hot-swap takes effect immediately — running tasks are uninterrupted, no restarts, no dropped work.", ex:'manifest_changed(rt=context_block, inline=true)'},
+      ].map((s,i) => (
+        <div key={i} className="how-step">
+          <div className="how-n">{s.n}</div>
+          <div className="how-title">{s.title}</div>
+          <div className="how-body">{s.body}</div>
+          <div className="how-ex">{s.ex}</div>
+        </div>
+      ))}
+    </div>
+  </section>
+);
+
+// ── AGENT TYPES ──
+const AgentTypes = () => (
+  <section className="section sr" id="agents" style={{borderTop:'1px solid var(--rule)'}}>
+    <div className="section-hd">
+      <div className="section-kicker">AGENT TYPES</div>
+      <div className="section-title">Three roles.<br/><em>One fabric.</em></div>
+    </div>
+    <div className="agents-grid" style={{background:'var(--rule)'}}>
+      {[
+        {
+          shape:<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7.5" stroke="currentColor" strokeWidth="1.1"/><circle cx="9" cy="9" r="2.8" fill="currentColor"/></svg>,
+          type:'WORKERS', name:'Chat & Task Workers',
+          body:'Worker agents handle tasks end-to-end — chat, messages, long-running jobs. Hosted in your own environment, hot-swappable while live.',
+          note:'Requires hosting in your own environment.',
+          tags:['Follow-ups','Chat','Long-running tasks'],
+        },
+        {
+          shape:<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="1.5" y="1.5" width="15" height="15" stroke="currentColor" strokeWidth="1.1"/><rect x="5.5" y="5.5" width="7" height="7" fill="currentColor"/></svg>,
+          type:'TOOL SERVICES', name:'Secure Tool Environments',
+          body:'Services are not agents — execution environments outside the agent harness. A security boundary giving agents controlled, auditable access to external tools and APIs.',
+          note:'Isolation layer: sits outside the agent harness.',
+          tags:['CRM access','API calls','Data reads'],
+        },
+        {
+          shape:<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="1" y="9" width="11.3" height="11.3" stroke="currentColor" strokeWidth="1.1" transform="rotate(-45 1 9)"/></svg>,
+          type:'CUSTOM APPS', name:'Your Product, Your Logic',
+          body:'Custom apps are built by your team on Nenjo. Technical skill needed for hosting and wiring — Nenjo handles orchestration, state, and live updates.',
+          note:'Requires development and hosting skill.',
+          tags:['Onboarding','Portals','Automation'],
+        },
+      ].map((a,i) => (
+        <div key={i} className="agent-card">
+          <div className="agent-glyph">{a.shape}</div>
+          <div className="agent-type">{a.type}</div>
+          <div className="agent-name">{a.name}</div>
+          <div className="agent-body">{a.body}</div>
+          <div className="agent-note"><span style={{color:'var(--accent)',flexShrink:0}}>→</span>{a.note}</div>
+          <div className="agent-tags">{a.tags.map((t,j)=><span key={j} className="agent-tag">{t}</span>)}</div>
+        </div>
+      ))}
+    </div>
+  </section>
+);
+
+// ── CTA ──
+const CTA = () => (
+  <div style={{borderTop:'1px solid var(--rule)'}} id="cta">
+    <div className="cta">
+      <div className="cta-kanji">念助</div>
+      <div className="cta-glow"/>
+      <div className="cta-inner">
+        <div className="cta-eyebrow">GET STARTED</div>
+        <div className="cta-headline">Own your<br/><em>agent stack.</em></div>
+        <p className="cta-sub">Launch production-ready agents in hours. Define them as files, update them live, and build systems where agents do more than run — they help operate.</p>
+        <div className="cta-btns">
+          <a className="btn-a" href="/dashboard/login">Enter Nenjo →</a>
+          <a className="btn-b" href="/docs">Read the docs</a>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+// ── APP ──
+const App = () => {
+  const [tw, setTw] = useState(()=>{
+    try{const s=localStorage.getItem('nenjo-p3-tw');return s?{...TWEAK_DEFAULTS,...JSON.parse(s)}:TWEAK_DEFAULTS;}
+    catch{return TWEAK_DEFAULTS;}
+  });
+
+  useEffect(()=>{
+    try{localStorage.setItem('nenjo-p3-tw',JSON.stringify(tw));}catch{}
+    
+  },[tw]);
+
+
+
+  useEffect(()=>{
+    const io = new IntersectionObserver(entries=>{
+      entries.forEach(e=>{
+        if(e.isIntersecting){e.target.classList.add('visible');io.unobserve(e.target);}
+      });
+    },{threshold:0.07});
+    document.querySelectorAll('.sr').forEach(el=>io.observe(el));
+    return()=>io.disconnect();
+  },[]);
+
+
+  return (
+    <main className="nenjo-landing" data-palette={tw.palette}>
+      <Nav/>
+      <SplashHero taglineId={tw.tagline}/>
+      <LayersSections/>
+      <UseCasesSection/>
+      <HowItWorks/>
+      <ValueProp/>
+      <Manifesto/>
+      <CTA/>
+      <footer className="footer">
+        <div className="footer-brand">
+          <img src={LANDING_LOGO} width="15" height="15" style={{opacity:.5}} alt=""/>
+          NENJO
+        </div>
+        <div className="footer-r">© 2026 NENJO LABS · BETA</div>
+      </footer>
+    </main>
+  );
+};
+
+export default function LandingPage() {
+  return <App/>;
+}
