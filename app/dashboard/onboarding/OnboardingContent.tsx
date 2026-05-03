@@ -98,9 +98,10 @@ const DEFAULT_SKIP_MESSAGE =
   "This is an automated message since the worker is not connected. Nenji will be able to help you once you connect the worker. Until then, feel free to browse around. Check out how Nenji is structured under Agents, or open the routine editor page.";
 const DEFAULT_CONNECTED_GREETING =
   "Welcome to Nenjo. Nenji is online and ready to help you shape agents, routines, and context. What kind of workflow do you want to build first?";
+const NENJI_SEED_COLOR = "#b8841a";
 const DEFAULT_NENJI_IDENTITY = {
   roleId: "nenji",
-  color: "#2563eb",
+  color: NENJI_SEED_COLOR,
 };
 
 // ---------------------------------------------------------------------------
@@ -113,52 +114,51 @@ function StepIndicator({
   currentStep: 1 | 2 | 3 | 4 | 5;
 }) {
   return (
-    <div className="flex items-center justify-center gap-0 mb-8">
+    <div className="mb-10 grid w-full grid-cols-5 items-start">
       {STEPS.map((label, i) => {
         const step = (i + 1) as 1 | 2 | 3 | 4 | 5;
         const isCompleted = step < currentStep;
         const isActive = step === currentStep;
         return (
-          <div key={label} className="flex items-center">
-            {i > 0 && (
+          <div key={label} className="relative flex flex-col items-center">
+            {i < STEPS.length - 1 && (
               <div
-                className={`h-0.5 w-10 sm:w-16 ${
+                className={`absolute left-[calc(50%+1.25rem)] right-[calc(-50%+1.25rem)] top-4 h-0.5 ${
                   isCompleted
                     ? "bg-deep-space-blue-500"
                     : "bg-gray-300 dark:bg-gray-600"
                 }`}
               />
             )}
-            <div className="flex flex-col items-center gap-1.5">
-              <div
-                className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
-                  isCompleted
-                    ? "bg-deep-space-blue-500 text-white"
-                    : isActive
-                      ? "border-2 border-deep-space-blue-500 text-deep-space-blue-600 dark:text-deep-space-blue-400"
-                      : "border-2 border-gray-300 text-gray-400 dark:border-gray-600 dark:text-gray-500"
-                }`}
-              >
-                {isCompleted ? (
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                ) : (
-                  step
-                )}
-              </div>
-              <span
-                className={`text-xs font-medium ${
-                  isActive
-                    ? "text-deep-space-blue-600 dark:text-deep-space-blue-400"
-                    : isCompleted
-                      ? "text-gray-700 dark:text-gray-300"
-                      : "text-gray-400 dark:text-gray-500"
-                }`}
-              >
-                {label}
-              </span>
+
+            <div
+              className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
+                isCompleted
+                  ? "bg-deep-space-blue-500 text-white"
+                  : isActive
+                    ? "border-2 border-deep-space-blue-500 text-deep-space-blue-600 dark:text-deep-space-blue-400"
+                    : "border-2 border-gray-300 text-gray-400 dark:border-gray-600 dark:text-gray-500"
+              }`}
+            >
+              {isCompleted ? (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+              ) : (
+                step
+              )}
             </div>
+            <span
+              className={`mt-3 min-h-8 px-1 text-center text-xs font-medium leading-tight ${
+                isActive
+                  ? "text-deep-space-blue-600 dark:text-deep-space-blue-400"
+                  : isCompleted
+                    ? "text-gray-700 dark:text-gray-300"
+                    : "text-gray-400 dark:text-gray-500"
+              }`}
+            >
+              {label}
+            </span>
           </div>
         );
       })}
@@ -167,10 +167,8 @@ function StepIndicator({
 }
 
 function StepSecureWorkspace({
-  userId,
   onContinue,
 }: {
-  userId: string;
   onContinue: () => void;
 }) {
   const [loading, setLoading] = useState(true);
@@ -178,6 +176,7 @@ function StepSecureWorkspace({
   const [recoveryPhrase, setRecoveryPhrase] = useState("");
   const [recoveryBundle, setRecoveryBundle] = useState<RecoveryBundlePayload | null>(null);
   const [copied, setCopied] = useState(false);
+  const [backupAcknowledged, setBackupAcknowledged] = useState(false);
   const [confirmWordA, setConfirmWordA] = useState("");
   const [confirmWordB, setConfirmWordB] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -232,6 +231,7 @@ function StepSecureWorkspace({
       setConfirmWordA("");
       setConfirmWordB("");
       setCopied(false);
+      setBackupAcknowledged(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to secure this workspace.");
     } finally {
@@ -247,14 +247,13 @@ function StepSecureWorkspace({
     try {
       await navigator.clipboard.writeText(recoveryPhrase);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     } catch {
       setError("Could not copy the recovery phrase to your clipboard.");
     }
   }, [recoveryPhrase]);
 
   const handleContinue = useCallback(async () => {
-    if (!recoveryBundle || !confirmed) return;
+    if (!recoveryBundle || !confirmed || !copied || !backupAcknowledged) return;
     setSubmitting(true);
     try {
       await storeRecoveryBundle(recoveryBundle);
@@ -291,14 +290,14 @@ function StepSecureWorkspace({
     } finally {
       setSubmitting(false);
     }
-  }, [confirmed, onContinue, recoveryBundle]);
+  }, [backupAcknowledged, confirmed, copied, onContinue, recoveryBundle]);
 
   return (
     <div className="space-y-5 md:space-y-6">
       <div>
         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Secure Your Workspace</h2>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          This device is generating your local content key, approval signing key, and an encrypted recovery bundle for account <span className="font-medium text-gray-700 dark:text-gray-200">{userId}</span>.
+          This device is generating local encryption keys for your organization.
         </p>
       </div>
 
@@ -321,7 +320,7 @@ function StepSecureWorkspace({
         <>
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
             <p className="text-sm text-amber-700 dark:text-amber-400">
-              Save this recovery phrase now. It protects the encrypted recovery bundle this device creates during onboarding.
+              Save this recovery phrase now. You can use it later to recover your encrypted resources.
             </p>
           </div>
 
@@ -358,6 +357,19 @@ function StepSecureWorkspace({
             </button>
           </div>
 
+          <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={backupAcknowledged}
+              disabled={!copied}
+              onChange={(event) => setBackupAcknowledged(event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-deep-space-blue-600 focus:ring-deep-space-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900"
+            />
+            <span>
+              I have backed up my recovery phrase and understand I will need it to recover encrypted resources.
+            </span>
+          </label>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label required>Type word #{promptIndexes[0] + 1}</Label>
@@ -380,7 +392,7 @@ function StepSecureWorkspace({
           <Button
             onClick={() => void handleContinue()}
             isLoading={submitting}
-            disabled={!confirmed || !recoveryBundle}
+            disabled={!confirmed || !recoveryBundle || !copied || !backupAcknowledged}
             className="w-full"
           >
             Continue
@@ -815,7 +827,7 @@ function StepConnect({
 }) {
   const router = useRouter();
   const { user } = useUser();
-  const { isConnected } = useWorkerStatus();
+  const { isConnected } = useWorkerStatus({ refreshInterval: 3000 });
   const { data: enrollments, mutate: mutateEnrollments } = useSWR<WorkerEnrollmentStatusResponse[]>(
     user ? workerEnrollmentUrl() : null,
     fetcher,
@@ -919,7 +931,7 @@ nenjo run`;
 
         setNenjiIdentity({
           roleId: systemAgent.id,
-          color: systemAgent.color,
+          color: NENJI_SEED_COLOR,
         });
 
         const session = await createChatSession({
@@ -929,7 +941,11 @@ nenjo run`;
 
         setGreeting("thinking");
 
-        const displayName = user?.firstName ?? user?.username ?? "there";
+        const displayName =
+          user?.firstName ??
+          user?.username ??
+          user?.primaryEmailAddress?.emailAddress ??
+          "there";
         sessionStorage.setItem(
           LOCAL_CHAT_SEED_KEY,
           JSON.stringify({
@@ -1098,9 +1114,6 @@ nenjo run`;
             <div>
               <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 Waiting for worker connection...
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Polling every 10 seconds
               </p>
             </div>
           </div>
@@ -1668,8 +1681,8 @@ export default function OnboardingContent() {
   );
 
   const gateFailure = (
-    <div className="space-y-4 py-6">
-      <div className="rounded-lg border border-flag-red-200 bg-flag-red-50 p-4 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-400">
+    <div className="mx-auto w-full max-w-sm space-y-4 py-6">
+      <div className="rounded-lg border border-[#ff5555]/40 bg-[#ff5555]/10 p-4 text-sm text-[#ff8888]">
         {gateError ?? "Failed to determine whether this device should onboard or restore."}
       </div>
       <Button onClick={() => window.location.reload()} className="w-full">
@@ -1688,7 +1701,7 @@ export default function OnboardingContent() {
 
       <div
         key={`${onboardingMode}-${currentStep}`}
-        className="animate-fade-in-up"
+        className="onboarding-step-panel animate-fade-in-up"
       >
         {onboardingMode === "restore" ? (
           <StepRestoreDevice
@@ -1710,7 +1723,6 @@ export default function OnboardingContent() {
 
         {onboardingMode === "fresh" && currentStep === 2 && (
           <StepSecureWorkspace
-            userId={accountUserId ?? user.id}
             onContinue={() => setCurrentStep(3)}
           />
         )}
@@ -1746,7 +1758,7 @@ export default function OnboardingContent() {
 
         {onboardingMode === "fresh" && currentStep === 1 && (
           <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
-            Welcome{user.firstName ? `, ${user.firstName}` : ""}! Let&apos;s get your organization set up.
+            Welcome{user.firstName ? `, ${user.firstName}` : user.primaryEmailAddress?.emailAddress ? `, ${user.primaryEmailAddress.emailAddress}` : ""}! Let&apos;s get your organization set up.
           </p>
         )}
       </div>
@@ -1758,17 +1770,16 @@ export default function OnboardingContent() {
   );
 
   return (
-    <div className="flex min-h-screen lg:overflow-hidden">
+    <div className="onboarding-landing dark flex min-h-screen bg-[#05070f] text-[#eaeef8] lg:overflow-hidden">
       {/* Left panel – branding */}
-      <div className="hidden lg:flex lg:w-1/2 relative flex-col justify-between bg-deep-space-blue-900 p-12 text-white overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 bg-linear-to-br from-deep-space-blue-800 via-deep-space-blue-900 to-gray-900" />
-        <div className="pointer-events-none absolute -bottom-32 -left-32 h-[500px] w-[500px] rounded-full bg-deep-space-blue-700/30 blur-3xl" />
-        <div className="pointer-events-none absolute -top-20 -right-20 h-[400px] w-[400px] rounded-full bg-vivid-tangerine-500/10 blur-3xl" />
+      <div className="onboarding-brand-panel relative hidden overflow-hidden border-r border-white/10 bg-[#05070f] p-12 text-white lg:flex lg:w-1/2 lg:flex-col lg:justify-between">
+        <div className="onboarding-brand-grid" />
+        <div className="onboarding-brand-glow" />
 
         <div className="relative z-10">
           <Link
             href="/"
-            className="inline-flex items-center gap-3 text-white transition-colors hover:text-deep-space-blue-200"
+            className="onboarding-brand-link inline-flex items-center gap-3 text-white transition-colors"
           >
             <NenjoLogoMark className="h-10 w-10 rounded-lg" />
             <span className="text-sm font-light tracking-[0.25em] text-white uppercase">
@@ -1779,8 +1790,8 @@ export default function OnboardingContent() {
 
         <div className="relative z-10 flex flex-col items-start gap-8">
           <div className="flex flex-col gap-2">
-            <span className="text-8xl font-light tracking-wider text-white/90 leading-none">念</span>
-            <span className="text-8xl font-light tracking-wider text-white/90 leading-none">助</span>
+            <span className="onboarding-kanji text-8xl font-light tracking-wider leading-none">念</span>
+            <span className="onboarding-kanji text-8xl font-light tracking-wider leading-none">助</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -1789,7 +1800,7 @@ export default function OnboardingContent() {
           </div>
 
           <div className="max-w-md space-y-4">
-            <h2 className="text-2xl font-semibold leading-snug text-white/95">
+            <h2 className="onboarding-quote text-2xl font-semibold leading-snug text-white/95">
               &ldquo;Mindful assistance&rdquo;
             </h2>
             <p className="text-base leading-relaxed text-white/60">
@@ -1815,12 +1826,12 @@ export default function OnboardingContent() {
       </div>
 
       {/* Right panel – onboarding wizard */}
-      <div className="flex min-h-screen w-full flex-col items-center justify-center overflow-y-auto bg-gray-100 px-4 py-8 dark:bg-gray-950 sm:px-6 sm:py-10 lg:w-1/2 lg:px-8 lg:py-12">
-        <div className={`w-full transition-[max-width] duration-300 ease-in-out ${maxWidth}`}>
+      <div className="onboarding-wizard-panel flex min-h-screen w-full flex-col items-center justify-center overflow-y-auto bg-[#080c18] px-4 py-8 sm:px-6 sm:py-10 lg:w-1/2 lg:px-8 lg:py-12">
+        <div className={`onboarding-wizard-card w-full transition-[max-width] duration-300 ease-in-out ${maxWidth}`}>
           <div className="mb-6 text-center lg:hidden">
             <Link
               href="/"
-              className="inline-flex items-center gap-3 text-deep-space-blue-600 transition-colors hover:text-deep-space-blue-500 dark:text-deep-space-blue-300 dark:hover:text-deep-space-blue-200"
+              className="onboarding-brand-link inline-flex items-center gap-3 transition-colors"
             >
               <NenjoLogoMark className="h-10 w-10 rounded-lg" />
               <span className="text-sm font-light uppercase tracking-[0.25em]">

@@ -448,9 +448,10 @@ function UserProfile({ collapsed = false }: { collapsed?: boolean }) {
     (account) => account.provider === "github",
   );
   const githubUsername = githubAccount?.username ?? user?.username;
-  const displayName = githubUsername ?? user?.fullName ?? "User";
+  const email = user?.primaryEmailAddress?.emailAddress;
+  const displayName = githubUsername ?? user?.fullName ?? email ?? "User";
   const imageUrl = user?.imageUrl;
-  const initials = user?.firstName?.[0] ?? "U";
+  const initials = (user?.firstName ?? email ?? "U").trim()[0]?.toUpperCase() ?? "U";
 
   const textClasses = cn(
     "whitespace-nowrap transition-[opacity,transform] duration-200 ease-in-out",
@@ -543,11 +544,11 @@ function UserProfile({ collapsed = false }: { collapsed?: boolean }) {
         )}
         <div className={cn("flex-1 min-w-0", textClasses)}>
           <p className="text-sm font-medium text-gray-900 truncate dark:text-gray-100">
-            {user?.fullName ?? displayName}
+            {displayName}
           </p>
-          {githubUsername && (
+          {(githubUsername || (email && displayName !== email)) && (
             <p className="text-xs text-gray-500 truncate dark:text-gray-400">
-              @{githubUsername}
+              {githubUsername ? `@${githubUsername}` : email}
             </p>
           )}
         </div>

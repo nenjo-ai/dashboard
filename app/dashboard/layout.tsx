@@ -14,7 +14,7 @@ import { MobileMenuProvider } from "@/lib/MobileMenuContext";
 import { OrgProvider } from "@/lib/org-context";
 
 /** Routes under /dashboard that should NOT show the sidebar chrome. */
-const CHROMELESS_ROUTES = ["/dashboard/login", "/dashboard/onboarding", "/dashboard/invitations"];
+const CHROMELESS_ROUTES = ["/dashboard/login", "/dashboard/signup", "/dashboard/onboarding", "/dashboard/invitations"];
 const CLERK_ENABLED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 export default function DashboardLayout({
@@ -25,7 +25,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
 
   if (!CLERK_ENABLED) {
-    if (pathname.startsWith("/dashboard/login")) {
+    if (pathname.startsWith("/dashboard/login") || pathname.startsWith("/dashboard/signup")) {
       return <>{children}</>;
     }
     return <ClerkConfigurationNotice />;

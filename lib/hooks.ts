@@ -682,15 +682,19 @@ export function useAgentAbilities(agentId: string | undefined) {
 // ---------------------------------------------------------------------------
 
 /**
- * Poll the backend every 10 seconds to check if the user's agent worker
+ * Poll the backend to check if the user's agent worker
  * is connected via WebSocket. Uses Redis on the backend so it works
  * correctly across horizontally-scaled backend nodes.
  */
-export function useWorkerStatus() {
+export function useWorkerStatus(options?: { refreshInterval?: number }) {
   const { data, error, isLoading, mutate } = useSWR<import("./types").WorkerStatus>(
     workerStatusUrl(),
     fetcher,
-    { revalidateOnFocus: true, refreshInterval: 10000, dedupingInterval: 5000 },
+    {
+      revalidateOnFocus: true,
+      refreshInterval: options?.refreshInterval ?? 10000,
+      dedupingInterval: Math.min(5000, options?.refreshInterval ?? 10000),
+    },
   );
 
   return {
