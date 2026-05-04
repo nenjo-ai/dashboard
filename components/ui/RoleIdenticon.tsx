@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { createAvatar } from "@dicebear/core";
-import { rings } from "@dicebear/collection";
+import * as rings from "@dicebear/rings";
 import { AnimatedRoleIdenticon } from "./AnimatedRoleIdenticon";
 import { SystemRoleIcon } from "./SystemRoleIcon";
 
@@ -30,16 +30,6 @@ export function RoleIdenticon({
   const resolvedName = name ?? roleName;
   const isSystemRole = resolvedName?.trim().toLowerCase() === "system";
 
-  if (isSystemRole) {
-    return (
-      <SystemRoleIcon
-        size={size}
-        className={className}
-        animate={animate}
-      />
-    );
-  }
-
   const dataUri = useMemo(() => {
     // DiceBear expects hex colors without the '#' prefix
     const hex = color.startsWith("#") ? color.slice(1) : color;
@@ -50,6 +40,16 @@ export function RoleIdenticon({
     });
     return avatar.toDataUri();
   }, [roleId, color, size]);
+
+  if (isSystemRole) {
+    return (
+      <SystemRoleIcon
+        size={size}
+        className={className}
+        animate={animate}
+      />
+    );
+  }
 
   if (animate) {
     return (
