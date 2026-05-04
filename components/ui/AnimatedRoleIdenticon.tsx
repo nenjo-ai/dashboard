@@ -2,7 +2,7 @@
 
 import { useId, useMemo, useRef, useEffect } from "react";
 import { createAvatar } from "@dicebear/core";
-import { rings } from "@dicebear/collection";
+import * as rings from "@dicebear/rings";
 
 interface AnimatedRoleIdenticonProps {
   roleId: string;

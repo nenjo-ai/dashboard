@@ -6,15 +6,16 @@
     "dev": "next dev --turbopack",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "license:check": "npx license-checker-rseidelsohn --production --excludePrivatePackages --onlyAllow \"MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;Zlib;0BSD;CC0-1.0;Unicode-3.0;Unicode-DFS-2016\""
   },
   "dependencies": {
     "@clerk/nextjs": "^6.37.4",
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/state": "^6.5.4",
     "@codemirror/view": "^6.39.15",
-    "@dicebear/collection": "^9.3.2",
     "@dicebear/core": "^9.3.2",
+    "@dicebear/rings": "^9.3.2",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -23,7 +24,6 @@
     "@vercel/analytics": "^2.0.1",
     "@xyflow/react": "^12.10.0",
     "fumadocs-core": "^16.6.17",
-    "fumadocs-mdx": "^14.2.10",
     "fumadocs-ui": "^16.6.17",
     "jszip": "^3.10.1",
     "lucide-react": "^0.577.0",
@@ -47,6 +47,7 @@
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.1.6",
+    "fumadocs-mdx": "^14.2.10",
     "postcss": "^8.4.32",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.3.3"
