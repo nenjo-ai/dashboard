@@ -25,7 +25,7 @@ import { cn } from "@/lib/cn";
 import { useTabParam, useWorkerStatus } from "@/lib/hooks";
 import { useOrgContext } from "@/lib/org-context";
 
-const SETTINGS_TABS = ["general", "org", "workers", "devices", "keys"] as const;
+const SETTINGS_TABS = ["general", "org", "runtime", "devices", "keys"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 function SettingsIntro({
@@ -212,7 +212,7 @@ function SettingsContent() {
   const tabs = [
     { id: "general", label: "General", icon: <Palette className="h-4 w-4" /> },
     { id: "org", label: "Org", icon: <Building2 className="h-4 w-4" /> },
-    { id: "workers", label: "Runtime", icon: <Cpu className="h-4 w-4" /> },
+    { id: "runtime", label: "Runtime", icon: <Cpu className="h-4 w-4" /> },
     { id: "devices", label: "Devices", icon: <HardDrive className="h-4 w-4" /> },
     { id: "keys", label: "Keys", icon: <KeyRound className="h-4 w-4" /> },
   ] satisfies Array<{ id: SettingsTab; label: string; icon: React.ReactNode }>;
@@ -279,7 +279,7 @@ function SettingsContent() {
 
         {activeTab === "org" && <OrgSettingsSection />}
 
-        {activeTab === "workers" && (
+        {activeTab === "runtime" && (
           <div className="space-y-6">
             <WorkerStatusPanel />
             <ContentEncryptionSection mode="workers" />
