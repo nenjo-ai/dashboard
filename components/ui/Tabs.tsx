@@ -3,12 +3,14 @@
 import { cn } from "@/lib/cn";
 import { motion } from "motion/react";
 import { ChevronDown } from "lucide-react";
+import Link from "next/link";
 
 interface Tab {
   id: string;
   label: string;
   count?: number;
   icon?: React.ReactNode;
+  href?: string;
 }
 
 interface TabsProps {
@@ -47,18 +49,14 @@ export function Tabs({ tabs, activeTab, onChange, className, layoutId = "tab-ind
       >
         {tabs.map((tab) => {
           const isActive = tab.id === activeTab;
-          return (
-            <button
-              type="button"
-              key={tab.id}
-              onClick={() => onChange(tab.id)}
-              className={cn(
-                "relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                isActive
-                  ? "text-gray-900 dark:text-gray-100"
-                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
-              )}
-            >
+          const className = cn(
+            "relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+            isActive
+              ? "text-gray-900 dark:text-gray-100"
+              : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
+          );
+          const content = (
+            <>
               {isActive && (
                 <motion.div
                   layoutId={layoutId}
@@ -82,6 +80,25 @@ export function Tabs({ tabs, activeTab, onChange, className, layoutId = "tab-ind
                   </span>
                 )}
               </span>
+            </>
+          );
+
+          if (tab.href) {
+            return (
+              <Link key={tab.id} href={tab.href} scroll={false} className={className}>
+                {content}
+              </Link>
+            );
+          }
+
+          return (
+            <button
+              type="button"
+              key={tab.id}
+              onClick={() => onChange(tab.id)}
+              className={className}
+            >
+              {content}
             </button>
           );
         })}

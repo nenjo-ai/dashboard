@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import {
   Bell,
   BellOff,
@@ -210,12 +210,12 @@ function SettingsContent() {
   };
 
   const tabs = [
-    { id: "general", label: "General", icon: <Palette className="h-4 w-4" /> },
-    { id: "org", label: "Org", icon: <Building2 className="h-4 w-4" /> },
-    { id: "runtime", label: "Runtime", icon: <Cpu className="h-4 w-4" /> },
-    { id: "devices", label: "Devices", icon: <HardDrive className="h-4 w-4" /> },
-    { id: "keys", label: "Keys", icon: <KeyRound className="h-4 w-4" /> },
-  ] satisfies Array<{ id: SettingsTab; label: string; icon: React.ReactNode }>;
+    { id: "general", label: "General", icon: <Palette className="h-4 w-4" />, href: "/dashboard/settings" },
+    { id: "org", label: "Org", icon: <Building2 className="h-4 w-4" />, href: "/dashboard/settings?tab=org" },
+    { id: "runtime", label: "Runtime", icon: <Cpu className="h-4 w-4" />, href: "/dashboard/settings?tab=runtime" },
+    { id: "devices", label: "Devices", icon: <HardDrive className="h-4 w-4" />, href: "/dashboard/settings?tab=devices" },
+    { id: "keys", label: "Keys", icon: <KeyRound className="h-4 w-4" />, href: "/dashboard/settings?tab=keys" },
+  ] satisfies Array<{ id: SettingsTab; label: string; icon: React.ReactNode; href: string }>;
 
   const content = (
     <PageContent className="py-6 md:py-8">
@@ -310,5 +310,9 @@ function SettingsContent() {
 }
 
 export default function SettingsPage() {
-  return <SettingsContent />;
+  return (
+    <Suspense>
+      <SettingsContent />
+    </Suspense>
+  );
 }
