@@ -601,8 +601,9 @@ function MyDeviceAccessPanel({
   const [busy, setBusy] = useState(false);
   const autoRequestedRef = useRef(false);
   const autoUnlockingRef = useRef(false);
+  const accessRequestDeviceId = hasLocalAccess === false ? deviceId ?? undefined : undefined;
   const { request, mutate, isLoading: requestLoading } = useCurrentOrgContentKeyAccessRequest(
-    deviceId ?? undefined,
+    accessRequestDeviceId,
   );
   const roleAllowsRecovery = currentRole === "owner" || currentRole === "admin";
 
