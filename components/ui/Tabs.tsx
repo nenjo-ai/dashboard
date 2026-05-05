@@ -49,6 +49,7 @@ export function Tabs({ tabs, activeTab, onChange, className, layoutId = "tab-ind
           const isActive = tab.id === activeTab;
           return (
             <button
+              type="button"
               key={tab.id}
               onClick={() => onChange(tab.id)}
               className={cn(
@@ -61,7 +62,7 @@ export function Tabs({ tabs, activeTab, onChange, className, layoutId = "tab-ind
               {isActive && (
                 <motion.div
                   layoutId={layoutId}
-                  className="theme-surface-elevated absolute inset-0 rounded-md shadow-xs"
+                  className="theme-surface-elevated pointer-events-none absolute inset-0 rounded-md shadow-xs"
                   transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
                 />
               )}
