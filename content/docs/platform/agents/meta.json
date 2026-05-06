@@ -1,0 +1,13 @@
+{
+  "title": "Agents",
+  "pages": [
+    "index",
+    "prompt-config",
+    "prompt-templating",
+    "abilities",
+    "domains",
+    "models",
+    "memory",
+    "mcp"
+  ]
+}
