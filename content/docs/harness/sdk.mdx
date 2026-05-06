@@ -1,0 +1,145 @@
+---
+title: SDK
+description: Rust SDK for turn loops, manifest parsing, provider builders, and runtime APIs
+icon: Code
+slug: harness/sdk
+order: 61
+tags:
+  - sdk
+  - rust
+  - manifest
+  - provider builder
+  - runtime
+---
+
+# SDK
+
+The Nenjo SDK is the developer-facing Rust library for building Nenjo-powered systems in code. It provides embeddable runtime APIs, manifest parsing, provider builders, and tool integration.
+
+## Purpose
+
+The SDK serves developers who want to:
+
+- Author Nenjo resources as local manifest files
+- Embed agent runners in Rust applications
+- Build custom model and tool providers
+- Compose memory, prompt context, and execution loops programmatically
+
+## Key Components
+
+### Manifest Files
+
+Declarative resource definitions in YAML or JSON format:
+
+```yaml
+# Example agent manifest
+id: my-agent
+name: My Agent
+model: gpt-4
+prompt: |
+  You are a helpful assistant.
+  Current project: {{ project.name }}
+abilities:
+  - web-search
+  - code-interpreter
+scopes:
+  - read:projects
+  - write:tasks
+```
+
+Supported resource types:
+- **Agents**: Prompt config, model, memory, scopes, abilities, domains
+- **Abilities**: Reusable specialist execution modes
+- **Domains**: Execution-mode addons with guidance and scopes
+- **Routines**: Workflow graphs with steps, gates, and councils
+- **Councils**: Multi-agent collaboration groups
+- **Projects**: Work containers with documents and settings
+
+### Provider Builder APIs
+
+Composable Rust APIs for runtime construction:
+
+```rust
+use nenjo::prelude::*;
+
+let provider = ProviderBuilder::new()
+    .with_modelFactory Ollama::default()
+    .with_tool_factory(FileSystem::default())
+    .with_memory(Sqlite::memory("agent.db"))
+    .build();
+
+let agent = provider.agent("my-agent")
+    .with_context(project_context)
+    .run();
+```
+
+Key traits:
+- `ModelFactory`: Backend for model inference (OpenAI, Ollama, Anthropic, custom)
+- `ToolFactory`: External tool integration (file system, API calls, custom)
+- `Memory`: Session and semantic memory storage
+- `AgentRunner`: Execution orchestration and turn handling
+
+### Turn Loops
+
+Execution patterns for multi-step conversations:
+
+```rust
+let mut agent = provider.agent("my-agent");
+
+// Single turn
+let response = agent.turn("What's the project status?").await?;
+
+// Multi-turn conversation
+let mut conv = agent.conversation();
+conv.say("Analyze the codebase").await?;
+conv.say("Summarize findings").await?;
+let summary = conv.read().await?;
+```
+
+### Hot Reload
+
+Development workflow for rapid iteration:
+
+```rust
+use nenjo::hot::ManifestWatcher;
+
+let watcher = ManifestWatcher::new("manifests/")
+    .on_change(|resource| {
+        println!("Reloading: {}", resource.id);
+    });
+
+watcher.start().await?;
+```
+
+The watcher monitors manifest directory changes and reloads resources without restarting the application.
+
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+nenjo = { version = "0.1", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
+```
+
+## Runtime API Overview
+
+| Module | Purpose |
+|--------|---------|
+| `nenjo::agent` | Agent definition, runner, and turn handling |
+| `nenjo::manifest` | Parse and validate resource manifests |
+| `nenjo::provider` | Model, tool, and memory provider builders |
+| `nenjo::memory` | Session and semantic memory implementations |
+| `nenjo::context` | Prompt template variables and rendering |
+| `nenjo::knowledge` | Builtin and project knowledge APIs |
+
+## Manifest Schema Reference
+
+See the SDK domain documentation (`builtin::nenjo/domain/sdk.md`) for complete manifest field reference and validation rules.
+
+## Related Resources
+
+- [Worker](./worker): Always-on execution service
+- [Resource Surface Taxonomy](/taxonomy/resource-surfaces): Platform vs SDK surface routing
+- [Template Variables](/reference/template-vars): Prompt context variables
