@@ -1,0 +1,111 @@
+---
+title: Prompt Configuration
+description: Agent prompt configuration covering system prompt, developer prompt, and mode-specific templates.
+icon: FileText
+slug: platform/agents/prompt-config
+order: 1
+tags: [domain:prompting, resource:prompt_config, operation:configure, audience:agent]
+---
+
+# Prompt Configuration
+
+Agent prompts are split into stable, versionable parts. Prompt content is stored as a dedicated subresource — metadata updates (name, model, assignments) and prompt updates are treated as **separate operations**.
+
+## Core Prompt Components
+
+An agent's prompt configuration consists of three main parts:
+
+### System Prompt
+
+The foundational, immutable identity and principles of the agent. Rarely changes.
+
+```jinja
+You are {{ agent.name }}.
+
+Role:
+{{ agent.description }}
+
+Operate as a pragmatic implementation agent. Use project documents and builtin
+knowledge when the user asks about project conventions or Nenjo platform
+concepts. Keep answers grounded in retrieved evidence.
+```
+
+**Best for:**
+- Role and responsibility
+- Decision principles
+- Communication style
+- Safety or policy constraints
+- Required use of tools for certain classes of work
+
+### Developer Prompt
+
+High-signal guidance that shapes behavior, reasoning style, and tool usage. Updated more frequently than system prompt.
+
+```jinja
+You are {{ agent.name }}.
+
+Role:
+{{ agent.description }}
+
+Use builtin Nenjo knowledge when the user asks about Nenjo concepts:
+{{ builtin_documents }}
+
+User request:
+{{ chat.message }}
+```
+
+**Best for:**
+- Team engineering standards
+- Review methodology
+- Domain-specific operating rules
+- Delegation policy
+
+### Mode-Specific Templates
+
+Specialized wrappers for different runtime contexts:
+
+| Template | Purpose | Key Variables |
+|----------|---------|---------------|
+| `prompt_config.task` | Project task execution | `{{ task }}`, `{{ task.acceptance_criteria }}` |
+| `prompt_config.chat` | Direct user conversation | `{{ chat.message }}` |
+| `prompt_config.gate` | Evidence evaluation | `{{ gate.criteria }}`, `{{ gate.previous_output }}` |
+| `prompt_config.cron` | Scheduled jobs | `{{ task }}`, `{{ heartbeat.last_run_at }}` |
+| `prompt_config.heartbeat` | Autonomous maintenance | `{{ heartbeat.previous_output }}` |
+
+## Prompt Locking
+
+Agents support prompt locking. A **locked prompt** can still be read but cannot be mutated until unlocked. This is useful for production agents where behavior must remain stable.
+
+```
+┌─────────────────────────────────────────┐
+│           Agent Prompt State             │
+├─────────────────────────────────────────┤
+│  system_prompt    │ locked: false       │
+│  developer_prompt │ locked: false       │
+│  prompt_config    │ locked: true        │
+└─────────────────────────────────────────┘
+```
+
+## Prompt Versioning
+
+Since prompt content is stored as a dedicated subresource, you can:
+- Update metadata without changing prompts
+- Update prompts without changing assignments
+- Roll back to previous prompt versions
+- View prompt history and changes
+
+## Best Practices
+
+1. **Keep system prompts stable** — Use them for core identity, not task details
+2. **Separate concerns** — Put reusable policy in developer prompts, not system prompts
+3. **Use mode templates appropriately** — Don't put task details in chat templates
+4. **Lock production agents** — Prevent accidental behavior changes
+5. **Version your prompts** — Track changes over time
+
+## Related Concepts
+
+- **[Prompt Templating](/docs/platform/agents/prompt-templating)** — Template variables and context blocks
+- **[Memory](/docs/platform/agents/memory)** — Memory profiles for context
+- **[Template Vars](/builtin/nenjo/reference/template_vars)** — Complete variable reference
+
+This documentation is grounded in builtin knowledge. See [builtin::nenjo/guide/agents](/builtin/nenjo/guide/agents) for the canonical reference.

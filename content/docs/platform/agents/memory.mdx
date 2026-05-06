@@ -1,0 +1,136 @@
+---
+title: Memory
+description: Scoped agent memory system covering core, project, and shared memory behavior.
+icon: Database
+order: 36
+---
+
+# Memory
+
+Every agent maintains a memory system with three distinct scopes: **core**, **project**, and **shared**. A `memory_profile` defines what the agent remembers and where it stores that knowledge.
+
+## The Three Memory Scopes
+
+| Scope | What It Stores | Visibility | Typical Content |
+|---|---|---|---|
+| **core_focus** | Long-term, cross-project knowledge | Global to the agent | Methodology, personality, core principles |
+| **project_focus** | Knowledge specific to one project | Isolated per project | Task history, decisions, acceptance criteria |
+| **shared_focus** | Knowledge shared across projects | Visible across projects | Reusable patterns, team conventions |
+
+## Memory Profile
+
+A memory profile is attached to every agent and defines focus areas for each scope. Profiles are defined in CSV format or YAML:
+
+```yaml
+memory_profile:
+  core_focus:
+    - user corrections
+    - methodology
+    - long-term principles
+    - personality traits
+  project_focus:
+    - task decisions
+    - acceptance criteria
+    - project documents
+    - stakeholder preferences
+  shared_focus:
+    - reusable patterns
+    - team conventions
+    - common solutions
+```
+
+## Runtime Behavior
+
+- Memory is automatically scoped at runtime based on the active profile
+- The agent can only read/write within defined scopes
+- `project_focus` memory is isolated per project
+- `core_focus` and `shared_focus` are visible across projects
+- Memory is injected via template variables:
+
+```jinja
+{{ memories.core }}
+{{ memories.project }}
+{{ memories.shared }}
+```
+
+## Memory Template Variables
+
+| Variable | Description |
+|---|---|
+| `{{ memories }}` | All memory scopes combined |
+| `{{ memories.core }}` | Core focus memories |
+| `{{ memories.project }}` | Project-specific memories |
+| `{{ memories.shared }}` | Shared cross-project memories |
+| `{{ memory_profile }}` | The agent's memory profile definition |
+| `{{ memory_profile.core_focus }}` | Core focus configuration |
+| `{{ memory_profile.project_focus }}` | Project focus configuration |
+| `{{ memory_profile.shared_focus }}` | Shared focus configuration |
+
+## Common Patterns
+
+### Specialist Agent
+
+Heavy `project_focus`, light `core_focus`, minimal `shared_focus`:
+
+```yaml
+memory_profile:
+  core_focus:
+    - methodology
+  project_focus:
+    - task history
+    - acceptance criteria
+    - stakeholder preferences
+  shared_focus: []
+```
+
+### Bootstrap Agent (Nenji)
+
+Strong `core_focus` + broad `shared_focus`:
+
+```yaml
+memory_profile:
+  core_focus:
+    - methodology
+    - platform patterns
+    - user preferences
+  project_focus: []
+  shared_focus:
+    - reusable patterns
+    - team conventions
+```
+
+### Council Member
+
+Balanced `core_focus` + strong `shared_focus`:
+
+```yaml
+memory_profile:
+  core_focus:
+    - delegation strategy
+    - methodology
+  project_focus:
+    - project context
+  shared_focus:
+    - council patterns
+    - delegation outcomes
+```
+
+## Best Practices
+
+- **Start simple**: Begin with only `project_focus` and expand later
+- **Keep core_focus focused**: Timeless principles and methodology
+- **Use shared_focus for genuinely reusable patterns**
+- **Regularly review and prune** memory profiles
+- **Make profiles visible** in the UI
+
+## Anti-Patterns
+
+- Putting project-specific data into `core_focus` (causes leakage)
+- Leaving memory_profile undefined on long-running agents
+- Forgetting to update `project_focus` after requirements change
+- Overloading `shared_focus` with low-value information
+
+## Related Documentation
+
+- [Prompt Configuration](prompt-config.mdx) — Prompt setup
+- [Prompt Templating](prompt-templating.mdx) — Template variables
