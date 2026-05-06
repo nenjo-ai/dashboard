@@ -1,0 +1,109 @@
+---
+title: Cron & Scheduling
+description: How to trigger routines on a schedule using cron expressions.
+icon: Clock
+order: 6
+---
+
+Cron triggers start routines on a defined schedule. This is useful for periodic maintenance, monitoring, data synchronization, and other time-based workflows.
+
+## Cron Trigger Basics
+
+A cron trigger uses a **cron expression** to define when the routine runs. The expression follows the standard 5-field cron format:
+
+```
+┌───────────── minute (0-59)
+│ ┌───────────── hour (0-23)
+│ │ ┌───────────── day of month (1-31)
+│ │ │ ┌───────────── month (1-12)
+│ │ │ │ ┌───────────── day of week (0-6)
+│ │ │ │ │
+* * * * *
+```
+
+---
+
+## Cron Expression Examples
+
+| Expression | Runs |
+|------------|------|
+| `0 * * * *` | Every hour at :00 |
+| `0 0 * * *` | Daily at midnight |
+| `0 9 * * 1-5` | Weekdays at 9 AM |
+| `0 */6 * * *` | Every 6 hours |
+| `30 14 * * 1-5` | Weekdays at 2:30 PM |
+
+---
+
+## Using Cron Triggers
+
+To create a cron-triggered routine, set the trigger type to `cron`:
+
+```json
+{
+  "name": "daily-backup",
+  "trigger": {
+    "type": "cron",
+    "schedule": "0 2 * * *"
+  },
+  "steps": [
+    {
+      "id": "backup-agent",
+      "type": "agent",
+      "agent_id": "backup-001"
+    },
+    {
+      "id": "terminal",
+      "type": "terminal"
+    }
+  ],
+  "edges": [
+    {
+      "from": "backup-agent",
+      "to": "terminal"
+    }
+  ]
+}
+```
+
+---
+
+## Common Use Cases
+
+### Periodic Maintenance
+- Database cleanup and optimization
+- Log rotation and archiving
+- Temporary file cleanup
+
+### Monitoring
+- Health check routines
+- System status polling
+- Alert verification
+
+### Data Synchronization
+- External API syncs
+- Backup operations
+- Report generation
+
+### Scheduled Notifications
+- Daily digest generation
+- Reminder workflows
+- Status updates
+
+---
+
+## Best Practices
+
+1. **Use descriptive routine names** — Make it clear what the scheduled routine does
+2. **Add error handling** — Route failures to `terminal_fail` with notifications
+3. **Consider timezone** — Cron expressions are typically UTC unless configured otherwise
+4. **Set up monitoring** — Track execution success/failure for scheduled routines
+5. **Avoid overlapping runs** — If the routine takes significant time, ensure new runs don't start while previous ones are still executing
+
+---
+
+## Related
+
+- [Routines Overview](/docs/routines) — Workflow graph concepts
+- [Step Types](/docs/routines/step-types) — Step type reference
+- [Executions](/docs/routines/executions) — Runtime execution model

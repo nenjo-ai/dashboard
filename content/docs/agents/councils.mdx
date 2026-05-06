@@ -1,0 +1,122 @@
+---
+title: Councils
+description: Structured multi-agent collaboration groups with leaders, members, and delegation strategies.
+icon: Users
+order: 6
+---
+
+Councils are **structured multi-agent collaboration groups** designed for work that benefits from multiple perspectives, decomposition, synthesis, adversarial review, or deliberate decision-making.
+
+## What is a Council?
+
+A council consists of:
+
+- **Leader Agent** — Coordinates the collaboration and synthesizes the final output
+- **Members** — One or more additional agents with defined roles and priorities
+- **Delegation Strategy** — Defines how work is distributed among members
+
+---
+
+## When to Use a Council
+
+**Use a council when:**
+- Multiple specialist perspectives are needed
+- Parallel subtasking is valuable
+- Adversarial review or critique improves quality
+- Explicit synthesis of different outputs is required
+- Voting or comparative judgment is needed
+- Complex decision-making benefits from structured debate
+
+**Do not use a council** when a single strong agent (with one or two abilities) would be simpler and clearer.
+
+---
+
+## Delegation Strategies
+
+| Strategy | Description | Best Used When |
+|----------|-------------|----------------|
+| **Dynamic** | Leader decides at runtime who to involve | Unpredictable work shape |
+| **Broadcast** | All members receive the same task independently | Need independent views |
+| **Decompose** | Leader breaks work into distinct subtasks | Naturally separable work |
+| **Round Robin** | Members work sequentially | Staged refinement |
+| **Vote** | Members respond independently; leader chooses | Selection between alternatives |
+
+---
+
+## Council Design
+
+### Leader Agent
+
+The leader agent:
+- Coordinates the overall collaboration
+- Usually synthesizes the final output
+- Distributes work according to the strategy
+- Makes the final decision (in Vote strategy)
+
+### Member Agents
+
+Good council members should be **deliberately distinct**:
+- Different role or lens on the problem
+- Different tools or scopes where appropriate
+- Clear reason to exist in the council
+
+**Anti-pattern:** Creating a council of near-identical agents adds cost without adding signal.
+
+---
+
+## Common Council Patterns
+
+### Code Review Council
+- Writer agent generates code
+- Reviewer agent critiques
+- Leader synthesizes and decides
+
+### Risk Assessment Council
+- Multiple domain experts evaluate risk dimensions
+- Leader synthesizes the risk report
+
+### Strategic Planning Council
+- Leader decomposes the problem
+- Specialists contribute their areas
+- Leader synthesizes the plan
+
+### Adversarial Review Council
+- Proposer agent presents the case
+- Critic agent challenges
+- Leader decides on the balance
+
+---
+
+## Councils in Routines
+
+Councils are typically used **inside routines** as a single step:
+
+```json
+{
+  "type": "council",
+  "council_id": "code-review-council",
+  "on_complete": "terminal",
+  "on_error": "terminal_fail"
+}
+```
+
+The routine treats the council as an atomic unit — the council runs, produces output, and returns a verdict.
+
+---
+
+## Best Practices
+
+1. **Keep councils small** — 3–5 members max
+2. **Make member roles explicit** — Each member should have a distinct purpose
+3. **Choose the strategy deliberately** — Based on the nature of the work
+4. **Use councils inside routines** — Rather than as top-level execution
+5. **Document why each member exists** — For maintainability
+
+---
+
+## Related
+
+- [Routines Overview](/docs/routines) — Workflow graph concepts
+- [Step Types](/docs/routines/step-types) — Council step type
+- [Workflow Patterns](/docs/workflows) — Pattern taxonomy
+- [Agents](/docs/agents) — Agent design reference

@@ -1,0 +1,103 @@
+---
+title: Executions
+description: Stateful runs that process project tasks through dispatch, lifecycle state, and progress tracking.
+icon: Play
+order: 5
+---
+
+Executions are **stateful runs** that process project tasks through the platform's dispatch system. An execution is the runtime container for coordinated task processing, not the task definition itself.
+
+## What is an Execution?
+
+An execution belongs to a project and controls:
+
+- Which tasks are linked into the run
+- How many tasks can run in parallel
+- The current lifecycle state of the run
+- Event and progress tracking for the run
+
+---
+
+## Lifecycle States
+
+An execution moves through the following states:
+
+| Status | Description |
+|--------|-------------|
+| `pending` | Created, awaiting start |
+| `running` | Actively processing tasks |
+| `paused` | Temporarily stopped |
+| `cancelled` | Stopped before completion |
+| `completed` | Finished successfully |
+
+---
+
+## Lifecycle Flow
+
+```
+pending → running → completed
+   │           ↓
+   │         paused
+   │           ↓
+   → cancelled
+```
+
+1. **Create** — Execution is created in `pending` status
+2. **Start** — A separate command starts the execution
+3. **Dispatch** — Ready work is dispatched up to `parallel_count`
+4. **Evaluate** — Dependents are re-evaluated as tasks finish
+5. **Complete** — Execution completes when no runnable work remains
+
+---
+
+## Key Properties
+
+- **parallel_count** — Maximum number of tasks that can run simultaneously
+- **linked_tasks** — Tasks assigned to this execution
+- **events** — History of state changes and transitions
+- **progress** — Current state of all linked tasks
+
+---
+
+## Monitoring Executions
+
+Executions provide strong observability:
+
+- Every state transition is recorded
+- Task progress is tracked in real-time
+- Events capture gate decisions and verdict changes
+- The full execution history is retained
+
+### Viewing Execution Status
+
+```bash
+# List executions for a project
+nenjo executions list --project my-project
+
+# Get execution details
+nenjo executions get <execution-id>
+
+# Monitor running execution
+nenjo executions watch <execution-id>
+```
+
+---
+
+## Integration with Routines
+
+When a task triggers a routine, an execution is created to run that routine:
+
+1. The task enters the ready state
+2. The task is linked to a routine execution
+3. The execution dispatches the routine
+4. Steps execute according to the graph
+5. The execution completes with terminal status
+
+---
+
+## Related
+
+- [Routines Overview](/docs/routines) — Workflow graph concepts
+- [Step Types](/docs/routines/step-types) — Step type reference
+- [Tasks](/docs/tasks) — Project task reference
+- [Projects](/docs/projects) — Project reference
