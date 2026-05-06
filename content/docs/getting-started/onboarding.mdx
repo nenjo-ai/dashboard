@@ -1,0 +1,123 @@
+---
+title: Onboarding
+description: Complete the onboarding flow — create organization, secure workspace, generate API keys, select models, and connect workers.
+icon: Shield
+order: 1
+---
+
+import { Callout, Steps } from 'fumadocs-ui/components/callout'
+
+Onboarding sets up your Nenjo workspace. After completing these steps, you'll have a fully configured environment ready for building with Nenji.
+
+## Prerequisites
+
+- A Nenjo account (sign up at the dashboard)
+- Access to an LLM provider (OpenAI, Anthropic, or Google)
+
+## Onboarding steps
+
+<Steps>
+
+### 1. Create your organization
+
+Organizations are the top-level container for your Nenjo resources. When you first sign up, you're prompted to create one.
+
+1. Navigate to **Settings → Organizations**
+2. Click **Create Organization**
+3. Enter a name for your organization
+4. Set the default timezone (used for scheduled tasks and routine triggers)
+
+Your organization owns all resources: agents, routines, councils, API keys, and projects.
+
+### 2. Secure your workspace
+
+Nenjo provides workspace-level security through encryption and device enrollment.
+
+**Content encryption**: Enable at-rest encryption for sensitive documents and prompt data.
+
+1. Go to **Settings → Security**
+2. Toggle **Enable Content Encryption**
+3. Store your encryption key in a secure location — you'll need it to recover encrypted content
+
+**Worker enrollment**: Enroll trusted workers that can execute your agent tasks.
+
+1. Go to **Settings → Workers**
+2. Click **Enroll Worker**
+3. Provide a worker name and description
+4. Copy the enrollment token — you'll use it when connecting the worker
+
+<Callout type="warn">
+  Never share your encryption key or worker enrollment token. Loss of the encryption key means permanent data loss.
+</Callout>
+
+### 3. Generate an API key
+
+API keys provide programmatic access to Nenjo. They're scoped tokens that control which resources and actions the key can access.
+
+1. Go to **Settings → API Keys**
+2. Click **Create API Key**
+3. Enter a name and select scopes:
+   - `agents:read` / `agents:write` — Agent management
+   - `routines:read` / `routines:write` — Routine management
+   - `tasks:read` / `tasks:write` — Task management
+   - `executions:read` / `executions:write` — Execution control
+   - `projects:read` / `projects:write` — Project access
+
+4. Copy the generated key — it's shown only once
+
+Use the API key in requests:
+
+```bash
+curl -H "Authorization: Bearer nj_your_api_key" \
+  https://api.nenjo.ai/v1/agents
+```
+
+### 4. Select a model
+
+Configure the default model used by agents unless explicitly overridden.
+
+1. Go to **Settings → Models**
+2. Select your primary provider (OpenAI, Anthropic, or Google)
+3. Choose a model variant (e.g., gpt-4o, claude-3-5-sonnet, gemini-2-flash)
+4. Set the model as default
+
+You can override the model per-agent or per-execution.
+
+### 5. Connect a worker
+
+Workers execute agent tasks and routine runs. Connect your first worker to enable automated execution.
+
+1. Install the Nenjo worker:
+   ```bash
+   npm install -g @nenjo/worker
+   ```
+
+2. Connect the worker to your workspace:
+   ```bash
+   nenjo worker connect --enrollment-token <your_token>
+   ```
+
+3. Verify the connection:
+   ```bash
+   nenjo worker status
+   ```
+
+The worker now appears in **Settings → Workers** with a green "Connected" status.
+
+</Steps>
+
+## Verification
+
+After completing onboarding, verify your setup:
+
+| Check | How to verify |
+|-------|-------------|
+| Organization created | Settings → Organizations shows your org |
+| Encryption enabled | Settings → Security shows "Enabled" |
+| API key works | `curl -H "Authorization: Bearer <key>" https://api.nenjo.ai/v1/whoami` |
+| Model available | Settings → Models shows default model |
+| Worker connected | Settings → Workers shows "Connected" status |
+
+## Next steps
+
+- [Chat with Nenji](/docs/getting-started/chat) — Start interacting with your AI assistant

@@ -1,4 +1,8 @@
 {
   "title": "Getting Started",
-  "pages": ["quickstart", "authentication", "architecture"]
+  "pages": [
+    "index",
+    "onboarding",
+    "chat"
+  ]
 }
