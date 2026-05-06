@@ -1,0 +1,43 @@
+---
+title: Harness
+description: Overview of the Nenjo harness, SDK, and Worker components for developers
+icon: W
+slug: harness
+order: 6
+tags:
+  - harness
+  - sdk
+  - worker
+  - developer
+---
+
+# Harness
+
+The Harness section covers the developer-facing components for building and operating Nenjo-powered systems locally. This includes the SDK for embeddable runtime, manifest authoring, and the Worker for always-on execution.
+
+## What's in This Section
+
+| Page | Description |
+|------|-------------|
+| [SDK](./sdk) | Rust SDK for turn loops, manifest parsing, provider builders, and runtime APIs |
+| [Worker](./worker) | Always-on worker service with NATS transport and capability-based execution |
+
+## Relationship to Platform
+
+The SDK and Worker complement the platform surface:
+
+- **Platform**: User-facing dashboard, chat, editors, and resource configuration
+- **SDK**: Local manifest files, runtime crates, and embeddable execution
+- **Worker**: Long-running service that connects SDK execution to platform transport and session systems
+
+When developing custom agents or integrations, use the SDK for local authoring and embed the runtime in your application. Connect to the Worker for always-on capability execution that can be triggered from platform chat or MCP tools.
+
+## Key Concepts
+
+- **Manifest files**: Declarative resource definitions for agents, abilities, domains, routines, councils, projects
+- **Provider builders**: Rust APIs for composing model loaders, tool factories, memory, and runners
+- **Turn loops**: Execution patterns for multi-step agent conversations
+- **Hot reload**: Development workflow for rapid iteration on manifests and runtime code
+- **NATS transport**: Message bus for Worker communication with the platform
+
+For more on resource surfaces and when to use SDK versus platform, see the [Resource Surface Taxonomy](/taxonomy/resource-surfaces).
