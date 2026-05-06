@@ -1,0 +1,105 @@
+---
+title: Nenji
+description: Nenji is the default platform guide and orchestrator for the Nenjo platform.
+icon: MessageSquare
+order: 3
+---
+
+**Nenji** is the default platform guide and orchestrator for the Nenjo platform. It provides conversational access to all Nenjo resources and guides users through the system.
+
+## What Nenji Does
+
+Nenji helps users with:
+
+- **Explaining Nenjo concepts** — Understanding agents, abilities, domains, routines, projects, and other resources
+- **Designing new resources** — Creating agents, routines, documents, prompts, and more
+- **Configuring resources** — Updating settings, permissions, memory profiles, and capabilities
+- **Orchestrating work** — Breaking down complex tasks, managing dependencies, and coordinating execution
+- **Troubleshooting** — Diagnosing issues with memory, prompts, permissions, or execution flow
+
+## Surface Awareness
+
+Nenji automatically identifies which **surface** the user is working on before recommending actions:
+
+| Surface | Description | When to Use |
+|---------|-------------|-------------|
+| **Platform** | Dashboard, chat, editors, settings, workers | User mentions chat, dashboard, project pages, editors, settings |
+| **SDK** | Manifests, local files, runtime embedding | User asks for manifests, local files, code embedding |
+
+**Platform-first default:** When a user asks about Nenjo at a high level, Nenji explains concepts without assuming either platform UI work or SDK manifest authoring.
+
+### Surface Routing Examples
+
+- "Create an agent" → Platform fields, editor flows, platform tools
+- "Show me the agent manifest" → SDK manifest JSON/YAML with field explanations
+- "How do I structure a routine?" → Routine editor graph structure
+- "How do I embed an agent in Rust?" → Provider builder, memory, runner APIs
+
+## Nenji as an Agent
+
+Nenji itself is an agent with specific characteristics:
+
+### Memory Profile
+
+- **Core focus:** Strong — Nenjo methodology, platform behavior, resource design principles
+- **Project focus:** Context-dependent — Current project documents and task context
+- **Shared focus:** Broad — Cross-project patterns, team conventions, common solutions
+
+### Capabilities
+
+Nenji has broad access to:
+- All platform resources (read/create/update)
+- Project and execution context
+- Agent, routine, and document editors
+- Settings and configuration
+- MCP server tools
+
+### Runtime Modes
+
+Nenji operates in multiple runtime modes depending on context:
+
+| Mode | When Triggered |
+|------|----------------|
+| `chat` | Direct user conversation |
+| `task` | Executing a project task |
+| `gate` | Evaluating evidence or readiness |
+| `design` | Creating or configuring resources |
+
+## Working with Nenji
+
+### Asking Good Questions
+
+- Be specific about what you want: "Explain agents" vs "Create an agent for code review"
+- Mention the surface when relevant: "Show me the SDK manifest" vs "Create it in the platform"
+- State your goal: "I need to orchestrate a multi-agent review flow"
+
+### Nenji Responses
+
+Nenji will:
+1. Identify your intent and the appropriate surface
+2. Explain relevant concepts and options
+3. Recommend concrete next actions or resources to create
+4. Offer to execute platform operations when ready
+
+### Following Up
+
+After Nenji creates or configures a resource:
+- Review the created resource in the appropriate editor
+- Test the resource in a safe context
+- Iterate with follow-up questions like "Add memory focus" or "Update the prompt"
+
+## Nenji Architecture
+
+As the bootstrap agent, Nenji is designed with these principles:
+
+- **Personality:** Helpful, clear, proactive
+- **Methodology:** Prefer explicit gates, structured workflows, and verification
+- **Memory:** Strong cross-project knowledge with clear scoping
+- **Permissions:** Broad platform-managed access (not self-assigned)
+
+## Related Documentation
+
+- [What is Nenjo](/docs/index) — Platform overview
+- [Building Blocks](/introduction/building-blocks) — Core resource concepts
+- [Agents](/docs/agents) — Agent architecture
+- [Memory](/docs/memory) — Memory system

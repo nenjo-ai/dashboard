@@ -1,0 +1,56 @@
+---
+title: What is Nenjo
+description: Nenjo is an agentic work system for designing, operating, and improving AI resources.
+icon: Bot
+order: 1
+---
+
+Nenjo is an **agentic work system** for designing, operating, and improving AI resources such as agents, abilities, domains, routines, councils, projects, tasks, memory, and knowledge documents.
+
+## Two Surfaces
+
+Nenjo has two main surfaces:
+
+- **Platform Surface** — Where users work through the dashboard, chat, editors, settings, workers, and platform-backed tools.
+- **SDK Surface** — Where developers embed the runtime, define portable manifests, configure providers, and compose workers or applications directly.
+
+Nenji is the default platform guide and orchestrator. It identifies which surface the user is working in before recommending concrete actions.
+
+## Core Resources
+
+Nenjo organizes AI resources into hierarchical **building blocks**:
+
+| Resource | Purpose |
+|----------|---------|
+| [Projects](/introduction/building-blocks#projects) | Top-level containers for work, documents, tasks, and execution runs |
+| [Agents](/introduction/building-blocks#agents) | Primary behavioral units with prompt configuration, memory, and capabilities |
+| [Routines](/introduction/building-blocks#routines) | Workflow graphs composed of steps, gates, agents, councils, and triggers |
+| [Abilities](/introduction/building-blocks#abilities) | Reusable specialist execution modes exposed to agents as callable tools |
+| [Domains](/introduction/building-blocks#domains) | User-activated modes that expand guidance, scopes, abilities, or integrations for a session |
+| [Memory](/introduction/building-blocks#memory) | Scoped agent memory system covering core, project, and shared memory behavior |
+| [Context Blocks](/introduction/building-blocks#context-blocks) | Reusable prompt-context assets referenced by path-like template names |
+| [Template Variables](/introduction/building-blocks#template-variables) | Runtime variables for connecting static prompt design with live execution state |
+| [Scopes](/introduction/building-blocks#scopes) | Fine-grained permissions for resource and action access boundaries |
+
+## Platform Concepts
+
+### Knowledge Graph
+
+Projects can host structured **documents** that form a local knowledge graph. By organizing documents using the six document kinds (Guide, Reference, Taxonomy, Domain, Entity, Policy) inside a Project, you can build a complete **AI Operating System** tailored to that project.
+
+### Executions and Tasks
+
+- **Tasks** are units of work with status, dependencies, assignment, priority, and readiness semantics
+- **Executions** are stateful runs that process project tasks through dispatch, lifecycle state, and progress tracking
+- **Routines** are workflow graphs that orchestrate how tasks move through agents, gates, and councils
+
+### Nenji
+
+Nenji is the default platform guide and orchestrator. It provides conversational access to all Nenjo resources, helps design and configure new resources, and guides users through the platform.
+
+## Getting Started
+
+New to Nenjo? Start with these docs:
+
+1. **[Building Blocks](/introduction/building-blocks)** — Understand the core resources that make up Nenjo
+2. **[Nenji](/introduction/nenji)** — Learn about the platform's default guide and orchestrator
