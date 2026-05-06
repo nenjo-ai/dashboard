@@ -9,6 +9,7 @@
     "getting-started",
     "---Platform---",
     "platform/organizations",
+    "platform/agents",
     "agents",
     "routines",
     "prompts",

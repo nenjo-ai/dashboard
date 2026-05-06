@@ -1,0 +1,86 @@
+---
+title: Agents
+description: Primary behavioral units that own prompt configuration, memory focus, model assignment, scopes, abilities, domains, and MCP integrations.
+icon: Bot
+slug: platform/agents
+order: 3
+tags: [domain:runtime, resource:agents, operation:design, audience:agent]
+---
+
+# Agents
+
+Agents are the fundamental behavioral units of the Nenjo platform. An agent defines **how work is interpreted**, what role it performs, what runtime context matters, and which capabilities it can access. Every execution in Nenjo ultimately runs through an agent (or a routine composed of agents).
+
+## What an Agent Owns
+
+An agent owns the complete definition of its behavior and surface:
+
+- **Behavioral identity and role** — Who the agent is and what it does
+- **Prompt configuration** — System prompt, developer prompt, and mode-specific templates
+- **Memory profile** — Core, project, and shared focus areas
+- **Model assignment** — Which AI model powers the agent
+- **Platform scopes** — Fine-grained permissions assigned by admin
+- **Assigned abilities** — Reusable specialist execution modes
+- **Assigned domains** — User-activated execution modes
+- **Assigned MCP servers** — External tool surfaces
+
+## Runtime Modes
+
+The same agent can operate in different runtime semantics. The **role stays constant**, but the prompt template and surrounding context change:
+
+| Mode | Description | Primary Template Used |
+|------|-------------|----------------------|
+| **chat** | Conversational interaction with a user | `templates.chat` |
+| **task** | Execution of a project task with full context | `templates.task` |
+| **gate** | Evaluation of evidence against acceptance criteria | `templates.gate` |
+| **cron** | Scheduled/recurring execution | `templates.cron` |
+| **heartbeat** | Periodic autonomous checks and maintenance | `templates.heartbeat` |
+| **council** | Participation as a member or leader in a multi-agent council | `templates.task` (adapted) |
+
+**Key Insight**: Runtime mode determines which template and context variables are injected. The agent's core identity and memory profile remain consistent across modes.
+
+## Agent Structure
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      Agent                               │
+├─────────────────────────────────────────────────────────┤
+│  Identity & Role                                        │
+│  ├── name, description                                   │
+│  └── model assignment                                    │
+├─────────────────────────────────────────────────────────┤
+│  Prompt Configuration                                    │
+│  ├── system_prompt (stable identity)                    │
+│  ├── developer_prompt (behavioral guidance)             │
+│  └── mode templates (chat, task, gate, cron, heartbeat) │
+├─────────────────────────────────────────────────────────┤
+│  Memory Profile                                         │
+│  ├── core_focus (cross-project knowledge)               │
+│  ├── project_focus (project-specific knowledge)         │
+│  └── shared_focus (reusable patterns)                   │
+├─────────────────────────────────────────────────────────┤
+│  Capabilities                                           │
+│  ├── platform scopes (permissions)                      │
+│  ├── abilities (specialist tools)                       │
+│  ├── domains (user-activated modes)                     │
+│  └── MCP servers (external tools)                       │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Related Concepts
+
+- **[Prompt Config](/docs/platform/agents/prompt-config)** — System, developer, and mode-specific prompt templates
+- **[Prompt Templating](/docs/platform/agents/prompt-templating)** — Template variables and context blocks
+- **[Abilities](/docs/platform/agents/abilities)** — Reusable specialist execution modes
+- **[Domains](/docs/platform/agents/domains)** — User-activated execution modes
+- **[Models](/docs/platform/agents/models)** — AI model selection and configuration
+- **[Memory](/docs/platform/agents/memory)** — Scoped memory system
+- **[MCP](/docs/platform/agents/mcp)** — Model Context Protocol integration
+
+## Common Patterns
+
+- **Bootstrap Agent (Nenji)**: Heavy on `core_focus`, broad platform-managed permissions, many abilities
+- **Specialist Agent**: Narrow `project_focus`, specific abilities, minimal platform-managed permissions
+- **Council Member**: Strong `shared_focus`, clear delegation strategy awareness
+
+This documentation is grounded in builtin knowledge. See [builtin::nenjo/guide/agents](/builtin/nenjo/guide/agents) for the canonical reference.

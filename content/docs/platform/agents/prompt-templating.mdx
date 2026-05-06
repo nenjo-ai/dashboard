@@ -1,0 +1,161 @@
+---title: Prompt Templating
+description: Template variables and context blocks for composing agent prompts at runtime.
+icon: Braces
+slug: platform/agents/prompt-templating
+order: 2
+tags: [domain:prompting, resource:template_vars, operation:configure, audience:agent]---
+# Prompt Templating
+
+Prompt templating connects static prompt design with live execution state through **template variables** and **context blocks**. This allows prompts to be reusable while still grounding each turn in the active agent, task, project, routine, memory, and available capabilities.
+
+## Template Variables
+
+Template variables are runtime context references injected into prompts. They render as XML-like blocks or scalar text depending on whether they're singular or aggregate.
+
+### Main Variable Groups
+
+| Group | Purpose | Example Variables |
+|-------|---------|-------------------|
+| **Agent** | Identity and role | `{{ self }}`, `{{ agent.name }}`, `{{ agent.description }}` |
+| **Chat** | User message | `{{ chat.message }}` |
+| **Task** | Project task context | `{{ task }}`, `{{ task.title }}`, `{{ task.acceptance_criteria }}` |
+| **Project** | Project identity and docs | `{{ project }}`, `{{ project.documents }}` |
+| **Builtin** | Platform knowledge | `{{ builtin_documents }}` |
+| **Routine** | Workflow context | `{{ routine }}`, `{{ routine.step.name }}` |
+| **Gate** | Evaluation criteria | `{{ gate.criteria }}`, `{{ gate.previous_output }}` |
+| **Memory** | Learned context | `{{ memories }}`, `{{ memories.project }}` |
+| **Available** | Collaborators | `{{ available_agents }}`, `{{ available_abilities }}`, `{{ available_domains }}` |
+
+## Context Blocks
+
+Context blocks are reusable prompt-context assets referenced by path-based template names. They store durable operating knowledge that multiple agents share.
+
+### Built-in Context Blocks
+
+- `{{ nenjo.core.methodology }}` — Core Nenjo methodology
+- `{{ nenjo.core.delegation }}` — Delegation strategies
+- `{{ custom.coding.standards }}` — Team coding standards
+- `{{ custom.review.standards }}` — Code review standards
+
+### Example Context Block Usage
+
+```jinja
+Relevant project knowledge:
+{{ project.documents }}
+
+Relevant memory:
+{{ memories.project }}
+
+Shared review standards:
+{{ custom.review.standards }}
+
+Repository worktree rules:
+{{ coding.git_worktree }}
+
+Delegation method:
+{{ nenjo.core.delegation }}
+```
+
+## Common Prompt Patterns
+
+### General Chat Agent
+
+```jinja
+You are {{ agent.name }}.
+
+Role:
+{{ agent.description }}
+
+Use builtin Nenjo knowledge when the user asks about Nenjo concepts:
+{{ builtin_documents }}
+
+User request:
+{{ chat.message }}
+```
+
+### Project Implementation Agent
+
+```jinja
+You are {{ agent.name }}.
+
+Role:
+{{ agent.description }}
+
+Project:
+{{ project }}
+
+Task:
+{{ task }}
+
+Project knowledge:
+{{ project.documents }}
+
+Project memory:
+{{ memories.project }}
+
+Git worktree rules:
+{{ coding.git_worktree }}
+```
+
+### Ability-Aware Agent
+
+```jinja
+You are {{ agent.name }}.
+
+Role:
+{{ agent.description }}
+
+Available abilities:
+{{ available_abilities }}
+
+Task or request:
+{{ task }}
+{{ chat.message }}
+
+Use an ability when its activation condition matches the work.
+```
+
+### Gate Evaluator
+
+```jinja
+You are a gate evaluator.
+
+Criteria:
+{{ gate.criteria }}
+
+Evidence:
+{{ gate.previous_output }}
+
+Return pass only when the evidence satisfies every required criterion.
+Return fail with specific missing criteria otherwise.
+```
+
+## Variable Selection Guide
+
+| Variable | Best Placement | Avoid |
+|----------|---------------|-------|
+| `agent`, `self` | System prompt, context blocks | Repeating static policy |
+| `chat` | Chat template | System prompt |
+| `task` | Task template, routine steps | Generic chat prompts |
+| `project` | Project-aware prompts | Global prompts |
+| `project.documents` | Knowledge-heavy work | Every prompt by default |
+| `builtin_documents` | Concept discovery | Treating summaries as full docs |
+| `available_agents` | Delegation, councils | Single-agent workflows |
+| `available_abilities` | Capability selection | Unavailable ability contexts |
+| `memories` | Learned behavior | Source-of-truth docs |
+
+## Anti-Patterns to Avoid
+
+- **Including every variable in every prompt** — Context inflation reduces reliability
+- **Treating `{{ builtin_documents }}` as full documentation** — It's an index for discovery
+- **Putting task details in system prompts** — Task details are runtime data
+- **Confusing memory with project documents** — Memory is learned, docs are explicit
+- **Exposing available agents/abilities when not relevant** — Creates decision noise
+
+## Related Concepts
+
+- **[Prompt Config](/docs/platform/agents/prompt-config)** — System, developer, and mode templates
+- **[Template Vars](/builtin/nenjo/reference/template_vars)** — Complete variable reference
+- **[Prompt Structuring](/builtin/nenjo/guide/prompt_structuring)** — Composition patterns
+
+This documentation is grounded in builtin knowledge. See [builtin::nenjo/reference/template_vars](/builtin/nenjo/reference/template_vars) and [builtin::nenjo/guide/prompt_structuring](/builtin/nenjo/guide/prompt_structuring) for canonical references.

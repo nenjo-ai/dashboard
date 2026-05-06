@@ -1,0 +1,109 @@
+---title: Abilities
+description: Reusable specialist execution modes exposed to agents as callable tools.
+icon: Zap
+slug: platform/agents/abilities
+order: 3
+tags: [domain:runtime, resource:abilities, operation:design, operation:execute, audience:agent]---# Abilities
+
+Abilities are **reusable specialist execution modes** that are exposed to an agent as callable tools. They are the primary mechanism for giving an agent a narrow, high-signal capability without turning that capability into a full standalone agent or routine.
+
+## What Makes an Ability
+
+An ability is a focused, self-contained unit of behavior that:
+
+- Is **assigned** to one or more agents
+- Appears at runtime as a **tool** the agent can call using its `tool_name`
+- The calling agent decides whether to use it based on the `activation_condition`, current task, and user request
+- Runs as a **nested specialist execution** under the calling agent
+
+## Ability vs Domain
+
+| Aspect | **Ability** | **Domain** |
+|--------|-------------|------------|
+| **Activation** | Invoked by the agent as a tool | Activated explicitly by the user |
+| **Scope** | Narrow, focused capability | Broader mode change with new instructions |
+| **Permission Model** | Filtered scopes for the ability | Expanded platform scopes for the session |
+| **Use Case** | Specialist tasks | Elevated, sensitive, or strategic modes |
+
+**Key Distinction**: Abilities are **agent-invoked tools**. Domains are **user-activated modes**. If a capability should only activate via explicit user command, it should usually be a Domain, not an Ability.
+
+## Core Fields
+
+| Field | Description |
+|-------|-------------|
+| `name` | Internal identifier |
+| `tool_name` | The name the calling agent uses to invoke it |
+| `path` | Unique path for referencing (e.g., `nenjo.abilities.code_review`) |
+| `display_name` | Human-readable name |
+| `description` | Clear explanation of what the ability does |
+| `activation_condition` | When the agent should consider using this ability |
+| `prompt_config.developer_prompt` | Specialized guidance used only while the ability is running |
+| `platform_scopes` | Permissions granted to the ability during execution |
+| `mcp_server_ids` | External tools available to the ability |
+
+## Runtime Behavior
+
+When an ability is invoked:
+
+1. It runs as a **nested execution** under the calling agent
+2. It **inherits** the caller's task, project context, user request, and memory state
+3. It **keeps** the caller's system-level framing and overall identity
+4. It **replaces** the caller's developer guidance with its own `developer_prompt`
+5. It receives its **own filtered permissions** (scopes + MCP servers)
+6. It returns control to the calling agent after completion
+
+```
+┌─────────────────────────────────────────────────┐
+│              Calling Agent                       │
+│  ┌─────────────────────────────────────────┐   │
+│  │         Ability Invocation               │   │
+│  │  1. Agent decides to call ability        │   │
+│  │  2. Nested execution starts              │   │
+│  │  3. Inherits caller context              │   │
+│  │  4. Uses ability's developer_prompt      │   │
+│  │  5. Returns result to caller             │   │
+│  └─────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────┘
+```
+
+## When to Use an Ability
+
+Use an ability when you need:
+
+- A **narrow, well-defined** capability with a clear input/output contract
+- **Reusable specialist behavior** that multiple agents might need
+- **Focused execution** that should inherit the caller's context but use its own developer guidance
+- Something that should feel like a "tool" to the calling agent
+
+## Common Patterns
+
+- **Code Review Ability** — Analyzes code for quality, security, and style
+- **Data Extraction Ability** — Pulls structured data from unstructured text
+- **Risk Assessment Ability** — Evaluates specific risk dimensions
+- **Format Conversion Ability** — Transforms data between formats
+- **Validation Ability** — Checks compliance against a specific policy
+
+## Best Practices
+
+1. **Keep abilities focused** — They should be narrow and well-defined
+2. **Write strong `activation_condition`** — Help agents know when to use them
+3. **Recommend minimum scopes** — Only what the ability actually needs
+4. **Version carefully** — Changes affect all agents that use them
+5. **Document output format** — Especially for downstream gates
+
+## Pitfalls to Avoid
+
+- Making abilities too broad (they should be narrow and focused)
+- Treating ability scope assignment as an agent-side write
+- Using abilities for long-running or stateful work (use Agents instead)
+- Confusing Abilities with Domains
+- Creating too many similar abilities instead of one well-designed one
+
+## Related Concepts
+
+- **[Agents](/docs/platform/agents)** — The agents that use abilities
+- **[Domains](/docs/platform/agents/domains)** — User-activated modes
+- **[MCP](/docs/platform/agents/mcp)** — External tool integration
+- **[Scopes](/builtin/neljo/guide/scopes)** — Permission system
+
+This documentation is grounded in builtin knowledge. See [builtin::nenjo/guide/abilities](/builtin/nenjo/guide/abilities) for the canonical reference.
