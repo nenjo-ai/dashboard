@@ -3,9 +3,14 @@ title: Routines
 description: Directed workflow graphs for orchestrating agents, gates, councils, and terminal steps in Nenjo.
 icon: GitBranch
 order: 3
+references:
+  - nenjo.guide.routines
+  - nenjo.taxonomy.workflow_patterns
 ---
 
 Routines are **directed workflow graphs** that orchestrate agents, gates, councils, and terminal steps. They provide deterministic, auditable, and maintainable execution paths instead of relying on a single unstructured agent pass.
+
+This documentation is grounded in [builtin::nenjo/guide/routines.md](/docs/platform/routines#builtin-nenjo-guide-routines) and [builtin::nenjo/taxonomy/workflow-patterns.md](/docs/platform/routines#builtin-nenjo-taxonomy-workflow-patterns).
 
 ## What is a Routine?
 
@@ -41,6 +46,8 @@ Routines are typically built using well-known patterns:
 | **Gated Pipeline** | Sequential steps with validation gates | Quality or compliance must be checked |
 | **Fan Out** | Parallel independent work followed by a join | Multiple independent analyses needed |
 | **Review Pipeline** | Generation → Review → Approval/Rejection loop | Output quality requires review |
+
+These patterns are defined in [builtin::nenjo/taxonomy/workflow-patterns.md](/docs/platform/routines#builtin-nenjo-taxonomy-workflow-patterns).
 
 ---
 
@@ -81,7 +88,7 @@ Every routine must have at least one reachable `terminal` or `terminal_fail` ste
 ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌────────────┐
 │ Generate │ → │  Gate   │ ──→│  Approve │ → │  terminal  │
 │  Agent   │   │ Review  │    │  Agent   │    │  (success) │
-└─────────┘    └─────────┘    └─────────┘
+└─────────┘    └──���──────┘    └─────────┘
                     │
                     │ reject
                     ↓
@@ -95,8 +102,8 @@ Every routine must have at least one reachable `terminal` or `terminal_fail` ste
 
 ## Related
 
-- [Step Types](/docs/routines/step-types) — Detailed step type reference
-- [Cron Scheduling](/docs/routines/cron) — Scheduled routine triggers
-- [Executions](/docs/routines/executions) — Runtime execution model
-- [Councils](/docs/agents/councils) — Multi-agent collaboration
-- [Workflow Patterns](/docs/workflows) — Pattern taxonomy
+- [Step Types](/docs/platform/routines/step-types) — Detailed step type reference
+- [Cron Scheduling](/docs/platform/routines/cron) — Scheduled routine triggers
+- [Executions](/docs/platform/routines/executions) — Runtime execution model
+- [Councils](/docs/platform/agents/councils) — Multi-agent collaboration
+- [Workflow Patterns](/docs/platform/routines#builtin-nenjo-taxonomy-workflow-patterns) — Pattern taxonomy

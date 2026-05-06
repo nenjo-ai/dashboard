@@ -3,9 +3,13 @@ title: Executions
 description: Stateful runs that process project tasks through dispatch, lifecycle state, and progress tracking.
 icon: Play
 order: 5
+references:
+  - nenjo.guide.executions
 ---
 
 Executions are **stateful runs** that process project tasks through the platform's dispatch system. An execution is the runtime container for coordinated task processing, not the task definition itself.
+
+This documentation is grounded in [builtin::nenjo/guide/executions.md](/docs/platform/routines/executions#builtin-nenjo-guide-executions).
 
 ## What is an Execution?
 
@@ -97,7 +101,8 @@ When a task triggers a routine, an execution is created to run that routine:
 
 ## Related
 
-- [Routines Overview](/docs/routines) — Workflow graph concepts
-- [Step Types](/docs/routines/step-types) — Step type reference
-- [Tasks](/docs/tasks) — Project task reference
-- [Projects](/docs/projects) — Project reference
+- [Routines Overview](/docs/platform/routines/index) — Workflow graph concepts
+- [Step Types](/docs/platform/routines/step-types) — Step type reference
+- [Tasks](/docs/platform/tasks) — Project task reference
+- [Projects](/docs/platform/projects) — Project reference
+- [builtin::nenjo/guide/executions.md](/docs/platform/routines/executions#builtin-nenjo-guide-executions)

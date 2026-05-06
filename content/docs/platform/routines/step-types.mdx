@@ -3,9 +3,13 @@ title: Step Types
 description: Reference for all step types in routines — agent, gate, council, cron, terminal, and terminal_fail.
 icon: Puzzle
 order: 4
+references:
+  - nenjo.guide.routines
 ---
 
 Each step in a routine has a specific type that defines its behavior. This guide covers all available step types and when to use each.
+
+This documentation is grounded in [builtin::nenjo/guide/routines.md](/docs/platform/routines#builtin-nenjo-guide-routines).
 
 ## Step Type Overview
 
@@ -90,7 +94,7 @@ Council steps run a structured multi-agent collaboration as a single step. The c
 }
 ```
 
-For details on council design, see [Councils](/docs/agents/councils).
+For details on council design, see [Councils](/docs/platform/agents/councils).
 
 ---
 
@@ -170,7 +174,8 @@ This distinction ensures critical work steps are atomic (failure = routine failu
 
 ## Related
 
-- [Routines Overview](/docs/routines) — Workflow graph concepts
-- [Cron Scheduling](/docs/routines/cron) — Scheduled triggers
-- [Executions](/docs/routines/executions) — Runtime execution
-- [Councils](/docs/agents/councils) — Multi-agent collaboration
+- [Routines Overview](/docs/platform/routines/index) — Workflow graph concepts
+- [Cron Scheduling](/docs/platform/routines/cron) — Scheduled triggers
+- [Executions](/docs/platform/routines/executions) — Runtime execution
+- [Councils](/docs/platform/agents/councils) — Multi-agent collaboration
+- [builtin::nenjo/guide/routines.md](/docs/platform/routines#builtin-nenjo-guide-routines)
