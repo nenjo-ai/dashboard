@@ -1,7 +1,10 @@
 {
   "title": "Nenjo",
   "pages": [
+    "---Introduction---",
     "index",
+    "introduction/building-blocks",
+    "introduction/nenji",
     "---Getting Started---",
     "getting-started",
     "---Platform---",
