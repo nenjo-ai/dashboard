@@ -1,0 +1,133 @@
+---
+title: REST Endpoints
+description: Programmatic access to Nenjo through REST API endpoints.
+icon: Database
+slug: rest-endpoints
+order: 3
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+
+REST endpoints provide full programmatic CRUD access to Nenjo resources. All endpoints require authentication via an API key in the `Authorization` header.
+
+## Base URL
+
+```
+https://api.nenjo.ai/v1
+```
+
+## Authentication
+
+Include your API key in each request:
+
+```bash
+curl -H "Authorization: Bearer njo_your_api_key_here" \
+     https://api.nenjo.ai/v1/projects
+```
+
+## Endpoints overview
+
+| Resource | Endpoints |
+|----------|----------|
+| Projects | `GET /projects`, `POST /projects`, `GET /projects/:id`, `PATCH /projects/:id`, `DELETE /projects/:id` |
+| Agents | `GET /agents`, `POST /agents`, `GET /agents/:id`, `PATCH /agents/:id`, `DELETE /agents/:id` |
+| Routines | `GET /routines`, `POST /routines`, `GET /routines/:id`, `PATCH /routines/:id`, `DELETE /routines/:id` |
+| Councils | `GET /councils`, `POST /councils`, `GET /councils/:id`, `PATCH /councils/:id`, `DELETE /councils/:id` |
+| Tasks | `GET /projects/:id/tasks`, `POST /projects/:id/tasks`, `PATCH /tasks/:id`, `DELETE /tasks/:id` |
+| Documents | `GET /projects/:id/documents`, `POST /projects/:id/documents`, `GET /documents/:id`, `PATCH /documents/:id` |
+| Executions | `GET /projects/:id/executions`, `POST /routines/:id/execute`, `GET /executions/:id`, `DELETE /executions/:id` |
+| Context Blocks | `GET /context-blocks`, `POST /context-blocks`, `GET /context-blocks/:id`, `PATCH /context-blocks/:id` |
+| Domains | `GET /domains`, `POST /domains`, `GET /domains/:id`, `PATCH /domains/:id`, `DELETE /domains/:id` |
+| Abilities | `GET /abilities`, `POST /abilities`, `GET /abilities/:id`, `PATCH /abilities/:id`, `DELETE /abilities/:id` |
+| MCP Servers | `GET /mcp-servers`, `POST /mcp-servers`, `GET /mcp-servers/:id`, `PATCH /mcp-servers/:id`, `DELETE /mcp-servers/:id` |
+| Workers | `GET /workers`, `POST /workers`, `GET /workers/:id`, `PATCH /workers/:id`, `DELETE /workers/:id` |
+| Organizations | `GET /org`, `PATCH /org`, `GET /org/members`, `POST /org/invites` |
+
+## Example: List projects
+
+```bash
+curl -H "Authorization: Bearer njo_your_key" \
+     https://api.nenjo.ai/v1/projects
+```
+
+Response:
+
+```json
+{
+  "projects": [
+    {
+      "id": "prj_abc123",
+      "name": "My Project",
+      "created_at": "2025-01-15T10:30:00Z",
+      "updated_at": "2025-01-20T14:22:00Z"
+    }
+  ],
+  "next_cursor": "cursor_xyz789"
+}
+```
+
+## Example: Create an agent
+
+```bash
+curl -X POST -H "Authorization: Bearer njo_your_key" \
+     -H "Content-Type: application/json" \
+     -d '{"name": "My Agent", "prompt": "You are a helpful assistant."}' \
+     https://api.nenjo.ai/v1/agents
+```
+
+## Pagination
+
+List endpoints use cursor-based pagination:
+
+```bash
+curl -H "Authorization: Bearer njo_your_key" \
+     "https://api.nenjo.ai/v1/projects?limit=20&cursor=cursor_abc123"
+```
+
+## Error handling
+
+| Status | Meaning |
+|--------|---------|
+| 400 | Bad request — invalid JSON or missing fields |
+| 401 | Unauthorized — missing or invalid API key |
+| 403 | Forbidden — key lacks required scopes |
+| 404 | Not found — resource doesn't exist |
+| 429 | Rate limited — too many requests |
+| 500 | Server error |
+
+Error response:
+
+```json
+{
+  "error": {
+    "code": "invalid_scope",
+    "message": "API key lacks required scope: agents:write"
+  }
+}
+```
+
+<Callout type="info">
+  Your API key must have the appropriate scopes for each endpoint. For example, creating agents requires `agents:write`.
+</Callout>
+
+## Rate limits
+
+- **Standard**: 100 requests/minute
+- **Burst**: 20 concurrent requests
+
+Rate limit headers:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1705779600
+```
+
+## SDK vs REST
+
+| Approach | Best for |
+|----------|----------|
+| REST API | Server-side scripts, CI/CD, external integrations |
+| SDK (Rust) | Embedding Nenjo in applications |
+
+For SDK usage, see `builtin::nenjo/domain/sdk.md`.

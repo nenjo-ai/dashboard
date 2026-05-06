@@ -1,0 +1,89 @@
+---
+title: Scopes
+description: Platform scopes that control resource access for API keys, agents, and abilities.
+icon: Shield
+slug: scopes
+order: 2
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+
+Platform scopes are exact permission strings controlling which resource families an API key, agent, ability, or domain can read or mutate. They follow the `resource:action` pattern.
+
+This document is grounded in `builtin::nenjo/guide/scopes.md` — the canonical reference for all platform scope strings.
+
+<Callout type="info">
+  Scopes use `resource:action`. The `:write` action implies `:read` for the same resource family.
+</Callout>
+
+## Semantics
+
+| Action | Meaning |
+|--------|---------|
+| `:read` | Read, list, get, or inspect resources of that family |
+| `:write` | Create, update, delete, or mutate resources — implies read |
+
+## Resource scopes
+
+These are the platform scopes used by API keys and runtime agents:
+
+| Scope | Meaning |
+|-------|---------|
+| `agents:read` | Read agent metadata and configuration |
+| `agents:write` | Create, update, delete, assign, or lock agents |
+| `abilities:read` | Read abilities and configurations |
+| `abilities:write` | Create, update, or delete abilities |
+| `domains:read` | Read domain configurations |
+| `domains:write` | Create, update, delete domains, enter/exit sessions |
+| `projects:read` | Read projects, tasks, documents, and executions |
+| `projects:write` | Create, update, delete projects and project resources |
+| `routines:read` | Read routine configurations |
+| `routines:write` | Create, update, delete routines |
+| `councils:read` | Read council configurations |
+| `councils:write` | Create, update, delete councils |
+| `context_blocks:read` | Read prompt-context assets |
+| `context_blocks:write` | Create, update, delete context blocks |
+| `mcp_servers:read` | Read MCP server configuration |
+| `mcp_servers:write` | Create, update, delete MCP servers |
+| `chat:read` | Read chat sessions and messages |
+| `chat:write` | Send messages, create sessions |
+| `models:read` | Read model records |
+| `models:write` | Create, update, delete model records |
+
+## Organization scopes
+
+These scopes manage organization-level resources:
+
+| Scope | Meaning |
+|-------|---------|
+| `org:read` | Read organization metadata |
+| `org:write` | Mutate organization metadata |
+| `org_members:read` | Read organization members |
+| `org_members:write` | Add, remove, or modify members |
+| `org_invites:read` | Read pending invitations |
+| `org_invites:write` | Create, resend, or revoke invitations |
+| `workers:read` | Read worker enrollment and status |
+| `workers:approve` | Approve or reject pending workers |
+| `workers:write` | Manage worker enrollment |
+| `api_keys:read` | Read API keys |
+| `api_keys:write` | Create, revoke, or manage API keys |
+
+## Common patterns
+
+| Use case | Scopes |
+|----------|--------|
+| Read-only platform guide | `agents:read`, `projects:read`, `routines:read`, `domains:read`, `models:read` |
+| Agent builder | `agents:write`, `abilities:write`, `models:read`, `domains:read`, `context_blocks:read` |
+| Workflow builder | `routines:write`, `projects:read`, `agents:read`, `domains:read` |
+| Project manager | `projects:write`, `routines:read`, `agents:read`, `models:read` |
+| Full API access | Empty scopes — grants full access (use with caution) |
+
+<Callout type="warning">
+  Never assign scopes beyond what's required. Prefer read-only scopes unless the key must mutate resources.
+</Callout>
+
+## Scopes in manifest tools
+
+Platform scopes serve as the permission layer when defining agents, abilities, and domains in manifest files. See `builtin::nenjo/guide/agents.md` for how scopes integrate with agent configuration.
+
+For REST API usage, see [REST Endpoints](/docs/api/rest-endpoints).

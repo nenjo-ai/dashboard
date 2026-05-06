@@ -1,0 +1,58 @@
+---
+title: API Keys
+description: Create, manage, and secure API keys for programmatic access to Nenjo.
+icon: Key
+slug: api-keys
+order: 1
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+import { Steps } from 'fumadocs-ui/components/steps'
+
+API keys provide long-lived tokens for server-to-server access to Nenjo. Each key is assigned platform scopes that control what resources it can access.
+
+## Overview
+
+API keys are tied to platform scopes from `builtin::nenjo/guide/scopes.md`. An API key with `api_keys:read` and `api_keys:write` can create and manage other API keys, while keys with narrower scopes can only access resources within those permissions.
+
+<Callout type="warning">
+  API keys provide full API access. Never expose keys in client-side code or public repositories.
+</Callout>
+
+## Creating an API key
+
+<Steps>
+1. Navigate to **Settings** → **API Keys**
+2. Click **Create API Key**
+3. Name your key (e.g., `production-worker` or `ci-pipeline`)
+4. Select platform scopes for the key's permissions
+5. Click **Create** and copy the key immediately
+</Steps>
+
+The key is shown once. After leaving the page, you cannot retrieve it—you'll need to create a new key.
+
+## Scope assignment
+
+API keys use the same platform scopes as agents, abilities, and domains. Common patterns:
+
+| Use case | Scopes |
+|----------|--------|
+| Read-only access | `projects:read`, `agents:read`, `routines:read`, `domains:read` |
+| Full project management | `projects:read`, `projects:write`, `routines:read` |
+| Agent builder | `agents:write`, `abilities:write`, `models:read`, `domains:read` |
+| Organization admin | `org:write`, `org_members:write`, `workers:write`, `api_keys:write` |
+
+For a complete list, see [Scopes](/docs/api/scopes).
+
+## Key management
+
+- **Revoke** — Immediately invalidate a key if compromised
+- **Rotate** — Create a new key, update your systems, then revoke the old key
+- **Audit** — Review key usage in the activity log
+
+## Security best practices
+
+1. **Scope minimization** — Grant only the scopes required for the key's purpose
+2. **Environment separation** — Use different keys for development, staging, and production
+3. **Regular rotation** — Rotate keys periodically or when team members leave
+4. **Monitor usage** — Review activity logs for unexpected access patterns

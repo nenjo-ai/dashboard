@@ -1,0 +1,98 @@
+---
+title: MCP Server
+description: Connect external MCP servers for extended capabilities and tool integrations.
+icon: Server
+slug: mcp-server
+order: 4
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+import { Steps } from 'fumadocs-ui/components/step'
+
+The MCP server integration lets Nenjo connect to external Model Context Protocol servers, exposing additional tools and capabilities to agents.
+
+## Overview
+
+MCP servers extend Nenji's capabilities by providing access to external tools — code execution, file operations, API integrations, and more. Each MCP server exposes a set of tools that agents can call during executions.
+
+<Callout type="info">
+  MCP integration is user-facing platform functionality. See `builtin::nenjo/domain/platform.md` for the platform surface concept.
+</Callout>
+
+## Connecting an MCP server
+
+<Steps>
+1. Navigate to **Settings** → **MCP Servers**
+2. Click **Add MCP Server**
+3. Enter the server URL or local path
+4. Configure authentication if required
+5. Click **Connect** to verify the connection
+6. Assign the server to projects or agents
+</Steps>
+
+## Server configuration
+
+| Field | Description |
+|-------|-------------|
+| **URL** | HTTP(s) endpoint for the MCP server |
+| **Name** | Display name for the server |
+| **Auth** | Optional API key, Bearer token, or basic auth |
+| **Scope** | Resources the server can access |
+
+## Available tools
+
+Each MCP server exposes specific tools. Common examples:
+
+- **Filesystem** — Read, write, list files
+- **Git** — Clone, pull, branch, commit
+- **Database** — Query, insert, update
+- **Web search** — Search the web
+- **Custom APIs** — Call external services
+
+## Assigning to agents
+
+<Steps>
+1. Open the **Agent Builder**
+2. Navigate to **MCP Integrations**
+3. Add the MCP server to the agent's configuration
+4. Save the agent
+</Steps>
+
+The agent can now call tools from the assigned MCP servers during executions.
+
+## Security
+
+<Callout type="warning">
+  Only connect to trusted MCP servers. Review the server's tool definitions before adding it.
+</Callout>
+
+- **HTTPS required** — Servers must use TLS
+- **Token authentication** — Use API keys for server auth
+- **Scope isolation** — Limit what resources the server can access
+- **Audit logging** — Track tool calls in activity logs
+
+## Local MCP servers
+
+For development, run a local MCP server:
+
+```bash
+npm install -g @modelcontextprotocol/server-filesystem
+npx @modelcontextprotocol/server-filesystem /path/to/project
+```
+
+Then connect via `http://localhost:3000` in the settings.
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Connection failed | Verify the server URL and authentication |
+| Tools not appearing | Check the server is running and reachable |
+| Permission errors | Verify scopes match the server's required access |
+| Timeout errors | Increase the connection timeout in settings |
+
+## See also
+
+- [Scopes](/docs/api/scopes) — Control MCP server access
+- [API Keys](/docs/api/api-keys) — Authenticate to MCP servers
+- `builtin::nenjo/guide/agents.md` — Configure agents with MCP tools
