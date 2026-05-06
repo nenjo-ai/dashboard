@@ -1,0 +1,74 @@
+---
+title: Documents
+description: Encrypted and inlined project documents with knowledge graph structure.
+icon: FileText
+slug: projects/documents
+order: 2
+---
+
+# Documents
+
+Projects host structured documents that together form a **local knowledge graph**. By organizing documents using the six builtin document kinds, you can build a complete AI Operating System tailored to your project.
+
+## Document Kinds
+
+| Kind | Purpose | Example |
+|------|---------|---------|
+| **Domain** | Vertical or problem space | "Regulatory Compliance" |
+| **Entity** | Data models and schema | Task, Agent, BusinessPlan |
+| **Policy** | Rules and decision logic | AccessControlPolicy |
+| **Taxonomy** | Classification systems | PriorityFramework |
+| **Guide** | Explanatory context | OnboardingGuide |
+| **Reference** | Facts and lookup tables | APIReference |
+
+## Creating Documents
+
+### Encrypted Documents
+
+Sensitive documents (API keys, credentials, strategy documents) can be encrypted at rest:
+
+1. Navigate to your project **Documents** panel
+2. Click **Add Document**
+3. Toggle **Encrypt** to enable encryption
+4. Enter your content
+5. Select the appropriate document kind
+6. Save
+
+<Callout type="warning">
+Encrypted documents are encrypted at rest using the project's encryption key. Only project members with appropriate permissions can view encrypted content.
+</Callout>
+
+### Inlined Documents
+
+For inline content that doesn't need encryption:
+
+1. Navigate to your project **Documents** panel
+2. Click **Add Document**
+3. Select **Inlined** (default)
+4. Enter your content
+5. Choose the document kind
+6. Save
+
+## Knowledge Graph Structure
+
+When documents are properly linked using canonical relationships, they create a queryable knowledge graph:
+
+```
+Domain (e.g., "Regulatory Compliance")
+    ├── defines → Entity (e.g., ComplianceReport)
+    ├── governs → Policy (e.g., AuditPolicy)
+    └── classifies → Taxonomy (e.g., ViolationCategories)
+            └── references → Reference (e.g., Fineschedule)
+```
+
+### Canonical Relationships
+
+- `part_of` → Container relationship
+- `defines` → Schema or rule definition
+- `governs` → Enforcement or control
+- `classifies` → Categorization
+- `references` → Pointers to related docs
+
+<Callout type="info">
+Start with Domain, Entity, and Policy documents for complex projects. Use the templates in `builtin::nenjo.reference.knowledge` to accelerate setup.
+</Callout>

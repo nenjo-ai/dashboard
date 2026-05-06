@@ -1,0 +1,109 @@
+---
+title: Settings
+description: Git sync configuration, metadata, and project-level configuration.
+icon: Settings
+slug: projects/settings
+order: 4
+---
+
+# Settings
+
+Project settings control repository connections, metadata, default models, memory profiles, and permissions.
+
+## General Settings
+
+| Field | Description |
+|------|-------------|
+| **Name** | Human-readable project name |
+| **Slug** | URL-friendly unique identifier |
+| **Description** | Overview of the project's purpose |
+
+## Git Sync
+
+Connect your project to a Git repository for workspace-driven workflows:
+
+### Enabling Git Sync
+
+1. Navigate to your project **Settings**
+2. Under **Git Sync**, enter your repository URL
+3. Select the default branch (typically `main` or `master`)
+4. Click **Connect**
+
+<Callout type="info">
+When a project has a synced Git repository, task executions create a Git worktree flow so the executing worker can operate against an isolated checkout.
+</Callout>
+
+### Worktree Flow
+
+With Git sync enabled, project tasks generate isolated worktrees:
+
+```
+Project Repository (origin)
+    └── Worktree for Task-123 (isolated checkout)
+            ├── Code changes
+            └── Commit & push
+                ↓
+            Merge to default branch
+```
+
+### Git Sync Settings
+
+| Setting | Description |
+|---------|-------------|
+| **Repository URL** | Git remote (HTTPS or SSH) |
+| **Default Branch** | Target branch for merges |
+| **Sync Interval** | How often to pull updates |
+| **Auto-merge** | Automatically merge on push |
+
+## Metadata
+
+Arbitrary key-value data for project configuration:
+
+```json
+{
+  "client": "Acme Corp",
+  "department": "Engineering",
+  "budget": 15000,
+  "quarters": ["Q1", "Q2"],
+  "stakeholders": ["alice@acme.com", "bob@acme.com"]
+}
+```
+
+### Using Metadata
+
+- Filter projects by metadata in lists
+- Access in agent prompts via template variables
+- Use in routing decisions
+
+## Model & Memory Defaults
+
+### Default Model
+
+Set the default model for project tasks:
+
+1. Go to **Settings** → **Defaults**
+2. Select a model from the dropdown
+3. Save
+
+### Memory Profile
+
+Configure memory behavior:
+
+| Profile | behavior |
+|---------|----------|
+| **Focused** | Minimal context, recent memories |
+| **Comprehensive** | Full project context |
+| **Custom** | Define specific memory rules |
+
+## Managing Settings
+
+To update project settings:
+
+1. Navigate to your project
+2. Click **Settings**
+3. Modify the desired field
+4. Click **Save**
+
+<Callout type="warning">
+Changes to Git sync settings may require reconnection. Test syncing after making changes.
+</Callout>

@@ -1,0 +1,82 @@
+---
+title: Context
+description: Project context and memory scoping for agent execution.
+icon: Brain
+slug: projects/context
+order: 3
+---
+
+# Context
+
+Project context provides the information and memory boundary that agents use when executing tasks within a project.
+
+## Memory Scoping
+
+Nenjo uses a three-tier memory system:
+
+| Scope | Description | Retention |
+|-------|-------------|-----------|
+| **Core** | Global agent identity and preferences | Permanent |
+| **Project** | Project-specific context and knowledge | Project lifetime |
+| **Shared** | Cross-project team memory | Team-defined |
+
+### Project Focus Memory
+
+When an agent works on a project task, it has access to:
+
+- Project-level documents and knowledge graph
+- Project settings and configuration
+- Previous task executions and history
+- Agent's project-specific memories
+
+<Callout type="info">
+Agents operating on Project tasks use the Project's `project_focus` memory. This ensures relevant context is available while maintaining isolation between projects.
+</Callout>
+
+## Context Components
+
+### Project Documents
+
+All documents in the project's knowledge graph are available as context:
+
+- Domain documents (vertical context)
+- Entity documents (data models)
+- Policy documents (rules)
+- Reference documents (facts)
+
+### Template Variables
+
+Runtime variables available in project context:
+
+```json
+{
+  "project.name": "My Project",
+  "project.slug": "my-project", 
+  "project.description": "Project description",
+  "project.repo_url": "https://github.com/...",
+  "project.created_at": "2024-01-01T00:00:00Z",
+  "task.title": "Current task title",
+  "task.acceptance_criteria": "...",
+  "execution.run_id": "..."
+}
+```
+
+### Retrieval Evidence
+
+When executing tasks, agents can retrieve relevant information from the project's knowledge graph:
+
+1. **Semantic search** — Query documents by meaning
+2. **Navigation** — Follow canonical relationships
+3. **Filtering** — By document kind, tags, or metadata
+
+## Viewing Context
+
+To view a project's context:
+
+1. Navigate to your project
+2. Click **Settings** → **Context**
+3. View memory scope, documents, and template variables
+
+<Callout type="info">
+Keep project memory profiles focused and regularly reviewed. Remove stale memories to keep agents working with relevant context.
+</Callout>

@@ -1,0 +1,11 @@
+{
+  "title": "Projects",
+  "pages": [
+    "---Platform---",
+    "projects",
+    "projects/tasks",
+    "projects/documents",
+    "projects/context",
+    "projects/settings"
+  ]
+}
