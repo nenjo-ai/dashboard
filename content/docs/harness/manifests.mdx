@@ -1,0 +1,108 @@
+---
+title: Manifests
+description: The typed resource catalog loaded by the SDK and cached by the worker.
+slug: harness/manifests
+order: 62
+tags:
+  - harness
+  - manifests
+  - resources
+  - sdk
+---
+
+# Manifests
+
+A `Manifest` is the runtime catalog for Nenjo. It is the typed view of the platform resources that an SDK `Provider` can execute.
+
+The SDK does not reach into the dashboard database directly. It receives manifests through a `ManifestLoader`, merges them, and then uses the result to build agents and routines.
+
+## Manifest Contents
+
+| Resource | What the runtime uses it for |
+|----------|------------------------------|
+| Projects | Project identity, slug, description, settings, and runtime context |
+| Agents | Prompt config, model assignment, platform scopes, assigned domains, abilities, MCP servers, and heartbeat settings |
+| Models | Provider name, model name, temperature, and optional base URL |
+| Routines | Trigger, schedule metadata, steps, and directed edges |
+| Councils | Multi-agent groups with a leader and delegation strategy |
+| Domains | Activatable execution modes with prompt addons, scopes, abilities, and MCP server assignments |
+| MCP servers | External tool servers and transport details |
+| Abilities | Reusable sub-execution modes exposed as tools to agents |
+| Context blocks | MiniJinja templates injected into prompts |
+
+## Loading and Merging
+
+`ManifestLoader` is an async trait:
+
+```rust
+#[async_trait::async_trait]
+pub trait ManifestLoader: Send + Sync {
+    async fn load(&self) -> anyhow::Result<Manifest>;
+}
+```
+
+`Provider::builder()` can accept a complete manifest with `with_manifest()` or one or more loaders with `with_loader()`.
+
+When manifests are merged, most resource arrays are appended. Context blocks are different: if two blocks share the same name, the later block wins. This makes local prompt context overlays possible without replacing the whole manifest.
+
+## Worker Cache
+
+On startup, the worker fetches the bootstrap manifest from the platform API and writes it into the local manifests directory.
+
+| Cache path under `.nenjo/manifests` | Contents |
+|-------------------------------------|----------|
+| `auth.json` | User, organization, and API-key identity returned by bootstrap |
+| `nats.json` | Event bus connection settings returned by bootstrap |
+| `projects.json` | Project manifests |
+| `routines.json` | Routine manifests |
+| `models.json` | Model manifests |
+| `agents.json` | Agent manifests with decrypted prompt config when enrollment allows it |
+| `councils.json` | Council manifests |
+| `mcp_servers.json` | MCP server manifests |
+| `domains/**/*.json` | Domain manifests stored as a tree |
+| `abilities/**/*.json` | Ability manifests stored as a tree |
+| `context_blocks/**/*.json` | Context block manifests stored as a tree |
+
+The worker also syncs project documents into the local workspace after the bootstrap manifest is cached.
+
+## Agent Manifest Shape
+
+An agent manifest contains the fields the runtime needs to build an `AgentRunner`:
+
+| Field | Runtime meaning |
+|-------|-----------------|
+| `prompt_config` | System prompt, developer prompt, task/chat/gate/cron/heartbeat templates, and memory profile |
+| `model_id` | Points to the model manifest used for LLM calls |
+| `platform_scopes` | Controls which platform tools are added to the agent |
+| `domain_ids` | Domains available to the agent |
+| `ability_ids` | Abilities exposed as sub-execution tools |
+| `mcp_server_ids` | External MCP servers assigned to the agent |
+| `prompt_locked` | Indicates whether prompt updates should be blocked by platform tooling |
+| `heartbeat` | Optional recurring agent heartbeat schedule metadata |
+
+## Routine Manifest Shape
+
+A routine manifest is a graph:
+
+| Part | Runtime meaning |
+|------|-----------------|
+| `trigger` | `task` or `cron` |
+| `metadata.schedule` | Schedule expression for cron-triggered routines |
+| `metadata.entry_step_ids` | Explicit entry points when present |
+| `steps` | Agent, council, cron, gate, terminal, and terminal-fail nodes |
+| `edges` | Directed connections between steps |
+| `edge.condition` | `always`, `on_pass`, or `on_fail` |
+
+The routine executor validates and walks this graph, then builds the needed agents from the same provider.
+
+## Local Context Loader
+
+The worker also has a small local loader for Markdown context files. Files under `.nenjo/context/*.md` become context blocks with:
+
+| Field | Value |
+|-------|-------|
+| `name` | File name without `.md` |
+| `path` | `local` |
+| `template` | File contents |
+
+This is useful for local guidance that should join the platform manifest at runtime.

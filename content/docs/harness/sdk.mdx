@@ -1,7 +1,6 @@
 ---
-title: SDK
-description: Rust SDK for turn loops, manifest parsing, provider builders, and runtime APIs
-icon: Code
+title: SDK API
+description: The core Rust API for building providers, agents, routines, tools, memory, and streaming execution.
 slug: harness/sdk
 order: 61
 tags:
@@ -12,134 +11,123 @@ tags:
   - runtime
 ---
 
-# SDK
+# SDK API
 
-The Nenjo SDK is the developer-facing Rust library for building Nenjo-powered systems in code. It provides embeddable runtime APIs, manifest parsing, provider builders, and tool integration.
+The `nenjo` crate is the core SDK. It turns manifest resources into executable agents and routines.
 
-## Purpose
+The SDK is intentionally small at the top level. A caller supplies manifests, a model factory, a tool factory, and optional memory. The SDK handles prompt assembly, agent lookup, the turn loop, streaming events, delegation support, routine execution, and memory tooling.
 
-The SDK serves developers who want to:
+## Provider
 
-- Author Nenjo resources as local manifest files
-- Embed agent runners in Rust applications
-- Build custom model and tool providers
-- Compose memory, prompt context, and execution loops programmatically
-
-## Key Components
-
-### Manifest Files
-
-Declarative resource definitions in YAML or JSON format:
-
-```yaml
-# Example agent manifest
-id: my-agent
-name: My Agent
-model: gpt-4
-prompt: |
-  You are a helpful assistant.
-  Current project: {{ project.name }}
-abilities:
-  - web-search
-  - code-interpreter
-scopes:
-  - read:projects
-  - write:tasks
-```
-
-Supported resource types:
-- **Agents**: Prompt config, model, memory, scopes, abilities, domains
-- **Abilities**: Reusable specialist execution modes
-- **Domains**: Execution-mode addons with guidance and scopes
-- **Routines**: Workflow graphs with steps, gates, and councils
-- **Councils**: Multi-agent collaboration groups
-- **Projects**: Work containers with documents and settings
-
-### Provider Builder APIs
-
-Composable Rust APIs for runtime construction:
+A `Provider` is the root runtime object. It owns a loaded `Manifest` plus the factories needed to create models and tools.
 
 ```rust
-use nenjo::prelude::*;
+use nenjo::Provider;
 
-let provider = ProviderBuilder::new()
-    .with_modelFactory Ollama::default()
-    .with_tool_factory(FileSystem::default())
-    .with_memory(Sqlite::memory("agent.db"))
-    .build();
-
-let agent = provider.agent("my-agent")
-    .with_context(project_context)
-    .run();
+let provider = Provider::builder()
+    .with_loader(my_manifest_loader)
+    .with_model_factory(my_model_factory)
+    .with_tool_factory(my_tool_factory)
+    .with_memory(my_memory)
+    .build()
+    .await?;
 ```
 
-Key traits:
-- `ModelFactory`: Backend for model inference (OpenAI, Ollama, Anthropic, custom)
-- `ToolFactory`: External tool integration (file system, API calls, custom)
-- `Memory`: Session and semantic memory storage
-- `AgentRunner`: Execution orchestration and turn handling
+The builder requires at least one manifest source and a model factory. If no tool factory is provided, agents run without external tools.
 
-### Turn Loops
+| Builder method | Purpose |
+|----------------|---------|
+| `with_manifest` | Provide a complete manifest directly |
+| `with_loader` | Load a partial manifest from a source such as the platform cache or a custom loader |
+| `with_model_factory` | Map manifest provider names like `openai`, `anthropic`, `gemini`, or `ollama` to model clients |
+| `with_tool_factory` | Build the tools available to each agent based on its manifest |
+| `with_memory` | Add memory tools and prompt memory summaries |
+| `with_agent_config` | Set shared turn loop settings such as max iterations and parallel tool execution |
 
-Execution patterns for multi-step conversations:
+Multiple loaders are merged in order. This lets the worker combine platform manifests with local context sources.
+
+## Agents
+
+Agents are resolved from the manifest by ID or name. The provider creates an `AgentBuilder`, then the builder produces an `AgentRunner`.
 
 ```rust
-let mut agent = provider.agent("my-agent");
+let runner = provider
+    .agent_by_name("coder")
+    .await?
+    .build()
+    .await?;
 
-// Single turn
-let response = agent.turn("What's the project status?").await?;
-
-// Multi-turn conversation
-let mut conv = agent.conversation();
-conv.say("Analyze the codebase").await?;
-conv.say("Summarize findings").await?;
-let summary = conv.read().await?;
+let output = runner.chat("Summarize the current project").await?;
+println!("{}", output.text);
 ```
 
-### Hot Reload
+An `AgentBuilder` can add execution context before `build()`:
 
-Development workflow for rapid iteration:
+| Builder method | What it changes |
+|----------------|-----------------|
+| `with_project_context` | Injects project variables and project-scoped memory |
+| `with_routine_context` | Adds routine-level template variables |
+| `with_step_context` | Adds current step template variables during routine execution |
+| `with_work_dir` | Scopes file, shell, and git tools to a project worktree |
+| `with_tool` | Adds an extra tool for this runner |
+| `with_memory_scope` | Restores a previously resolved memory namespace |
+
+## Streaming
+
+The SDK has both simple and streaming execution. Use `chat()` when only the final answer matters. Use `chat_stream()` when the caller needs tool events, transcript messages, pause/resume state, or completion output.
 
 ```rust
-use nenjo::hot::ManifestWatcher;
+let mut handle = runner.chat_stream("Refactor the auth module").await?;
 
-let watcher = ManifestWatcher::new("manifests/")
-    .on_change(|resource| {
-        println!("Reloading: {}", resource.id);
-    });
+while let Some(event) = handle.recv().await {
+    match event {
+        nenjo::TurnEvent::ToolCallStart { calls, .. } => {
+            println!("starting {} tool call(s)", calls.len());
+        }
+        nenjo::TurnEvent::Done { .. } => break,
+        _ => {}
+    }
+}
 
-watcher.start().await?;
+let output = handle.output().await?;
 ```
 
-The watcher monitors manifest directory changes and reloads resources without restarting the application.
+`TurnOutput` contains the final text, token counts, tool call count, and messages that can be persisted as conversation history.
 
-## Installation
+## Routines
 
-Add to your `Cargo.toml`:
+Routines are resolved from the same manifest and run through the provider.
 
-```toml
-[dependencies]
-nenjo = { version = "0.1", features = ["full"] }
-tokio = { version = "1", features = ["full"] }
+```rust
+let result = provider
+    .routine_by_id(routine_id)?
+    .run(task)
+    .await?;
 ```
 
-## Runtime API Overview
+Use `run_stream()` for routine events and final output handling. Routine steps use the same provider-owned agent, model, tool, prompt, and memory machinery as normal agent runs.
+
+## Key Traits
+
+| Trait or type | Role |
+|---------------|------|
+| `ManifestLoader` | Loads a full or partial `Manifest` |
+| `ModelProviderFactory` | Creates model providers by manifest `model_provider` name |
+| `ToolFactory` | Creates an agent's runtime tools from platform scopes, abilities, MCP assignments, and config |
+| `Memory` | Stores and recalls memories and resources |
+| `AgentRunner` | Executes chat turns and streams turn events |
+| `RoutineRunner` | Executes a manifest routine by ID |
+| `TurnEvent` | Describes tool calls, delegation, transcript updates, pause/resume, compaction, and completion |
+
+## Public Modules
 
 | Module | Purpose |
 |--------|---------|
-| `nenjo::agent` | Agent definition, runner, and turn handling |
-| `nenjo::manifest` | Parse and validate resource manifests |
-| `nenjo::provider` | Model, tool, and memory provider builders |
-| `nenjo::memory` | Session and semantic memory implementations |
-| `nenjo::context` | Prompt template variables and rendering |
-| `nenjo::knowledge` | Builtin and project knowledge APIs |
-
-## Manifest Schema Reference
-
-See the SDK domain documentation (`builtin::nenjo/domain/sdk.md`) for complete manifest field reference and validation rules.
-
-## Related Resources
-
-- [Worker](./worker): Always-on execution service
-- [Resource Surface Taxonomy](/taxonomy/resource-surfaces): Platform vs SDK surface routing
-- [Template Variables](/reference/template-vars): Prompt context variables
+| `agents` | Agent builder, instance, runner, prompts, abilities, domains, and delegation |
+| `manifest` | Typed platform resource definitions and manifest loading |
+| `provider` | Provider builder, model factory, tool factory, agent lookup, and routine lookup |
+| `memory` | Memory traits, markdown memory, memory scopes, and memory tools |
+| `context` | Prompt rendering and project/routine/step template variables |
+| `routines` | Routine execution, gates, councils, step results, and routine events |
+| `builtin_knowledge` | Built-in Nenjo knowledge available to worker tools |
+| `client` | Platform API client used by the worker and integrations |

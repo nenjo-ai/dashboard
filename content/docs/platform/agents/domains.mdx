@@ -1,98 +1,63 @@
----title: Domains
-description: User-activated execution modes that can add guidance, scopes, abilities, MCP tools, and session behavior.
-icon: ToggleRight
+---
+title: Domains
+description: User-activated modes that change an agent's guidance and available capabilities.
 slug: platform/agents/domains
 order: 4
-tags: [domain:runtime, resource:domains, operation:configure, risk:permissions, audience:agent]---# Domains
-Domains are **user-activated execution modes** that allow a user to explicitly place an agent into a different operating state with modified instructions, expanded permissions, and additional specialist capabilities. They are designed for elevated, sensitive, or mode-switching scenarios where the agent needs temporary access to different behavior and tools.
-## Domain vs Ability
+---
 
-| Aspect | **Ability** | **Domain** |
-|--------|-------------|------------|
-| **Activation** | Invoked by the agent as a tool | Activated explicitly by the user |
-| **Scope** | Narrow, focused capability | Broader mode change with new instructions |
-| **Permission Model** | Filtered scopes for the ability | Expanded platform scopes for the session |
-| **Use Case** | Specialist tasks | Elevated, sensitive, or strategic modes |
+# Domains
 
-**Key Distinction**: Abilities are **agent-invoked tools**. Domains are **user-activated modes**. If a capability should only run after explicit user approval or command, it should usually be a Domain, not an Ability.
+A **domain** is a user-activated mode for an agent. It lets the user say, "operate in this context now," and Nenjo adds the domain's guidance and capabilities to the active session.
 
-## Core Fields
+Domains are useful for explicit mode changes: production work, compliance review, legal review, architecture planning, debugging, or any other situation where the user should deliberately opt in.
 
-| Field | Description |
-|-------|-------------|
+## What a domain contains
+
+| Field | What it means |
+|-------|---------------|
 | `name` | Internal identifier |
-| `path` | Unique reference path |
-| `display_name` | Human-readable name shown to users |
-| `description` | Explains what the domain does and when to use it |
-| `command` | The user command that activates the domain (e.g., `/compliance-mode`) |
-| `platform_scopes` | Additional or expanded permissions granted while active |
-| `ability_ids` | Specialist abilities made available in this mode |
-| `mcp_server_ids` | External tools available in this mode |
-| `prompt_config.developer_prompt_addon` | Additional guidance appended to the agent's developer prompt |
+| `path` | Folder path used in the domain library |
+| `display_name` | Human-friendly label |
+| `description` | What the mode is for |
+| `command` | The command or selector used to activate the domain |
+| Guidance | Encrypted developer-prompt add-on for the active agent |
+| `platform_scopes` | Additional Nenjo scopes available while the domain is active |
+| `ability_ids` | Abilities made available in the domain |
+| `mcp_server_ids` | MCP servers made available in the domain |
+| Session config | Optional session behavior such as max turns and exit commands |
 
-## Runtime Behavior
+Domain guidance is org-scoped encrypted content. Domain metadata, commands, scopes, assignments, and session records are not encrypted.
 
-When a user activates a domain:
+## How activation works
 
-1. The agent receives the `developer_prompt_addon` which modifies its behavior and reasoning style
-2. The agent gains access to the additional `platform_scopes`, `abilities`, and `mcp_server_ids` defined by the domain
-3. A **domain session** is created and tracked for auditability
-4. The expanded capabilities remain active until the user explicitly deactivates the domain or the session ends
-5. All actions taken while the domain is active are associated with that domain session
+When a user activates a domain for an agent:
 
-```
-┌─────────────────────────────────────────────────────────┐
-│              Domain Activation Flow                      │
-├─────────────────────────────────────────────────────────┤
-│  1. User activates domain: /compliance-mode             │
-│  2. Domain session created (tracked for audit)          │
-│  3. developer_prompt_addon injected                     │
-│  4. Expanded scopes/abilities/MCP servers enabled       │
-│  5. Agent operates in elevated mode                      │
-│  6. User deactivates or session ends                     │
-│  7. Session logged for audit                             │
-└─────────────────────────────────────────────────────────┘
-```
+1. Nenjo creates or finds the active domain session for that user, agent, and project.
+2. The domain's guidance is added to the agent's prompt context.
+3. The domain's scopes, abilities, and MCP servers become available for that session.
+4. The session remains active until it is completed, cancelled, or replaced.
 
-## When to Use a Domain
+The active domain is session state, not a permanent change to the agent. Leaving the domain returns the agent to its normal behavior and assignments.
 
-Use a Domain when you need:
+## Domain vs ability
 
-- **Elevated permissions** or sensitive operations (e.g., production deployments, financial actions)
-- A **temporary shift** in agent behavior or personality
-- Access to a **different set of tools** for a specific session
-- **Clear auditability** of when and why a mode change occurred
+| Question | Domain | Ability |
+|----------|--------|---------|
+| Who activates it? | The user | The agent |
+| What does it change? | Mode, guidance, available scopes, tools, and abilities | A focused specialist execution |
+| How long does it last? | Across a domain session | For a nested call |
+| Best use | Explicit elevated or specialized mode | Reusable task-specific capability |
 
-## Common Patterns
+If the user should be aware that the agent is operating differently, use a domain.
 
-- **Compliance Mode** — Expanded regulatory scopes + specialized compliance abilities
-- **Production Mode** — Elevated deployment permissions with stricter audit logging
-- **Legal Review Mode** — Access to legal analysis abilities and sensitive document tools
-- **Debug Mode** — Additional diagnostic abilities and relaxed output constraints
-- **Executive Summary Mode** — Different reasoning style focused on high-level synthesis
+## Designing domains
 
-## Best Practices
+Good domains are explicit and understandable:
 
-1. **Use clear, memorable `command` names** — e.g., `/compliance`, `/exec-mode`
-2. **Document exactly what changes** when the domain is activated
-3. **Track domain sessions** for audit purposes
-4. **Prefer composition** (multiple focused domains) over monolithic mega-domains
-5. **Include a way for users to explicitly deactivate** a domain
-6. **Assign platform scopes through the controlled scope-management path**
+- The command should be easy to recognize, such as `/production` or `/legal-review`
+- The description should say what changes when the mode is active
+- The guidance should explain how the agent should behave differently
+- Additional scopes should be limited to what the mode needs
+- Added abilities should match the mode's purpose
 
-## Pitfalls to Avoid
-
-- Using Domains for narrow capabilities that an agent could safely invoke itself
-- Treating domain scope assignment as an agent-side write
-- Forgetting to track domain sessions for audit purposes
-- Creating too many overlapping domains instead of composing them cleanly
-- Making domain activation too easy for high-risk operations
-
-## Related Concepts
-
-- **[Agents](/docs/platform/agents)** — The agents that use domains
-- **[Abilities](/docs/platform/agents/abilities)** — Specialist tools
-- **[MCP](/docs/platform/agents/mcp)** — External tool integration
-- **[Scopes](/builtin/neljo/guide/scopes)** — Permission system
-
-This documentation is grounded in builtin knowledge. See [builtin::nenjo/guide/domains](/builtin/ nenjo/guide/domains) for the canonical reference.
+Avoid using domains as a hidden permission shortcut. A domain is a user-visible mode, so it should be clear why it exists.

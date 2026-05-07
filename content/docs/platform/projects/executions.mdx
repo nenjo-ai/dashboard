@@ -1,0 +1,46 @@
+---
+title: Executions
+description: Project execution history and how project runs are recorded.
+slug: platform/projects/executions
+order: 7
+---
+
+# Executions
+
+Executions are records of work that ran in Nenjo. Project executions connect a run to the project, task activity, agent activity, routine metadata, timing, status, and token usage.
+
+The project Execution tab shows recent runs for the current project and step progress when available.
+
+## What executions track
+
+| Field | Purpose |
+|-------|---------|
+| Project | The project the run belongs to |
+| Agent | The primary agent when one is associated with the run |
+| Routine | Routine ID and routine name when the run came from a routine |
+| Status | Pending, running, paused, cancelled, or completed |
+| Timing | Created, started, completed, cancelled, and updated timestamps |
+| Config | Execution configuration and trigger metadata |
+| Step events | Step names, step types, verdict data, and progress events |
+
+Execution metadata is not end-to-end encrypted. It is used for dashboard history, activity, progress updates, worker coordination, and usage reporting.
+
+## Project runs and routines
+
+When a task runs through a routine, the execution can record the routine ID and routine name. Step events then provide the detail: which step started, which step completed, whether a gate passed or failed, and how the run ended.
+
+Scheduled routines can also create executions associated with a project when the routine is bound to one.
+
+## Commands
+
+Agents or users with the right project write access can start, pause, resume, or cancel project executions through project-scoped APIs and tools.
+
+Use execution commands for active work. Use task status changes for the durable state of a task.
+
+## Token usage
+
+Token usage can be attributed to project work, routine work, chat, task work, or heartbeat activity. Project execution history helps connect that usage back to the work that caused it.
+
+## Permissions
+
+Reading project executions requires `projects:read`. Starting or controlling executions requires `projects:write`.

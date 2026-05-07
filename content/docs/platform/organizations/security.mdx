@@ -1,93 +1,66 @@
 ---
-title: Organization Security
-description: End-to-end encryption, device approval, key rotation, and member management.
-icon: Shield
+title: Security
+description: Trusted devices, recovery, workers, and encrypted organization content.
 slug: platform/organizations/security
 order: 1
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout'
 
-Nenjo protects your organization's data through **zero-trust end-to-end encryption**, device approval controls, and secure key management. This page covers how to configure security settings for your organization.
+Nenjo protects sensitive workspace content with keys that are created and used on trusted clients. The server stores encrypted payloads and the metadata required to route work, enforce permissions, and help trusted devices regain access.
 
-## End-to-End Encryption
+## Security model
 
-All organization data is encrypted end-to-end using encryption keys that only your organization members can decrypt. This means:
+There are two encryption scopes in use:
 
-- **Key ownership** — Your organization owns its encryption keys; Nenjo servers never see plaintext data
-- **Key distribution** — Members receive keys through secure channels when they join the organization
-- **Data isolation** — Each organization has distinct encryption keys that isolate data from other organizations
+| Scope | Key | Used for |
+|-------|-----|----------|
+| User | Account content key | Chat messages and assistant responses for that user |
+| Org | Organization content key | Shared project documents, task content, agent prompts, ability prompts, domain prompts, context block templates, and encrypted execution payloads |
 
-<Callout>
-  End-to-end encryption is enabled by default for all organizations. You cannot disable it — this is a core security principle.
-</Callout>
-
-### How Encryption Works
-
-1. When an organization is created, Nenjo generates a unique encryption key pair
-2. The private key is distributed to organization members through their devices
-3. All data (documents, agent prompts, memory, routines) is encrypted before leaving the device
-4. Only members with approved devices can decrypt organization data
-
-## Device Approval
-
-Device approval ensures that only trusted devices can access organization data. Before a device can decrypt organization content:
-
-1. **New device registration** — A user attempts to access from a new device
-2. **Approval request** — An existing organization member must approve the device
-3. **Key distribution** — Once approved, the encryption key is shared with the device
-4. **Access granted** — The device can now decrypt organization data
-
-### Configuring Device Approval
-
-Organization owners and admins can configure device approval settings:
-
-- **Require approval** — All new devices require member approval (default: enabled)
-- **Auto-approve domains** — Automatically approve devices from configured email domains
-- **Session duration** — How long a device can access before re-authentication
-
-## Key Rotation
-
-Key rotation periodically refreshes encryption keys to limit the impact of potential key compromise.
-
-### Manual Key Rotation
-
-Organization owners can trigger manual key rotation:
-
-1. Go to **Organization Settings** → **Security** → **Key Rotation**
-2. Click **Rotate Keys**
-3. Confirm the rotation — all members will receive new encryption keys on their next login
+The server does not need plaintext for encrypted content. It stores the encrypted payload, object type, object ID, key version, nonce, and ciphertext. Resource metadata is still stored separately so the app can show lists, search, enforce scopes, and route work.
 
 <Callout>
-  During key rotation, organization members must reconnect their devices. Plan key rotation during low-activity periods to minimize disruption.
+  Current Nenjo does not perform automatic key rotation. Key versions exist in the data model, but there is no automatic rotation schedule in the product today.
 </Callout>
 
-### Automatic Key Rotation
+## Trusted devices
 
-Organizations can enable automatic key rotation:
+A trusted device is a browser or client that has local encryption material for the signed-in user. During secure workspace setup, the device creates the user's local content key material, approval signing key, and recovery bundle.
 
-- **Annual rotation** — Keys rotate every 12 months
-- **Semi-annual rotation** — Keys rotate every 6 months (recommended for sensitive data)
-- **Quarterly rotation** — Keys rotate every 3 months
+For organization content, a trusted device also needs access to the active organization content key. When a device has that access, it can decrypt org-scoped content such as project documents, task content, agent prompts, and context blocks.
 
-## Inviting Members
+If a user signs in from a device that does not have org content access, the device can request access. An owner or admin with access can approve that request by wrapping the organization content key for the requesting device.
 
-Organization members invite new collaborators through secure invite links:
+## Recovery phrase
 
-1. Go to **Organization Settings** → **Members**
-2. Click **Invite Member**
-3. Enter the invitee's email address and select a role
-4. The invitee receives a secure link to join the organization
+The recovery phrase protects the user's encrypted recovery bundle. It is shown during secure workspace setup and must be backed up outside Nenjo.
 
-### Invite Security
+Recovery restores the user's account encryption material. For organization content, owner and admin roles may also receive a recovery-wrapped organization content key grant. That grant lets a recovered user regain org content access and then trust the new device.
 
-- **One-time links** — Invite links expire after 7 days or upon use
-- **Email verification** — Invitees must verify their email before joining
-- **Role assignment** — Invitees receive the role specified by the inviter
-- **Revocation** — Organization owners can revoke pending invites
+If the recovery phrase is lost, Nenjo cannot reconstruct the user's local recovery material. A team admin may still be able to approve org content access for a new device, but user-scoped encrypted chat history depends on the user's recovery path.
 
-## Related concepts
+## Workers
 
-- [Organizations](/docs/platform/organizations) — Overview of team collaboration
-- [Projects](/docs/platform/projects) — Workspace data protected by encryption
-- [Scopes](/docs/reference/scopes) — Permission boundaries for resources
+Workers need explicit enrollment before they can run work for an organization. The onboarding flow creates a worker API key, starts the worker, then approves the worker so it can receive the encrypted access material it needs.
+
+Workers do not get general plaintext access just because they exist. They receive scoped credentials and wrapped keys needed for the work they are approved to perform. Org-scoped encrypted payloads must match the enrolled organization before the worker can decrypt them.
+
+## What remains visible
+
+Some data is intentionally not encrypted because Nenjo needs it to operate:
+
+- Organization membership, roles, scopes, invites, and access-request state
+- Project, agent, routine, model, worker, and API key metadata
+- Resource names, descriptions, paths, IDs, timestamps, tags, status, and assignments
+- Routine definitions and model settings
+- Document metadata, task titles, execution run metadata, and activity records
+
+This metadata is protected by authentication, organization membership, and scopes. It is not protected by content encryption.
+
+## Current limits
+
+- There is no automatic organization key rotation today.
+- Key-version fields are present so encrypted payloads can identify which key version was used.
+- Removing a member or worker revokes future access grants, but already-decrypted local content is outside server control.
+- Metadata is not end-to-end encrypted.

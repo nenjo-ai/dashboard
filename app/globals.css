@@ -76,7 +76,16 @@
 
 @plugin '@tailwindcss/typography';
 
-/* Fumadocs dark mode overrides — match deep-space-blue dark bg */
+/* Fumadocs accent overrides — match the landing page amber. */
+:root {
+  --color-fd-ring: #b8841a !important;
+  --color-fd-primary: #b8841a !important;
+  --color-fd-primary-foreground: #ffffff !important;
+  --color-fd-accent: rgba(184, 132, 26, 0.12) !important;
+  --color-fd-accent-foreground: #111827 !important;
+}
+
+/* Fumadocs dark mode overrides — match the app shell with landing-page amber accents */
 .dark {
   --color-fd-background: #0a1023 !important;
   --color-fd-foreground: #e5e7eb !important;
@@ -84,12 +93,12 @@
   --color-fd-muted-foreground: #d1d5db !important;
   --color-fd-card: #111d35 !important;
   --color-fd-border: rgba(75, 95, 140, 0.4) !important;
-  --color-fd-ring: #4d6295 !important;
-  --color-fd-primary: #93c5fd !important;
+  --color-fd-ring: #b8841a !important;
+  --color-fd-primary: #b8841a !important;
   --color-fd-primary-foreground: #0a1023 !important;
   --color-fd-secondary: #111d35 !important;
   --color-fd-secondary-foreground: #e5e7eb !important;
-  --color-fd-accent: #162040 !important;
+  --color-fd-accent: rgba(184, 132, 26, 0.16) !important;
   --color-fd-accent-foreground: #f3f4f6 !important;
   --color-fd-popover: #111d35 !important;
   --color-fd-popover-foreground: #f3f4f6 !important;
@@ -111,14 +120,14 @@
 .dark [class*="DocsBody"] code:not(pre code),
 .dark [data-docs-body] code:not(pre code),
 .dark .prose code:not(pre code) {
-  color: #93c5fd !important;
-  background: rgba(59, 130, 246, 0.15) !important;
+  color: #f1c36a !important;
+  background: rgba(184, 132, 26, 0.16) !important;
 }
 
 .dark [class*="DocsBody"] a,
 .dark [data-docs-body] a,
 .dark .prose a {
-  color: #93c5fd !important;
+  color: #f1c36a !important;
 }
 
 .dark [class*="DocsBody"] li,
@@ -155,6 +164,157 @@
 
 .dark [class*="DocsBody"] th {
   background: rgba(75, 95, 140, 0.2) !important;
+}
+
+/* Keep Fumadocs sidebar labels inside the left navigation column. */
+#nd-docs-layout {
+  background: var(--app-bg) !important;
+}
+
+#nd-sidebar,
+#nd-sidebar-mobile {
+  background: var(--app-bg) !important;
+  overflow-x: hidden;
+}
+
+#nd-sidebar > *,
+#nd-sidebar [data-radix-scroll-area-viewport],
+#nd-sidebar [data-radix-scroll-area-viewport] > div,
+#nd-sidebar > div.overflow-hidden,
+#nd-sidebar > div.overflow-hidden > div,
+#nd-sidebar > div.overflow-hidden > div.size-full,
+#nd-sidebar-mobile > *,
+#nd-sidebar-mobile [data-radix-scroll-area-viewport],
+#nd-sidebar-mobile [data-radix-scroll-area-viewport] > div,
+#nd-sidebar-mobile > div.overflow-hidden,
+#nd-sidebar-mobile > div.overflow-hidden > div,
+#nd-sidebar-mobile > div.overflow-hidden > div.size-full {
+  background: var(--app-bg) !important;
+}
+
+#nd-sidebar *,
+#nd-sidebar-mobile * {
+  min-width: 0;
+}
+
+#nd-sidebar a,
+#nd-sidebar button,
+#nd-sidebar [role="button"],
+#nd-sidebar-mobile a,
+#nd-sidebar-mobile button,
+#nd-sidebar-mobile [role="button"] {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#nd-sidebar a,
+#nd-sidebar-mobile a {
+  display: flex;
+}
+
+#nd-page :is(h2, h3, h4, h5, h6) > a {
+  text-decoration: none !important;
+}
+
+@media (min-width: 768px) {
+  #nd-page {
+    margin-block: 16px 40px !important;
+    padding: 40px 32px !important;
+    border: 1px solid var(--color-fd-border) !important;
+    border-radius: 14px !important;
+    background: #ffffff !important;
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.06),
+      0 16px 48px rgba(15, 23, 42, 0.08) !important;
+  }
+
+  .dark #nd-page {
+    background: #101217 !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.28),
+      0 18px 56px rgba(0, 0, 0, 0.32) !important;
+  }
+}
+
+@media (min-width: 1280px) {
+  #nd-docs-layout {
+    --nenjo-docs-sidebar-width: 268px;
+    --nenjo-docs-page-width: 880px;
+    --nenjo-docs-toc-width: 268px;
+    --nenjo-docs-gap: 32px;
+    --nenjo-docs-shell-width: calc(
+      var(--nenjo-docs-sidebar-width) + var(--nenjo-docs-page-width) +
+        var(--nenjo-docs-toc-width) + (var(--nenjo-docs-gap) * 2)
+    );
+    --nenjo-docs-shell-left: max(
+      24px,
+      calc((100vw - var(--nenjo-docs-shell-width)) / 2)
+    );
+    --fd-layout-width: var(--nenjo-docs-shell-width);
+  }
+
+  #nd-sidebar[data-collapsed='false'] {
+    position: fixed !important;
+    top: var(--fd-docs-row-1, 0px) !important;
+    bottom: 0 !important;
+    left: var(--nenjo-docs-shell-left) !important;
+    right: auto !important;
+    inset-inline-start: var(--nenjo-docs-shell-left) !important;
+    inset-inline-end: auto !important;
+    width: var(--nenjo-docs-sidebar-width) !important;
+    min-width: var(--nenjo-docs-sidebar-width) !important;
+    max-width: var(--nenjo-docs-sidebar-width) !important;
+    height: calc(100dvh - var(--fd-docs-row-1, 0px)) !important;
+  }
+
+  #nd-page {
+    position: fixed !important;
+    top: 16px !important;
+    bottom: 16px !important;
+    left: calc(
+      var(--nenjo-docs-shell-left) + var(--nenjo-docs-sidebar-width) +
+        var(--nenjo-docs-gap)
+    ) !important;
+    right: auto !important;
+    width: var(--nenjo-docs-page-width) !important;
+    max-width: var(--nenjo-docs-page-width) !important;
+    height: calc(100dvh - 32px) !important;
+    margin: 0 !important;
+    padding: 48px 40px !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+  }
+
+  #nd-toc {
+    position: fixed !important;
+    top: 40px !important;
+    bottom: 24px !important;
+    left: calc(
+      var(--nenjo-docs-shell-left) + var(--nenjo-docs-sidebar-width) +
+        var(--nenjo-docs-page-width) + (var(--nenjo-docs-gap) * 2)
+    ) !important;
+    right: auto !important;
+    width: var(--nenjo-docs-toc-width) !important;
+    height: calc(100dvh - 64px) !important;
+    padding: 10px 0 0 0 !important;
+  }
+}
+
+@media (min-width: 1280px) and (max-width: 1519px) {
+  #nd-docs-layout {
+    --nenjo-docs-page-width: min(
+      760px,
+      calc(100vw - var(--nenjo-docs-sidebar-width) - var(--nenjo-docs-toc-width) - 96px)
+    );
+    --nenjo-docs-gap: 24px;
+  }
+
+  #nd-page {
+    padding-inline: 32px !important;
+  }
 }
 
 @layer base {

@@ -1,0 +1,108 @@
+---
+title: Scopes
+description: Platform scope strings and the agent tools each runtime scope adds.
+slug: platform/scopes
+order: 3
+---
+
+# Scopes
+
+Scopes are exact permission strings. In Nenjo they are used in a few places:
+
+- Organization members use scopes to control API access.
+- API keys use scopes to limit backend access.
+- Agents, abilities, and domains use platform scopes to decide which platform tools are available at runtime.
+- Internal MCP tool filtering can hide tools whose required scope is not present.
+
+Use the smallest scope set that lets the resource do its job. A `:write` scope implies read access for the same resource family.
+
+## Runtime Tool Scopes
+
+These scopes add built-in platform tools to an agent when the worker builds its tool list.
+
+| Scope | Tools added |
+|-------|-------------|
+| `agents:read` | `list_agents`, `get_agent`, `get_agent_prompt` |
+| `agents:write` | `create_agent`, `update_agent`, `update_agent_prompt`, `delete_agent` |
+| `abilities:read` | `list_abilities`, `get_ability`, `get_ability_prompt` |
+| `abilities:write` | `create_ability`, `update_ability`, `update_ability_prompt`, `delete_ability` |
+| `domains:read` | `list_domains`, `get_domain`, `get_domain_prompt` |
+| `domains:write` | `create_domain`, `update_domain`, `update_domain_prompt`, `delete_domain` |
+| `projects:read` | `list_projects`, `get_project`, `list_project_documents`, `read_project_document_manifest`, `read_project_document`, `search_project_documents`, `search_project_document_paths`, `list_project_document_tree`, `list_project_document_neighbors`, `list_project_tasks`, `get_project_task`, `list_project_execution_runs`, `get_project_execution_run` |
+| `projects:write` | `create_project`, `update_project`, `delete_project`, `create_project_document`, `update_project_document_content`, `delete_project_document`, `create_project_tasks`, `update_project_task`, `delete_project_task`, `start_project_execution`, `pause_project_execution`, `resume_project_execution` |
+| `routines:read` | `list_routines`, `get_routine` |
+| `routines:write` | `create_routine`, `update_routine`, `delete_routine` |
+| `models:read` | `list_models`, `get_model` |
+| `models:write` | `create_model`, `update_model`, `delete_model` |
+| `councils:read` | `list_councils`, `get_council` |
+| `councils:write` | `create_council`, `update_council`, `add_council_member`, `remove_council_member`, `delete_council` |
+| `context_blocks:read` | `list_context_blocks`, `get_context_block`, `get_context_block_content` |
+| `context_blocks:write` | `create_context_block`, `update_context_block`, `update_context_block_content`, `delete_context_block` |
+
+Write scopes add mutation tools and satisfy read checks for the same resource family. For example, `projects:write` also satisfies a `projects:read` requirement.
+
+## Project Scope Covers More Than Projects
+
+`projects:read` and `projects:write` cover project-scoped surfaces:
+
+- Projects
+- Tasks
+- Project documents
+- Document relationships
+- Task dependencies
+- Execution runs
+- Execution controls
+- Project-scoped state used by workers
+
+That is why there are no separate runtime tool scopes such as `tasks:write` or `documents:write` in the current implementation.
+
+## Valid API and Assignment Scopes
+
+These scopes are valid in the broader platform scope registry. Some are used for organization members or API keys rather than adding built-in runtime tools to agents.
+
+| Scope | Current use |
+|-------|-------------|
+| `mcp_servers:read` | Allows reading MCP server configuration and assignments through API/admin surfaces. External MCP tools are assigned by server assignment; platform-scoped MCP tools may also be filtered by their own scope field. |
+| `mcp_servers:write` | Allows creating, updating, deleting, or assigning MCP server configuration through API/admin surfaces. |
+| `chat:read` | API-key scope for chat sessions, messages, commands, stream metadata, and notifications where exposed. |
+| `chat:write` | API-key scope for creating, updating, sending, streaming, or mutating chat-related resources. |
+| `org:read` | Read organization metadata. |
+| `org:write` | Mutate organization metadata. |
+| `org_members:read` | Read organization members and member permissions. |
+| `org_members:write` | Mutate organization members and member permissions. |
+| `org_invites:read` | Read organization invitations. |
+| `org_invites:write` | Create, resend, revoke, accept, or mutate organization invitations. |
+| `org_billing:read` | Read billing-related organization state. |
+| `org_billing:write` | Mutate billing-related organization state. |
+| `workers:read` | Read worker enrollment, status, runtime, and capability information. |
+| `workers:approve` | Approve or reject workers and manage approval-key related worker access. |
+| `workers:write` | Mutate worker enrollment and runtime administration outside approval-specific operations. |
+| `api_keys:read` | Read API keys and API-key metadata. |
+| `api_keys:write` | Create, update, revoke, or mutate API keys. |
+
+These scopes do not currently add built-in agent tools through the worker's manifest tool groups. They still matter for API authorization, organization membership, API keys, and controlled admin surfaces.
+
+## MCP Tool Filtering
+
+External MCP servers are assigned to agents separately. External server tools usually do not have Nenjo platform scopes.
+
+The internal platform MCP path can attach a `scope` field to tools. When that happens, the worker only exposes the tool if the agent has a matching scope. A write scope also satisfies the matching read scope.
+
+## Assignment Rules
+
+Platform scopes are security-sensitive. Agents should not grant scopes to themselves or to other executable resources.
+
+In normal design work, an agent can recommend the minimum scopes needed. The user or an admin should assign scopes through the controlled platform scope-management path.
+
+## Common Scope Sets
+
+| Use case | Suggested scopes |
+|----------|------------------|
+| Read-only platform guide | `agents:read`, `projects:read`, `routines:read`, `domains:read`, `abilities:read`, `models:read`, `context_blocks:read`, `mcp_servers:read` |
+| Project work manager | `projects:write`, `routines:read`, `agents:read`, `models:read` |
+| Workflow builder | `routines:write`, `councils:read`, `agents:read`, `projects:read`, `context_blocks:read` |
+| Council builder | `councils:write`, `agents:read`, `projects:read`, `routines:read`, `context_blocks:read` |
+| Agent designer | `agents:read`, `models:read`, `abilities:read`, `domains:read`, `context_blocks:read`, `mcp_servers:read` |
+| Creator mode | `agents:write`, `projects:write`, `routines:write`, `domains:write`, `abilities:write`, `context_blocks:write`, `models:write` |
+
+Start read-only when the agent only needs to explain, inspect, diagnose, or design. Add write scopes only when the agent must perform the mutation itself.

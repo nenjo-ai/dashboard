@@ -1,105 +1,39 @@
 ---
 title: Nenji
-description: Nenji is the default platform guide and orchestrator for the Nenjo platform.
-icon: MessageSquare
+description: Nenji is the default guide for bootstrapping and operating a Nenjo workspace.
 order: 3
 ---
 
-**Nenji** is the default platform guide and orchestrator for the Nenjo platform. It provides conversational access to all Nenjo resources and guides users through the system.
+**Nenji** is the default guide inside Nenjo. It is designed to help you turn a blank workspace into a working system of projects, agents, routines, knowledge, permissions, and execution infrastructure.
 
-## What Nenji Does
+Use Nenji when you know what outcome you want but do not yet know which Nenjo resources should exist. It can help you shape the workspace, ask clarifying questions, draft resource configurations, and connect the pieces through the platform.
 
-Nenji helps users with:
+## What Nenji was designed for
 
-- **Explaining Nenjo concepts** — Understanding agents, abilities, domains, routines, projects, and other resources
-- **Designing new resources** — Creating agents, routines, documents, prompts, and more
-- **Configuring resources** — Updating settings, permissions, memory profiles, and capabilities
-- **Orchestrating work** — Breaking down complex tasks, managing dependencies, and coordinating execution
-- **Troubleshooting** — Diagnosing issues with memory, prompts, permissions, or execution flow
+Nenji is a bootstrap and orchestration agent. Its job is to help you:
 
-## Surface Awareness
+- Map your work into Nenjo resources
+- Create useful first projects, agents, routines, and knowledge documents
+- Decide when a capability should be an agent, ability, domain, routine, or council
+- Keep platform setup grounded in real constraints like models, workers, scopes, and repository access
+- Inspect and revise existing resources as your workspace matures
 
-Nenji automatically identifies which **surface** the user is working on before recommending actions:
+Nenji is platform-first. If you ask it to build or configure something in the dashboard, it should talk in terms of platform resources and editor fields. If you ask for SDK manifests, local files, or embedded runtime behavior, it should switch to SDK guidance.
 
-| Surface | Description | When to Use |
-|---------|-------------|-------------|
-| **Platform** | Dashboard, chat, editors, settings, workers | User mentions chat, dashboard, project pages, editors, settings |
-| **SDK** | Manifests, local files, runtime embedding | User asks for manifests, local files, code embedding |
+## How to prompt Nenji
 
-**Platform-first default:** When a user asks about Nenjo at a high level, Nenji explains concepts without assuming either platform UI work or SDK manifest authoring.
+Good Nenji prompts describe the workspace you want, the work it should support, and any constraints Nenji should respect.
 
-### Surface Routing Examples
+Strong prompts usually include:
 
-- "Create an agent" → Platform fields, editor flows, platform tools
-- "Show me the agent manifest" → SDK manifest JSON/YAML with field explanations
-- "How do I structure a routine?" → Routine editor graph structure
-- "How do I embed an agent in Rust?" → Provider builder, memory, runner APIs
+- The kind of work your team does
+- The first project or workflow you want to support
+- The agents or roles you expect to need
+- Any required tools, models, repositories, or approval steps
+- Whether you want Nenji to ask questions first or propose a draft plan
 
-## Nenji as an Agent
+For copyable prompt examples, see [Bootstrap](/docs/getting-started/bootstrap).
 
-Nenji itself is an agent with specific characteristics:
+## What to expect
 
-### Memory Profile
-
-- **Core focus:** Strong — Nenjo methodology, platform behavior, resource design principles
-- **Project focus:** Context-dependent — Current project documents and task context
-- **Shared focus:** Broad — Cross-project patterns, team conventions, common solutions
-
-### Capabilities
-
-Nenji has broad access to:
-- All platform resources (read/create/update)
-- Project and execution context
-- Agent, routine, and document editors
-- Settings and configuration
-- MCP server tools
-
-### Runtime Modes
-
-Nenji operates in multiple runtime modes depending on context:
-
-| Mode | When Triggered |
-|------|----------------|
-| `chat` | Direct user conversation |
-| `task` | Executing a project task |
-| `gate` | Evaluating evidence or readiness |
-| `design` | Creating or configuring resources |
-
-## Working with Nenji
-
-### Asking Good Questions
-
-- Be specific about what you want: "Explain agents" vs "Create an agent for code review"
-- Mention the surface when relevant: "Show me the SDK manifest" vs "Create it in the platform"
-- State your goal: "I need to orchestrate a multi-agent review flow"
-
-### Nenji Responses
-
-Nenji will:
-1. Identify your intent and the appropriate surface
-2. Explain relevant concepts and options
-3. Recommend concrete next actions or resources to create
-4. Offer to execute platform operations when ready
-
-### Following Up
-
-After Nenji creates or configures a resource:
-- Review the created resource in the appropriate editor
-- Test the resource in a safe context
-- Iterate with follow-up questions like "Add memory focus" or "Update the prompt"
-
-## Nenji Architecture
-
-As the bootstrap agent, Nenji is designed with these principles:
-
-- **Personality:** Helpful, clear, proactive
-- **Methodology:** Prefer explicit gates, structured workflows, and verification
-- **Memory:** Strong cross-project knowledge with clear scoping
-- **Permissions:** Broad platform-managed access (not self-assigned)
-
-## Related Documentation
-
-- [What is Nenjo](/docs/index) — Platform overview
-- [Building Blocks](/introduction/building-blocks) — Core resource concepts
-- [Agents](/docs/agents) — Agent architecture
-- [Memory](/docs/memory) — Memory system
+Nenji should usually start by clarifying the goal, then propose a concrete shape for the workspace. For small requests, it may create or update resources directly. For larger bootstraps, it should first give you a plan that you can approve, adjust, or turn into platform actions.

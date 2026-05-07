@@ -1,0 +1,63 @@
+---
+title: Step Types
+description: The step types available in the routine graph editor.
+slug: routines/step-types
+order: 2
+---
+
+# Step Types
+
+Routine steps are the units of work in a graph. The current dashboard editor offers six step types.
+
+## Agent
+
+An **agent** step runs one selected agent. It is the normal step for doing work: implement a task, summarize context, inspect a document, update a project, or produce an answer.
+
+Agent steps receive the current task or cron context, project context when available, routine context, step metadata, and the output of the previous step. They can return a structured pass or fail verdict.
+
+One important behavior: if an agent step returns a failure verdict, the routine stops. Use a gate when you want pass/fail routing.
+
+## Council
+
+A **council** step runs a selected council. A council has a leader, members, and a delegation strategy such as dynamic, broadcast, decompose, round robin, or vote.
+
+Use a council when the step benefits from several agents rather than one. The council produces one step result, then the routine continues from that result.
+
+## Gate
+
+A **gate** step evaluates the previous step output. It runs a selected agent using the gate prompt path and returns pass or fail.
+
+Gates are built for routing. In the editor, gate nodes expose separate pass and fail handles so you can draw an `on_pass` edge and an `on_fail` edge.
+
+Good gates have clear criteria. A vague gate tends to create vague routing.
+
+## Cron
+
+A **cron** step runs a selected agent using the cron prompt path. It is a flow-control step inside a routine, separate from the routine-level `cron` trigger.
+
+Cron steps are useful when a step should repeat on an interval until it returns a pass or fail verdict. The step config supports an interval such as `30s`, `5m`, or `1h`, and a timeout such as `1h` or `24h`.
+
+Cron steps also expose pass and fail routes.
+
+## Terminal
+
+A **terminal** step marks a successful end state. It does not run an agent or council.
+
+Use terminal steps to make the graph's successful outcomes easy to read.
+
+## Terminal Fail
+
+A **terminal fail** step marks an explicit failure end state. It can include a failure reason shown when the routine reaches that node.
+
+Use terminal fail steps when a rejected or blocked path should end intentionally instead of simply running out of edges.
+
+## Choosing steps
+
+| Need | Use |
+|------|-----|
+| Do work with one role | Agent |
+| Bring in multiple roles | Council |
+| Evaluate and branch | Gate |
+| Repeat a step until verdict or timeout | Cron step |
+| End successfully | Terminal |
+| End as failed | Terminal fail |

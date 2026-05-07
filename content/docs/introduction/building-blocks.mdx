@@ -1,31 +1,37 @@
 ---
 title: Building Blocks
-description: Overview of the core resources that make up Nenjo — agents, abilities, domains, routines, projects, and more.
-icon: Blocks
+description: "Overview of the core resources that make up Nenjo: projects, agents, abilities, domains, routines, memory, and knowledge."
 order: 2
 ---
 
-The Nenjo platform is built from a set of interconnected **building blocks**. Each resource type serves a specific purpose and can be composed with others to create sophisticated AI workflows.
+Nenjo is built from a set of resources that compose together. Each one has a simple job: hold context, define behavior, grant a capability, switch modes, run a process, or preserve knowledge.
+
+You do not need all of them on day one. Most useful setups begin with a project and an agent, then add routines, abilities, domains, memory, and documents as the work becomes more important or more repeatable.
 
 ## Projects
 
-Projects are the **top-level containers** for work in Nenjo. They group tasks, documents, settings, repository connections, and execution runs into a single, coherent workspace.
+Projects are the main boundary for work in Nenjo. A project keeps tasks, documents, settings, execution history, repository connections, and project-specific memory together.
 
-**Key fields:**
-- `name` — Human-readable project name
-- `slug` — URL-friendly unique identifier
-- `description` — Overview of the project's purpose
-- `repo_url` — Optional Git repository connection for workspace-driven workflows
+Think of a project as a working environment, not just a folder. It gives agents a place to understand what they are working on, which documents matter, what has already happened, and how future executions should be scoped.
 
-Projects provide isolation for tasks, documents, memory, and execution history. When connected to a Git repository, task executions use an isolated **Git worktree** so agents can operate against a clean checkout for each task.
+The important layer is project knowledge. Projects can contain structured documents that form a local knowledge graph:
 
-**Related:** [Projects guide](/docs/projects) | [Executions](/docs/executions)
+- **Domain** documents explain the problem space.
+- **Entity** documents define important objects and data models.
+- **Policy** documents capture rules, constraints, and decision criteria.
+- **Taxonomy** documents classify concepts.
+- **Reference** documents store facts, glossaries, and lookup material.
+- **Guide** documents explain patterns and usage.
+
+When those documents are connected, agents can reason from shared project context instead of relying only on the current chat. For code-backed projects, a repository connection can also give executions an isolated workspace where agents inspect, change, test, and report on real files.
 
 ---
 
 ## Agents
 
-Agents are the **primary behavioral units** of Nenjo. An agent defines how work is interpreted, what role it performs, what runtime context matters, and which capabilities it can access.
+Agents are the main behavioral units in Nenjo. An agent defines a role: how work should be interpreted, which prompts shape behavior, what memory matters, which model to use, which tools are available, and what permissions apply.
+
+An agent can be conversational, task-focused, scheduled, evaluative, or part of a multi-agent collaboration. The role stays consistent, but the runtime context changes depending on how the agent is being used.
 
 **What an agent owns:**
 - Behavioral identity and role
@@ -46,49 +52,37 @@ Agents are the **primary behavioral units** of Nenjo. An agent defines how work 
 | `cron` | Scheduled/recurring execution |
 | `heartbeat` | Periodic autonomous checks |
 
-**Related:** [Agents guide](/docs/agents) | [Prompt Structuring](/docs/prompt-structuring) | [Memory](/docs/memory)
+Start with a clear role and the smallest useful capability set. Add tools, scopes, domains, and memory focus deliberately as the agent's responsibility grows.
 
 ---
 
 ## Abilities
 
-Abilities are **reusable specialist execution modes** that an agent can invoke as callable tools. They provide narrow, high-signal capabilities that extend what an agent can do.
+Abilities are reusable specialist capabilities that an agent can invoke as tools. They are for focused work that is useful across agents but does not need to become a full standalone agent or a user-facing mode.
 
-Examples of abilities:
-- File system operations (read, write, search)
-- Web search and fetch
-- Code execution and testing
-- Document generation
-- API calls to external services
+An ability might handle code review, document summarization, policy checks, data extraction, research synthesis, or another narrow task. The calling agent decides whether to use it based on the current request and the ability's activation guidance.
 
-**Design principle:** Abilities should be narrow and focused. Complex functionality is better composed from multiple specialized abilities rather than a single broad ability.
-
-**Related:** [Abilities guide](/docs/abilities)
+Use an ability when the agent can safely decide to call a specialist tool. If the user should explicitly opt into the behavior, use a domain instead.
 
 ---
 
 ## Domains
 
-Domains are **user-activated execution modes** that expand guidance, scopes, abilities, or integrations for a session. Unlike abilities which are agent-owned, domains are activated by users during a session.
+Domains are user-activated modes. They let a user intentionally place an agent into a different operating state for a session.
 
-When a user activates a domain:
-- Additional prompt guidance is injected
-- New scopes may be granted
-- Additional abilities become available
-- MCP integrations may be added
+A domain can change the agent's guidance, expose additional abilities, add MCP integrations, or grant expanded platform scopes through a controlled path. Domains are designed for work where the mode switch should be visible, intentional, and auditable.
 
-**Examples:**
-- `code-mode` — Elevated permissions and tools for code development
-- `admin-mode` — System administration capabilities
-- `analysis-mode` — Data analysis and visualization tools
+Common examples include compliance mode, production mode, legal review mode, debug mode, or executive summary mode.
 
-**Related:** [Domains guide](/docs/domains)
+The distinction from abilities matters: abilities are agent-invoked; domains are user-activated. Use a domain when the work is sensitive, elevated, strategic, or should leave a clear audit trail.
 
 ---
 
 ## Routines
 
-Routines are **workflow graphs** composed of steps, gates, agents, councils, and triggers. They orchestrate how work flows through the system.
+Routines make work repeatable. A routine is a workflow graph made from steps, gates, agents, councils, triggers, and terminal outcomes.
+
+Use a routine when the work has a process: draft then review, fan out to several specialists then synthesize, run a scheduled check, or gate an output against acceptance criteria. Every step transition and decision can be recorded, which makes routines easier to inspect and improve than a long unstructured chat.
 
 **Components:**
 - **Steps** — Individual actions or agent invocations
@@ -105,8 +99,6 @@ Routines are **workflow graphs** composed of steps, gates, agents, councils, and
 - Council with leader and members
 - Retry loops with gates
 
-**Related:** [Routines guide](/docs/routines)
-
 ---
 
 ## Memory
@@ -120,8 +112,6 @@ Nenjo provides a **scoped memory system** for agents with three scopes:
 | `shared_focus` | Knowledge shared across projects | Reusable patterns, team conventions |
 
 **Best practice:** Start simple with only `project_focus`. Expand to `core_focus` and `shared_focus` as the agent's responsibilities grow.
-
-**Related:** [Memory guide](/docs/memory)
 
 ---
 
@@ -137,8 +127,6 @@ Context blocks are **reusable prompt-context assets** referenced by path-like te
 
 **Example reference:** `context:standard/instructions/security`
 
-**Related:** [Context Blocks guide](/docs/context-blocks)
-
 ---
 
 ## Template Variables
@@ -149,29 +137,34 @@ Template variables connect **static prompt design** with **live execution state*
 | Variable | Description |
 |----------|-------------|
 | `{{ project }}` | Current project context |
-| `{{ task }}` | Current task description |
-| `{{ acceptance_criteria }}` | Task acceptance criteria |
+| `{{ project.documents }}` | Project knowledge and document metadata |
+| `{{ task }}` | Current task context |
+| `{{ task.acceptance_criteria }}` | Task acceptance criteria |
 | `{{ chat.message }}` | User message in chat mode |
-| `{{ execution }}` | Current execution state |
-
-**Related:** [Template Variables reference](/docs/template-vars)
+| `{{ routine }}` | Current routine context |
+| `{{ routine.execution_id }}` | Current routine execution run |
+| `{{ available_agents }}` | Agents available for delegation or routing |
+| `{{ memories.project }}` | Learned project-specific memory |
 
 ---
 
 ## Scopes
 
-Scopes define **fine-grained permissions** for resource and action access boundaries. They follow a least-privilege model where agents receive only the permissions they need.
+Scopes define **fine-grained permissions** for platform resource families. They follow a least-privilege model where agents receive only the platform tool access they need.
+
+Each scope adds a corresponding set of platform tools to an agent, ability, domain, API key, or organization member. For example, `agents:read` allows agent read/list/get tools, while `agents:write` allows tools that create or mutate agents. Write scopes imply read access for the same resource family.
 
 **Scope examples:**
-- `project:read` — Read project metadata
-- `project:write` — Modify project settings
-- `task:create` — Create new tasks
-- `task:execute` — Run task executions
-- `memory:write` — Write to agent memory
+- `agents:read` / `agents:write` — Read or mutate agents, including prompt-related agent surfaces
+- `abilities:read` / `abilities:write` — Read or mutate abilities
+- `domains:read` / `domains:write` — Read or mutate domains and domain sessions
+- `projects:read` / `projects:write` — Read or mutate projects, tasks, documents, dependencies, executions, and project-scoped state
+- `routines:read` / `routines:write` — Read or mutate routines
+- `councils:read` / `councils:write` — Read or mutate councils
+- `context_blocks:read` / `context_blocks:write` — Read or mutate reusable prompt-context assets
+- `models:read` / `models:write` — Read or mutate model records
 
-Platform scopes are assigned by admin or platform-controlled surfaces, not by agent-facing creation tools.
-
-**Related:** [Scopes guide](/docs/scopes)
+Platform scopes are assigned by admin or platform-controlled surfaces, not by agent-facing creation tools. Agents may recommend the minimum scopes needed, but they should not assign scopes to themselves.
 
 ---
 
@@ -180,26 +173,41 @@ Platform scopes are assigned by admin or platform-controlled surfaces, not by ag
 These building blocks compose into a complete system:
 
 ```
-Project
-├── Tasks & Executions
-├── Documents (Knowledge Graph)
-│   ├── Guides
-│   ├── References
-│   ├── Entity documents
-│   └── Policy documents
+Nenjo Workspace
+├── Projects
+│   ├── Tasks & executions
+│   ├── Documents / knowledge graph
+│   ├── Repository context
+│   └── Project-scoped memory
 │
-└── Agents
-    ├── Prompt configuration
-    ├── Memory profile (core/project/shared)
-    ├── Abilities (specialist tools)
-    ├── Domains (user-activated modes)
-    └── Scopes (permissions)
-        │
-        └── Routines
-            ├── Steps
-            ├── Gates
-            ├── Councils
-            └── Triggers
+├── Agents
+│   ├── Prompt configuration
+│   ├── Model assignment
+│   ├── Memory profile
+│   ├── Platform scopes
+│   ├── Assigned abilities
+│   ├── Assigned domains
+│   └── Assigned MCP servers
+│
+├── Routines
+│   ├── Triggers
+│   ├── Steps
+│   ├── Gates
+│   ├── Agent and council runs
+│   └── Terminal outcomes
+│
+├── Abilities
+│   └── Specialist tools agents can invoke
+│
+├── Domains
+│   └── User-activated modes with extra guidance, scopes, tools, or abilities
+│
+├── Councils
+│   └── Structured multi-agent collaboration
+│
+├── Context Blocks
+│   └── Reusable prompt-context assets
+│
+└── Models and MCP Servers
+    └── Runtime integrations assigned to agents, abilities, or domains
 ```
-
-**Related:** [Nenjo overview](/docs/index) | [Nenji](/introduction/nenji)

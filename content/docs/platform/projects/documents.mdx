@@ -1,0 +1,62 @@
+---
+title: Documents
+description: Project documents, metadata, relationships, and how agents use project knowledge.
+slug: platform/projects/documents
+order: 4
+---
+
+# Documents
+
+Project documents are explicit knowledge for a project. They can hold requirements, policies, domain explanations, data definitions, glossaries, implementation notes, and other reference material agents should use.
+
+The Documents tab lets you upload files, edit text documents, preview Markdown, classify documents, tag them, write summaries, and connect documents with typed relationships.
+
+## Document metadata
+
+| Field | Purpose |
+|-------|---------|
+| Filename | Original uploaded file name |
+| Path | Dot-separated logical path used to organize the document tree |
+| Title | Human-readable document title |
+| Kind | `guide`, `reference`, `taxonomy`, `domain`, `entity`, or `policy` |
+| Authority | `canonical`, `supporting`, `reference`, `draft`, or `deprecated` |
+| Summary | Short explanation shown to agents and humans |
+| Tags | Search and grouping hints |
+| Status | Free-form lifecycle/status value |
+
+Metadata is not encrypted. It is used to list documents, build the document tree, search, route worker sync, and render `{{ project.documents }}` context.
+
+## Document content
+
+Uploaded files are stored in object storage and tracked in the project document table.
+
+For text-like files created or updated through the dashboard, document content is encrypted with the organization content key before it is sent to the backend. The server stores the encrypted payload reference and metadata needed to retrieve and decrypt it on trusted devices.
+
+Document metadata remains visible platform metadata. Binary and non-text uploads may not follow the same client-side text encryption path, so treat the document metadata and file handling model as distinct.
+
+## Document kinds
+
+Use the kind field to make the project knowledge layer easier for agents to understand:
+
+| Kind | Good use |
+|------|----------|
+| Domain | Problem space, business area, or product area |
+| Entity | Important objects, schemas, concepts, or data models |
+| Policy | Rules, constraints, standards, and decision criteria |
+| Taxonomy | Classification systems and controlled vocabularies |
+| Reference | Facts, lookup material, glossaries, and API notes |
+| Guide | How-to guidance, workflows, and explanatory material |
+
+## Relationships
+
+Documents can link to other documents with these edge types:
+
+`part_of`, `defines`, `governs`, `classifies`, `references`, `depends_on`, `extends`, and `related_to`.
+
+These edges turn a pile of files into a navigable project knowledge graph. Keep relationships simple and meaningful. A few clear links are more useful than every document pointing at every other document.
+
+## Agent context
+
+Workers sync project document metadata into the local workspace. Agents can receive a compact XML listing through `{{ project.documents }}` that includes document names, paths, kinds, authority, status, tags, size, and summaries.
+
+Use `{{ project.documents }}` for knowledge-heavy project work. Do not inject it into every prompt by default if the task does not need the document graph.

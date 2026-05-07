@@ -1,0 +1,55 @@
+---
+title: Crates
+description: What each crate in the nenjo Rust workspace owns.
+slug: harness/crates
+order: 63
+tags:
+  - harness
+  - crates
+  - rust
+---
+
+# Crates
+
+The `nenjo` repo is a Rust workspace. The crates are split by responsibility so the embeddable SDK, platform transport contracts, local tools, and worker process can evolve without becoming one large runtime package.
+
+## Workspace Crates
+
+| Crate | Purpose |
+|-------|---------|
+| `nenjo` | Core SDK: provider builder, manifest types, agent runners, prompt context, memory hooks, routine execution, and public API re-exports |
+| `nenjo-models` | Model provider trait and implementations for OpenAI, Anthropic, Gemini, OpenRouter, Ollama, OpenAI-compatible APIs, and reliability wrappers |
+| `nenjo-tools` | Tool trait, built-in file/shell/git/search/web/browser/memory tools, runtime adapters, and security policy |
+| `nenjo-xml` | XML serialization and MiniJinja template rendering helpers used in prompt context |
+| `nenjo-events` | Typed command, response, stream, capability, subject, and encrypted payload contracts shared by worker and platform |
+| `nenjo-eventbus` | Transport-agnostic event bus abstraction plus NATS JetStream transport |
+| `nenjo-secure-envelope` | Encryption-aware envelope layer over the event bus |
+| `nenjo-crypto-auth` | Worker enrollment, wrapped key state, and secure-envelope key provider primitives |
+| `nenjo-platform` | Platform-backed manifest contracts, REST client pieces, MCP tool contracts, local backend helpers, and scope policy helpers |
+| `nenjo-sessions` | Shared session records, content stores, coordinator traits, and recoverable session state |
+| `nenjo-worker` | The worker implementation used by `nenjo run` |
+| `nenjo-cli` | CLI package in `bin/` that builds the `nenjo` binary |
+
+## Boundaries
+
+| Layer | Crates |
+|-------|--------|
+| Core SDK | `nenjo`, `nenjo-models`, `nenjo-tools`, `nenjo-xml` |
+| Platform contracts | `nenjo-events`, `nenjo-platform` |
+| Transport | `nenjo-eventbus`, `nenjo-secure-envelope`, `nenjo-crypto-auth` |
+| Worker and CLI | `nenjo-worker`, `nenjo-cli`, `nenjo-sessions` |
+
+## How the Pieces Fit
+
+```text
+nenjo-cli
+  -> nenjo-worker
+      -> nenjo-eventbus + nenjo-secure-envelope
+      -> nenjo-platform + nenjo-events + nenjo-sessions
+      -> nenjo
+          -> nenjo-models
+          -> nenjo-tools
+          -> nenjo-xml
+```
+
+The SDK crate owns execution semantics. The worker crate owns platform connectivity and local process state. The transport and event crates keep the worker-platform boundary typed and reusable.

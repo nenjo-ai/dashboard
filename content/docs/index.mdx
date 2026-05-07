@@ -1,56 +1,53 @@
 ---
 title: What is Nenjo
-description: Nenjo is an agentic work system for designing, operating, and improving AI resources.
-icon: Bot
+description: Nenjo is a workspace for building AI agents, workflows, and project knowledge that can actually operate together.
 order: 1
 ---
 
-Nenjo is an **agentic work system** for designing, operating, and improving AI resources such as agents, abilities, domains, routines, councils, projects, tasks, memory, and knowledge documents.
+Nenjo is a system for turning AI from a single chat box into a working environment.
 
-## Two Surfaces
+It gives you a place to design agents, give them useful context, connect them to tools, route work through repeatable workflows, and keep a record of what happened. Instead of asking one assistant to remember everything and improvise every step, Nenjo lets you shape the people, permissions, knowledge, and process around the work.
 
-Nenjo has two main surfaces:
+At the center of the platform is **Nenji**, the default guide and orchestrator. Nenji helps you create resources, explain how they fit together, inspect existing configuration, and move between high-level design and concrete platform actions.
 
-- **Platform Surface** — Where users work through the dashboard, chat, editors, settings, workers, and platform-backed tools.
-- **SDK Surface** — Where developers embed the runtime, define portable manifests, configure providers, and compose workers or applications directly.
+## Why Nenjo exists
 
-Nenji is the default platform guide and orchestrator. It identifies which surface the user is working in before recommending concrete actions.
+Most teams do not just need an AI model. They need a way to make AI behavior understandable, repeatable, and connected to real work.
 
-## Core Resources
+Nenjo is built around a few practical ideas:
 
-Nenjo organizes AI resources into hierarchical **building blocks**:
+- Agents should have clear roles, prompts, memory, tools, and permission boundaries.
+- Important work should run through workflows that can be inspected and improved.
+- Project knowledge should live somewhere structured instead of being scattered across chat history.
+- Sensitive actions should require explicit modes, scopes, and audit trails.
+- Developers should be able to use the same concepts from the hosted platform or from code.
 
-| Resource | Purpose |
-|----------|---------|
-| [Projects](/introduction/building-blocks#projects) | Top-level containers for work, documents, tasks, and execution runs |
-| [Agents](/introduction/building-blocks#agents) | Primary behavioral units with prompt configuration, memory, and capabilities |
-| [Routines](/introduction/building-blocks#routines) | Workflow graphs composed of steps, gates, agents, councils, and triggers |
-| [Abilities](/introduction/building-blocks#abilities) | Reusable specialist execution modes exposed to agents as callable tools |
-| [Domains](/introduction/building-blocks#domains) | User-activated modes that expand guidance, scopes, abilities, or integrations for a session |
-| [Memory](/introduction/building-blocks#memory) | Scoped agent memory system covering core, project, and shared memory behavior |
-| [Context Blocks](/introduction/building-blocks#context-blocks) | Reusable prompt-context assets referenced by path-like template names |
-| [Template Variables](/introduction/building-blocks#template-variables) | Runtime variables for connecting static prompt design with live execution state |
-| [Scopes](/introduction/building-blocks#scopes) | Fine-grained permissions for resource and action access boundaries |
+That makes Nenjo useful for work like product planning, code review, compliance review, research, operations, support workflows, and any setting where AI needs context, structure, and accountability.
 
-## Platform Concepts
+## Two ways to use Nenjo
 
-### Knowledge Graph
+Nenjo has two main surfaces.
 
-Projects can host structured **documents** that form a local knowledge graph. By organizing documents using the six document kinds (Guide, Reference, Taxonomy, Domain, Entity, Policy) inside a Project, you can build a complete **AI Operating System** tailored to that project.
+**The platform** is the hosted product: dashboard, chat, project pages, document editors, routine builder, agent builder, settings, workers, and platform tools. This is where most users create and operate Nenjo resources without writing manifests by hand.
 
-### Executions and Tasks
+**The SDK** is the embeddable developer surface: local manifests, Rust runtime APIs, model providers, tool providers, prompt context, memory, worker composition, and transport contracts. This is for teams building Nenjo-powered systems directly into their own applications or infrastructure.
 
-- **Tasks** are units of work with status, dependencies, assignment, priority, and readiness semantics
-- **Executions** are stateful runs that process project tasks through dispatch, lifecycle state, and progress tracking
-- **Routines** are workflow graphs that orchestrate how tasks move through agents, gates, and councils
+The same core ideas exist in both places. If you are working in the dashboard or asking Nenji to configure something, think in terms of platform resources and editors. If you are embedding Nenjo in code, think in terms of manifests and runtime APIs.
 
-### Nenji
+## The core model
 
-Nenji is the default platform guide and orchestrator. It provides conversational access to all Nenjo resources, helps design and configure new resources, and guides users through the platform.
+Nenjo is made from resources that fit together. A project holds the work and knowledge. Agents do the work. Routines make the work repeatable. Abilities give agents focused specialist tools. Domains let users intentionally switch an agent into a different mode when the work needs different guidance, permissions, or auditability.
 
-## Getting Started
+You can start with only a project and an agent. As the work becomes more serious, add structure where it helps: routines for repeatability, abilities for specialist work, domains for explicit high-trust modes, and documents for durable knowledge.
 
-New to Nenjo? Start with these docs:
+For the resource-by-resource view, see [Building Blocks](/docs/introduction/building-blocks).
 
-1. **[Building Blocks](/introduction/building-blocks)** — Understand the core resources that make up Nenjo
-2. **[Nenji](/introduction/nenji)** — Learn about the platform's default guide and orchestrator
+## Where to start
+
+If you are new to Nenjo, start with the building blocks, then create a small project and one agent. Add structure only when the work asks for it.
+
+1. [Building Blocks](/docs/introduction/building-blocks)
+2. [Nenji](/docs/introduction/nenji)
+3. [Agents](/docs/platform/agents)
+4. [Onboarding](/docs/getting-started/onboarding)
+5. [Bootstrap](/docs/getting-started/bootstrap)

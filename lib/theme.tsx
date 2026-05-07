@@ -41,7 +41,10 @@ function resolve(theme: Theme): "light" | "dark" {
 function getStoredTheme(): Theme {
   if (typeof window === "undefined") return "system";
   const stored = localStorage.getItem("nenjo-theme") as Theme | null;
-  return stored ?? "system";
+  const isDocs =
+    window.location.pathname === "/docs" ||
+    window.location.pathname.startsWith("/docs/");
+  return stored ?? (isDocs ? "dark" : "system");
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

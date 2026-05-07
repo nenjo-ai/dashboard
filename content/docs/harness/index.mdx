@@ -1,7 +1,6 @@
 ---
 title: Harness
-description: Overview of the Nenjo harness, SDK, and Worker components for developers
-icon: W
+description: "How the nenjo repo is organized: SDK, manifests, crates, worker runtime, and worker config."
 slug: harness
 order: 6
 tags:
@@ -13,31 +12,42 @@ tags:
 
 # Harness
 
-The Harness section covers the developer-facing components for building and operating Nenjo-powered systems locally. This includes the SDK for embeddable runtime, manifest authoring, and the Worker for always-on execution.
+The Harness section covers the `nenjo` repo: the Rust SDK, manifest model, crate layout, worker runtime, and local worker configuration.
 
-## What's in This Section
+Nenjo uses the same runtime concepts in two ways. You can embed the SDK directly in Rust code, or you can run the worker with `nenjo run` so the platform can route chat, tasks, schedules, repository sync, and manifest updates to a local machine.
 
-| Page | Description |
-|------|-------------|
-| [SDK](./sdk) | Rust SDK for turn loops, manifest parsing, provider builders, and runtime APIs |
-| [Worker](./worker) | Always-on worker service with NATS transport and capability-based execution |
+## Repo Shape
 
-## Relationship to Platform
+| Area | What it owns |
+|------|--------------|
+| SDK | Provider construction, manifest loading, agent runners, routine runners, prompt context, memory, and turn loop events |
+| Manifests | Typed resource definitions for agents, models, routines, projects, councils, domains, MCP servers, abilities, and context blocks |
+| Crates | Separate packages for models, tools, events, event bus, encrypted envelopes, platform contracts, sessions, worker, and CLI |
+| Worker | The long-running harness behind `nenjo run` that connects local execution to the platform |
+| Worker config | The `.nenjo` directory, API key, model keys, tool settings, reliability, capabilities, and local state paths |
 
-The SDK and Worker complement the platform surface:
+## Runtime Relationship
 
-- **Platform**: User-facing dashboard, chat, editors, and resource configuration
-- **SDK**: Local manifest files, runtime crates, and embeddable execution
-- **Worker**: Long-running service that connects SDK execution to platform transport and session systems
+```text
+Dashboard and API
+    -> encrypted platform commands
+    -> worker transport
+    -> Harness
+    -> Provider
+    -> AgentRunner or RoutineRunner
+    -> models, tools, memory, project files
+```
 
-When developing custom agents or integrations, use the SDK for local authoring and embed the runtime in your application. Connect to the Worker for always-on capability execution that can be triggered from platform chat or MCP tools.
+The platform stores and edits the resources. The worker fetches those resources into a local manifest cache, builds a `Provider`, then uses the SDK to execute the requested work.
 
-## Key Concepts
+## What to Read
 
-- **Manifest files**: Declarative resource definitions for agents, abilities, domains, routines, councils, projects
-- **Provider builders**: Rust APIs for composing model loaders, tool factories, memory, and runners
-- **Turn loops**: Execution patterns for multi-step agent conversations
-- **Hot reload**: Development workflow for rapid iteration on manifests and runtime code
-- **NATS transport**: Message bus for Worker communication with the platform
+| Page | Start here when you want to understand |
+|------|----------------------------------------|
+| [SDK API](./sdk) | How application code builds providers, agents, routines, and streaming handles |
+| [Manifests](./manifests) | What resource data the worker receives and how it is cached locally |
+| [Crates](./crates) | Why the repo is split into multiple crates and what each crate owns |
+| [Worker](./worker) | What `nenjo run` does after startup and which command families it handles |
+| [Worker Config](./worker-config) | Which local files, environment variables, and config sections affect the worker |
 
-For more on resource surfaces and when to use SDK versus platform, see the [Resource Surface Taxonomy](/taxonomy/resource-surfaces).
+The short version: manifests describe the world, `Provider` turns that world into executable runners, and the worker keeps that runtime connected to the platform.

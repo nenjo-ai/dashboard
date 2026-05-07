@@ -74,7 +74,8 @@ export default function RootLayout({
             (function(){
               try {
                 var t = localStorage.getItem('nenjo-theme');
-                var dark = t === 'dark' || (!t || t === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                var docs = window.location.pathname === '/docs' || window.location.pathname.indexOf('/docs/') === 0;
+                var dark = t === 'dark' || (!t && docs) || (!t || t === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches;
                 if (dark) {
                   document.documentElement.classList.add('dark');
                   document.documentElement.style.colorScheme = 'dark';
