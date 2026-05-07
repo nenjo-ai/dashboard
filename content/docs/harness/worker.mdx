@@ -1,9 +1,8 @@
 ---
 title: Worker
-description: Always-on worker service with NATS transport and capability-based execution
-icon: Server
+description: "The runtime behind nenjo run: bootstrap, event bus, command routing, sessions, and Provider execution."
 slug: harness/worker
-order: 62
+order: 64
 tags:
   - worker
   - nats
@@ -14,234 +13,98 @@ tags:
 
 # Worker
 
-The Nenjo Worker is a long-running service that executes platform-routed work. It maintains persistent connections via NATS, handles capability-based execution, and bridges SDK runtime with platform transport.
+The worker is the long-running runtime behind `nenjo run`. It connects a local machine to the platform, fetches the user's manifest resources, builds a SDK `Provider`, and handles platform-routed commands.
 
-## Purpose
-
-The Worker serves as the always-on execution layer for Nenjo:
-
-- **Always-on execution**: Continuously available for platform-routed tasks and MCP calls
-- **NATS transport**: Message bus communication with platform sessions and chat
-- **Capability execution**: Runs ability-defined specialist modes on behalf of agents
-- **Session management**: Maintains conversation state and memory across interactions
-
-## Architecture
-
-```
-┌─────────────────┐     NATS      ┌─────────────────┐
-│    Platform     │◄───────────►│     Worker      │
-│  (chat/tasks)   │   messages   │  (always-on)   │
-└─────────────────┘              └───────┬────────┘
-                                          │
-                                  ┌───────▼────────┐
-                                  │   SDK Runtime  │
-                                  │  (abilities) │
-                                  └─────────────┘
-```
-
-### Components
-
-| Component | Description |
-|-----------|-------------|
-| **NATS listener** | Subscribes to platform task and execution queues |
-| **Session manager** | Maintains active conversation and memory state |
-| **Ability executor** | Runs specialist modes (web-search, code-interpreter, etc.) |
-| **SDK runtime** | Embeds Nenjo SDK for manifest loading and agent execution |
-| **Status reporter** | Publishes worker health and capability availability |
-
-## Configuration
-
-### Basic Setup
-
-```toml
-# worker.toml
-[worker]
-id = "my-worker"
-org_id = "org-123"
-
-[nats]
-url = "nats://localhost:4222"
-queue = "nenjo.execution"
-
-[capabilities]
-enabled = ["web-search", "code-interpreter", "file-read"]
-
-[security]
-api_key = "nenjo_wk_xxx"
-trusted = true
-```
-
-### Starting the Worker
+The worker is not a separate `nenjo-worker` command in the current implementation. The CLI package builds a `nenjo` binary, and the worker starts with:
 
 ```bash
-# Start with config file
-nenjo-worker serve --config worker.toml
-
-# Start with specific capabilities
-nenjo-worker serve --capabilities web-search,code-interpreter
-
-# Start in development mode (hot reload)
-nenjo-worker serve --dev
+nenjo run
 ```
 
-### verifying Status
+## Startup Flow
 
-```bash
-# Check worker status
-nenjo-worker status
+| Step | What happens |
+|------|--------------|
+| Load config | Reads `.nenjo/config.toml`, applies environment overrides, validates `NENJO_API_KEY`, and prepares local directories |
+| Configure local git | If `GITHUB_TOKEN` is present, writes an isolated `.nenjo/gitconfig` and credential helper for worker git operations |
+| Bootstrap | Calls the platform manifest endpoint and caches manifest resources under `.nenjo/manifests` |
+| Enroll crypto identity | Loads or creates worker crypto state and waits until enrollment is active when approval is required |
+| Build Provider | Creates model registry, tool factory, memory backend, external MCP pool, and SDK `Provider` |
+| Connect transport | Uses NATS settings from bootstrap, explicit config, or defaults, then wraps the event bus with secure envelopes |
+| Register and listen | Sends worker registration and heartbeat responses, restores schedules, then routes incoming commands |
 
-# List available capabilities
-nenjo-worker capabilities
+The worker retries startup and the event loop with exponential backoff. If the backend or event bus is temporarily unavailable, the process keeps trying until it can reconnect or receives a shutdown signal.
 
-# View active sessions
-nenjo-worker sessions
+## Command Capabilities
+
+Worker capabilities are command families, not individual tools. Empty capability config means the worker handles all capability families.
+
+| Capability | Commands it covers |
+|------------|--------------------|
+| `chat` | Chat messages, domain enter/exit, chat cancellation, and local chat session deletion |
+| `task` | Task execution plus execution cancel, pause, and resume |
+| `cron` | Routine cron enable/disable/trigger and agent heartbeat enable/disable/trigger |
+| `manifest` | Manifest changes and worker account-key updates |
+| `repo` | Project repository sync and unsync |
+| `ping` | Worker health pings |
+
+These capabilities are declared when the worker registers and in periodic worker heartbeats.
+
+## Command Routing
+
+The event loop receives encrypted platform commands, acknowledges each command, creates a `CommandContext`, and dispatches handling work into an independent task.
+
+```text
+SecureEnvelopeBus
+    -> Command
+    -> handlers::route_command
+    -> CommandContext
+    -> Provider / sessions / API / tools
+    -> Response
 ```
 
-## Capabilities
+Handlers do not write to the event bus directly. They send typed responses through the response channel, and the bus task routes the response back to the correct user.
 
-Capabilities define what the Worker can execute on behalf of the platform. They map to [abilities](/guide/abilities) defined in agent configurations.
+## Provider Runtime
 
-### Built-in Capabilities
+The harness builds one provider snapshot from the cached manifests. When manifest updates arrive, the harness can rebuild the manifest view and swap the provider without rebuilding the entire process.
 
-| Capability | Description | Requirements |
-|------------|-------------|--------------|
-| `web-search` | Search the web for information | Network access |
-| `code-interpreter` | Execute code in sandbox | CPU/time limits |
-| `file-read` | Read files from configured paths | Path allowlist |
-| `file-write` | Write files to configured paths | Path allowlist |
-| `http-request` | Make HTTP API calls | Domain allowlist |
+At runtime the provider is responsible for:
 
-### Custom Capabilities
+- Resolving agents and routines by ID or name
+- Creating model clients from model manifests
+- Creating tools from platform scopes, MCP assignments, local config, and security policy
+- Injecting memory tools and prompt memory summaries
+- Building project, routine, step, domain, and context block prompt variables
 
-Define custom abilities in manifest files:
+## Local State
 
-```yaml
-# ability-manifest.yaml
-id: my-custom-ability
-name: Custom Processor
-description: Processes data using custom logic
-entrypoint: my_crate::processor::run
+The worker keeps durable local state under `.nenjo`.
 
-runtime:
-  timeout_ms: 30000
-  memory_mb: 512
+| Directory | Purpose |
+|-----------|---------|
+| `.nenjo/workspace` | Project working directories, synced repositories, and synced project documents |
+| `.nenjo/state` | Worker memory, sessions, session content, and crypto state |
+| `.nenjo/manifests` | Cached platform resource manifests and bootstrap transport/auth data |
 
-input:
-  type: object
-  properties:
-    data:
-      type: string
-    options:
-      type: object
+This local state lets the worker restore domain sessions, reconcile recoverable chat/task sessions, and restart active schedules after a process restart.
 
-output:
-  type: object
-  properties:
-    result:
-      type: string
-```
+## Tools
 
-## NATS Message Protocol
+Every agent starts with the base local tools: shell, file read/write/edit/delete, git operations, content search, glob search, and built-in Nenjo knowledge tools.
 
-### Execution Request
+Additional tools are added from:
 
-```json
-{
-  "type": "execution.request",
-  "id": "exec-123",
-  "ability": "web-search",
-  "agent_id": "my-agent",
-  "input": {
-    "query": "Rust async best practices"
-  },
-  "context": {
-    "project_id": "proj-456",
-    "session_id": "sess-789"
-  }
-}
-```
+- Agent platform scopes such as `projects:read` or `routines:write`
+- Assigned external MCP servers
+- Assigned abilities
+- Memory backend
+- Enabled worker config sections such as web search, web fetch, HTTP request, browser, and screenshot support
 
-### Execution Response
+See [Platform Scopes](/docs/platform/scopes) for the platform tools each scope adds.
 
-```json
-{
-  "type": "execution.response",
-  "id": "exec-123",
-  "status": "success",
-  "output": {
-    "results": [...]
-  },
-  "metadata": {
-    "duration_ms": 250
-  }
-}
-```
+## Encryption
 
-## Security
+The worker uses the secure-envelope event bus for command and response transport. Bootstrap also handles encrypted agent prompt config and context block content when the worker has the needed account content key.
 
-### API Key Authentication
-
-Workers authenticate with platform using API keys:
-
-```bash
-# Generate worker API key
-nenjo-cli worker create --name "prod-worker"
-
-# Output:
-# nenko_wk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-### Trusted Workers
-
-Mark workers as trusted to bypass certain restrictions:
-
-```toml
-[security]
-trusted = true  # Bypasses path allowlists, timeouts
-```
-
-### Encryption
-
-Workers can handle encrypted content when enrolled as trusted devices. See [platform scopes](/guide/scopes) for permission boundaries.
-
-## Troubleshooting
-
-### Worker Not Connecting
-
-```bash
-# Verify NATS connectivity
-nenjo-worker diagnose --nats
-
-# Common issues:
-# - NATS server not running
-# - Firewall blocking port 4222
-# - Invalid API key
-```
-
-### Capability Not Available
-
-```bash
-# List enabled capabilities
-nenjo-worker capabilities
-
-# Add capability
-nenjo-worker capability add web-search
-```
-
-### Task Timeout
-
-```bash
-# Check worker logs
-nenjo-worker logs --follow
-
-# Increase timeout in config
-[worker]
-timeout_ms = 60000
-```
-
-## Related Resources
-
-- [SDK](./sdk): Runtime and manifest authoring
-- [Abilities](/guide/abilities): Specialist execution modes
-- [Platform Scopes](/guide/scopes): Permission boundaries
-- [MCP Integration](/guide/mcp): Model Context Protocol
+If a command cannot be decoded, the worker returns a generic execution failure response when the envelope contains enough session context to route that response.

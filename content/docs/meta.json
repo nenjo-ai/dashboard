@@ -6,20 +6,15 @@
     "introduction/building-blocks",
     "introduction/nenji",
     "---Getting Started---",
-    "getting-started",
+    "getting-started/onboarding",
+    "getting-started/bootstrap",
     "---Platform---",
     "platform/organizations",
+    "platform/projects",
+    "platform/scopes",
     "platform/agents",
-    "agents",
     "routines",
-    "prompts",
     "---Harness---",
-    "harness",
-    "harness/sdk",
-    "harness/worker",
-    "---System---",
-    "system",
-    "---API---",
-    "api"
+    "harness"
   ]
 }

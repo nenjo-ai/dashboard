@@ -1,0 +1,156 @@
+---
+title: Worker Config
+description: Local configuration, environment variables, directories, capabilities, model keys, and tool settings for nenjo run.
+slug: harness/worker-config
+order: 65
+tags:
+  - harness
+  - worker
+  - config
+---
+
+# Worker Config
+
+`nenjo run` loads config from `.nenjo/config.toml`, then applies environment variable and CLI overrides.
+
+By default `.nenjo` is `~/.nenjo`. You can point the worker somewhere else with `--nenjo-dir` or `NENJO_DIR`.
+
+## Local Directories
+
+| Path | Purpose |
+|------|---------|
+| `.nenjo/config.toml` | Serialized worker config |
+| `.nenjo/workspace` | Project worktrees and synced project documents |
+| `.nenjo/state` | Memory, sessions, session content, and crypto state |
+| `.nenjo/manifests` | Cached bootstrap manifest resources |
+| `.nenjo/gitconfig` | Worker-specific git config when `GITHUB_TOKEN` is set |
+| `.nenjo/git-credential-helper.sh` | Worker-specific GitHub token helper when `GITHUB_TOKEN` is set |
+
+The state directory is the important backup target for local worker-generated state.
+
+## Required Identity
+
+The worker requires a Nenjo API key:
+
+```bash
+export NENJO_API_KEY="..."
+nenjo run
+```
+
+The key can also be stored as `api_key` in `.nenjo/config.toml`.
+
+## CLI and Environment Overrides
+
+| Setting | CLI flag | Environment variable | Default |
+|---------|----------|----------------------|---------|
+| Backend API URL | `--backend-url` | `NENJO_API_URL` | `https://api.nenjo.ai` |
+| NATS URL | `--nats-url` | `NATS_URL` | Bootstrap value, then `tls://nats.nenjo.ai` |
+| Log level | `--log-level` | `RUST_LOG` | `info` |
+| Show log target | `--log-target` | `NENJO_LOG_TARGET` | `false` |
+| Config directory | `--nenjo-dir` | `NENJO_DIR` | `~/.nenjo` |
+| Worker capabilities | `--capabilities` | `NENJO_CAPABILITIES` | All capabilities |
+| Harness display name | `--harness-name` | `NENJO_HARNESS_NAME` | unset |
+| Harness labels | `--harness-labels` | `NENJO_HARNESS_LABELS` | none |
+
+Most workers should not set `NATS_URL`. The bootstrap response supplies the event bus settings when available.
+
+## Model Provider Keys
+
+Model keys can be stored in `[model_provider_api_keys]` or supplied by environment variables. Environment variables win.
+
+| Provider | Environment variable |
+|----------|----------------------|
+| OpenAI | `OPENAI_API_KEY` |
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenRouter | `OPENROUTER_API_KEY` |
+| Ollama | `OLLAMA_API_KEY` |
+| Groq | `GROQ_API_KEY` |
+| Venice | `VENICE_API_KEY` |
+| Mistral | `MISTRAL_API_KEY` |
+| DeepSeek | `DEEPSEEK_API_KEY` |
+| xAI | `XAI_API_KEY` |
+| Together | `TOGETHER_API_KEY` |
+| Fireworks | `FIREWORKS_API_KEY` |
+| Perplexity | `PERPLEXITY_API_KEY` |
+| Cohere | `COHERE_API_KEY` |
+| Moonshot | `MOONSHOT_API_KEY` |
+| GLM | `GLM_API_KEY` |
+| Minimax | `MINIMAX_API_KEY` |
+| Google/Gemini | `GOOGLE_AI_API_KEY` or `GEMINI_API_KEY` |
+| OpenAI-compatible | `OPENAI_COMPATIBLE_API_KEY` |
+
+For OpenAI-compatible providers, the manifest can use a tagged provider name such as `openai-compatible:sambanova`. The worker first looks for a config key named `sambanova`, then `SAMBANOVA_API_KEY`, then the generic OpenAI-compatible key.
+
+## Capabilities
+
+Capabilities limit which command families this worker handles.
+
+```bash
+nenjo run --capabilities chat,task,repo
+```
+
+Valid values are `chat`, `task`, `cron`, `manifest`, `repo`, and `ping`. If no capabilities are configured, the worker runs in full mode and handles all of them.
+
+## Tool Config
+
+These sections control optional built-in tools:
+
+| Config section | Default | Purpose |
+|----------------|---------|---------|
+| `[web_search]` | enabled with DuckDuckGo | Adds web search; can use Brave with `brave_api_key` |
+| `[web_fetch]` | disabled | Adds web page fetching with allowed and blocked domains |
+| `[http_request]` | disabled | Adds general HTTP requests with allowed domains |
+| `[browser]` | disabled | Adds browser open and screenshot tools |
+| `[memory]` | `markdown` | Selects the memory backend |
+| `[git]` | unset | Sets git author, committer, and optional SSH signing key for worker git operations |
+
+Web fetch and HTTP request both have response-size and timeout settings. Domain filters are applied before requests are made.
+
+## Autonomy and Reliability
+
+`[autonomy]` controls the application-level safety policy for local actions. Defaults keep work inside the workspace, block high-risk commands, require approval for medium-risk shell commands, and include a blocklist for destructive or system-level commands.
+
+`[reliability]` controls model retry behavior:
+
+| Setting | Default |
+|---------|---------|
+| `max_retries` | `2` |
+| `backoff_ms` | `500` |
+| `fallback_providers` | none |
+| `model_fallbacks` | none |
+
+The worker's provider registry wraps created model clients with the reliability layer.
+
+## Security and Audit
+
+`[security.sandbox]` can auto-detect or explicitly choose a sandbox backend: `auto`, `landlock`, `firejail`, `bubblewrap`, `docker`, or `none`.
+
+`[security.audit]` defaults to enabled and writes `audit.log` under the `.nenjo` directory. Audit events can also be HMAC-signed when configured.
+
+## Example
+
+```toml
+api_key = "..."
+harness_name = "local-dev"
+harness_labels = ["macbook", "repo-work"]
+capabilities = ["chat", "task", "repo", "manifest"]
+
+[model_provider_api_keys]
+anthropic = "..."
+openai = "..."
+
+[web_search]
+enabled = true
+provider = "duckduckgo"
+max_results = 5
+timeout_secs = 15
+
+[web_fetch]
+enabled = true
+allowed_domains = ["docs.rs", "github.com"]
+blocked_domains = []
+
+[git]
+user_name = "Nenjo Worker"
+user_email = "worker@example.com"
+```

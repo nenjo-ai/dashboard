@@ -1,0 +1,62 @@
+---
+title: Cron and Scheduling
+description: How scheduled routines and cron steps behave.
+slug: routines/cron-and-scheduling
+order: 6
+---
+
+# Cron and Scheduling
+
+Nenjo has two related scheduling ideas:
+
+- A routine-level `cron` trigger, which runs the whole routine on a schedule.
+- A `cron` step, which repeats one step inside a routine until it produces a pass or fail verdict or times out.
+
+They are related, but they are not the same setting.
+
+## Scheduled routines
+
+A scheduled routine has `trigger: cron`. Its schedule is stored in routine metadata as `schedule` or `interval`.
+
+The schedule can be:
+
+| Format | Example |
+|--------|---------|
+| Simple interval | `30s`, `5m`, `1h`, `2d` |
+| Cron expression | `0 9 * * *`, `*/5 * * * *` |
+
+When a scheduled routine is active, workers restore and run active schedules. The backend keeps `is_active`, `last_run_at`, and `next_run_at` updated from worker heartbeat and schedule state events.
+
+## Starting and stopping
+
+In the dashboard Run tab:
+
+- **Start Loop** activates the routine and keeps the current schedule.
+- **Stop Loop** deactivates the routine and attempts to cancel active executions.
+- **Run Once** triggers a scheduled routine immediately.
+
+A scheduled routine needs a schedule before the loop can start.
+
+## Project binding
+
+Scheduled routines can be bound to a project. The project binding gives the run project context and lets the worker associate executions with the right workspace.
+
+Use project binding for recurring work that should inspect or change a specific project.
+
+## Cron steps
+
+A cron step sits inside the graph. It runs the selected agent with the cron prompt path on a recurring interval until the step returns a pass or fail verdict.
+
+Cron step config supports:
+
+| Config | Purpose |
+|--------|---------|
+| `interval` | How often to run the step, such as `60s` or `5m` |
+| `timeout` | Maximum total runtime before the step fails |
+| `agent_id` | The agent to run for each cycle |
+
+Cron steps expose pass and fail routes, so the graph can continue differently depending on the final verdict.
+
+## Current limits
+
+The dashboard editor supports agent-backed cron steps. The backend data model has a `lambda_id` field, but current worker execution rejects cron lambda steps, so do not model lambdas as cron step executors today.

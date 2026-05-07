@@ -1,0 +1,4 @@
+{
+  "title": "Harness",
+  "pages": ["index", "sdk", "manifests", "crates", "worker", "worker-config"]
+}

@@ -1,166 +1,75 @@
 ---
 title: MCP Integration
-description: External tool integrations using the Model Context Protocol.
-icon: Plug
-order: 37
+description: External tool servers that can be assigned to agents, abilities, and domains.
+slug: platform/agents/mcp
+order: 7
 ---
 
 # MCP Integration
 
-MCP (Model Context Protocol) servers provide external tool integrations that agents can use during execution.
+MCP servers give agents access to external tools. Nenjo stores MCP server configuration in the organization, then assigns servers to agents, abilities, or domains.
 
-## What MCP Provides
+MCP configuration is metadata. It is protected by normal organization permissions, but it is not content-encrypted.
 
-MCP servers expose external capabilities to agents:
+## MCP server fields
 
-- **File system operations** — Read, write, search files
-- **Database queries** — Structured data access
-- **API integrations** — External service connections
-- **Custom tools** — Organization-specific capabilities
-
-## MCP Server Types
-
-| Type | Transport | Description |
-|---|---|---|
-| **stdio** | Local process | Runs as subprocess on same machine |
-| **HTTP** | Remote URL | Connects to remote MCP servers |
-
-## Core Fields
-
-| Field | Description |
-|---|---|
+| Field | What it means |
+|-------|---------------|
 | `name` | Internal identifier |
-| `path` | Unique reference path (e.g., `nenjo.mcp.filesystem`) |
-| `display_name` | Human-readable name |
-| `description` | What the MCP server provides |
+| `display_name` | Human-friendly label |
+| `description` | What the server provides |
 | `transport` | `stdio` or `http` |
-| `command` | Command to start the server (stdio) |
-| `url` | Server URL (HTTP) |
-| `env` | Environment variables |
+| `command` | Command for `stdio` servers |
+| `args` | Arguments for `stdio` servers |
+| `url` | Endpoint for `http` servers |
+| `env_schema` | Declared environment variables the server expects |
+| `category`, `tags`, `icon` | Organization and display metadata |
 
-## stdio Transport
+For `stdio` transport, a command is required. For `http` transport, a URL is required.
 
-Runs as a local subprocess:
+## Assignment
+
+MCP servers are not automatically available to every agent. They become available through assignment:
+
+- Assign a server to an agent for normal agent runs.
+- Assign a server to an ability for that specialist execution.
+- Assign a server to a domain for the active domain session.
+
+At runtime, the worker combines the active agent, active domain, ability call, platform scopes, and MCP assignments to decide which tools are available.
+
+## MCP and scopes
+
+MCP assignment says which external server the runtime can use. Platform scopes still decide which Nenjo platform tools are available.
+
+For example, assigning a GitHub MCP server may expose GitHub tools, while `projects:read` and `projects:write` determine which Nenjo project tools the agent can use.
+
+## Transport examples
+
+Local `stdio` server:
 
 ```yaml
 name: filesystem
-path: nenjo.mcp.filesystem
-display_name: File System
-description: Read, write, and search files in the workspace.
+display_name: Filesystem
 transport: stdio
-command: npx -y @modelcontextprotocol/server-filesystem /workspace
+command: npx
+args:
+  - -y
+  - "@modelcontextprotocol/server-filesystem"
+  - "{{ git.work_dir }}"
 ```
 
-## HTTP Transport
-
-Connects to remote servers:
+Remote `http` server:
 
 ```yaml
 name: github
-path: custom.mcp.github
 display_name: GitHub
-description: GitHub API integration for issues, PRs, and repos.
 transport: http
 url: https://mcp.example.com/github
 ```
 
-## Agent Assignment
+## Good practices
 
-MCP servers are assigned to agents, not assumed available:
-
-1. Agent defines which MCP servers it needs
-2. Platform scopes control who can assign MCP servers
-3. At runtime, the agent can call MCP tools
-
-## MCP in Abilities and Domains
-
-MCP servers can also be scoped to individual Abilities or Domains:
-
-```yaml
-# In an Ability
-ability:
-  name: code_review
-  mcp_server_ids:
-    - filesystem
-    - github
-
-# In a Domain
-domain:
-  name: compliance
-  mcp_server_ids:
-    - database
-    - regulatory_api
-```
-
-## Security Considerations
-
-- MCP server access is controlled by platform scopes
-- Environment variables should not contain secrets directly
-- Use secure credential management
-- Audit logs track MCP tool invocations
-
-## Common Patterns
-
-### Filesystem MCP
-
-For agents that work with repository files:
-
-```yaml
-name: filesystem
-path: nenjo.mcp.filesystem
-display_name: File System
-description: Read and write files in the workspace.
-transport: stdio
-command: npx -y @modelcontextprotocol/server-filesystem {{ git.work_dir }}
-```
-
-### GitHub MCP
-
-For agents that interact with GitHub:
-
-```yaml
-name: github
-path: nenjo.mcp.github
-display_name: GitHub
-description: Issues, pull requests, and repository management.
-transport: http
-url: https://api.github.com
-```
-
-### Database MCP
-
-For data access:
-
-```yaml
-name: database
-path: custom.mcp.database
-display_name: Database
-description: Query and update project data.
-transport: stdio
-command: ./mcp-database-server
-env:
-  DATABASE_URL: $DATABASE_URL
-```
-
-## Tool Discovery
-
-At runtime, available MCP tools are exposed via `{{ available_mcp_tools }}`:
-
-```jinja
-Available tools:
-{{ available_mcp_tools }}
-```
-
-The agent can call MCP tools the same way it calls native platform tools.
-
-## Best Practices
-
-- Assign only the MCP servers the agent actually needs
-- Use stdio for local operations
-- Use HTTP for remote services
-- Keep credential handling separate from MCP config
-
-## Related Documentation
-
-- [Abilities](abilities.mdx) — Specialist tools
-- [Domains](domains.mdx) — User-activated modes
+- Assign only the servers the agent or ability actually needs.
+- Prefer environment schemas over hard-coded secrets in config.
+- Keep high-risk tools behind explicit domains when the user should opt in.
+- Pair MCP assignments with the smallest useful platform scopes.

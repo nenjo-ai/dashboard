@@ -11,7 +11,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         enabled: true,
         attribute: 'class',
         storageKey: 'nenjo-theme',
-        defaultTheme: 'system',
+        defaultTheme: 'dark',
       }}
     >
       <DocsLayout tree={source.getPageTree()} {...baseOptions()}>

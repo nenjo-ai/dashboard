@@ -1,57 +1,74 @@
 ---
 title: Organizations
-description: Team collaboration, shared resources, and workspace security.
-icon: Users
+description: What an organization contains and how shared workspace data is protected.
 slug: platform/organizations
 order: 5
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout'
 
-**Organizations** provide team collaboration by grouping users who share access to projects, agents, and workspace resources. This section covers how to create and manage an organization, invite team members, and configure security settings.
+An **organization** is the shared workspace boundary in Nenjo. It contains the people, permissions, agents, projects, workers, and knowledge resources that a team uses together.
 
-## In this section
-
-| Page | What you'll learn |
-|------|------------------|
-| [Security](/docs/platform/organizations/security) | End-to-end encryption, device approval, key rotation, and member invites |
-| Organization Settings | Configure organization profile, branding, and billing |
-
-## What is an Organization
-
-An organization is a shared workspace where team members collaborate on Nenjo projects, agents, and resources. Each organization has:
-
-- **Members** — Users who belong to the organization with defined roles
-- **Projects** — Shared project containers for team work
-- **Agents** — Collaborative agent configurations accessible to members
-- **Security** — Encryption, device approval, and access controls
+Every user belongs to at least one organization. For solo use, that organization may feel like a personal workspace. As more people join, the same boundary becomes the team workspace.
 
 <Callout>
-  Every Nenjo user belongs to at least one organization — your personal workspace. As you invite team members, your organization grows to include collaborators.
+  Organization access controls decide who can use a resource. Content encryption decides which keys are needed to read protected content inside that resource.
 </Callout>
 
-## Key concepts
+## What belongs to an organization
 
-### Member Roles
+An organization is made up of:
 
-Organization members have roles that define their permissions:
+| Area | What it controls |
+|------|------------------|
+| Members | The users who belong to the workspace, their roles, and their platform scopes |
+| Projects | Shared work containers, documents, tasks, and project activity |
+| Agents | Agent definitions, prompt configuration, abilities, domains, model assignment, and tool access |
+| Routines | Workflow definitions that coordinate work across projects and agents |
+| Models | Provider, model name, and generation settings used by agents |
+| Knowledge | Project documents, context blocks, abilities, and domains used to shape agent behavior |
+| Workers | Approved local or server workers that can run Nenjo tasks for the organization |
+| API keys | Credentials used by workers and integrations to connect to the organization |
+| Security material | Trusted devices, recovery bundle state, org content key grants, and pending access requests |
 
-- **Owner** — Full administrative access, can manage billing and security
-- **Admin** — Manage members, projects, and agents
-- **Member** — Access shared projects and collaborate on work
+## Encrypted content
 
-### Shared Resources
+Nenjo encrypts the content that is most likely to contain private instructions, user intent, or project knowledge before it is stored.
 
-Team members share access to:
+| Content | Scope | Notes |
+|---------|-------|-------|
+| Chat messages and agent responses | User | Encrypted with the user's account content key. The server stores placeholder text and the encrypted payload metadata. |
+| Project document content | Org | Encrypted with the organization content key. Document metadata remains searchable and visible to authorized members. |
+| Task description and acceptance criteria | Org | Encrypted as task content. Task titles, status, priority, tags, and ordering remain metadata. |
+| Agent prompts | Org | Encrypted as the agent prompt configuration. Agent name, description, color, model assignment, scopes, abilities, and domains remain metadata. |
+| Ability prompts | Org | Encrypted as the ability developer prompt. Ability name, path, tool name, activation condition, scopes, and tool filters remain metadata. |
+| Domain prompts | Org | Encrypted as the domain prompt configuration. Domain name, command, category, tags, and manifest metadata remain metadata. |
+| Context block templates | Org | Encrypted as context block content. Context block name, path, display name, and description remain metadata. |
+| Execution step encrypted payloads | Org | Used when a step carries protected task or tool content. Step names, types, timing, status, and run metadata remain metadata. |
 
-- **Projects** — Work containers visible to organization members
-- **Agents** — Agent configurations with shared prompt configuration and memory
-- **Knowledge** — Documents and context blocks for team knowledge base
-- **Routines** — Workflow definitions for team automation
+**User scope** means the payload is protected by the user's account content key. **Org scope** means the payload is protected by the organization content key, so trusted devices and approved workers need access to that org key before they can decrypt it.
 
-## Related concepts
+## Not encrypted
 
-- [Security](/docs/platform/organizations/security) — Configure encryption and device approval
-- [Projects](/docs/platform/projects) — Collaborative work containers
-- [Agents](/docs/platform/agents) — Shared agent configurations
-- [Scopes](/docs/reference/scopes) — Permission boundaries for resources
+Nenjo also stores operational metadata that the app and worker need in plaintext to list resources, enforce permissions, route work, and show activity. This includes:
+
+- Organization name, member roles, member scopes, invites, and timestamps
+- Resource names, display names, descriptions, paths, IDs, timestamps, tags, and status fields
+- Project records, project membership, document metadata, task titles, and activity records
+- Routine definitions and routine metadata
+- Model records, including provider, model name, base URL, and temperature
+- Agent assignments, platform scopes, MCP server assignments, abilities, domains, and model IDs
+- API key metadata, worker enrollment metadata, trusted-device records, key-version metadata, and access-request state
+
+Metadata is still protected by authentication, organization membership, and scopes. It is not the same as encrypted content, and it may be visible to Nenjo services that need it to operate.
+
+## Roles and scopes
+
+Organization roles provide the default permission shape:
+
+- **Owner** — Full administrative access to the organization
+- **Admin** — Broad management access for members, resources, and workers
+- **Member** — Day-to-day project and agent collaboration access
+- **Viewer** — Read-focused access
+
+Each member also has explicit scopes such as `projects:read`, `projects:write`, `agents:read`, `agents:write`, `models:read`, and `routines:write`. Scopes decide which resources a user or worker can operate on; encryption keys decide whether protected content can be decrypted.

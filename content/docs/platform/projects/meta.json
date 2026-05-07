@@ -1,0 +1,12 @@
+{
+  "title": "Projects",
+  "auto-collapse": false,
+  "pages": [
+    "index",
+    "tasks",
+    "documents",
+    "context-and-settings",
+    "repositories",
+    "executions"
+  ]
+}

@@ -1,0 +1,112 @@
+---
+title: Bootstrap
+description: Use Nenji prompts to turn a newly onboarded workspace into useful projects, agents, routines, and knowledge.
+order: 2
+---
+
+Bootstrap is what you do after onboarding. Onboarding makes the workspace usable; bootstrapping gives it shape.
+
+Use Nenji when you know the work you want to support but do not yet know which Nenjo resources should exist. Nenji can ask clarifying questions, propose a workspace plan, and help create projects, agents, routines, abilities, domains, councils, and knowledge documents through the platform.
+
+## How to Prompt Nenji
+
+Strong bootstrap prompts usually include:
+
+- The kind of work your team does
+- The first project or workflow you want to support
+- The roles or agents you expect to need
+- Any required tools, models, repositories, approval steps, or compliance constraints
+- Whether Nenji should ask questions first or propose a draft plan
+
+## Prompt Examples
+
+### Create a Workspace Plan
+
+```text
+Help me bootstrap a Nenjo workspace for a team that [describe the team or domain].
+
+First, ask me the minimum questions you need. Then propose:
+- the first project
+- the first agents
+- any useful abilities or domains
+- the first routine
+- the project knowledge documents we should create
+- the scopes, models, workers, and MCP servers we may need
+```
+
+### Set Up a Project
+
+```text
+Create a project plan for [project name].
+
+The project is about [describe the work]. It should support [tasks or outcomes].
+
+Recommend the initial project description, knowledge documents, task structure, repository connection needs, and memory focus for agents working in this project.
+```
+
+### Design the First Agents
+
+```text
+Design the first agents for this workspace.
+
+The work includes [describe work]. I want agents that are narrow enough to trust but broad enough to be useful.
+
+For each agent, propose:
+- name and role
+- model needs
+- prompt focus
+- memory focus
+- required abilities
+- required domains
+- minimum platform scopes
+```
+
+### Build Project Knowledge
+
+```text
+Help me create the initial knowledge graph for [project name].
+
+Recommend a small set of Domain, Entity, Policy, Taxonomy, Reference, and Guide documents. For each document, explain why it matters and draft a useful starting outline.
+```
+
+### Turn a Process Into a Routine
+
+```text
+Turn this process into a Nenjo routine:
+
+[paste process]
+
+Recommend the routine trigger, steps, agents, gates, council steps if useful, success path, failure path, and what should be recorded for review.
+```
+
+### Choose the Right Resource Type
+
+```text
+I need Nenjo to support this capability:
+
+[describe capability]
+
+Help me decide whether this should be an agent, ability, domain, routine, council, or project document. Explain the tradeoffs and recommend the simplest useful design.
+```
+
+### Prepare a Code-Backed Project
+
+```text
+Help me bootstrap a code-backed project for this repository:
+
+[repository or project description]
+
+Recommend the project setup, initial agents, code-review or implementation routines, required knowledge documents, worker requirements, and the minimum scopes needed for safe operation.
+```
+
+### Review an Existing Workspace
+
+```text
+Review my current Nenjo workspace.
+
+Look for agents that are too broad, missing scopes, missing knowledge documents, routines that need gates, abilities that should be domains, and domains that need clearer activation rules. Give me a prioritized cleanup plan.
+```
+
+## What to Expect
+
+For small bootstraps, Nenji may propose concrete resources immediately. For larger workspaces, it should start with a plan, then help you turn that plan into platform resources once you approve the shape.

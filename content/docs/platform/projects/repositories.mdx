@@ -1,0 +1,46 @@
+---
+title: Repositories
+description: How project repository sync works and how it affects agent execution.
+slug: platform/projects/repositories
+order: 6
+---
+
+# Repositories
+
+A project can connect to a Git repository. Once synced, the repository becomes workspace context for code-backed project work.
+
+Repository settings live in project settings:
+
+| Setting | Meaning |
+|---------|---------|
+| `repo_url` | Remote Git URL |
+| `target_branch` | Branch to clone or pull, defaulting to `main` |
+| `repo_sync_status` | `syncing`, `synced`, or `error` |
+| `repo_synced_at` | Last successful sync time |
+| `repo_sync_error` | Last sync failure message |
+
+## Syncing
+
+When you save and sync a repository, the backend stores the repository URL, marks the project as syncing, and publishes a repo sync command to the organization's worker channel.
+
+The worker clones or pulls the repository into the project's workspace directory. If the repository already exists, the worker pulls the target branch. If it is not present, the worker clones it.
+
+## Disconnecting
+
+Disconnecting clears repository-related settings and sends a repo unsync command. The worker removes the cloned repository and associated worktrees.
+
+Disconnecting does not delete project tasks, documents, context, or execution history.
+
+## Worktrees during execution
+
+Repository-connected projects give task executions a workspace-backed flow. Agents running project tasks can receive Git context such as repository URL, branch, and work directory.
+
+When a task execution creates an isolated worktree, file and shell tools are scoped to that worktree. This keeps autonomous code work tied to the project and task instead of the worker's root directory.
+
+## Practical guidance
+
+- Connect a repository when agents are expected to inspect or modify code.
+- Keep the target branch explicit.
+- Make task acceptance criteria concrete enough to verify against repository changes.
+- Use project context for repository conventions that are too broad for one task.
+- Do not store credentials or secrets in project metadata or context.

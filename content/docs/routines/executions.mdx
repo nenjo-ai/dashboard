@@ -1,0 +1,42 @@
+---
+title: Executions
+description: What routine runs record and how they appear in Nenjo.
+slug: routines/executions
+order: 5
+---
+
+# Executions
+
+An **execution** is the record of work that ran. Routine executions connect a run back to the routine, project, agent activity, task events, status, and timing.
+
+## What gets recorded
+
+Execution records can include:
+
+| Field | What it means |
+|-------|---------------|
+| `routine_id` | The routine that produced the run |
+| `routine_name` | The routine name at execution time |
+| `project_id` | The project context when one exists |
+| `status` | Pending, running, completed, cancelled, or another execution status |
+| `started_at` / `completed_at` / `cancelled_at` | Run timing |
+| `config` | Execution configuration, including trigger context |
+| Token usage | Input and output token usage attributed to routine work |
+
+Step-level events are recorded separately as execution task events. Those events include step names, step types, verdict data, and transition information used by the dashboard and activity surfaces.
+
+## Scheduled routine cycles
+
+For scheduled routines, the Run tab shows recent cycles. A completed cycle is displayed as pass or fail based on the final execution status and verdict.
+
+Starting a schedule marks the routine active. Stopping it marks the loop inactive and attempts to cancel running executions for that routine.
+
+## Manual runs
+
+The current manual **Run Once** action is for cron routines. It sends a trigger command for the scheduled routine without requiring the loop to wait for the next scheduled tick.
+
+Task-triggered routines run from task/project flow rather than from the routine detail page.
+
+## Activity and visibility
+
+Routine metadata, execution metadata, and activity records are visible to Nenjo so the app can list runs, show status, route worker events, and enforce organization access. Encrypted task or document content remains separate from that metadata.
