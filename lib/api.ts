@@ -61,6 +61,11 @@ const FETCH_TIMEOUT_MS = 15000;
 const RATE_LIMIT_MAX_ATTEMPTS = 3;
 const RATE_LIMIT_FALLBACK_DELAY_MS = 1000;
 const RATE_LIMIT_MAX_DELAY_MS = 10000;
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+
+function normalizeOptionalProjectId(projectId: string | null | undefined): string | null {
+  return projectId && projectId !== NIL_UUID ? projectId : null;
+}
 
 function resolveApiUrl(url: string): string {
   if (/^https?:\/\//i.test(url)) {
@@ -2047,7 +2052,8 @@ export function chatMessagesUrl(params?: {
   session_id?: string;
 }): string {
   const qs = new URLSearchParams();
-  if (params?.project_id) qs.set("project_id", params.project_id);
+  const projectId = normalizeOptionalProjectId(params?.project_id);
+  if (projectId) qs.set("project_id", projectId);
   if (params?.agent_id) qs.set("agent_id", params.agent_id);
   if (params?.limit) qs.set("limit", String(params.limit));
   if (params?.before) qs.set("before", params.before);
@@ -2061,9 +2067,10 @@ export async function fetchChatMessages(
   agentId: string,
   opts?: { limit?: number; before?: string; session_id: string },
 ): Promise<ChatMessagePage> {
+  const normalizedProjectId = normalizeOptionalProjectId(projectId);
   return fetcher<ChatMessagePage>(
     chatMessagesUrl({
-      ...(projectId ? { project_id: projectId } : {}),
+      ...(normalizedProjectId ? { project_id: normalizedProjectId } : {}),
       agent_id: agentId,
       limit: opts?.limit,
       before: opts?.before,
@@ -2080,9 +2087,13 @@ export async function createChatMessage(body: {
   session_id: string;
   idempotency_key?: string;
 }): Promise<PersistedChatMessage> {
+  const projectId = normalizeOptionalProjectId(body.project_id);
   const res = await authFetch(chatMessagesUrl(), {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      ...body,
+      project_id: projectId,
+    }),
   });
   return res.json() as Promise<PersistedChatMessage>;
 }
@@ -2110,7 +2121,8 @@ export async function fetchChatSessions(
   agentId: string,
 ): Promise<ChatSession[]> {
   const qs = new URLSearchParams();
-  if (projectId) qs.set("project_id", projectId);
+  const normalizedProjectId = normalizeOptionalProjectId(projectId);
+  if (normalizedProjectId) qs.set("project_id", normalizedProjectId);
   qs.set("agent_id", agentId);
   return fetcher<ChatSession[]>(`${API_V1}/chat-sessions?${qs.toString()}`);
 }
@@ -2120,9 +2132,13 @@ export async function createChatSession(body: {
   agent_id: string;
   title?: string;
 }): Promise<ChatSession> {
+  const projectId = normalizeOptionalProjectId(body.project_id);
   const res = await authFetch(`${API_V1}/chat-sessions`, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      ...body,
+      project_id: projectId,
+    }),
   });
   return res.json() as Promise<ChatSession>;
 }
@@ -2131,13 +2147,17 @@ export async function createChatStream(
   body: ChatStreamRequest,
   signal?: AbortSignal,
 ): Promise<Response> {
+  const projectId = normalizeOptionalProjectId(body.project_id);
   const headers = await authHeaders({
     Accept: "text/event-stream",
   });
   const res = await fetch(`${API_V1}/chat-streams`, {
     method: "POST",
     headers,
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      ...body,
+      project_id: projectId,
+    }),
     signal,
   });
   if (!res.ok) {
@@ -2170,32 +2190,48 @@ export async function createExecutionEventStream(
 }
 
 export async function cancelChat(body: ChatCancelRequest): Promise<void> {
+  const projectId = normalizeOptionalProjectId(body.project_id);
   await authFetch(`${API_V1}/chat-commands/cancel`, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      ...body,
+      project_id: projectId,
+    }),
   });
 }
 
 export async function enterChatDomain(body: ChatDomainEnterRequest): Promise<void> {
+  const projectId = normalizeOptionalProjectId(body.project_id);
   await authFetch(`${API_V1}/chat-commands/domain-enter`, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      ...body,
+      project_id: projectId,
+    }),
   });
 }
 
 export async function exitChatDomain(body: ChatDomainExitRequest): Promise<void> {
+  const projectId = normalizeOptionalProjectId(body.project_id);
   await authFetch(`${API_V1}/chat-commands/domain-exit`, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      ...body,
+      project_id: projectId,
+    }),
   });
 }
 
 export async function notifyChatSessionDelete(
   body: ChatSessionDeleteRequest,
 ): Promise<void> {
+  const projectId = normalizeOptionalProjectId(body.project_id);
   await authFetch(`${API_V1}/chat-commands/session-delete`, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      ...body,
+      project_id: projectId,
+    }),
   });
 }
 
@@ -2498,10 +2534,11 @@ export async function createDomainSession(
   projectId: string | null | undefined,
   agentId: string,
 ): Promise<DomainSession> {
+  const normalizedProjectId = normalizeOptionalProjectId(projectId);
   const res = await authFetch(`${domainUrl(domainId)}/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ project_id: projectId ?? null, agent_id: agentId }),
+    body: JSON.stringify({ project_id: normalizedProjectId, agent_id: agentId }),
   });
   return res.json() as Promise<DomainSession>;
 }
@@ -2538,7 +2575,8 @@ export async function fetchActiveDomainSession(
   agentId: string,
 ): Promise<DomainSession | null> {
   const qs = new URLSearchParams({ agent_id: agentId });
-  if (projectId) qs.set("project_id", projectId);
+  const normalizedProjectId = normalizeOptionalProjectId(projectId);
+  if (normalizedProjectId) qs.set("project_id", normalizedProjectId);
   const res = await authFetch(
     `${API_V1}/domains/sessions/active?${qs.toString()}`,
   );
