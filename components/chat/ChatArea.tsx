@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import useSWR from "swr";
 import type { ChatMessage, AgentDefinition, ChatSessionExtended, Domain } from "@/lib/types";
 import {
+  useAgent,
   useAgents,
   useAgentDomains,
   useProjects,
@@ -30,7 +31,7 @@ interface ChatAreaProps {
   /** Navigate to a different session (from @mention agent→session picker). */
   onNavigateToSession?: (sessionId: string) => void;
   /** Called after creating a new session via @mention → new chat flow. */
-  onSessionCreated?: () => void;
+  onSessionCreated?: () => void | Promise<unknown>;
   /** Render variant — "mobile" uses MobileInputBar and MobileEmptyState */
   variant?: "desktop" | "mobile";
   /** Switch to a different agent's general chat (handled at ChatView level). */
@@ -42,11 +43,103 @@ type ChatProjectOption = {
   name: string;
 };
 
+type ChatCommandOption = {
+  command: string;
+  description: string;
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const NEW_SESSION_COMMAND = "/new-session";
+const CHAT_COMMANDS: ChatCommandOption[] = [
+  {
+    command: NEW_SESSION_COMMAND,
+    description: "Create a fresh chat with this agent and project.",
+  },
+];
+
+function ChatCommandDropdown({
+  commands,
+  selectedIndex,
+  onSelect,
+  onClose,
+  anchorRef,
+}: {
+  commands: ChatCommandOption[];
+  selectedIndex: number;
+  onSelect: (command: ChatCommandOption) => void;
+  onClose: () => void;
+  anchorRef: React.RefObject<HTMLElement | null>;
+}) {
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node) &&
+        anchorRef.current &&
+        !anchorRef.current.contains(e.target as Node)
+      ) {
+        onClose();
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [anchorRef, onClose]);
+
+  if (commands.length === 0) return null;
+
+  return (
+    <div
+      ref={dropdownRef}
+      className="theme-border theme-surface absolute bottom-full left-0 z-50 mb-1 w-80 overflow-hidden rounded-lg border shadow-lg"
+    >
+      <div className="px-3 py-1.5 text-xs font-medium text-gray-400 dark:text-gray-500">
+        Available Commands
+      </div>
+      {commands.map((command, index) => (
+        <button
+          key={command.command}
+          type="button"
+          className={cn(
+            "flex w-full items-start gap-3 px-3 py-2 text-left text-sm transition-colors",
+            index === selectedIndex
+              ? "bg-deep-space-blue-500 text-white"
+              : "text-gray-700 hover:[background:var(--app-hover)] dark:text-gray-300",
+          )}
+          onClick={() => onSelect(command)}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <span
+            className={cn(
+              "mt-0.5 flex h-5 w-5 items-center justify-center rounded-sm text-xs font-medium",
+              index === selectedIndex
+                ? "bg-white/15 text-white"
+                : "theme-surface-muted theme-text-muted",
+            )}
+          >
+            /
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-medium">{command.command}</span>
+            <span
+              className={cn(
+                "block truncate text-xs",
+                index === selectedIndex ? "text-deep-space-blue-100" : "text-gray-500 dark:text-gray-400",
+              )}
+            >
+              {command.description}
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /** Shorten full UUIDs to their first 8-char segment for compact mobile display. */
 function shortenUuids(text: string): string {
@@ -690,8 +783,12 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
   const [showDomainDropdown, setShowDomainDropdown] = useState(false);
   const [domainFilter, setDomainFilter] = useState("");
   const [selectedDomainIndex, setSelectedDomainIndex] = useState(0);
+  const [showCommandDropdown, setShowCommandDropdown] = useState(false);
+  const [commandFilter, setCommandFilter] = useState("");
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
 
   const { agents: allAgents } = useAgents();
+  const { agent: activeAgentDetail } = useAgent(agentId);
   const { agentDomains } = useAgentDomains(agentId);
   const { projects } = useProjects();
 
@@ -732,8 +829,8 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
 
 
   const activeAgent = useMemo(
-    () => allAgents?.find((a: AgentDefinition) => a.id === agentId),
-    [allAgents, agentId],
+    () => activeAgentDetail ?? allAgents?.find((a: AgentDefinition) => a.id === agentId),
+    [activeAgentDetail, allAgents, agentId],
   );
 
   useEffect(() => { setSelectedDropdownIndex(0); }, [filteredAgents]);
@@ -765,6 +862,18 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
   }, [showDomainDropdown, domainFilter, availableDomains]);
 
   useEffect(() => { setSelectedDomainIndex(0); }, [filteredDomains]);
+
+  const filteredCommands = useMemo(() => {
+    if (!showCommandDropdown) return [];
+    const lower = commandFilter.toLowerCase();
+    return CHAT_COMMANDS.filter(
+      (command) =>
+        command.command.slice(1).toLowerCase().includes(lower) ||
+        command.description.toLowerCase().includes(lower),
+    );
+  }, [showCommandDropdown, commandFilter]);
+
+  useEffect(() => { setSelectedCommandIndex(0); }, [filteredCommands]);
 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -986,6 +1095,23 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
       closeMentionFlow();
     }
 
+    if (value.startsWith("/")) {
+      const commandText = value.slice(1);
+      if (!/\s/.test(commandText)) {
+        setShowCommandDropdown(true);
+        setCommandFilter(commandText);
+        setSelectedCommandIndex(0);
+        setShowAgentDropdown(false);
+        setMentionFilter("");
+        setShowDomainDropdown(false);
+        setDomainFilter("");
+        return;
+      }
+    }
+
+    setShowCommandDropdown(false);
+    setCommandFilter("");
+
     const cursorPos = e.target.selectionStart ?? value.length;
     const textBeforeCursor = value.slice(0, cursorPos);
     const atIndex = textBeforeCursor.lastIndexOf("@");
@@ -1071,7 +1197,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
 
       closeMentionFlow();
       await mutateSessions();
-      onSessionCreated?.();
+      await onSessionCreated?.();
       onNavigateToSession?.(newSession.id);
     } catch (err) {
       console.error("Failed to create chat:", err);
@@ -1086,12 +1212,56 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
     }
   }, []);
 
-  const handleSend = () => {
+  const handleNewSessionCommand = useCallback(async () => {
+    if (isCreatingChat) return;
+    setIsCreatingChat(true);
+    try {
+      const newSession = await createChatSession({
+        ...(projectId ? { project_id: projectId } : {}),
+        agent_id: agentId,
+      });
+
+      await mutateSessions();
+      await onSessionCreated?.();
+      onNavigateToSession?.(newSession.id);
+    } catch (err) {
+      console.error("Failed to create new chat session:", err);
+    } finally {
+      setIsCreatingChat(false);
+    }
+  }, [agentId, isCreatingChat, mutateSessions, onNavigateToSession, onSessionCreated, projectId]);
+
+  const handleCommandSelect = useCallback(
+    async (command: ChatCommandOption) => {
+      setInput("");
+      resetInputHeight();
+      setShowCommandDropdown(false);
+      setCommandFilter("");
+
+      if (command.command === NEW_SESSION_COMMAND) {
+        await handleNewSessionCommand();
+      }
+    },
+    [handleNewSessionCommand, resetInputHeight],
+  );
+
+  const handleSend = async () => {
     const text = input.trim();
     if (!text) return;
 
     // Close any open mention flow
     closeMentionFlow();
+
+    if (text.toLowerCase() === NEW_SESSION_COMMAND) {
+      setInput("");
+      resetInputHeight();
+      setShowCommandDropdown(false);
+      setCommandFilter("");
+      setShowDomainDropdown(false);
+      setDomainFilter("");
+      await handleNewSessionCommand();
+      return;
+    }
 
     if (activeDomainSession) {
       const exitCommands = ["#exit", "#done", "#finish"];
@@ -1126,6 +1296,14 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Local slash command keyboard nav
+    if (showCommandDropdown && filteredCommands.length > 0) {
+      if (e.key === "Escape") { e.preventDefault(); setShowCommandDropdown(false); return; }
+      if (e.key === "ArrowDown") { e.preventDefault(); setSelectedCommandIndex((prev) => prev < filteredCommands.length - 1 ? prev + 1 : 0); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setSelectedCommandIndex((prev) => prev > 0 ? prev - 1 : filteredCommands.length - 1); return; }
+      if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); void handleCommandSelect(filteredCommands[selectedCommandIndex]); return; }
+    }
+
     // Domain dropdown keyboard nav
     if (showDomainDropdown && filteredDomains.length > 0) {
       if (e.key === "Escape") { e.preventDefault(); setShowDomainDropdown(false); return; }
@@ -1456,6 +1634,17 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
       {isMobile && (
         <div className="pointer-events-none z-20 shrink-0">
           {/* Dropdowns render above the mobile input */}
+          {showCommandDropdown && filteredCommands.length > 0 && (
+            <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-50 px-4 pb-2">
+              <ChatCommandDropdown
+                commands={filteredCommands}
+                selectedIndex={selectedCommandIndex}
+                onSelect={(command) => { void handleCommandSelect(command); }}
+                onClose={() => setShowCommandDropdown(false)}
+                anchorRef={inputRef}
+              />
+            </div>
+          )}
           {showDomainDropdown && filteredDomains.length > 0 && (
             <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-50 px-4 pb-2">
               <DomainSlashCommandDropdown
@@ -1604,6 +1793,16 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
       {/* Desktop Input */}
       {!isMobile && <div className="theme-border theme-surface border-t p-3">
         <div className="relative">
+          {showCommandDropdown && filteredCommands.length > 0 && (
+            <ChatCommandDropdown
+              commands={filteredCommands}
+              selectedIndex={selectedCommandIndex}
+              onSelect={(command) => { void handleCommandSelect(command); }}
+              onClose={() => setShowCommandDropdown(false)}
+              anchorRef={inputRef}
+            />
+          )}
+
           {showDomainDropdown && filteredDomains.length > 0 && (
             <DomainSlashCommandDropdown
               domains={filteredDomains}

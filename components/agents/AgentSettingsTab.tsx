@@ -2,7 +2,8 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { updateAgent, deleteAgent } from "@/lib/api";
+import { useSWRConfig } from "swr";
+import { updateAgent, deleteAgent, agentsUrl } from "@/lib/api";
 import { useModels } from "@/lib/hooks";
 import { Button } from "@/components/ui/Button";
 import { ColorSwatchPicker } from "@/components/ui/ColorSwatchPicker";
@@ -15,6 +16,7 @@ interface AgentSettingsTabProps {
 
 export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
   const router = useRouter();
+  const { mutate } = useSWRConfig();
   const { models } = useModels();
 
   const [displayName, setDisplayName] = useState(agent.display_name ?? "");
@@ -42,13 +44,14 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
       });
       setSaved(true);
       onUpdated();
+      void mutate(agentsUrl());
       setTimeout(() => setSaved(false), 1500);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setSaving(false);
     }
-  }, [agent.id, name, displayName, description, color, modelId, onUpdated]);
+  }, [agent.id, name, displayName, description, color, modelId, mutate, onUpdated]);
 
   const handleDelete = useCallback(async () => {
     setDeleting(true);

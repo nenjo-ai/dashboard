@@ -369,6 +369,12 @@ function InvitesPanel({
   const [inviteExpanded, setInviteExpanded] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null);
+  const openInvitations = invitations.filter(
+    (invite) =>
+      !invite.revoked_at &&
+      !invite.accepted_at &&
+      new Date(invite.expires_at).getTime() > Date.now(),
+  );
 
   const buildInviteLink = (token: string) => {
     if (typeof window === "undefined") return token;
@@ -490,25 +496,20 @@ function InvitesPanel({
         </div>
 
         <div className="divide-y divide-black/5 dark:divide-white/8">
-          {invitations.length === 0 && (
+          {openInvitations.length === 0 && (
             <div className="px-5 py-8 text-sm text-gray-500 dark:text-gray-400">
               No invitations yet.
             </div>
           )}
 
-          {invitations.map((invite) => {
-            const state = invite.revoked_at
-              ? "revoked"
-              : invite.accepted_at
-                ? "accepted"
-                : "pending";
+          {openInvitations.map((invite) => {
             return (
               <div key={invite.id} className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="theme-text truncate font-medium">{invite.email}</p>
                     <span className="bg-black/[0.04] px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-600 dark:bg-white/[0.08] dark:text-gray-300">
-                      {state}
+                      pending
                     </span>
                     <span className="bg-deep-space-blue-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-deep-space-blue-700 dark:bg-deep-space-blue-900/30 dark:text-deep-space-blue-200">
                       {invite.role}
@@ -528,55 +529,51 @@ function InvitesPanel({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {state === "pending" && (
-                    <>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        isLoading={busyInviteId === invite.id}
-                        onClick={async () => {
-                          try {
-                            setBusyInviteId(invite.id);
-                            const resent = await resendOrgInvitation(orgId, invite.id);
-                            await navigator.clipboard.writeText(buildInviteLink(resent.invite_token));
-                            await onRefresh();
-                            toast.success("Invite email resent and fresh link copied.");
-                          } catch (error) {
-                            toast.error(error instanceof Error ? error.message : "Failed to resend invitation.");
-                          } finally {
-                            setBusyInviteId(null);
-                          }
-                        }}
-                      >
-                        <Copy className="h-4 w-4" />
-                        Resend invite
-                      </Button>
-                      {canEdit && (
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          isLoading={busyInviteId === invite.id}
-                          onClick={async () => {
-                            if (!window.confirm(`Revoke invite for ${invite.email}?`)) {
-                              return;
-                            }
-                            try {
-                              setBusyInviteId(invite.id);
-                              await revokeOrgInvitation(orgId, invite.id);
-                              await onRefresh();
-                              toast.success("Invite revoked.");
-                            } catch (error) {
-                              toast.error(error instanceof Error ? error.message : "Failed to revoke invitation.");
-                            } finally {
-                              setBusyInviteId(null);
-                            }
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Revoke
-                        </Button>
-                      )}
-                    </>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    isLoading={busyInviteId === invite.id}
+                    onClick={async () => {
+                      try {
+                        setBusyInviteId(invite.id);
+                        const resent = await resendOrgInvitation(orgId, invite.id);
+                        await navigator.clipboard.writeText(buildInviteLink(resent.invite_token));
+                        await onRefresh();
+                        toast.success("Invite email resent and fresh link copied.");
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : "Failed to resend invitation.");
+                      } finally {
+                        setBusyInviteId(null);
+                      }
+                    }}
+                  >
+                    <Copy className="h-4 w-4" />
+                    Resend invite
+                  </Button>
+                  {canEdit && (
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      isLoading={busyInviteId === invite.id}
+                      onClick={async () => {
+                        if (!window.confirm(`Revoke invite for ${invite.email}?`)) {
+                          return;
+                        }
+                        try {
+                          setBusyInviteId(invite.id);
+                          await revokeOrgInvitation(orgId, invite.id);
+                          await onRefresh();
+                          toast.success("Invite revoked.");
+                        } catch (error) {
+                          toast.error(error instanceof Error ? error.message : "Failed to revoke invitation.");
+                        } finally {
+                          setBusyInviteId(null);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Revoke
+                    </Button>
                   )}
                 </div>
               </div>

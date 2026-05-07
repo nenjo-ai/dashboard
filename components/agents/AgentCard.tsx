@@ -15,6 +15,14 @@ interface AgentCardProps {
   onRefresh?: () => void;
 }
 
+const AGENT_CARD_DESCRIPTION_LIMIT = 180;
+
+function truncateDescription(description: string): string {
+  return description.length > AGENT_CARD_DESCRIPTION_LIMIT
+    ? `${description.slice(0, AGENT_CARD_DESCRIPTION_LIMIT).trimEnd()}...`
+    : description;
+}
+
 export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardProps) {
   const { agentDomains } = useAgentDomains(agent.id);
   const { abilities: agentAbilities } = useAgentAbilities(agent.id);
@@ -177,8 +185,8 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
                 </span>
               </div>
               {agent.description && (
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  {agent.description}
+                <p className="mt-1 line-clamp-3 text-sm text-gray-500 dark:text-gray-400">
+                  {truncateDescription(agent.description)}
                 </p>
               )}
             </div>
