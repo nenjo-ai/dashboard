@@ -1,37 +1,31 @@
 /**
- * Authentication utilities for integrating Clerk with the backend API.
+ * Authentication utilities for browser calls to the backend API.
  *
- * Provides helpers to attach Clerk session tokens to outgoing fetch requests
- * so the Rust/Axum backend can verify them via JWKS.
+ * Browser code should call the dashboard BFF, which verifies the Clerk cookie
+ * session server-side and attaches an internal platform credential.
  */
 
 /**
- * Create an authenticated fetch function that automatically attaches
- * the Clerk session token to requests.
+ * Create an authenticated fetch function for dashboard BFF requests.
  *
  * Usage (in a client component):
  * ```ts
- * import { useAuth } from "@clerk/nextjs";
  * import { createAuthFetch } from "@/lib/auth";
  *
- * const { getToken } = useAuth();
- * const authFetch = createAuthFetch(getToken);
- * const res = await authFetch("/api/v1/projects");
+ * const authFetch = createAuthFetch();
+ * const res = await authFetch("/api/platform/projects");
  * ```
  */
 export function createAuthFetch(
-  getToken: () => Promise<string | null>,
+  getToken?: () => Promise<string | null>,
 ) {
+  void getToken;
+
   return async function authFetch(
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<Response> {
-    const token = await getToken();
-
     const headers = new Headers(init?.headers);
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
     if (!headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
@@ -48,22 +42,19 @@ export function createAuthFetch(
  * Returns the verification response or throws on failure.
  */
 export async function verifySession(
-  getToken: () => Promise<string | null>,
-  apiBase: string,
+  getToken?: () => Promise<string | null>,
+  apiBase?: string,
 ): Promise<{
   authenticated: boolean;
   user_id: string;
   session_id: string | null;
   issuer: string | null;
 }> {
-  const token = await getToken();
-  if (!token) {
-    throw new Error("No session token available");
-  }
+  void getToken;
+  void apiBase;
 
-  const res = await fetch(`${apiBase}/api/v1/auth/verify`, {
+  const res = await fetch("/api/platform/auth/me", {
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
   });
@@ -73,5 +64,11 @@ export async function verifySession(
     throw new Error(`Session verification failed: ${body}`);
   }
 
-  return res.json();
+  const body = await res.json();
+  return {
+    authenticated: true,
+    user_id: body.clerk_id ?? body.user_id,
+    session_id: body.session_id ?? null,
+    issuer: null,
+  };
 }
