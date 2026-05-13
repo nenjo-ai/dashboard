@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
 import { useProjectDocuments } from "@/lib/hooks";
 import {
+  createProjectDocument,
   createProjectDocumentEdge,
   deleteProjectDocument,
   deleteProjectDocumentEdge,
@@ -80,16 +81,20 @@ function buildDocumentTree(documents: ProjectDocument[]): TreeNode[] {
   const root: TreeNode[] = [];
 
   for (const doc of documents) {
-    const rawPath = doc.path?.trim() || doc.filename;
-    const segments = doc.path
-      ? rawPath.split(".").filter(Boolean)
-      : [doc.filename];
-    const leafName = segments.pop() ?? rawPath;
+    const rawPath = doc.path?.trim().replace(/^\/+|\/+$/g, "");
+    const pathParts = rawPath ? rawPath.split("/").filter(Boolean) : [];
+    const filename = doc.filename || pathParts.at(-1) || "Untitled";
+    const filenameStem = filename.replace(/\.[^/.]+$/, "");
+    const pathLooksLikeFile =
+      pathParts.length > 0 &&
+      (pathParts.at(-1) === filename || pathParts.at(-1) === filenameStem);
+    const folderSegments = pathLooksLikeFile ? pathParts.slice(0, -1) : pathParts;
+    const leafName = filename;
     let parent = root;
 
-    for (let i = 0; i < segments.length; i += 1) {
-      const seg = segments[i];
-      const folderPath = segments.slice(0, i + 1).join(".");
+    for (let i = 0; i < folderSegments.length; i += 1) {
+      const seg = folderSegments[i];
+      const folderPath = folderSegments.slice(0, i + 1).join("/");
       let folder = parent.find((node) => node.path === folderPath && !node.document);
       if (!folder) {
         folder = { name: seg, path: folderPath, children: [] };
@@ -100,7 +105,7 @@ function buildDocumentTree(documents: ProjectDocument[]): TreeNode[] {
 
     parent.push({
       name: leafName,
-      path: rawPath,
+      path: [...folderSegments, leafName].join("/"),
       children: [],
       document: doc,
     });
@@ -227,7 +232,7 @@ function DocumentTreeNode({
         <svg className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
         </svg>
-        <div className="min-w-0 flex-1 truncate text-sm">{doc.title ?? node.name}</div>
+        <div className="min-w-0 flex-1 truncate text-sm">{node.name}</div>
         {doc.authority === "canonical" ? (
           <span className="ml-auto shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
             Canonical
@@ -258,6 +263,7 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
 
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isCreatingDocument, setIsCreatingDocument] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
@@ -270,6 +276,7 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
 
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [isSavingMetadata, setIsSavingMetadata] = useState(false);
+  const [docFilename, setDocFilename] = useState("");
   const [docPath, setDocPath] = useState("");
   const [docTitle, setDocTitle] = useState("");
   const [docKind, setDocKind] = useState<ProjectDocumentKind | "">("");
@@ -277,6 +284,8 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
   const [docSummary, setDocSummary] = useState("");
   const [docStatus, setDocStatus] = useState("");
   const [docTags, setDocTags] = useState<string[]>([]);
+  const [docAliases, setDocAliases] = useState<string[]>([]);
+  const [docKeywords, setDocKeywords] = useState<string[]>([]);
 
   const [documentEdges, setDocumentEdges] = useState<ProjectDocumentEdge[]>([]);
   const [isLoadingEdges, setIsLoadingEdges] = useState(false);
@@ -345,6 +354,7 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
 
   useEffect(() => {
     if (!selectedDoc) {
+      setDocFilename("");
       setDocPath("");
       setDocTitle("");
       setDocKind("");
@@ -352,9 +362,12 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
       setDocSummary("");
       setDocStatus("");
       setDocTags([]);
+      setDocAliases([]);
+      setDocKeywords([]);
       return;
     }
 
+    setDocFilename(selectedDoc.filename ?? "");
     setDocPath(selectedDoc.path ?? "");
     setDocTitle(selectedDoc.title ?? "");
     setDocKind(selectedDoc.kind ?? "");
@@ -362,6 +375,8 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
     setDocSummary(selectedDoc.summary ?? "");
     setDocStatus(selectedDoc.status ?? "");
     setDocTags(selectedDoc.tags ?? []);
+    setDocAliases(selectedDoc.aliases ?? []);
+    setDocKeywords(selectedDoc.keywords ?? []);
     setMetadataError(null);
   }, [selectedDoc]);
 
@@ -419,6 +434,23 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
     [projectId, mutateDocs],
   );
 
+  const handleCreateDocument = useCallback(async () => {
+    setIsCreatingDocument(true);
+    setUploadError(null);
+    try {
+      const created = await createProjectDocument(projectId);
+      await mutateDocs();
+      setSelectedDocId(created.id);
+      setContentMode("edit");
+    } catch (err: unknown) {
+      setUploadError(
+        err instanceof Error ? err.message : "Failed to create document",
+      );
+    } finally {
+      setIsCreatingDocument(false);
+    }
+  }, [projectId, mutateDocs]);
+
   const handleDelete = useCallback(
     async (doc: ProjectDocument) => {
       try {
@@ -455,10 +487,16 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
 
   const handleSaveMetadata = async () => {
     if (!selectedDocId) return;
+    const filename = docFilename.trim();
+    if (!filename) {
+      setMetadataError("Filename cannot be empty");
+      return;
+    }
     setIsSavingMetadata(true);
     setMetadataError(null);
     try {
       await updateProjectDocumentMetadata(projectId, selectedDocId, {
+        filename,
         path: docPath.trim() || null,
         title: docTitle.trim() || null,
         kind: docKind || null,
@@ -466,6 +504,8 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
         summary: docSummary.trim() || null,
         status: docStatus.trim() || null,
         tags: docTags,
+        aliases: docAliases,
+        keywords: docKeywords,
       });
       await mutateDocs();
     } catch (err) {
@@ -562,12 +602,19 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
             <div className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
               {(documents?.length ?? 0).toLocaleString()} docs
             </div>
-            <Button size="sm" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+            <Button size="sm" onClick={handleCreateDocument} disabled={isCreatingDocument || isUploading}>
               <span className="inline-flex items-center gap-1.5">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                </svg>
-                Upload
+                {isCreatingDocument ? (
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                ) : (
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                )}
+                New Document
               </span>
             </Button>
           </div>
@@ -609,7 +656,7 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                   </div>
                 ) : (
                   <>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Add document</p>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Upload</p>
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Click or drag in a file</p>
                   </>
                 )}
@@ -806,8 +853,13 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                     </div>
 
                     <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Filename</label>
+                      <Input value={docFilename} onChange={(e) => setDocFilename(e.target.value)} placeholder="random.md" />
+                    </div>
+
+                    <div>
                       <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Path</label>
-                      <Input value={docPath} onChange={(e) => setDocPath(e.target.value)} placeholder="domain/billing.md" />
+                      <Input value={docPath} onChange={(e) => setDocPath(e.target.value)} placeholder="domain" />
                     </div>
 
                     <div>
@@ -861,6 +913,26 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                         value={docTags}
                         onChange={setDocTags}
                         suggestions={["canonical", "policy", "entity", "taxonomy", "guide", "reference", "project"]}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Aliases</label>
+                      <TagInput
+                        value={docAliases}
+                        onChange={setDocAliases}
+                        placeholder="Add an alias..."
+                        preserveValue
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Keywords</label>
+                      <TagInput
+                        value={docKeywords}
+                        onChange={setDocKeywords}
+                        placeholder="Add a keyword..."
+                        preserveValue
                       />
                     </div>
 

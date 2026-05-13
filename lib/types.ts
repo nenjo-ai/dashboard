@@ -169,6 +169,7 @@ export interface TaskStepProgress {
   step_type: string;
   status: StepStatus;
   event_type: string;
+  created_at?: string;
   started_at: string | null;
   completed_at: string | null;
   duration_ms: number | null;
@@ -917,6 +918,8 @@ export interface ProjectDocument {
   summary: string | null;
   status: string | null;
   tags: string[];
+  aliases: string[];
+  keywords: string[];
   content_type: string;
   size_bytes: number;
   created_at: string;

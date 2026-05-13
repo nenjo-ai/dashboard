@@ -21,7 +21,7 @@ The template variable list in the dashboard comes from the Nenjo SDK. These are 
 | Chat | `{{ chat.message }}` | User chat turns |
 | Task | `{{ task }}`, `{{ task.title }}`, `{{ task.acceptance_criteria }}` | Project task execution |
 | Project | `{{ project }}`, `{{ project.documents }}`, `{{ project.working_dir }}` | Project-aware work |
-| Builtin docs | `{{ builtin.documents }}` | Discovering embedded Nenjo reference material |
+| Built-in Nenjo docs | `{{ builtin.nenjo }}`, `{{ builtin.nenjo.guide.agents }}` | Discovering embedded Nenjo reference material |
 | Routine | `{{ routine }}`, `{{ routine.step.name }}`, `{{ routine.execution_id }}` | Routine steps |
 | Gate | `{{ gate.criteria }}`, `{{ gate.previous_output }}` | Evaluation steps |
 | Heartbeat | `{{ heartbeat.previous_output }}`, `{{ heartbeat.last_run_at }}` | Periodic checks |

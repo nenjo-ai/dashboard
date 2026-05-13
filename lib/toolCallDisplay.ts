@@ -10,6 +10,8 @@ function toPascalCase(value: string): string {
     .join("");
 }
 
+const ARG_VALUE_MAX_LENGTH = 80;
+
 function truncate(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
   return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
@@ -17,19 +19,30 @@ function truncate(value: string, maxLength: number): string {
 
 function formatValue(value: unknown): string {
   if (typeof value === "string") {
-    return JSON.stringify(truncate(value, 180));
+    return JSON.stringify(truncate(value, ARG_VALUE_MAX_LENGTH));
   }
   if (typeof value === "number" || typeof value === "boolean" || value === null) {
     return String(value);
   }
   if (Array.isArray(value) || typeof value === "object") {
-    return truncate(JSON.stringify(value), 240);
+    return truncate(JSON.stringify(value), ARG_VALUE_MAX_LENGTH);
   }
   return JSON.stringify(String(value));
 }
 
-function parseArgs(args: string): unknown {
-  const trimmed = args.trim();
+export function normalizeToolCallArgs(args: unknown): string {
+  if (args == null) return "";
+  if (typeof args === "string") return args;
+  try {
+    return JSON.stringify(args);
+  } catch {
+    return String(args);
+  }
+}
+
+function parseArgs(args: unknown): unknown {
+  const normalized = normalizeToolCallArgs(args);
+  const trimmed = normalized.trim();
   if (!trimmed) return undefined;
 
   try {
@@ -39,7 +52,7 @@ function parseArgs(args: string): unknown {
   }
 }
 
-export function formatToolCallSignature(name: string, args: string): string {
+export function formatToolCallSignature(name: string, args: unknown): string {
   const displayName = toPascalCase(name) || "Tool";
   const parsedArgs = parseArgs(args);
 
@@ -48,7 +61,7 @@ export function formatToolCallSignature(name: string, args: string): string {
   }
 
   if (typeof parsedArgs === "string") {
-    return `${displayName}(${truncate(parsedArgs, 240)})`;
+    return `${displayName}(${truncate(parsedArgs, ARG_VALUE_MAX_LENGTH)})`;
   }
 
   if (!parsedArgs || Array.isArray(parsedArgs) || typeof parsedArgs !== "object") {
@@ -63,14 +76,5 @@ export function formatToolCallSignature(name: string, args: string): string {
   const inlineArgs = entries
     .map(([key, value]) => `${key}=${formatValue(value)}`)
     .join(", ");
-  const inline = `${displayName}(${inlineArgs})`;
-
-  if (inline.length <= 96 && entries.length <= 3) {
-    return inline;
-  }
-
-  const multilineArgs = entries
-    .map(([key, value]) => `  ${key}=${formatValue(value)}`)
-    .join(",\n");
-  return `${displayName}(\n${multilineArgs}\n)`;
+  return `${displayName}(${inlineArgs})`;
 }

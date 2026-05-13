@@ -53,13 +53,13 @@ function SignupContent() {
 
       <p className="mt-6 text-center text-xs leading-relaxed text-gray-400 dark:text-gray-500">
         By signing up, you agree to our{" "}
-        <a href="#" className="underline hover:text-gray-600 dark:hover:text-gray-300">
+        <Link href="/terms" className="underline hover:text-gray-600 dark:hover:text-gray-300">
           Terms of Service
-        </a>{" "}
+        </Link>{" "}
         and{" "}
-        <a href="#" className="underline hover:text-gray-600 dark:hover:text-gray-300">
+        <Link href="/policy" className="underline hover:text-gray-600 dark:hover:text-gray-300">
           Privacy Policy
-        </a>
+        </Link>
         .
       </p>
 

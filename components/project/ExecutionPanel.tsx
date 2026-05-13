@@ -9,6 +9,7 @@ import type {
   ExecutionDetails,
   ExecutionCommand,
   ExecutionTask,
+  RoutineDetail,
   TaskStepProgress,
 } from "@/lib/types";
 import {
@@ -16,13 +17,13 @@ import {
   sendExecutionCommand,
 } from "@/lib/api";
 import { subscribeExecutionRealtime } from "@/lib/executionRealtime";
-import { useExecutionTasks } from "@/lib/hooks";
+import { useExecutionTasks, useRoutine } from "@/lib/hooks";
 import { decryptContentPayload } from "@/lib/cryptoContent";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
-import { formatToolCallSignature } from "@/lib/toolCallDisplay";
+import { formatToolCallSignature, normalizeToolCallArgs } from "@/lib/toolCallDisplay";
 
 
 interface ExecutionPanelProps {
@@ -154,15 +155,16 @@ function StepTypeBadge({ stepType }: { stepType: string }) {
 function deduplicateSteps(steps: TaskStepProgress[]): TaskStepProgress[] {
   const map = new Map<string, TaskStepProgress>();
   for (const step of steps) {
-    const prev = map.get(step.step_name);
+    const key = stepIdentityKey(step);
+    const prev = map.get(key);
     if (prev) {
       // Carry forward fields that step_completed doesn't populate.
       const merged = { ...step };
       if (!merged.step_type && prev.step_type) merged.step_type = prev.step_type;
       if (!merged.agent && prev.agent) merged.agent = prev.agent;
-      map.set(step.step_name, merged);
+      map.set(key, merged);
     } else {
-      map.set(step.step_name, step);
+      map.set(key, step);
     }
   }
   return Array.from(map.values());
@@ -171,12 +173,33 @@ function deduplicateSteps(steps: TaskStepProgress[]): TaskStepProgress[] {
 interface DisplayStep {
   step: TaskStepProgress;
   children: TaskStepProgress[];
+  attemptLabel?: string;
 }
 
 type StepPayloadData = Record<string, unknown>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stepIdentityKey(step: TaskStepProgress): string {
+  const stepRunId = step.data?.step_run_id;
+  if (typeof stepRunId === "string" && stepRunId.length > 0) {
+    return `routine-run:${stepRunId}`;
+  }
+  const stepId = step.data?.step_id;
+  if (typeof stepId === "string" && stepId.length > 0) {
+    return `routine:${stepId}`;
+  }
+  if (step.step_type === "agent" && step.agent?.agent_id) {
+    return `agent:${step.agent.agent_id}:${step.step_name}`;
+  }
+  return `${step.step_type}:${step.step_name}`;
+}
+
+function agentStepIdentityKey(step: TaskStepProgress): string | null {
+  if (!step.agent?.agent_id) return null;
+  return `${step.agent.agent_id}:${stepIdentityKey(step)}`;
 }
 
 function extractStringFields(data: Record<string, unknown> | undefined): StepPayloadData {
@@ -264,14 +287,127 @@ function isCompletedStep(step: TaskStepProgress): boolean {
   );
 }
 
-function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
+function stepCreatedTime(step: TaskStepProgress): number {
+  const time = step.created_at ? new Date(step.created_at).getTime() : Number.NaN;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function routineStepKey(step: TaskStepProgress): string {
+  const stepId = step.data?.step_id;
+  if (typeof stepId === "string" && stepId.length > 0) {
+    return `routine:${stepId}`;
+  }
+  return `${step.step_type}:${step.step_name}`;
+}
+
+function isWorktreeStep(step: TaskStepProgress): boolean {
+  return step.step_type === "worktree" || step.step_name.startsWith("worktree_");
+}
+
+function isChildActivityStep(step: TaskStepProgress): boolean {
+  return step.step_type === "tool" || step.step_type === "ability" || step.step_type === "delegation";
+}
+
+function childActivityKey(step: TaskStepProgress): string {
+  const toolCallId = step.data?.tool_call_id;
+  if (typeof toolCallId === "string" && toolCallId.length > 0) {
+    return `tool-call:${toolCallId}`;
+  }
+
+  const toolIndex = step.data?.tool_index;
+  if (typeof toolIndex === "number") {
+    return `${step.step_type}:${step.step_name}:${toolIndex}`;
+  }
+
+  return `${step.step_type}:${step.step_name}`;
+}
+
+function routineOrderIndex(step: TaskStepProgress, routine: RoutineDetail | undefined): number | null {
+  if (!routine) return null;
+  const stepId = step.data?.step_id;
+  const routineStep =
+    typeof stepId === "string"
+      ? routine.steps.find((candidate) => candidate.id === stepId)
+      : routine.steps.find(
+          (candidate) =>
+            candidate.name === step.step_name && candidate.step_type === step.step_type,
+        );
+  return routineStep?.order_index ?? null;
+}
+
+function orderDisplaySteps(groups: DisplayStep[], routine: RoutineDetail | undefined): DisplayStep[] {
+  const withIndex = groups.map((group, index) => ({ ...group, originalIndex: index }));
+  const setup = withIndex.filter((group) => group.step.step_name === "worktree_setup");
+  const cleanup = withIndex.filter((group) => group.step.step_name === "worktree_cleanup");
+  const body = withIndex.filter(
+    (group) =>
+      group.step.step_name !== "worktree_setup" &&
+      group.step.step_name !== "worktree_cleanup",
+  );
+
+  body.sort((a, b) => {
+    const aTime = stepCreatedTime(a.step);
+    const bTime = stepCreatedTime(b.step);
+    if (aTime !== bTime) return aTime - bTime;
+
+    const aOrder = routineOrderIndex(a.step, routine);
+    const bOrder = routineOrderIndex(b.step, routine);
+    if (aOrder != null && bOrder != null && aOrder !== bOrder) {
+      return aOrder - bOrder;
+    }
+
+    return a.originalIndex - b.originalIndex;
+  });
+
+  const ordered = [...setup, ...body, ...cleanup];
+  const attemptCounts = new Map<string, number>();
+  let previousRoutineOrder: number | null = null;
+  let previousRoutineStepName: string | null = null;
+
+  return ordered.map(({ originalIndex: _originalIndex, ...group }) => {
+    if (isWorktreeStep(group.step) || isChildActivityStep(group.step)) {
+      return group;
+    }
+
+    const key = routineStepKey(group.step);
+    const attempt = (attemptCounts.get(key) ?? 0) + 1;
+    attemptCounts.set(key, attempt);
+
+    let attemptLabel: string | undefined;
+    const currentOrder = routineOrderIndex(group.step, routine);
+    if (attempt > 1) {
+      attemptLabel = `attempt ${attempt}`;
+      if (
+        currentOrder != null &&
+        previousRoutineOrder != null &&
+        currentOrder <= previousRoutineOrder &&
+        previousRoutineStepName
+      ) {
+        attemptLabel = `${attemptLabel} after ${previousRoutineStepName}`;
+      }
+    }
+
+    if (currentOrder != null) {
+      previousRoutineOrder = currentOrder;
+      previousRoutineStepName = group.step.step_name;
+    }
+
+    return { ...group, attemptLabel };
+  });
+}
+
+function buildDisplaySteps(
+  steps: TaskStepProgress[],
+  routine: RoutineDetail | undefined,
+): DisplayStep[] {
   const groups: DisplayStep[] = [];
   const parentIndex = new Map<string, number>();
   const agentParentIndex = new Map<string, number>();
   let currentParentName: string | null = null;
 
   const upsertTopLevel = (step: TaskStepProgress): number => {
-    const existingIndex = parentIndex.get(step.step_name);
+    const key = stepIdentityKey(step);
+    const existingIndex = parentIndex.get(key);
     if (existingIndex != null) {
       groups[existingIndex] = {
         ...groups[existingIndex],
@@ -282,18 +418,20 @@ function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
 
     const nextIndex = groups.length;
     groups.push({ step, children: [] });
+    parentIndex.set(key, nextIndex);
     parentIndex.set(step.step_name, nextIndex);
-    if (step.agent?.agent_id && step.step_type === "agent") {
-      agentParentIndex.set(step.agent.agent_id, nextIndex);
+    const agentKey = agentStepIdentityKey(step);
+    if (agentKey && step.step_type === "agent") {
+      agentParentIndex.set(agentKey, nextIndex);
     }
     return nextIndex;
   };
 
   const upsertAgentTopLevel = (step: TaskStepProgress): number => {
-    const agentId = step.agent?.agent_id;
-    if (!agentId) return upsertTopLevel(step);
+    const agentKey = agentStepIdentityKey(step);
+    if (!agentKey) return upsertTopLevel(step);
 
-    const existingIndex = agentParentIndex.get(agentId);
+    const existingIndex = agentParentIndex.get(agentKey);
     if (existingIndex != null) {
       groups[existingIndex] = {
         ...groups[existingIndex],
@@ -312,6 +450,9 @@ function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
     const toolNames = Array.isArray(step.data?.tool_names)
       ? step.data.tool_names.filter((value): value is string => typeof value === "string")
       : [step.step_name];
+    const toolCallIds = Array.isArray(step.data?.tool_call_ids)
+      ? step.data.tool_call_ids
+      : [];
     const toolArgs = Array.isArray(step.data?.tool_args)
       ? step.data.tool_args
       : [];
@@ -323,12 +464,21 @@ function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
         step_name: toolName,
         data: {
           ...(step.data ?? {}),
-          tool_args: typeof toolArgs[toolIndex] === "string" ? toolArgs[toolIndex] : step.data?.tool_args,
+          tool_call_id:
+            typeof toolCallIds[toolIndex] === "string"
+              ? toolCallIds[toolIndex]
+              : step.data?.tool_call_id,
+          tool_index: toolIndex,
+          tool_args:
+            toolArgs[toolIndex] != null
+              ? normalizeToolCallArgs(toolArgs[toolIndex])
+              : normalizeToolCallArgs(step.data?.tool_args),
         },
       };
 
+      const childKey = childActivityKey(childStep);
       const existingIndex = groups[groupIndex].children.findIndex(
-        (child) => child.step_name === toolName,
+        (child) => childActivityKey(child) === childKey,
       );
 
       if (existingIndex >= 0) {
@@ -344,6 +494,8 @@ function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
 
   const createImplicitAgentParent = (step: TaskStepProgress): number | null => {
     if (!step.agent?.agent_id) return null;
+    const stepId = step.data?.step_id;
+    const stepRunId = step.data?.step_run_id;
     const implicitStep: TaskStepProgress = {
       ...step,
       step_name: step.agent.agent_name ?? "agent",
@@ -351,7 +503,10 @@ function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
       event_type: step.event_type === "step_completed" ? "step_started" : step.event_type,
       status: step.status === "passed" ? "running" : step.status,
       duration_ms: null,
-      data: {},
+      data: {
+        ...(typeof stepId === "string" ? { step_id: stepId } : {}),
+        ...(typeof stepRunId === "string" ? { step_run_id: stepRunId } : {}),
+      },
       payload: null,
       encrypted_payload: null,
     };
@@ -359,12 +514,20 @@ function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
   };
 
   for (const rawStep of steps) {
-    if (rawStep.step_type !== "tool") {
+    if (!isChildActivityStep(rawStep)) {
       if (rawStep.step_type === "agent" && rawStep.agent?.agent_id) {
         upsertAgentTopLevel(rawStep);
       } else {
         upsertTopLevel(rawStep);
       }
+      currentParentName = rawStep.step_name;
+    }
+  }
+
+  currentParentName = null;
+
+  for (const rawStep of steps) {
+    if (!isChildActivityStep(rawStep)) {
       currentParentName = rawStep.step_name;
       continue;
     }
@@ -373,16 +536,27 @@ function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
       typeof rawStep.data?.parent_tool_name === "string"
         ? rawStep.data.parent_tool_name
         : null;
+    const parentStepId =
+      typeof rawStep.data?.step_run_id === "string"
+        ? `routine-run:${rawStep.data.step_run_id}`
+        : typeof rawStep.data?.step_id === "string"
+          ? `routine:${rawStep.data.step_id}`
+          : null;
     const parentGroupIndex =
-      parentToolName != null ? parentIndex.get(parentToolName) : undefined;
+      parentStepId != null
+        ? parentIndex.get(parentStepId)
+        : parentToolName != null
+          ? parentIndex.get(parentToolName)
+          : undefined;
 
     if (parentGroupIndex != null && groups[parentGroupIndex].step.step_type !== "tool") {
       upsertChild(parentGroupIndex, rawStep);
       continue;
     }
 
-    const agentGroupIndex = rawStep.agent?.agent_id
-      ? agentParentIndex.get(rawStep.agent.agent_id) ?? createImplicitAgentParent(rawStep)
+    const rawAgentKey = agentStepIdentityKey(rawStep);
+    const agentGroupIndex = rawAgentKey
+      ? agentParentIndex.get(rawAgentKey) ?? createImplicitAgentParent(rawStep)
       : null;
 
     if (agentGroupIndex != null) {
@@ -401,7 +575,7 @@ function buildDisplaySteps(steps: TaskStepProgress[]): DisplayStep[] {
     upsertTopLevel(rawStep);
   }
 
-  return groups;
+  return orderDisplaySteps(groups, routine);
 }
 
 /** Extract token counts from a step's data — supports both flat (output_preview flow)
@@ -446,24 +620,58 @@ function friendlyToolName(toolName: string): string {
   return toolName.replace(/^app\.nenjo\.platform\//, "");
 }
 
+function hasToolArgs(value: unknown): boolean {
+  if (value == null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
 function getToolArgs(
   data: Record<string, unknown> | undefined,
   payload: StepPayloadData | null | undefined,
 ): string {
-  const dataArgs = data?.tool_args;
-  if (typeof dataArgs === "string") return dataArgs;
   const payloadArgs = payload?.tool_args;
-  if (typeof payloadArgs === "string") return payloadArgs;
+  const dataArgs = data?.tool_args;
+  const resolvedFromPayload = hasToolArgs(payloadArgs)
+    ? normalizeToolCallArgs(payloadArgs)
+    : "";
+  const resolvedFromData = hasToolArgs(dataArgs)
+    ? normalizeToolCallArgs(dataArgs)
+    : "";
+  if (resolvedFromPayload) return resolvedFromPayload;
+  if (resolvedFromData) return resolvedFromData;
   return "";
 }
 
-function TaskRow({ task }: { task: ExecutionTask }) {
-  const [expanded, setExpanded] = useState(false);
-  const [openActivity, setOpenActivity] = useState<Record<string, boolean>>({});
+function TaskRow({
+  task,
+  defaultExpanded = false,
+  defaultOpenActivity = false,
+}: {
+  task: ExecutionTask;
+  defaultExpanded?: boolean;
+  defaultOpenActivity?: boolean;
+}) {
+  const { routine } = useRoutine(task.routine_id ?? undefined);
+  const displaySteps = useMemo(
+    () => buildDisplaySteps(task.steps ?? [], routine),
+    [task.steps, routine],
+  );
+  const steps = useMemo(() => deduplicateSteps(task.steps ?? []), [task.steps]);
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [openActivity, setOpenActivity] = useState<Record<string, boolean>>(() => {
+    if (!defaultOpenActivity) return {};
+
+    const initial: Record<string, boolean> = {};
+    for (const { step, children } of displaySteps) {
+      if (children.length === 0 || !isCompletedStep(step)) continue;
+      initial[`${task.id ?? task.slug ?? task.title}:${stepIdentityKey(step)}`] = true;
+    }
+    return initial;
+  });
   const [resolvedPayloads, setResolvedPayloads] = useState<Record<string, StepPayloadData>>({});
 
-  const displaySteps = useMemo(() => buildDisplaySteps(task.steps ?? []), [task.steps]);
-  const steps = useMemo(() => deduplicateSteps(task.steps ?? []), [task.steps]);
   const totalDuration = steps.reduce((acc, s) => acc + (s.duration_ms ?? 0), 0);
   const totalTokens = steps.reduce(
     (acc, s) => acc + getStepTokens(s.data as Record<string, unknown> | undefined).total, 0
@@ -541,7 +749,7 @@ function TaskRow({ task }: { task: ExecutionTask }) {
 
       {expanded && displaySteps.length > 0 && (
         <div className="pl-10 pr-4 pb-2 space-y-1">
-          {displaySteps.map(({ step, children }, parentIndex) => {
+          {displaySteps.map(({ step, children, attemptLabel }, parentIndex) => {
             const d = step.data as Record<string, unknown> | undefined;
             const resolved = resolvedPayloads[`step:${parentIndex}`];
             const metrics = d?.metrics as
@@ -567,11 +775,13 @@ function TaskRow({ task }: { task: ExecutionTask }) {
             const isRunning =
               step.event_type === "step_started" || step.event_type === "running";
             const hasActivity = step.step_type !== "tool" && (children.length > 0 || isRunning);
-            const activityKey = `${task.id ?? task.slug ?? task.title}:${step.step_name}`;
+            const stepKey = stepIdentityKey(step);
+            const activityKey = `${task.id ?? task.slug ?? task.title}:${stepKey}`;
+            const renderKey = `${activityKey}:${parentIndex}`;
             const isDone = isCompletedStep(step);
             const activityExpanded = isDone ? !!openActivity[activityKey] : hasActivity;
             return (
-              <div key={step.step_name}>
+              <div key={renderKey}>
                 <div className="flex items-center gap-2 py-1">
                   {agent ? (
                     <RoleIdenticon
@@ -588,6 +798,11 @@ function TaskRow({ task }: { task: ExecutionTask }) {
                   <span className="theme-text flex-1 truncate text-xs">
                     {step.step_name}
                   </span>
+                  {attemptLabel && (
+                    <span className="shrink-0 rounded-sm border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-300">
+                      {attemptLabel}
+                    </span>
+                  )}
                   {metrics?.execution_count != null && metrics.execution_count > 1 && (
                     <span className="text-[10px] text-amber-600 font-medium">
                       x{metrics.execution_count}
@@ -609,7 +824,7 @@ function TaskRow({ task }: { task: ExecutionTask }) {
                   )}
                 </div>
                 {outputPreview && (
-                  <div className="theme-surface-muted theme-text ml-5 mt-0.5 mb-1 max-h-40 overflow-y-auto break-words rounded-md px-2.5 py-1.5 text-xs">
+                  <div className="theme-surface-muted theme-text ml-5 mt-0.5 mb-1 max-h-64 overflow-y-auto break-words rounded-md px-2.5 py-1.5 text-xs">
                     <MarkdownPreview content={outputPreview} />
                   </div>
                 )}
@@ -677,7 +892,7 @@ function TaskRow({ task }: { task: ExecutionTask }) {
                             : null;
 
                         return (
-                          <div key={`${step.step_name}:${child.step_name}`} className="theme-surface rounded-md px-2 py-1.5">
+                          <div key={`${renderKey}:${stepIdentityKey(child)}:${childIndex}`} className="theme-surface rounded-md px-2 py-1.5">
                             <div className="flex items-start gap-2">
                               <StatusIcon status={child.event_type} />
                               <div className="min-w-0 flex-1">
@@ -806,7 +1021,10 @@ function HistoryRow({ execution: exec }: { execution: ExecutionDetails }) {
         <div className="theme-border border-t">
           {tasks && tasks.length > 0 ? (
             tasks.map((task) => (
-              <TaskRow key={task.id} task={task} />
+              <TaskRow
+                key={task.id}
+                task={task}
+              />
             ))
           ) : (
             <div className="theme-text-muted px-5 py-3 text-xs">

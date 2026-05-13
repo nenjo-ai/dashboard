@@ -145,10 +145,13 @@ provider = "duckduckgo"
 max_results = 5
 timeout_secs = 15
 
+[web]
+allow_private_hosts = false
+
 [web_fetch]
 enabled = true
-allowed_domains = ["docs.rs", "github.com"]
-blocked_domains = []
+allowed_hosts = ["docs.rs", "github.com"]
+blocked_hosts = []
 
 [git]
 user_name = "Nenjo Worker"
