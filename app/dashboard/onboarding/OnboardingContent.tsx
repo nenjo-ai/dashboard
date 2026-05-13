@@ -32,6 +32,7 @@ import {
   fetchAgents,
   fetcher,
   fetchCurrentUser,
+  authMeUrl,
   listTrustedDevices,
   updateCurrentOrg,
   updateAgent,
@@ -1555,7 +1556,7 @@ export default function OnboardingContent() {
   const { user, isLoaded } = useUser();
   const router = useRouter();
   const redirected = useRef(false);
-  const { data: currentUser } = useSWR(user ? "/api/v1/auth/me" : null, fetcher, {
+  const { data: currentUser } = useSWR(user ? authMeUrl() : null, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 30000,
   }) as {

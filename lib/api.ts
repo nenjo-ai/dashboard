@@ -56,8 +56,7 @@ import {
 // Config
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
-const API_V1 = API_BASE ? `${API_BASE}/api/v1` : "/api/v1";
+const API_V1 = "/api/platform";
 const FETCH_TIMEOUT_MS = 15000;
 const RATE_LIMIT_MAX_ATTEMPTS = 3;
 const RATE_LIMIT_FALLBACK_DELAY_MS = 1000;
@@ -91,10 +90,6 @@ function normalizeOptionalProjectId(projectId: string | null | undefined): strin
 function resolveApiUrl(url: string): string {
   if (/^https?:\/\//i.test(url)) {
     return url;
-  }
-
-  if (url.startsWith("/") && API_BASE) {
-    return `${API_BASE}${url}`;
   }
 
   return url;
@@ -139,9 +134,9 @@ function retryDelayFromResponse(response: Response, attempt: number): number {
 }
 
 /**
- * Optional global token getter — set this from a component that has access
- * to Clerk's `useAuth().getToken` so that all API calls automatically
- * include the Bearer token.
+ * Optional global token getter retained for compatibility with components
+ * that still initialize auth plumbing. Browser API calls route through the
+ * dashboard BFF and do not attach Clerk bearer tokens directly.
  *
  * Usage (e.g. in your dashboard layout):
  * ```ts
@@ -154,33 +149,12 @@ function retryDelayFromResponse(response: Response, attempt: number): number {
  */
 type AuthTokenGetter = (options?: { skipCache?: boolean }) => Promise<string | null>;
 
-let _getToken: AuthTokenGetter | null = null;
 let _getActiveOrgId: (() => string | null) | null = null;
-let _tokenGetterReady: Promise<void> | null = null;
-let _resolveTokenGetterReady: (() => void) | null = null;
-
-function tokenGetterReadyPromise(): Promise<void> {
-  if (_getToken) return Promise.resolve();
-  if (!_tokenGetterReady) {
-    _tokenGetterReady = new Promise<void>((resolve) => {
-      _resolveTokenGetterReady = resolve;
-    });
-  }
-  return _tokenGetterReady;
-}
 
 export function setAuthTokenGetter(
   getter: AuthTokenGetter | null,
 ) {
-  _getToken = getter;
-  if (getter) {
-    _resolveTokenGetterReady?.();
-    _resolveTokenGetterReady = null;
-    _tokenGetterReady = Promise.resolve();
-  } else {
-    _tokenGetterReady = null;
-    _resolveTokenGetterReady = null;
-  }
+  void getter;
 }
 
 export function setActiveOrgIdGetter(
@@ -190,33 +164,18 @@ export function setActiveOrgIdGetter(
 }
 
 /**
- * Build headers with the Clerk session token attached (if available).
- * Accepts optional extra headers to merge in.
+ * Build API request headers. Browser requests do not attach Clerk session
+ * tokens; the dashboard BFF converts the Clerk cookie session into an
+ * internal server-to-platform credential.
  */
 async function authHeaders(
   extra?: Record<string, string>,
-  options?: { skipTokenCache?: boolean },
+  _options?: { skipTokenCache?: boolean },
 ): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...extra,
   };
-
-  if (!_getToken) {
-    await Promise.race([
-      tokenGetterReadyPromise(),
-      new Promise<void>((resolve) => setTimeout(resolve, 1500)),
-    ]);
-  }
-
-  if (_getToken) {
-    const token = await _getToken(
-      options?.skipTokenCache ? { skipCache: true } : undefined,
-    );
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-  }
 
   const activeOrgId = _getActiveOrgId?.()?.trim();
   if (activeOrgId) {
@@ -247,8 +206,9 @@ export async function authRequestHeaders(
 }
 
 /**
- * Authenticated fetch wrapper. Attaches the Clerk session token and
- * throws `ApiError` on non-2xx responses.
+ * Authenticated fetch wrapper. Requests route through the dashboard BFF,
+ * which authenticates the Clerk cookie session server-side and attaches the
+ * internal platform credential.
  */
 async function authFetch(
   url: string,
@@ -256,11 +216,11 @@ async function authFetch(
 ): Promise<Response> {
   const resolvedUrl = resolveApiUrl(url);
   const includeOrgHeader =
-    !resolvedUrl.endsWith("/api/v1/auth/me")
-    && !resolvedUrl.endsWith("/api/v1/auth/bootstrap-status")
-    && !resolvedUrl.endsWith("/api/v1/orgs")
-    && !resolvedUrl.endsWith("/api/v1/orgs/")
-    && !resolvedUrl.endsWith("/api/v1/orgs/current");
+    !resolvedUrl.endsWith("/api/platform/auth/me")
+    && !resolvedUrl.endsWith("/api/platform/auth/bootstrap-status")
+    && !resolvedUrl.endsWith("/api/platform/orgs")
+    && !resolvedUrl.endsWith("/api/platform/orgs/")
+    && !resolvedUrl.endsWith("/api/platform/orgs/current");
   const initHeaders =
     init?.headers instanceof Headers
       ? Object.fromEntries(init.headers.entries())
