@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import useSWR from "swr";
 import {
+  catalogFetcher,
+  catalogSWROptions,
   fetcher,
   fetchTasks,
   projectsUrl,
@@ -162,8 +164,8 @@ export function useTabParam<T extends string>(
 export function useProjects() {
   const { data, error, isLoading, mutate } = useSWR<Project[]>(
     projectsUrl(),
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
+    catalogFetcher,
+    catalogSWROptions,
   );
 
   return {
@@ -178,8 +180,8 @@ export function useProjects() {
 export function useContextBlocks() {
   const { data, error, isLoading, mutate } = useSWR<ContextBlock[]>(
     contextBlocksUrl(),
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
+    catalogFetcher,
+    catalogSWROptions,
   );
 
   return {
@@ -384,8 +386,8 @@ export function useTokenUsage(params?: {
 export function useModels(projectId?: string) {
   const { data, error, isLoading, mutate } = useSWR<Model[]>(
     modelsUrl({ project_id: projectId }),
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
+    catalogFetcher,
+    catalogSWROptions,
   );
 
   return {
@@ -424,8 +426,8 @@ export function useProjectDocuments(projectId: string | undefined) {
 
   const { data, error, isLoading, mutate } = useSWR<ProjectDocument[]>(
     url,
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 3000 },
+    catalogFetcher,
+    catalogSWROptions,
   );
 
   return {
@@ -610,8 +612,8 @@ export function useApiKeys(userId: string | undefined) {
 export function useMcpServers() {
   const { data, error, isLoading, mutate } = useSWR<McpServer[]>(
     mcpServersUrl(),
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
+    catalogFetcher,
+    catalogSWROptions,
   );
 
   return {
@@ -647,8 +649,8 @@ export function useAgentMcpServers(agentId: string | undefined) {
 export function useAbilities() {
   const { data, error, isLoading, mutate } = useSWR<Ability[]>(
     abilitiesUrl(),
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
+    catalogFetcher,
+    catalogSWROptions,
   );
 
   return {
@@ -714,8 +716,8 @@ export function useWorkerStatus(options?: { refreshInterval?: number }) {
 export function useRoutines() {
   const { data, error, isLoading, mutate } = useSWR<RoutineSummary[]>(
     routinesUrl(),
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
+    catalogFetcher,
+    catalogSWROptions,
   );
 
   return {
@@ -752,8 +754,8 @@ export function useRoutine(routineId: string | undefined) {
 export function useCouncils() {
   const { data, error, isLoading, mutate } = useSWR<CouncilDetail[]>(
     councilsUrl(),
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
+    catalogFetcher,
+    catalogSWROptions,
   );
 
   return {
@@ -788,8 +790,8 @@ export function useCouncil(id: string | undefined) {
 export function useAgents() {
   const { data, error, isLoading, mutate } = useSWR<AgentDefinition[]>(
     agentsUrl(),
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
+    catalogFetcher,
+    catalogSWROptions,
   );
 
   return {
@@ -880,8 +882,8 @@ export function useAgentPrompt(agentId: string | undefined) {
 export function useDomains() {
   const { data, error, isLoading, mutate } = useSWR<Domain[]>(
     domainsUrl(),
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
+    catalogFetcher,
+    catalogSWROptions,
   );
 
   return {

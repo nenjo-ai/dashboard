@@ -46,6 +46,7 @@ import type {
   PromptConfigResponse,
   TokenUsageSource,
 } from "./types";
+import { mutate as mutateSWR } from "swr";
 import {
   decryptContentPayload,
   encryptOrgContentPayload,
@@ -61,7 +62,27 @@ const FETCH_TIMEOUT_MS = 15000;
 const RATE_LIMIT_MAX_ATTEMPTS = 3;
 const RATE_LIMIT_FALLBACK_DELAY_MS = 1000;
 const RATE_LIMIT_MAX_DELAY_MS = 10000;
+const CATALOG_CACHE_VERSION = 1;
+const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
+const CATALOG_CACHE_MAX_BYTES = 512 * 1024;
+const CATALOG_CACHE_PREFIX = "nenjo.catalog-cache";
+const DOCUMENT_CONTENT_CACHE_TTL_MS = 5 * 60 * 1000;
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+
+interface DocumentContentResult {
+  content: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+}
+
+interface DocumentContentCacheEntry {
+  orgId: string;
+  savedAt: number;
+  data: DocumentContentResult;
+}
+
+const documentContentCache = new Map<string, DocumentContentCacheEntry>();
 
 function normalizeOptionalProjectId(projectId: string | null | undefined): string | null {
   return projectId && projectId !== NIL_UUID ? projectId : null;
@@ -310,6 +331,235 @@ export async function fetcher<T>(url: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+interface CatalogCacheEntry<T> {
+  version: number;
+  orgId: string;
+  url: string;
+  savedAt: number;
+  data: T;
+}
+
+function activeCatalogOrgId(): string | null {
+  return _getActiveOrgId?.()?.trim() || null;
+}
+
+function scopedCacheKey(orgId: string, url: string): string {
+  return `${orgId}:${url}`;
+}
+
+function catalogStorageKey(orgId: string, url: string): string {
+  return `${CATALOG_CACHE_PREFIX}:${CATALOG_CACHE_VERSION}:${orgId}:${url}`;
+}
+
+function isCatalogUrl(url: string): boolean {
+  if (url === projectsUrl()) return true;
+  if (url === modelsUrl()) return true;
+  if (url.startsWith(`${modelsUrl()}?`)) return true;
+  if (/\/api\/v1\/projects\/[^/]+\/documents$/.test(url)) return true;
+  if (/\/api\/v1\/projects\/[^/]+\/documents\/[^/]+\/edges$/.test(url)) return true;
+  return [
+    agentsUrl(),
+    domainsUrl(),
+    abilitiesUrl(),
+    contextBlocksUrl(),
+    mcpServersUrl(),
+    councilsUrl(),
+    routinesUrl(),
+  ].includes(url);
+}
+
+function readDocumentContentCache(url: string): DocumentContentResult | null {
+  const orgId = activeCatalogOrgId();
+  if (!orgId) return null;
+
+  const key = scopedCacheKey(orgId, url);
+  const entry = documentContentCache.get(key);
+  if (!entry) return null;
+
+  const isValid =
+    entry.orgId === orgId &&
+    Date.now() - entry.savedAt <= DOCUMENT_CONTENT_CACHE_TTL_MS;
+
+  if (!isValid) {
+    documentContentCache.delete(key);
+    return null;
+  }
+
+  return entry.data;
+}
+
+function writeDocumentContentCache(url: string, data: DocumentContentResult): void {
+  const orgId = activeCatalogOrgId();
+  if (!orgId) return;
+
+  documentContentCache.set(scopedCacheKey(orgId, url), {
+    orgId,
+    savedAt: Date.now(),
+    data,
+  });
+}
+
+function clearDocumentContentCache(url?: string): void {
+  const orgId = activeCatalogOrgId();
+  if (!orgId) {
+    documentContentCache.clear();
+    return;
+  }
+
+  if (url) {
+    documentContentCache.delete(scopedCacheKey(orgId, url));
+    return;
+  }
+
+  const prefix = `${orgId}:`;
+  Array.from(documentContentCache.keys()).forEach((key) => {
+    if (key.startsWith(prefix)) {
+      documentContentCache.delete(key);
+    }
+  });
+}
+
+function readCatalogCache<T>(url: string): T | null {
+  if (typeof window === "undefined") return null;
+
+  const orgId = activeCatalogOrgId();
+  if (!orgId) return null;
+
+  try {
+    const raw = window.localStorage.getItem(catalogStorageKey(orgId, url));
+    if (!raw) return null;
+
+    const entry = JSON.parse(raw) as CatalogCacheEntry<T>;
+    const isValid =
+      entry.version === CATALOG_CACHE_VERSION &&
+      entry.orgId === orgId &&
+      entry.url === url &&
+      Date.now() - entry.savedAt <= CATALOG_CACHE_TTL_MS;
+
+    if (!isValid) {
+      window.localStorage.removeItem(catalogStorageKey(orgId, url));
+      return null;
+    }
+
+    return entry.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeCatalogCache<T>(url: string, data: T): void {
+  if (typeof window === "undefined") return;
+
+  const orgId = activeCatalogOrgId();
+  if (!orgId) return;
+
+  try {
+    const entry: CatalogCacheEntry<T> = {
+      version: CATALOG_CACHE_VERSION,
+      orgId,
+      url,
+      savedAt: Date.now(),
+      data,
+    };
+    const serialized = JSON.stringify(entry);
+    if (serialized.length > CATALOG_CACHE_MAX_BYTES) return;
+
+    window.localStorage.setItem(catalogStorageKey(orgId, url), serialized);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function clearCatalogCacheMatching(shouldClear: (url: string) => boolean): void {
+  if (typeof window === "undefined") return;
+
+  const orgId = activeCatalogOrgId();
+  const prefix = orgId
+    ? `${CATALOG_CACHE_PREFIX}:${CATALOG_CACHE_VERSION}:${orgId}:`
+    : `${CATALOG_CACHE_PREFIX}:`;
+
+  try {
+    for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.localStorage.key(index);
+      if (!key?.startsWith(prefix)) continue;
+      const cachedUrl = key.slice(prefix.length);
+      if (!shouldClear(cachedUrl)) continue;
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Ignore storage failures.
+  }
+
+  void mutateSWR(
+    (key) => typeof key === "string" && shouldClear(key),
+  );
+}
+
+export function clearCatalogCache(url?: string): void {
+  clearCatalogCacheMatching(url ? (cachedUrl) => cachedUrl === url : isCatalogUrl);
+}
+
+export async function catalogFetcher<T>(url: string): Promise<T> {
+  const cached = readCatalogCache<T>(url);
+  if (cached) return cached;
+
+  const data = await fetcher<T>(url);
+  writeCatalogCache(url, data);
+  return data;
+}
+
+export const catalogSWROptions = {
+  revalidateOnFocus: false,
+  dedupingInterval: CATALOG_CACHE_TTL_MS,
+  keepPreviousData: true,
+};
+
+function invalidateProjectCatalogCache(): void {
+  clearCatalogCache(projectsUrl());
+}
+
+function invalidateModelsCatalogCache(): void {
+  clearCatalogCacheMatching((url) => url === modelsUrl() || url.startsWith(`${modelsUrl()}?`));
+}
+
+function invalidateAgentsCatalogCache(): void {
+  clearCatalogCache(agentsUrl());
+}
+
+function invalidateDomainsCatalogCache(): void {
+  clearCatalogCache(domainsUrl());
+}
+
+function invalidateAbilitiesCatalogCache(): void {
+  clearCatalogCache(abilitiesUrl());
+}
+
+function invalidateContextBlocksCatalogCache(): void {
+  clearCatalogCache(contextBlocksUrl());
+}
+
+function invalidateMcpServersCatalogCache(): void {
+  clearCatalogCache(mcpServersUrl());
+}
+
+function invalidateCouncilsCatalogCache(): void {
+  clearCatalogCache(councilsUrl());
+}
+
+function invalidateRoutinesCatalogCache(): void {
+  clearCatalogCache(routinesUrl());
+}
+
+function invalidateProjectDocumentsCatalogCache(projectId: string): void {
+  clearCatalogCache(projectDocumentsUrl(projectId));
+}
+
+function invalidateProjectDocumentCache(projectId: string, docId: string): void {
+  invalidateProjectDocumentsCatalogCache(projectId);
+  clearCatalogCache(projectDocumentEdgesUrl(projectId, docId));
+  clearDocumentContentCache(projectDocumentContentUrl(projectId, docId));
+}
+
 // ---------------------------------------------------------------------------
 // Projects
 // ---------------------------------------------------------------------------
@@ -333,7 +583,7 @@ export async function fetchPromptContextVariables(): Promise<PromptContextVariab
 }
 
 export async function fetchProjects(): Promise<Project[]> {
-  return fetcher<Project[]>(projectsUrl());
+  return catalogFetcher<Project[]>(projectsUrl());
 }
 
 export async function fetchProject(id: string): Promise<Project> {
@@ -348,11 +598,13 @@ export async function createProject(
     body: JSON.stringify(data),
   });
 
+  invalidateProjectCatalogCache();
   return res.json() as Promise<Project>;
 }
 
 export async function deleteProject(id: string): Promise<void> {
   await authFetch(projectUrl(id), { method: "DELETE" });
+  invalidateProjectCatalogCache();
 }
 
 export async function updateProject(
@@ -364,6 +616,7 @@ export async function updateProject(
     body: JSON.stringify(data),
   });
 
+  invalidateProjectCatalogCache();
   return res.json() as Promise<Project>;
 }
 
@@ -384,6 +637,7 @@ export async function syncRepo(
     method: "POST",
     body: JSON.stringify({ repo_url: repoUrl }),
   });
+  invalidateProjectCatalogCache();
   return res.json() as Promise<{ status: string }>;
 }
 
@@ -391,6 +645,7 @@ export async function disconnectRepo(projectId: string): Promise<void> {
   await authFetch(`${API_V1}/projects/${projectId}/disconnect-repo`, {
     method: "POST",
   });
+  invalidateProjectCatalogCache();
 }
 
 // ---------------------------------------------------------------------------
@@ -762,7 +1017,7 @@ export function modelUrl(id: string): string {
 }
 
 export async function fetchModels(projectId?: string): Promise<Model[]> {
-  return fetcher<Model[]>(modelsUrl({ project_id: projectId }));
+  return catalogFetcher<Model[]>(modelsUrl({ project_id: projectId }));
 }
 
 export async function fetchModel(id: string): Promise<Model> {
@@ -775,6 +1030,7 @@ export async function createModel(data: CreateModelRequest): Promise<Model> {
     body: JSON.stringify(data),
   });
 
+  invalidateModelsCatalogCache();
   return res.json() as Promise<Model>;
 }
 
@@ -787,11 +1043,13 @@ export async function updateModel(
     body: JSON.stringify(data),
   });
 
+  invalidateModelsCatalogCache();
   return res.json() as Promise<Model>;
 }
 
 export async function deleteModel(id: string): Promise<void> {
   await authFetch(modelUrl(id), { method: "DELETE" });
+  invalidateModelsCatalogCache();
 }
 
 export async function fetchAllTags(projectId?: string): Promise<string[]> {
@@ -815,7 +1073,7 @@ export function projectDocumentUrl(projectId: string, docId: string): string {
 export async function fetchProjectDocuments(
   projectId: string,
 ): Promise<import("./types").ProjectDocument[]> {
-  return fetcher(projectDocumentsUrl(projectId));
+  return catalogFetcher(projectDocumentsUrl(projectId));
 }
 
 export async function uploadProjectDocument(
@@ -870,7 +1128,9 @@ export async function uploadProjectDocument(
     throw new ApiError(body, res.status);
   }
 
-  return res.json() as Promise<import("./types").ProjectDocument>;
+  const document = await res.json() as import("./types").ProjectDocument;
+  invalidateProjectDocumentsCatalogCache(projectId);
+  return document;
 }
 
 export async function createProjectDocument(
@@ -898,6 +1158,7 @@ export async function deleteProjectDocument(
   await authFetch(projectDocumentUrl(projectId, docId), {
     method: "DELETE",
   });
+  invalidateProjectDocumentCache(projectId, docId);
 }
 
 export function downloadProjectDocumentUrl(
@@ -917,14 +1178,18 @@ export function projectDocumentContentUrl(
 export async function fetchDocumentContent(
   projectId: string,
   docId: string,
-): Promise<{ content: string; filename: string; content_type: string; size_bytes: number }> {
+): Promise<DocumentContentResult> {
+  const url = projectDocumentContentUrl(projectId, docId);
+  const cached = readDocumentContentCache(url);
+  if (cached) return cached;
+
   const response = await fetcher<{
     content?: string | null;
     filename: string;
     content_type: string;
     size_bytes: number;
     encrypted_payload?: EncryptedPayload | null;
-  }>(projectDocumentContentUrl(projectId, docId));
+  }>(url);
 
   if (response.encrypted_payload) {
     const plaintext = await decryptContentPayload(response.encrypted_payload);
@@ -933,12 +1198,14 @@ export async function fetchDocumentContent(
     }
 
     try {
-      return {
+      const result = {
         content: JSON.parse(plaintext) as string,
         filename: response.filename,
         content_type: response.content_type,
         size_bytes: response.size_bytes,
       };
+      writeDocumentContentCache(url, result);
+      return result;
     } catch (error) {
       console.warn("Failed to parse decrypted document content payload", {
         docId,
@@ -949,12 +1216,14 @@ export async function fetchDocumentContent(
     }
   }
 
-  return {
+  const result = {
     content: response.content ?? "",
     filename: response.filename,
     content_type: response.content_type,
     size_bytes: response.size_bytes,
   };
+  writeDocumentContentCache(url, result);
+  return result;
 }
 
 export async function updateDocumentContent(
@@ -983,7 +1252,9 @@ export async function updateDocumentContent(
     body: JSON.stringify({ content, encrypted_payload: encryptedPayload }),
   });
 
-  return res.json() as Promise<import("./types").ProjectDocument>;
+  const document = await res.json() as import("./types").ProjectDocument;
+  invalidateProjectDocumentCache(projectId, docId);
+  return document;
 }
 
 function isTextDocumentFile(file: File): boolean {
@@ -1023,7 +1294,9 @@ export async function updateProjectDocumentMetadata(
     body: JSON.stringify(data),
   });
 
-  return res.json() as Promise<import("./types").ProjectDocument>;
+  const document = await res.json() as import("./types").ProjectDocument;
+  invalidateProjectDocumentCache(projectId, docId);
+  return document;
 }
 
 export function projectDocumentEdgesUrl(projectId: string, docId: string): string {
@@ -1034,7 +1307,7 @@ export async function fetchProjectDocumentEdges(
   projectId: string,
   docId: string,
 ): Promise<import("./types").ProjectDocumentEdge[]> {
-  return fetcher(projectDocumentEdgesUrl(projectId, docId));
+  return catalogFetcher(projectDocumentEdgesUrl(projectId, docId));
 }
 
 export async function createProjectDocumentEdge(
@@ -1047,7 +1320,11 @@ export async function createProjectDocumentEdge(
     body: JSON.stringify(data),
   });
 
-  return res.json() as Promise<import("./types").ProjectDocumentEdge>;
+  const edge = await res.json() as import("./types").ProjectDocumentEdge;
+  invalidateProjectDocumentsCatalogCache(projectId);
+  clearCatalogCache(projectDocumentEdgesUrl(projectId, docId));
+  clearCatalogCache(projectDocumentEdgesUrl(projectId, edge.target_document_id));
+  return edge;
 }
 
 export async function deleteProjectDocumentEdge(
@@ -1058,6 +1335,8 @@ export async function deleteProjectDocumentEdge(
   await authFetch(`${projectDocumentEdgesUrl(projectId, docId)}/${edgeId}`, {
     method: "DELETE",
   });
+  invalidateProjectDocumentsCatalogCache(projectId);
+  clearCatalogCache(projectDocumentEdgesUrl(projectId, docId));
 }
 
 // ---------------------------------------------------------------------------
@@ -1547,7 +1826,7 @@ export function routineEdgeUrl(routineId: string, edgeId: string): string {
 }
 
 export async function fetchRoutines(): Promise<import("./types").RoutineSummary[]> {
-  return fetcher(routinesUrl());
+  return catalogFetcher(routinesUrl());
 }
 
 export async function fetchRoutine(
@@ -1563,6 +1842,7 @@ export async function createRoutine(
     method: "POST",
     body: JSON.stringify(data),
   });
+  invalidateRoutinesCatalogCache();
   return res.json();
 }
 
@@ -1574,6 +1854,7 @@ export async function updateRoutine(
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  invalidateRoutinesCatalogCache();
   return res.json();
 }
 
@@ -1585,6 +1866,7 @@ export async function saveRoutineGraph(
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  invalidateRoutinesCatalogCache();
   return res.json();
 }
 
@@ -1592,6 +1874,7 @@ export async function deleteRoutine(
   routineId: string,
 ): Promise<void> {
   await authFetch(routineUrl(routineId), { method: "DELETE" });
+  invalidateRoutinesCatalogCache();
 }
 
 export async function createRoutineStep(
@@ -1602,6 +1885,7 @@ export async function createRoutineStep(
     method: "POST",
     body: JSON.stringify(data),
   });
+  invalidateRoutinesCatalogCache();
   return res.json();
 }
 
@@ -1614,6 +1898,7 @@ export async function updateRoutineStep(
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  invalidateRoutinesCatalogCache();
   return res.json();
 }
 
@@ -1624,6 +1909,7 @@ export async function deleteRoutineStep(
   await authFetch(routineStepUrl(routineId, stepId), {
     method: "DELETE",
   });
+  invalidateRoutinesCatalogCache();
 }
 
 export async function createRoutineEdge(
@@ -1634,6 +1920,7 @@ export async function createRoutineEdge(
     method: "POST",
     body: JSON.stringify(data),
   });
+  invalidateRoutinesCatalogCache();
   return res.json();
 }
 
@@ -1644,6 +1931,7 @@ export async function deleteRoutineEdge(
   await authFetch(routineEdgeUrl(routineId, edgeId), {
     method: "DELETE",
   });
+  invalidateRoutinesCatalogCache();
 }
 
 // ---------------------------------------------------------------------------
@@ -1667,7 +1955,7 @@ export function councilMemberUrl(councilId: string, memberId: string): string {
 }
 
 export async function fetchCouncils(): Promise<CouncilDetail[]> {
-  return fetcher<CouncilDetail[]>(councilsUrl());
+  return catalogFetcher<CouncilDetail[]>(councilsUrl());
 }
 
 export async function fetchCouncil(councilId: string): Promise<CouncilDetail> {
@@ -1681,6 +1969,7 @@ export async function createCouncil(
     method: "POST",
     body: JSON.stringify(data),
   });
+  invalidateCouncilsCatalogCache();
   return res.json() as Promise<CouncilDetail>;
 }
 
@@ -1692,11 +1981,13 @@ export async function updateCouncil(
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  invalidateCouncilsCatalogCache();
   return res.json() as Promise<CouncilDetail>;
 }
 
 export async function deleteCouncil(councilId: string): Promise<void> {
   await authFetch(councilUrl(councilId), { method: "DELETE" });
+  invalidateCouncilsCatalogCache();
 }
 
 export async function addCouncilMember(
@@ -1707,6 +1998,7 @@ export async function addCouncilMember(
     method: "POST",
     body: JSON.stringify(data),
   });
+  invalidateCouncilsCatalogCache();
   return res.json() as Promise<CouncilMember>;
 }
 
@@ -1719,6 +2011,7 @@ export async function updateCouncilMember(
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  invalidateCouncilsCatalogCache();
   return res.json() as Promise<CouncilMember>;
 }
 
@@ -1729,6 +2022,7 @@ export async function removeCouncilMember(
   await authFetch(councilMemberUrl(councilId, memberId), {
     method: "DELETE",
   });
+  invalidateCouncilsCatalogCache();
 }
 
 // ---------------------------------------------------------------------------
@@ -1804,7 +2098,7 @@ async function encryptContextBlockTemplate(
 }
 
 export async function fetchAgents(): Promise<AgentDefinition[]> {
-  return fetcher<AgentDefinition[]>(agentsUrl());
+  return catalogFetcher<AgentDefinition[]>(agentsUrl());
 }
 
 export async function fetchAgent(agentId: string): Promise<AgentDefinition> {
@@ -1818,6 +2112,7 @@ export async function createAgent(
     method: "POST",
     body: JSON.stringify(data),
   });
+  invalidateAgentsCatalogCache();
   return res.json() as Promise<AgentDefinition>;
 }
 
@@ -1829,11 +2124,13 @@ export async function updateAgent(
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  invalidateAgentsCatalogCache();
   return res.json() as Promise<AgentDefinition>;
 }
 
 export async function deleteAgent(agentId: string): Promise<void> {
   await authFetch(agentUrl(agentId), { method: "DELETE" });
+  invalidateAgentsCatalogCache();
 }
 
 export async function fetchAgentHeartbeat(agentId: string): Promise<AgentHeartbeat | null> {
@@ -1848,6 +2145,7 @@ export async function updateAgentHeartbeat(
     method: "PUT",
     body: JSON.stringify(data),
   });
+  invalidateAgentsCatalogCache();
   return res.json() as Promise<AgentDefinition>;
 }
 
@@ -1875,6 +2173,7 @@ export async function updateAgentPlatformScopes(
     method: "PATCH",
     body: JSON.stringify({ scopes }),
   });
+  invalidateAgentsCatalogCache();
   return res.json() as Promise<AgentDefinition>;
 }
 
@@ -1932,6 +2231,7 @@ export async function updateAgentPrompt(
       encrypted_payload: encryptedPayload,
     }),
   });
+  invalidateAgentsCatalogCache();
   const response = (await res.json()) as PromptConfigResponse;
   if (response.encrypted_payload) {
     const plaintext = await decryptContentPayload(response.encrypted_payload);
@@ -1963,6 +2263,7 @@ export async function resetAgentToDefault(
   const res = await authFetch(`${API_V1}/agents/${agentId}/reset`, {
     method: "POST",
   });
+  invalidateAgentsCatalogCache();
   return res.json() as Promise<AgentDefinition>;
 }
 
@@ -2371,8 +2672,7 @@ export function domainPromptUrl(id: string): string {
 }
 
 export async function fetchDomains(): Promise<Domain[]> {
-  const res = await authFetch(domainsUrl());
-  return res.json() as Promise<Domain[]>;
+  return catalogFetcher<Domain[]>(domainsUrl());
 }
 
 export async function fetchDomain(id: string): Promise<Domain> {
@@ -2441,6 +2741,7 @@ export async function createDomain(data: CreateDomainRequest): Promise<Domain> {
       });
     }
   }
+  invalidateDomainsCatalogCache();
   return domain;
 }
 
@@ -2453,6 +2754,7 @@ export async function updateDomain(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
+  invalidateDomainsCatalogCache();
   return res.json() as Promise<Domain>;
 }
 
@@ -2481,6 +2783,7 @@ export async function updateDomainManifest(
     }
     prompt = JSON.parse(plaintext) as DomainManifest["prompt"];
   }
+  invalidateDomainsCatalogCache();
   return {
     ...manifest,
     prompt,
@@ -2489,19 +2792,23 @@ export async function updateDomainManifest(
 
 export async function deleteDomain(id: string): Promise<void> {
   await authFetch(domainUrl(id), { method: "DELETE" });
+  invalidateDomainsCatalogCache();
 }
 
 export async function moveDomain(id: string, path: string): Promise<Domain> {
   const res = await authFetch(`${domainUrl(id)}/move`, { method: "PATCH", body: JSON.stringify({ path }) });
+  invalidateDomainsCatalogCache();
   return res.json() as Promise<Domain>;
 }
 
 export async function deleteDomainFolder(path: string): Promise<void> {
   await authFetch(`${API_V1}/domains/folders/delete`, { method: "DELETE", body: JSON.stringify({ path }) });
+  invalidateDomainsCatalogCache();
 }
 
 export async function renameDomainFolder(oldPath: string, newPath: string): Promise<void> {
   await authFetch(`${API_V1}/domains/folders/rename`, { method: "PATCH", body: JSON.stringify({ old_path: oldPath, new_path: newPath }) });
+  invalidateDomainsCatalogCache();
 }
 
 export async function uploadDomain(file: File): Promise<Domain> {
@@ -2511,6 +2818,7 @@ export async function uploadDomain(file: File): Promise<Domain> {
     method: "POST",
     body: form,
   });
+  invalidateDomainsCatalogCache();
   return res.json() as Promise<Domain>;
 }
 
@@ -2686,7 +2994,7 @@ export function agentMcpAssignmentUrl(agentId: string, mcpId: string): string {
 }
 
 export async function fetchMcpServers(): Promise<import("./types").McpServer[]> {
-  return fetcher(mcpServersUrl());
+  return catalogFetcher(mcpServersUrl());
 }
 
 export async function createMcpServer(
@@ -2708,6 +3016,7 @@ export async function createMcpServer(
     method: "POST",
     body: JSON.stringify(data),
   });
+  invalidateMcpServersCatalogCache();
   return res.json() as Promise<import("./types").McpServer>;
 }
 
@@ -2730,11 +3039,13 @@ export async function updateMcpServer(
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  invalidateMcpServersCatalogCache();
   return res.json() as Promise<import("./types").McpServer>;
 }
 
 export async function deleteMcpServer(id: string): Promise<void> {
   await authFetch(mcpServerUrl(id), { method: "DELETE" });
+  invalidateMcpServersCatalogCache();
 }
 
 export async function fetchAgentMcpServers(
@@ -2860,7 +3171,7 @@ export function contextBlockContentUrl(id: string): string {
 }
 
 export async function fetchContextBlocks(): Promise<import("./types").ContextBlock[]> {
-  return fetcher(contextBlocksUrl());
+  return catalogFetcher(contextBlocksUrl());
 }
 
 export async function createContextBlock(
@@ -2886,6 +3197,7 @@ export async function createContextBlock(
       });
     }
   }
+  invalidateContextBlocksCatalogCache();
   return block;
 }
 
@@ -2897,6 +3209,7 @@ export async function updateContextBlock(
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  invalidateContextBlocksCatalogCache();
   return res.json() as Promise<import("./types").ContextBlock>;
 }
 
@@ -2935,13 +3248,16 @@ export async function updateContextBlockContent(
     if (!plaintext) {
       throw new ApiError("Updated context block payload could not be decrypted", 500);
     }
+    invalidateContextBlocksCatalogCache();
     return { template: JSON.parse(plaintext) as string };
   }
+  invalidateContextBlocksCatalogCache();
   return { template: response.template };
 }
 
 export async function deleteContextBlock(id: string): Promise<void> {
   await authFetch(contextBlockUrl(id), { method: "DELETE" });
+  invalidateContextBlocksCatalogCache();
 }
 
 export async function moveContextBlock(
@@ -2952,6 +3268,7 @@ export async function moveContextBlock(
     method: "PATCH",
     body: JSON.stringify({ path }),
   });
+  invalidateContextBlocksCatalogCache();
   return res.json() as Promise<import("./types").ContextBlock>;
 }
 
@@ -2960,6 +3277,7 @@ export async function deleteFolder(path: string): Promise<void> {
     method: "DELETE",
     body: JSON.stringify({ path }),
   });
+  invalidateContextBlocksCatalogCache();
 }
 
 export async function renameFolder(
@@ -2970,6 +3288,7 @@ export async function renameFolder(
     method: "PATCH",
     body: JSON.stringify({ old_path: oldPath, new_path: newPath }),
   });
+  invalidateContextBlocksCatalogCache();
 }
 
 // ---------------------------------------------------------------------------
@@ -2993,7 +3312,7 @@ export function agentAbilitiesUrl(agentId: string): string {
 }
 
 export async function fetchAbilities(): Promise<import("./types").Ability[]> {
-  return fetcher(abilitiesUrl());
+  return catalogFetcher(abilitiesUrl());
 }
 
 export async function fetchAbility(id: string): Promise<import("./types").Ability> {
@@ -3027,6 +3346,7 @@ export async function createAbility(
       });
     }
   }
+  invalidateAbilitiesCatalogCache();
   return ability;
 }
 
@@ -3038,6 +3358,7 @@ export async function updateAbility(
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  invalidateAbilitiesCatalogCache();
   return res.json() as Promise<import("./types").Ability>;
 }
 
@@ -3081,13 +3402,16 @@ export async function updateAbilityPrompt(
       throw new ApiError("Updated ability prompt could not be decrypted", 500);
     }
     const promptConfig = JSON.parse(plaintext) as { developer_prompt?: string };
+    invalidateAbilitiesCatalogCache();
     return promptConfig.developer_prompt ?? "";
   }
+  invalidateAbilitiesCatalogCache();
   return data.prompt_config?.developer_prompt ?? "";
 }
 
 export async function deleteAbility(id: string): Promise<void> {
   await authFetch(abilityUrl(id), { method: "DELETE" });
+  invalidateAbilitiesCatalogCache();
 }
 
 export async function moveAbility(
@@ -3098,6 +3422,7 @@ export async function moveAbility(
     method: "PATCH",
     body: JSON.stringify({ path }),
   });
+  invalidateAbilitiesCatalogCache();
   return res.json() as Promise<import("./types").Ability>;
 }
 
@@ -3106,6 +3431,7 @@ export async function deleteAbilityFolder(path: string): Promise<void> {
     method: "DELETE",
     body: JSON.stringify({ path }),
   });
+  invalidateAbilitiesCatalogCache();
 }
 
 export async function renameAbilityFolder(
@@ -3116,6 +3442,7 @@ export async function renameAbilityFolder(
     method: "PATCH",
     body: JSON.stringify({ old_path: oldPath, new_path: newPath }),
   });
+  invalidateAbilitiesCatalogCache();
 }
 
 export async function fetchAgentAbilities(
