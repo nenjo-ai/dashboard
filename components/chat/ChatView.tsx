@@ -33,6 +33,13 @@ export function ChatView() {
   const sessionParam = searchParams.get("session");
   const channelParam = searchParams.get("channel");
   const isNotificationView = channelParam === "notifications";
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
+    () => sessionParam,
+  );
+
+  useEffect(() => {
+    setSelectedSessionId(sessionParam);
+  }, [sessionParam]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -63,8 +70,8 @@ export function ChatView() {
 
   // Find active session data
   const activeSession = useMemo(
-    () => sessions?.find((s) => s.id === sessionParam) ?? null,
-    [sessions, sessionParam],
+    () => sessions?.find((s) => s.id === selectedSessionId) ?? null,
+    [sessions, selectedSessionId],
   );
 
   useEffect(() => {
@@ -81,7 +88,10 @@ export function ChatView() {
   const selectSession = useCallback(
     (session: ChatSessionExtended) => {
       pendingNavigationSessionRef.current = session.id;
+      setSelectedSessionId(session.id);
       const params = new URLSearchParams(searchParams.toString());
+      params.delete("project");
+      params.delete("agent");
       params.set("session", session.id);
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     },
@@ -93,7 +103,7 @@ export function ChatView() {
     if (isMobileViewport) return;
     const projectParam = searchParams.get("project");
     const agentParam = searchParams.get("agent");
-    if (projectParam && agentParam && !sessionParam && sessions) {
+    if (projectParam && agentParam && !selectedSessionId && sessions) {
       const match = sessions.find(
         (s) => s.project_id === projectParam && s.agent_id === agentParam,
       );
@@ -102,23 +112,23 @@ export function ChatView() {
         return () => clearTimeout(timer);
       }
     }
-  }, [searchParams, sessions, sessionParam, selectSession, isMobileViewport]);
+  }, [searchParams, sessions, selectedSessionId, selectSession, isMobileViewport]);
 
   // Auto-select most recent session when landing with no session param
   useEffect(() => {
     if (isMobileViewport) return;
-    if (!sessionParam && sessions && sessions.length > 0) {
+    if (!selectedSessionId && sessions && sessions.length > 0) {
       const timer = setTimeout(() => selectSession(sessions[0]), 0);
       return () => clearTimeout(timer);
     }
-  }, [sessions, sessionParam, selectSession, isMobileViewport]);
+  }, [sessions, selectedSessionId, selectSession, isMobileViewport]);
 
   // Recover when the URL points at a session that is no longer in the fetched list.
   useEffect(() => {
     if (isMobileViewport) return;
-    if (!sessionParam || sessionsLoading || !sessions) return;
-    if (sessions.some((s) => s.id === sessionParam)) return;
-    if (pendingNavigationSessionRef.current === sessionParam) {
+    if (!selectedSessionId || sessionsLoading || !sessions) return;
+    if (sessions.some((s) => s.id === selectedSessionId)) return;
+    if (pendingNavigationSessionRef.current === selectedSessionId) {
       void mutateSessions();
       return;
     }
@@ -126,6 +136,7 @@ export function ChatView() {
     const params = new URLSearchParams(searchParams.toString());
     if (sessions.length > 0) {
       params.set("session", sessions[0].id);
+      setSelectedSessionId(sessions[0].id);
       const timer = setTimeout(() => {
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
       }, 0);
@@ -133,11 +144,12 @@ export function ChatView() {
     } else {
       const timer = setTimeout(() => {
         params.delete("session");
+        setSelectedSessionId(null);
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [sessionParam, sessions, sessionsLoading, searchParams, router, pathname, isMobileViewport, mutateSessions]);
+  }, [selectedSessionId, sessions, sessionsLoading, searchParams, router, pathname, isMobileViewport, mutateSessions]);
 
   // Create new chat
   const handleCreateChat = useCallback(
@@ -165,6 +177,7 @@ export function ChatView() {
       params.delete("project");
       params.delete("agent");
       params.set("session", newSession.id);
+      setSelectedSessionId(newSession.id);
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     },
     [sessions, mutateSessions, searchParams, router, pathname],
@@ -183,18 +196,20 @@ export function ChatView() {
     async (id: string) => {
       await deleteChatSession(id);
       mutateSessions();
-      if (id === sessionParam) {
+      if (id === selectedSessionId) {
         const params = new URLSearchParams(searchParams.toString());
         params.delete("session");
+        setSelectedSessionId(null);
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
       }
     },
-    [mutateSessions, sessionParam, searchParams, router, pathname],
+    [mutateSessions, selectedSessionId, searchParams, router, pathname],
   );
 
   const navigateToSessionById = useCallback(
     (sessionId: string) => {
       pendingNavigationSessionRef.current = sessionId;
+      setSelectedSessionId(sessionId);
       const params = new URLSearchParams(searchParams.toString());
       params.delete("project");
       params.delete("agent");
@@ -212,7 +227,7 @@ export function ChatView() {
         <div className="w-80 shrink-0 border-r border-black/10 dark:border-white/10">
           <GlobalSessionList
             sessions={sessions ?? []}
-            activeSessionId={sessionParam}
+            activeSessionId={selectedSessionId}
             isLoading={sessionsLoading}
             onSelect={selectSession}
             onCreate={isNotificationView ? undefined : () => setShowNewChat(true)}

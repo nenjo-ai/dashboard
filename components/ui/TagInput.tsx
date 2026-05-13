@@ -11,6 +11,7 @@ interface TagInputProps {
   placeholder?: string;
   disabled?: boolean;
   error?: string;
+  preserveValue?: boolean;
 }
 
 /** Normalize a tag: lowercase, trim, replace spaces with hyphens. */
@@ -30,6 +31,7 @@ export function TagInput({
   placeholder = "Add a tag...",
   disabled = false,
   error,
+  preserveValue = false,
 }: TagInputProps) {
   const [input, setInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -41,19 +43,19 @@ export function TagInput({
   const filtered = suggestions.filter(
     (s) =>
       !value.includes(s) &&
-      (input === "" || s.includes(input.toLowerCase())),
+      (input === "" || s.toLowerCase().includes(input.toLowerCase())),
   );
 
   const addTag = useCallback(
     (raw: string) => {
-      const tag = normalizeTag(raw);
-      if (!tag || !isValidTag(tag)) return;
+      const tag = preserveValue ? raw.trim() : normalizeTag(raw);
+      if (!tag || (!preserveValue && !isValidTag(tag))) return;
       if (value.includes(tag)) return;
       onChange([...value, tag]);
       setInput("");
       setHighlightIdx(-1);
     },
-    [value, onChange],
+    [preserveValue, value, onChange],
   );
 
   const removeTag = useCallback(

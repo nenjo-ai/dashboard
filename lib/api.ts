@@ -131,7 +131,9 @@ function retryDelayFromResponse(response: Response, attempt: number): number {
  * useEffect(() => { setAuthTokenGetter(getToken); }, [getToken]);
  * ```
  */
-let _getToken: (() => Promise<string | null>) | null = null;
+type AuthTokenGetter = (options?: { skipCache?: boolean }) => Promise<string | null>;
+
+let _getToken: AuthTokenGetter | null = null;
 let _getActiveOrgId: (() => string | null) | null = null;
 let _tokenGetterReady: Promise<void> | null = null;
 let _resolveTokenGetterReady: (() => void) | null = null;
@@ -147,7 +149,7 @@ function tokenGetterReadyPromise(): Promise<void> {
 }
 
 export function setAuthTokenGetter(
-  getter: (() => Promise<string | null>) | null,
+  getter: AuthTokenGetter | null,
 ) {
   _getToken = getter;
   if (getter) {
@@ -172,6 +174,7 @@ export function setActiveOrgIdGetter(
  */
 async function authHeaders(
   extra?: Record<string, string>,
+  options?: { skipTokenCache?: boolean },
 ): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -186,7 +189,9 @@ async function authHeaders(
   }
 
   if (_getToken) {
-    const token = await _getToken();
+    const token = await _getToken(
+      options?.skipTokenCache ? { skipCache: true } : undefined,
+    );
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }
@@ -203,8 +208,11 @@ async function authHeaders(
 async function authHeadersWithOptions(options?: {
   extra?: Record<string, string>;
   includeOrgHeader?: boolean;
+  skipTokenCache?: boolean;
 }): Promise<Record<string, string>> {
-  const headers = await authHeaders(options?.extra);
+  const headers = await authHeaders(options?.extra, {
+    skipTokenCache: options?.skipTokenCache,
+  });
   if (options?.includeOrgHeader === false) {
     delete headers["X-Nenjo-Org-Id"];
   }
@@ -232,19 +240,22 @@ async function authFetch(
     && !resolvedUrl.endsWith("/api/v1/orgs")
     && !resolvedUrl.endsWith("/api/v1/orgs/")
     && !resolvedUrl.endsWith("/api/v1/orgs/current");
-  const headers = await authHeadersWithOptions({ includeOrgHeader });
-
-  if (init?.headers) {
-    const extra =
-      init.headers instanceof Headers
-        ? Object.fromEntries(init.headers.entries())
-        : Array.isArray(init.headers)
-          ? Object.fromEntries(init.headers)
-          : init.headers;
-    Object.assign(headers, extra);
-  }
+  const initHeaders =
+    init?.headers instanceof Headers
+      ? Object.fromEntries(init.headers.entries())
+      : Array.isArray(init?.headers)
+        ? Object.fromEntries(init.headers)
+        : init?.headers;
 
   for (let attempt = 1; attempt <= RATE_LIMIT_MAX_ATTEMPTS; attempt += 1) {
+    const headers = await authHeadersWithOptions({
+      includeOrgHeader,
+      skipTokenCache: attempt > 1,
+    });
+    if (initHeaders) {
+      Object.assign(headers, initHeaders);
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -267,6 +278,13 @@ async function authFetch(
 
     if (!res.ok) {
       const body = await res.text().catch(() => "Unknown error");
+      const invalidToken =
+        res.status === 401 &&
+        body.includes('"code":"invalid_token"') &&
+        attempt < RATE_LIMIT_MAX_ATTEMPTS;
+      if (invalidToken) {
+        continue;
+      }
       const contentType = res.headers.get("content-type") ?? "";
       if (
         res.status === 404 &&
@@ -803,7 +821,7 @@ export async function fetchProjectDocuments(
 export async function uploadProjectDocument(
   projectId: string,
   file: File,
-  metadata?: Partial<Pick<import("./types").ProjectDocument, "path" | "title" | "kind" | "authority" | "summary" | "status" | "tags">>,
+  metadata?: Partial<Pick<import("./types").ProjectDocument, "path" | "title" | "kind" | "authority" | "summary" | "status" | "tags" | "aliases" | "keywords">>,
 ): Promise<import("./types").ProjectDocument> {
   const formData = new FormData();
   formData.append("file", file);
@@ -814,6 +832,8 @@ export async function uploadProjectDocument(
   if (metadata?.summary) formData.append("summary", metadata.summary);
   if (metadata?.status) formData.append("status", metadata.status);
   if (metadata?.tags) formData.append("tags", JSON.stringify(metadata.tags));
+  if (metadata?.aliases) formData.append("aliases", JSON.stringify(metadata.aliases));
+  if (metadata?.keywords) formData.append("keywords", JSON.stringify(metadata.keywords));
   if (isTextDocumentFile(file)) {
     const currentUser = await fetchCurrentUser();
     if (!currentUser.org_id) {
@@ -851,6 +871,24 @@ export async function uploadProjectDocument(
   }
 
   return res.json() as Promise<import("./types").ProjectDocument>;
+}
+
+export async function createProjectDocument(
+  projectId: string,
+): Promise<import("./types").ProjectDocument> {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const title = "Untitled document";
+  const filename = `untitled-${timestamp}.md`;
+  const file = new File([`# ${title}\n\n`], filename, {
+    type: "text/markdown",
+  });
+
+  return uploadProjectDocument(projectId, file, {
+    title,
+    kind: "guide",
+    authority: "draft",
+    status: "draft",
+  });
 }
 
 export async function deleteProjectDocument(
@@ -978,7 +1016,7 @@ function isTextDocumentFile(file: File): boolean {
 export async function updateProjectDocumentMetadata(
   projectId: string,
   docId: string,
-  data: Partial<Pick<import("./types").ProjectDocument, "path" | "title" | "kind" | "authority" | "summary" | "status" | "tags">>,
+  data: Partial<Pick<import("./types").ProjectDocument, "filename" | "path" | "title" | "kind" | "authority" | "summary" | "status" | "tags" | "aliases" | "keywords">>,
 ): Promise<import("./types").ProjectDocument> {
   const res = await authFetch(projectDocumentUrl(projectId, docId), {
     method: "PATCH",

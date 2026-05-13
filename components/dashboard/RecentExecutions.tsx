@@ -6,6 +6,7 @@ import { useExecutionTasks } from "@/lib/hooks";
 import { Badge } from "@/components/ui/Badge";
 import { ExecutionRowSkeleton } from "@/components/ui/Skeleton";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
+import { formatToolCallSignature, normalizeToolCallArgs } from "@/lib/toolCallDisplay";
 
 interface RecentExecutionsProps {
   executions: ExecutionDetails[] | undefined;
@@ -76,16 +77,106 @@ function TaskStatusIcon({ status }: { status: string }) {
   }
 }
 
+function hasToolArgs(value: unknown): boolean {
+  if (value == null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+function toolArgsForStep(step: ExecutionTask["steps"][number]): string {
+  const payloadArgs = step.payload?.tool_args;
+  const dataArgs = step.data?.tool_args;
+  if (hasToolArgs(payloadArgs)) return normalizeToolCallArgs(payloadArgs);
+  if (hasToolArgs(dataArgs)) return normalizeToolCallArgs(dataArgs);
+  return "";
+}
+
+function friendlyToolName(toolName: string): string {
+  return toolName.replace(/^app\.nenjo\.platform\//, "");
+}
+
+function stepDisplayName(step: ExecutionTask["steps"][number]): string {
+  if (step.step_type === "tool") {
+    return formatToolCallSignature(friendlyToolName(step.step_name), toolArgsForStep(step));
+  }
+  return step.step_name;
+}
+
+function stepStatusLabel(step: ExecutionTask["steps"][number]): string {
+  return step.event_type === "step_completed" ? "done"
+    : step.event_type === "step_failed" ? "failed"
+    : step.event_type === "step_started" ? "in_progress"
+    : "open";
+}
+
+function StepDetail({ step }: { step: ExecutionTask["steps"][number] }) {
+  const d = step.data as Record<string, unknown> | undefined;
+  const agent = step.agent;
+  const isRunning = step.event_type === "step_started";
+  const status = stepStatusLabel(step);
+  const inputTok = typeof d?.input_tokens === "number" ? d.input_tokens : 0;
+  const outputTok = typeof d?.output_tokens === "number" ? d.output_tokens : 0;
+  const totalTok = inputTok + outputTok;
+
+  return (
+    <div className="ml-2 flex items-center gap-2 py-1">
+      {agent ? (
+        <RoleIdenticon
+          roleId={agent.agent_id}
+          color={agent.agent_color ?? "#6B7280"}
+          size={14}
+          className="shrink-0"
+          animate={isRunning}
+          name={agent.agent_name ?? undefined}
+        />
+      ) : (
+        <TaskStatusIcon status={status} />
+      )}
+      <span
+        className={`flex-1 truncate text-xs text-gray-600 dark:text-gray-400 ${step.step_type === "tool" ? "font-mono" : ""}`}
+        title={stepDisplayName(step)}
+      >
+        {stepDisplayName(step)}
+      </span>
+      {totalTok > 0 && (
+        <span
+          className="text-[10px] text-gray-400 tabular-nums"
+          title={`In: ${inputTok.toLocaleString()} / Out: ${outputTok.toLocaleString()}`}
+        >
+          {formatTokens(totalTok)} tok
+        </span>
+      )}
+      {step.duration_ms != null && (
+        <span className="text-[10px] text-gray-400">
+          {step.duration_ms < 1000
+            ? `${step.duration_ms}ms`
+            : `${(step.duration_ms / 1000).toFixed(1)}s`}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function TaskDetail({ task }: { task: ExecutionTask }) {
   return (
-    <div className="flex items-center gap-2.5 py-1.5">
-      <TaskStatusIcon status={task.status} />
-      <span className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">
-        {task.slug ? `${task.slug} — ` : ""}{task.title}
-      </span>
-      <span className="ml-auto text-[10px] text-gray-400 dark:text-gray-500 capitalize shrink-0">
-        {task.status.replace("_", " ")}
-      </span>
+    <div className="py-1.5">
+      <div className="flex items-center gap-2.5">
+        <TaskStatusIcon status={task.status} />
+        <span className="truncate text-xs font-medium text-gray-700 dark:text-gray-300">
+          {task.slug ? `${task.slug} - ` : ""}{task.title}
+        </span>
+        <span className="ml-auto shrink-0 text-[10px] capitalize text-gray-400 dark:text-gray-500">
+          {task.status.replace("_", " ")}
+        </span>
+      </div>
+      {task.steps.length > 0 && (
+        <div className="mt-1 space-y-0.5 pl-4">
+          {task.steps.map((step, index) => (
+            <StepDetail key={`${step.step_name}:${step.event_type}:${index}`} step={step} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -196,53 +287,9 @@ function ExecutionRow({ exec }: { exec: ExecutionDetails }) {
                     <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
                       {task.title}
                     </span>
-                    {task.steps.map((step, i) => {
-                      const d = step.data as Record<string, unknown> | undefined;
-                      const agent = step.agent;
-                      const isRunning = step.event_type === "step_started";
-                      const stepStatus =
-                        step.event_type === "step_completed" ? "done"
-                        : step.event_type === "step_failed" ? "failed"
-                        : step.event_type === "step_started" ? "in_progress"
-                        : "open";
-                      const inputTok = typeof d?.input_tokens === "number" ? d.input_tokens : 0;
-                      const outputTok = typeof d?.output_tokens === "number" ? d.output_tokens : 0;
-                      const totalTok = inputTok + outputTok;
-                      return (
-                        <div key={i} className="flex items-center gap-2 py-1 ml-2">
-                          {agent ? (
-                            <RoleIdenticon
-                              roleId={agent.agent_id}
-                              color={agent.agent_color ?? "#6B7280"}
-                              size={14}
-                              className="shrink-0"
-                              animate={isRunning}
-                              name={agent.agent_name ?? undefined}
-                            />
-                          ) : (
-                            <TaskStatusIcon status={stepStatus} />
-                          )}
-                          <span className="text-xs text-gray-600 dark:text-gray-400 flex-1 truncate">
-                            {step.step_name}
-                          </span>
-                          {totalTok > 0 && (
-                            <span
-                              className="text-[10px] text-gray-400 tabular-nums"
-                              title={`In: ${inputTok.toLocaleString()} / Out: ${outputTok.toLocaleString()}`}
-                            >
-                              {formatTokens(totalTok)} tok
-                            </span>
-                          )}
-                          {step.duration_ms != null && (
-                            <span className="text-[10px] text-gray-400">
-                              {step.duration_ms < 1000
-                                ? `${step.duration_ms}ms`
-                                : `${(step.duration_ms / 1000).toFixed(1)}s`}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {task.steps.map((step, i) => (
+                      <StepDetail key={`${step.step_name}:${step.event_type}:${i}`} step={step} />
+                    ))}
                   </div>
                 ) : (
                   <TaskDetail key={task.id} task={task} />

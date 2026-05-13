@@ -8,6 +8,8 @@ import { ToastProvider } from '@/components/ui/Toast'
 import { Analytics } from "@vercel/analytics/next"
 import './globals.css'
 
+const WEBSITE_UUID = '05016a17-3f9b-4d9a-97f7-989353c2fa40'
+
 export const metadata: Metadata = {
   title: {
     default: 'Nenjo',
@@ -93,6 +95,12 @@ export default function RootLayout({
             {children}
             <PwaInstallController />
             <ToastProvider />
+            <Script
+              id="termly-cmp"
+              src="https://app.termly.io/embed.min.js"
+              data-website-uuid={WEBSITE_UUID}
+              strategy="afterInteractive"
+            />
             <Analytics />
           </ThemeProvider>
         </PwaProvider>

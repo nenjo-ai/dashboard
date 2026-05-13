@@ -759,6 +759,10 @@ function timeAgo(dateStr: string): string {
   return `${days}d`;
 }
 
+function displayProjectName(projectName: string | null | undefined): string {
+  return projectName === "No project" ? "General" : (projectName ?? "General");
+}
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -1730,7 +1734,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                       >
                         <span className={cn("truncate text-sm font-medium", index + 1 === sessionPickerIndex ? "text-white" : "text-gray-900 dark:text-gray-100")}>{session.title}</span>
                         <span className={cn("mt-0.5 flex items-center gap-1.5 text-[11px]", index + 1 === sessionPickerIndex ? "text-deep-space-blue-100" : "text-gray-500 dark:text-gray-400")}>
-                          <span className="truncate">{session.project_name}</span>
+                          <span className="truncate">{displayProjectName(session.project_name)}</span>
                           <span>·</span>
                           <span className="shrink-0">{timeAgo(session.updated_at)}</span>
                         </span>
@@ -1894,7 +1898,9 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                         "mt-0.5 flex items-center gap-1.5 text-[11px]",
                         index + 1 === sessionPickerIndex ? "text-deep-space-blue-100" : "text-gray-500 dark:text-gray-400",
                       )}>
-                        <span className="truncate">{session.project_name}</span>
+                        <span className="truncate">
+                          {displayProjectName(session.project_name)}
+                        </span>
                         <span>·</span>
                         <span className="shrink-0">{timeAgo(session.updated_at)}</span>
                       </span>

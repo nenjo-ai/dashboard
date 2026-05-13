@@ -38,6 +38,7 @@ import {
   notifyChatStreamSnapshot,
   persistChatStreamSnapshot,
 } from "./chatStreamDurability";
+import { normalizeToolCallArgs } from "./toolCallDisplay";
 import type {
   ChatMessage,
   ChatSession,
@@ -213,7 +214,20 @@ function mergeLoadedMessages(
   loaded: ChatMessage[],
   current: ChatMessage[],
 ): ChatMessage[] {
-  const merged = [...loaded];
+  const merged = loaded.map((loadedMessage) => {
+    const loadedKey = loadedMessage.persistedId ?? loadedMessage.id;
+    const localMatch = current.find(
+      (message) =>
+        (message.persistedId ?? message.id) === loadedKey ||
+        (message.role === loadedMessage.role &&
+          message.content === loadedMessage.content &&
+          isRecentMatch(message, loadedMessage.timestamp)),
+    );
+    if (localMatch?.status === "cancelled") {
+      return { ...loadedMessage, status: "cancelled" as const };
+    }
+    return loadedMessage;
+  });
   const seen = new Set(
     loaded.map((message) => message.persistedId ?? message.id),
   );
@@ -966,7 +980,8 @@ export function usePlannerChat(
                         persistedId: msg.id,
                         content: resolvedContent,
                         timestamp: msg.created_at,
-                        status: "delivered",
+                        status:
+                          m.status === "cancelled" ? "cancelled" : "delivered",
                       }
                     : m,
                 );
@@ -1044,7 +1059,12 @@ export function usePlannerChat(
                       persistedId: msg.id,
                       content: resolvedContent,
                       timestamp: msg.created_at,
-                      status: role === "user" ? "delivered" : m.status,
+                      status:
+                        role === "user"
+                          ? m.status === "cancelled"
+                            ? "cancelled"
+                            : "delivered"
+                          : m.status,
                     }
                   : m,
               );
@@ -1088,7 +1108,13 @@ export function usePlannerChat(
         setMessages((prev) =>
           prev.map((m) =>
             m.id === message_id
-              ? { ...m, status: status as ChatMessage["status"] }
+              ? {
+                  ...m,
+                  status:
+                    m.status === "cancelled"
+                      ? "cancelled"
+                      : (status as ChatMessage["status"]),
+                }
               : m,
           ),
         );
@@ -1103,7 +1129,12 @@ export function usePlannerChat(
         }
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === message_id ? { ...m, status: "delivered" } : m,
+            m.id === message_id
+              ? {
+                  ...m,
+                  status: m.status === "cancelled" ? "cancelled" : "delivered",
+                }
+              : m,
           ),
         );
         return;
@@ -1496,27 +1527,51 @@ export function usePlannerChat(
           case "ToolCalls": {
             const { tool_calls, parent_tool_name, payload, encrypted_payload } =
               streamEvent.data as {
-                tool_calls: { tool_name: string; tool_args: string }[];
+                tool_calls: { tool_name: string; tool_args?: unknown }[];
                 parent_tool_name?: string;
                 payload?: { text_preview?: string };
                 encrypted_payload?: EncryptedPayload;
               };
-            const toolNames = tool_calls.map((call) => call.tool_name);
             void (async () => {
               const encryptedData = await resolveEncryptedPayloadJson<{
                 text_preview?: string;
+                tool_args?: unknown[] | unknown;
+                tool_calls?: { tool_name: string; tool_args?: unknown }[];
               }>(encrypted_payload);
+              const encryptedCalls = Array.isArray(encryptedData?.tool_calls)
+                ? encryptedData.tool_calls
+                : [];
+              const encryptedArgs = Array.isArray(encryptedData?.tool_args)
+                ? encryptedData.tool_args
+                : [];
+              const resolvedToolCalls = tool_calls.map((call, index) => {
+                const encryptedCall = encryptedCalls.find(
+                  (item) => item.tool_name === call.tool_name,
+                );
+                return {
+                  ...call,
+                  tool_args:
+                    call.tool_args ??
+                    encryptedCall?.tool_args ??
+                    encryptedArgs[index],
+                };
+              });
+              const toolNames = resolvedToolCalls.map((call) => call.tool_name);
               const resolvedTextPreview = encryptedData?.text_preview
                 ? String(encryptedData.text_preview)
                 : payload?.text_preview
                   ? String(payload.text_preview)
                   : undefined;
               if (parent_tool_name) {
-                const newChildren = tool_calls
+                const parentArgs = normalizeToolCallArgs(
+                  resolvedToolCalls.find((call) => call.tool_name === parent_tool_name)
+                    ?.tool_args,
+                );
+                const newChildren = resolvedToolCalls
                   .filter((call) => call.tool_name !== parent_tool_name)
                   .map((call) => ({
                     name: call.tool_name,
-                    args: call.tool_args || "",
+                    args: normalizeToolCallArgs(call.tool_args),
                     textPreview: undefined,
                     status: "running" as const,
                   }));
@@ -1536,7 +1591,7 @@ export function usePlannerChat(
                         ...prev,
                         {
                           name: parent_tool_name,
-                          args: "",
+                          args: parentArgs,
                           textPreview: resolvedTextPreview,
                           status: "running" as const,
                           children: newChildren,
@@ -1546,6 +1601,7 @@ export function usePlannerChat(
                         if (tool.name !== parent_tool_name) return tool;
                         return {
                           ...tool,
+                          args: parentArgs || tool.args,
                           textPreview: appendPreview(
                             tool.textPreview,
                             resolvedTextPreview,
@@ -1567,7 +1623,9 @@ export function usePlannerChat(
                     ? [
                         {
                           name: toolNames[0],
-                          args: "",
+                          args: normalizeToolCallArgs(
+                            resolvedToolCalls[0]?.tool_args,
+                          ),
                           textPreview: resolvedTextPreview,
                           status: "running" as const,
                           children: [],
@@ -1581,9 +1639,9 @@ export function usePlannerChat(
                             ? `${previousPreview}\n\n${resolvedTextPreview.trim()}`
                             : resolvedTextPreview.trim()
                           : previousPreview;
-                        return tool_calls.map((call) => ({
+                        return resolvedToolCalls.map((call) => ({
                           name: call.tool_name,
-                          args: call.tool_args || "",
+                          args: normalizeToolCallArgs(call.tool_args),
                           textPreview: nextPreview || undefined,
                           status: "running" as const,
                           children: [],
@@ -1765,13 +1823,39 @@ export function usePlannerChat(
     async (text: string) => {
       const trimmed = text.trim();
       if (!trimmed || !activeSessionId) return;
+
+      const msgId = generateId();
+      const userMsg: ChatMessage = {
+        id: msgId,
+        role: "user",
+        content: trimmed,
+        timestamp: new Date().toISOString(),
+        status: "sending",
+      };
+      optimisticUserMessageIdRef.current = msgId;
+      awaitingDeliveryRef.current = true;
+      setMessages((prev) => [...prev, userMsg]);
+
+      const failOptimisticMessage = () => {
+        optimisticUserMessageIdRef.current = null;
+        awaitingDeliveryRef.current = false;
+        setIsTyping(false);
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === msgId ? { ...message, status: "failed" } : message,
+          ),
+        );
+      };
+
       if (!userId) {
+        failOptimisticMessage();
         toast.error("This device is not ready to encrypt messages yet.");
         return;
       }
 
       const storedAck = await loadStoredAccountContentKey();
       if (!storedAck) {
+        failOptimisticMessage();
         toast.error(
           "Generate a local account content key in Settings before sending encrypted messages.",
         );
@@ -1787,6 +1871,7 @@ export function usePlannerChat(
             "Failed to sync current user ACK to active workers",
             error,
           );
+          failOptimisticMessage();
           toast.error(
             "This device could not sync its chat encryption access to the worker yet.",
           );
@@ -1801,21 +1886,10 @@ export function usePlannerChat(
         plaintext: trimmed,
       });
       if (!encryptedMessage) {
+        failOptimisticMessage();
         toast.error("Failed to encrypt this message on the current device.");
         return;
       }
-
-      const msgId = generateId();
-      const userMsg: ChatMessage = {
-        id: msgId,
-        role: "user",
-        content: trimmed,
-        timestamp: new Date().toISOString(),
-        status: "sending",
-      };
-      optimisticUserMessageIdRef.current = msgId;
-      awaitingDeliveryRef.current = true;
-      setMessages((prev) => [...prev, userMsg]);
 
       // Pre-allocate a response ID so the final response targets the same message
       responsePersistedRef.current = false;
@@ -1876,23 +1950,10 @@ export function usePlannerChat(
         });
       };
 
-      const markMessageDelivered = () => {
-        awaitingDeliveryRef.current = false;
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === msgId
-              ? { ...message, status: "delivered" }
-              : message,
-          ),
-        );
-        setTypingIfDelivered();
-      };
-
       const streamPromise = createChatStream(
         streamBody,
         controller.signal,
       ).then((response) => {
-        markMessageDelivered();
         return consumeSseStream(response, handleStreamEvent);
       });
 
