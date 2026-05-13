@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth, useUser } from "@clerk/nextjs";
 import useSWR from "swr";
-import { fetcher, projectsUrl } from "@/lib/api";
+import { catalogFetcher, catalogSWROptions, projectsUrl } from "@/lib/api";
 import type { Project } from "@/lib/types";
 import { CreateProjectModal } from "@/components/dashboard/CreateProjectModal";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
@@ -92,8 +92,8 @@ function ProjectSubmenu({ activeProjectId }: { activeProjectId: string | undefin
   // Only fetch when Clerk auth is fully loaded and user is signed in
   const { data: projects, isLoading, mutate: mutateProjects } = useSWR<Project[]>(
     isLoaded && isSignedIn ? projectsUrl() : null,
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 10000 },
+    catalogFetcher,
+    catalogSWROptions,
   );
 
   if (!isLoaded || !isSignedIn || isLoading) {
