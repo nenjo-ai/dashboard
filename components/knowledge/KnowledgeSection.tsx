@@ -3,19 +3,31 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
-import { useProjectDocuments } from "@/lib/hooks";
 import {
-  createProjectDocument,
-  createProjectDocumentEdge,
-  deleteProjectDocument,
-  deleteProjectDocumentEdge,
-  downloadProjectDocumentUrl,
-  fetchDocumentContent,
-  fetchProjectDocumentEdges,
-  updateDocumentContent,
-  updateProjectDocumentMetadata,
-  uploadProjectDocument,
+  ArrowDownToLine,
+  FileText,
+  Folder,
+  Link2,
+  Loader2,
+  PanelRight,
+  Plus,
+  Save,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
+import { useKnowledgeItems } from "@/lib/hooks";
+import {
+  createKnowledgeItem,
+  createKnowledgeItemEdge,
+  deleteKnowledgeItem,
+  deleteKnowledgeItemEdge,
+  downloadKnowledgeItemUrl,
+  fetchKnowledgeItemContent,
+  fetchKnowledgeItemEdges,
+  updateKnowledgeItemContent,
+  updateKnowledgeItemMetadata,
+  uploadKnowledgeItem,
 } from "@/lib/api";
 import {
   Card,
@@ -30,26 +42,27 @@ import { Select } from "@/components/ui/Select";
 import { TagInput } from "@/components/ui/TagInput";
 import { Textarea } from "@/components/ui/Textarea";
 import { ResizeHandle, useResizablePanel } from "@/components/agents/useResizablePanel";
+import { cn } from "@/lib/cn";
 import type {
-  ProjectDocument,
-  ProjectDocumentAuthority,
-  ProjectDocumentEdge,
-  ProjectDocumentEdgeType,
-  ProjectDocumentKind,
+  KnowledgeItem,
+  KnowledgeItemAuthority,
+  KnowledgeItemEdge,
+  KnowledgeItemEdgeType,
+  KnowledgeItemKind,
 } from "@/lib/types";
 
-interface ProductDocSectionProps {
-  projectId: string;
+interface KnowledgeSectionProps {
+  packId: string;
 }
 
 interface TreeNode {
   name: string;
   path: string;
   children: TreeNode[];
-  document?: ProjectDocument;
+  item?: KnowledgeItem;
 }
 
-const DOCUMENT_KINDS: Array<{ value: ProjectDocumentKind; label: string }> = [
+const ITEM_KINDS: Array<{ value: KnowledgeItemKind; label: string }> = [
   { value: "guide", label: "Guide" },
   { value: "reference", label: "Reference" },
   { value: "taxonomy", label: "Taxonomy" },
@@ -58,7 +71,7 @@ const DOCUMENT_KINDS: Array<{ value: ProjectDocumentKind; label: string }> = [
   { value: "policy", label: "Policy" },
 ];
 
-const DOCUMENT_AUTHORITIES: Array<{ value: ProjectDocumentAuthority; label: string }> = [
+const ITEM_AUTHORITIES: Array<{ value: KnowledgeItemAuthority; label: string }> = [
   { value: "canonical", label: "Canonical" },
   { value: "supporting", label: "Supporting" },
   { value: "reference", label: "Reference" },
@@ -66,7 +79,7 @@ const DOCUMENT_AUTHORITIES: Array<{ value: ProjectDocumentAuthority; label: stri
   { value: "deprecated", label: "Deprecated" },
 ];
 
-const DOCUMENT_EDGE_TYPES: Array<{ value: ProjectDocumentEdgeType; label: string }> = [
+const ITEM_EDGE_TYPES: Array<{ value: KnowledgeItemEdgeType; label: string }> = [
   { value: "part_of", label: "Part Of" },
   { value: "defines", label: "Defines" },
   { value: "governs", label: "Governs" },
@@ -77,13 +90,13 @@ const DOCUMENT_EDGE_TYPES: Array<{ value: ProjectDocumentEdgeType; label: string
   { value: "related_to", label: "Related To" },
 ];
 
-function buildDocumentTree(documents: ProjectDocument[]): TreeNode[] {
+function buildItemTree(items: KnowledgeItem[]): TreeNode[] {
   const root: TreeNode[] = [];
 
-  for (const doc of documents) {
-    const rawPath = doc.path?.trim().replace(/^\/+|\/+$/g, "");
+  for (const item of items) {
+    const rawPath = item.path?.trim().replace(/^\/+|\/+$/g, "");
     const pathParts = rawPath ? rawPath.split("/").filter(Boolean) : [];
-    const filename = doc.filename || pathParts.at(-1) || "Untitled";
+    const filename = item.filename || pathParts.at(-1) || "Untitled";
     const filenameStem = filename.replace(/\.[^/.]+$/, "");
     const pathLooksLikeFile =
       pathParts.length > 0 &&
@@ -95,7 +108,7 @@ function buildDocumentTree(documents: ProjectDocument[]): TreeNode[] {
     for (let i = 0; i < folderSegments.length; i += 1) {
       const seg = folderSegments[i];
       const folderPath = folderSegments.slice(0, i + 1).join("/");
-      let folder = parent.find((node) => node.path === folderPath && !node.document);
+      let folder = parent.find((node) => node.path === folderPath && !node.item);
       if (!folder) {
         folder = { name: seg, path: folderPath, children: [] };
         parent.push(folder);
@@ -107,15 +120,15 @@ function buildDocumentTree(documents: ProjectDocument[]): TreeNode[] {
       name: leafName,
       path: [...folderSegments, leafName].join("/"),
       children: [],
-      document: doc,
+      item: item,
     });
   }
 
   const sortNodes = (nodes: TreeNode[]): TreeNode[] =>
     nodes
       .sort((a, b) => {
-        const aFolder = !a.document;
-        const bFolder = !b.document;
+        const aFolder = !a.item;
+        const bFolder = !b.item;
         if (aFolder !== bFolder) return aFolder ? -1 : 1;
         return a.name.localeCompare(b.name);
       })
@@ -127,18 +140,18 @@ function buildDocumentTree(documents: ProjectDocument[]): TreeNode[] {
   return sortNodes(root);
 }
 
-function DocumentTreeNode({
+function ItemTreeNode({
   node,
   depth,
-  selectedDocumentId,
+  selectedItemId,
   onSelect,
 }: {
   node: TreeNode;
   depth: number;
-  selectedDocumentId: string | null;
-  onSelect: (docId: string) => void;
+  selectedItemId: string | null;
+  onSelect: (itemId: string) => void;
 }) {
-  const isFolder = !node.document;
+  const isFolder = !node.item;
   const [expanded, setExpanded] = useState(depth < 2);
   const indent = depth * 16 + 8;
   const guides = Array.from({ length: depth }, (_, index) => index);
@@ -175,20 +188,18 @@ function DocumentTreeNode({
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
             </svg>
-            <svg className="h-3.5 w-3.5 shrink-0 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-            </svg>
+            <Folder className="h-3.5 w-3.5 shrink-0 text-amber-500" />
             <span className="truncate text-xs font-medium text-gray-700 dark:text-gray-300">{node.name}</span>
           </button>
         </div>
         {expanded ? (
           <div>
             {node.children.map((child) => (
-              <DocumentTreeNode
+              <ItemTreeNode
                 key={child.path}
                 node={child}
                 depth={depth + 1}
-                selectedDocumentId={selectedDocumentId}
+                selectedItemId={selectedItemId}
                 onSelect={onSelect}
               />
             ))}
@@ -198,10 +209,10 @@ function DocumentTreeNode({
     );
   }
 
-  const doc = node.document;
-  if (!doc) return null;
+  const item = node.item;
+  if (!item) return null;
 
-  const isActive = doc.id === selectedDocumentId;
+  const isActive = item.id === selectedItemId;
 
   return (
     <div className="relative">
@@ -214,14 +225,14 @@ function DocumentTreeNode({
       ))}
       <button
         type="button"
-        onClick={() => onSelect(doc.id)}
+        onClick={() => onSelect(item.id)}
         className={`group relative flex w-full items-center gap-1.5 rounded py-1 text-left transition-colors ${
           isActive
             ? "border-r-2 border-deep-space-blue-500 bg-deep-space-blue-50 text-deep-space-blue-700 dark:bg-deep-space-blue-900/30 dark:text-deep-space-blue-300"
             : "text-gray-600 hover:[background:var(--app-hover)] dark:text-gray-400"
         }`}
         style={{ paddingLeft: `${indent}px` }}
-        title={doc.path ?? doc.filename}
+        title={item.path ?? item.filename}
       >
         {depth > 0 ? (
           <span
@@ -229,11 +240,9 @@ function DocumentTreeNode({
             style={{ left: `${(depth - 1) * 16 + 15}px`, width: "12px" }}
           />
         ) : null}
-        <svg className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-        </svg>
+        <FileText className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" />
         <div className="min-w-0 flex-1 truncate text-sm">{node.name}</div>
-        {doc.authority === "canonical" ? (
+        {item.authority === "canonical" ? (
           <span className="ml-auto shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
             Canonical
           </span>
@@ -257,17 +266,17 @@ function formatDate(iso: string): string {
   });
 }
 
-export function ProductDocSection({ projectId }: ProductDocSectionProps) {
+export function KnowledgeSection({ packId }: KnowledgeSectionProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const rightPanel = useResizablePanel(360, 300, 560);
 
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [isCreatingDocument, setIsCreatingDocument] = useState(false);
+  const [isCreatingItem, setIsCreatingItem] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
-  const [docContent, setDocContent] = useState<string | null>(null);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [itemContent, setItemContent] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [isLoadingContent, setIsLoadingContent] = useState(false);
   const [contentError, setContentError] = useState<string | null>(null);
@@ -276,48 +285,48 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
 
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [isSavingMetadata, setIsSavingMetadata] = useState(false);
-  const [docFilename, setDocFilename] = useState("");
-  const [docPath, setDocPath] = useState("");
-  const [docTitle, setDocTitle] = useState("");
-  const [docKind, setDocKind] = useState<ProjectDocumentKind | "">("");
-  const [docAuthority, setDocAuthority] = useState<ProjectDocumentAuthority>("reference");
-  const [docSummary, setDocSummary] = useState("");
-  const [docStatus, setDocStatus] = useState("");
-  const [docTags, setDocTags] = useState<string[]>([]);
-  const [docAliases, setDocAliases] = useState<string[]>([]);
-  const [docKeywords, setDocKeywords] = useState<string[]>([]);
+  const [itemFilename, setItemFilename] = useState("");
+  const [itemPath, setItemPath] = useState("");
+  const [itemTitle, setItemTitle] = useState("");
+  const [itemKind, setItemKind] = useState<KnowledgeItemKind | "">("");
+  const [itemAuthority, setItemAuthority] = useState<KnowledgeItemAuthority>("reference");
+  const [itemSummary, setItemSummary] = useState("");
+  const [itemStatus, setItemStatus] = useState("");
+  const [itemTags, setItemTags] = useState<string[]>([]);
+  const [itemAliases, setItemAliases] = useState<string[]>([]);
+  const [itemKeywords, setItemKeywords] = useState<string[]>([]);
 
-  const [documentEdges, setDocumentEdges] = useState<ProjectDocumentEdge[]>([]);
+  const [itemEdges, setItemEdges] = useState<KnowledgeItemEdge[]>([]);
   const [isLoadingEdges, setIsLoadingEdges] = useState(false);
   const [edgeError, setEdgeError] = useState<string | null>(null);
   const [isSavingEdge, setIsSavingEdge] = useState(false);
-  const [selectedTargetDocumentId, setSelectedTargetDocumentId] = useState("");
-  const [selectedEdgeType, setSelectedEdgeType] = useState<ProjectDocumentEdgeType>("references");
+  const [selectedTargetItemId, setSelectedTargetItemId] = useState("");
+  const [selectedEdgeType, setSelectedEdgeType] = useState<KnowledgeItemEdgeType>("references");
   const [edgeNote, setEdgeNote] = useState("");
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const {
-    documents,
+    items,
     isLoading,
-    mutate: mutateDocs,
-  } = useProjectDocuments(projectId);
+    mutate: mutateItems,
+  } = useKnowledgeItems(packId);
 
-  const selectedDoc = documents?.find((doc) => doc.id === selectedDocId) ?? null;
+  const selectedItem = items?.find((item) => item.id === selectedItemId) ?? null;
 
   useEffect(() => {
-    if (!documents || documents.length === 0) {
-      setSelectedDocId(null);
+    if (!items || items.length === 0) {
+      setSelectedItemId(null);
       return;
     }
-    if (!selectedDocId || !documents.some((doc) => doc.id === selectedDocId)) {
-      setSelectedDocId(documents[0].id);
+    if (!selectedItemId || !items.some((item) => item.id === selectedItemId)) {
+      setSelectedItemId(items[0].id);
     }
-  }, [documents, selectedDocId]);
+  }, [items, selectedItemId]);
 
   useEffect(() => {
-    if (!selectedDocId) {
-      setDocContent(null);
+    if (!selectedItemId) {
+      setItemContent(null);
       setEditContent("");
       setContentError(null);
       return;
@@ -327,19 +336,19 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
     setIsLoadingContent(true);
     setContentError(null);
 
-    fetchDocumentContent(projectId, selectedDocId)
+    fetchKnowledgeItemContent(packId, selectedItemId)
       .then((res) => {
         if (!cancelled) {
-          setDocContent(res.content);
+          setItemContent(res.content);
           setEditContent(res.content ?? "");
         }
       })
       .catch((err) => {
         if (!cancelled) {
-          setDocContent(null);
+          setItemContent(null);
           setEditContent("");
           setContentError(
-            err instanceof Error ? err.message : "Failed to load document",
+            err instanceof Error ? err.message : "Failed to load item",
           );
         }
       })
@@ -350,40 +359,40 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
     return () => {
       cancelled = true;
     };
-  }, [projectId, selectedDocId]);
+  }, [packId, selectedItemId]);
 
   useEffect(() => {
-    if (!selectedDoc) {
-      setDocFilename("");
-      setDocPath("");
-      setDocTitle("");
-      setDocKind("");
-      setDocAuthority("reference");
-      setDocSummary("");
-      setDocStatus("");
-      setDocTags([]);
-      setDocAliases([]);
-      setDocKeywords([]);
+    if (!selectedItem) {
+      setItemFilename("");
+      setItemPath("");
+      setItemTitle("");
+      setItemKind("");
+      setItemAuthority("reference");
+      setItemSummary("");
+      setItemStatus("");
+      setItemTags([]);
+      setItemAliases([]);
+      setItemKeywords([]);
       return;
     }
 
-    setDocFilename(selectedDoc.filename ?? "");
-    setDocPath(selectedDoc.path ?? "");
-    setDocTitle(selectedDoc.title ?? "");
-    setDocKind(selectedDoc.kind ?? "");
-    setDocAuthority(selectedDoc.authority);
-    setDocSummary(selectedDoc.summary ?? "");
-    setDocStatus(selectedDoc.status ?? "");
-    setDocTags(selectedDoc.tags ?? []);
-    setDocAliases(selectedDoc.aliases ?? []);
-    setDocKeywords(selectedDoc.keywords ?? []);
+    setItemFilename(selectedItem.filename ?? "");
+    setItemPath(selectedItem.path ?? "");
+    setItemTitle(selectedItem.title ?? "");
+    setItemKind(selectedItem.kind ?? "");
+    setItemAuthority(selectedItem.authority);
+    setItemSummary(selectedItem.summary ?? "");
+    setItemStatus(selectedItem.status ?? "");
+    setItemTags(selectedItem.tags ?? []);
+    setItemAliases(selectedItem.aliases ?? []);
+    setItemKeywords(selectedItem.keywords ?? []);
     setMetadataError(null);
-  }, [selectedDoc]);
+  }, [selectedItem]);
 
   useEffect(() => {
-    if (!selectedDocId) {
-      setDocumentEdges([]);
-      setSelectedTargetDocumentId("");
+    if (!selectedItemId) {
+      setItemEdges([]);
+      setSelectedTargetItemId("");
       setEdgeNote("");
       setEdgeError(null);
       return;
@@ -393,9 +402,9 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
     setIsLoadingEdges(true);
     setEdgeError(null);
 
-    fetchProjectDocumentEdges(projectId, selectedDocId)
+    fetchKnowledgeItemEdges(packId, selectedItemId)
       .then((edges) => {
-        if (!cancelled) setDocumentEdges(edges);
+        if (!cancelled) setItemEdges(edges);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -411,74 +420,74 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
     return () => {
       cancelled = true;
     };
-  }, [projectId, selectedDocId]);
+  }, [packId, selectedItemId]);
 
   const handleUpload = useCallback(
     async (file: File) => {
-      if (file.size > 50 * 1024 * 1024) {
-        setUploadError("File exceeds maximum size of 50 MB.");
+      if (file.size > 20 * 1024 * 1024) {
+        setUploadError("File exceeds maximum size of 20 MB.");
         return;
       }
       setIsUploading(true);
       setUploadError(null);
       try {
-        const created = await uploadProjectDocument(projectId, file);
-        await mutateDocs();
-        setSelectedDocId(created.id);
+        const created = await uploadKnowledgeItem(packId, file);
+        await mutateItems();
+        setSelectedItemId(created.id);
       } catch (err: unknown) {
         setUploadError(err instanceof Error ? err.message : "Upload failed");
       } finally {
         setIsUploading(false);
       }
     },
-    [projectId, mutateDocs],
+    [packId, mutateItems],
   );
 
-  const handleCreateDocument = useCallback(async () => {
-    setIsCreatingDocument(true);
+  const handleCreateItem = useCallback(async () => {
+    setIsCreatingItem(true);
     setUploadError(null);
     try {
-      const created = await createProjectDocument(projectId);
-      await mutateDocs();
-      setSelectedDocId(created.id);
+      const created = await createKnowledgeItem(packId);
+      await mutateItems();
+      setSelectedItemId(created.id);
       setContentMode("edit");
     } catch (err: unknown) {
       setUploadError(
-        err instanceof Error ? err.message : "Failed to create document",
+        err instanceof Error ? err.message : "Failed to create item",
       );
     } finally {
-      setIsCreatingDocument(false);
+      setIsCreatingItem(false);
     }
-  }, [projectId, mutateDocs]);
+  }, [packId, mutateItems]);
 
   const handleDelete = useCallback(
-    async (doc: ProjectDocument) => {
+    async (item: KnowledgeItem) => {
       try {
-        await deleteProjectDocument(projectId, doc.id);
-        await mutateDocs();
+        await deleteKnowledgeItem(packId, item.id);
+        await mutateItems();
         setConfirmDeleteId(null);
-        if (selectedDocId === doc.id) {
-          const remaining = (documents ?? []).filter((item) => item.id !== doc.id);
-          setSelectedDocId(remaining[0]?.id ?? null);
+        if (selectedItemId === item.id) {
+          const remaining = (items ?? []).filter((candidate) => candidate.id !== item.id);
+          setSelectedItemId(remaining[0]?.id ?? null);
         }
       } catch {
         setConfirmDeleteId(null);
       }
     },
-    [projectId, mutateDocs, selectedDocId, documents],
+    [packId, mutateItems, selectedItemId, items],
   );
 
   const handleSaveContent = async () => {
-    if (!selectedDocId) return;
+    if (!selectedItemId) return;
     setIsSavingContent(true);
     setContentError(null);
     try {
-      await updateDocumentContent(projectId, selectedDocId, editContent);
-      setDocContent(editContent);
-      await mutateDocs();
+      await updateKnowledgeItemContent(packId, selectedItemId, editContent);
+      setItemContent(editContent);
+      await mutateItems();
     } catch (err) {
       setContentError(
-        err instanceof Error ? err.message : "Failed to save document",
+        err instanceof Error ? err.message : "Failed to save item",
       );
     } finally {
       setIsSavingContent(false);
@@ -486,8 +495,8 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
   };
 
   const handleSaveMetadata = async () => {
-    if (!selectedDocId) return;
-    const filename = docFilename.trim();
+    if (!selectedItemId) return;
+    const filename = itemFilename.trim();
     if (!filename) {
       setMetadataError("Filename cannot be empty");
       return;
@@ -495,22 +504,22 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
     setIsSavingMetadata(true);
     setMetadataError(null);
     try {
-      await updateProjectDocumentMetadata(projectId, selectedDocId, {
+      await updateKnowledgeItemMetadata(packId, selectedItemId, {
         filename,
-        path: docPath.trim() || null,
-        title: docTitle.trim() || null,
-        kind: docKind || null,
-        authority: docAuthority,
-        summary: docSummary.trim() || null,
-        status: docStatus.trim() || null,
-        tags: docTags,
-        aliases: docAliases,
-        keywords: docKeywords,
+        path: itemPath.trim() || null,
+        title: itemTitle.trim() || null,
+        kind: itemKind || null,
+        authority: itemAuthority,
+        summary: itemSummary.trim() || null,
+        status: itemStatus.trim() || null,
+        tags: itemTags,
+        aliases: itemAliases,
+        keywords: itemKeywords,
       });
-      await mutateDocs();
+      await mutateItems();
     } catch (err) {
       setMetadataError(
-        err instanceof Error ? err.message : "Failed to save document metadata",
+        err instanceof Error ? err.message : "Failed to save item metadata",
       );
     } finally {
       setIsSavingMetadata(false);
@@ -518,17 +527,17 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
   };
 
   const handleCreateEdge = async () => {
-    if (!selectedDocId || !selectedTargetDocumentId) return;
+    if (!selectedItemId || !selectedTargetItemId) return;
     setIsSavingEdge(true);
     setEdgeError(null);
     try {
-      const edge = await createProjectDocumentEdge(projectId, selectedDocId, {
-        target_document_id: selectedTargetDocumentId,
+      const edge = await createKnowledgeItemEdge(packId, selectedItemId, {
+        target_item_id: selectedTargetItemId,
         edge_type: selectedEdgeType,
         note: edgeNote.trim() || null,
       });
-      setDocumentEdges((current) => [...current, edge]);
-      setSelectedTargetDocumentId("");
+      setItemEdges((current) => [...current, edge]);
+      setSelectedTargetItemId("");
       setSelectedEdgeType("references");
       setEdgeNote("");
     } catch (err) {
@@ -541,11 +550,11 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
   };
 
   const handleDeleteEdge = async (edgeId: string) => {
-    if (!selectedDocId) return;
+    if (!selectedItemId) return;
     setEdgeError(null);
     try {
-      await deleteProjectDocumentEdge(projectId, selectedDocId, edgeId);
-      setDocumentEdges((current) => current.filter((edge) => edge.id !== edgeId));
+      await deleteKnowledgeItemEdge(packId, selectedItemId, edgeId);
+      setItemEdges((current) => current.filter((edge) => edge.id !== edgeId));
     } catch (err) {
       setEdgeError(
         err instanceof Error ? err.message : "Failed to delete relationship",
@@ -576,46 +585,33 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
     if (file) handleUpload(file);
   };
 
-  const tree = useMemo(() => buildDocumentTree(documents ?? []), [documents]);
-  const relatedDocumentOptions = (documents ?? []).filter((doc) => doc.id !== selectedDocId);
-  const documentNameById = new Map(
-    (documents ?? []).map((doc) => [doc.id, doc.title ?? doc.path ?? doc.filename]),
+  const tree = useMemo(() => buildItemTree(items ?? []), [items]);
+  const relatedItemOptions = (items ?? []).filter((item) => item.id !== selectedItemId);
+  const itemNameById = new Map(
+    (items ?? []).map((item) => [item.id, item.title ?? item.path ?? item.filename]),
   );
-  const contentDirty = docContent !== null && editContent !== docContent;
+  const contentDirty = itemContent !== null && editContent !== itemContent;
 
   return (
-    <Card static className="overflow-hidden">
-      <CardHeader className="border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between gap-4">
+    <Card static className="overflow-hidden rounded-lg bg-white dark:bg-gray-900">
+      <CardHeader className="border-b border-gray-200 bg-gray-50/70 px-4 py-3 dark:border-gray-700 dark:bg-gray-950/20">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <svg className="h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-              </svg>
-              <CardTitle>Project Documents</CardTitle>
+              <FileText className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+              <CardTitle className="text-base">Documents</CardTitle>
             </div>
-            <CardDescription>
-              Project knowledge organized as files on the left, content in the center, and metadata on the right.
+            <CardDescription className="mt-1">
+              Edit content, metadata, tags, and relationships for this pack.
             </CardDescription>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-              {(documents?.length ?? 0).toLocaleString()} docs
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <div className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700">
+              {(items?.length ?? 0).toLocaleString()} items
             </div>
-            <Button size="sm" onClick={handleCreateDocument} disabled={isCreatingDocument || isUploading}>
-              <span className="inline-flex items-center gap-1.5">
-                {isCreatingDocument ? (
-                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                ) : (
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                  </svg>
-                )}
-                New Document
-              </span>
+            <Button size="sm" onClick={handleCreateItem} disabled={isCreatingItem || isUploading}>
+              {isCreatingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              New Item
             </Button>
           </div>
         </div>
@@ -632,37 +628,45 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
 
         <div className="flex min-h-[780px] overflow-hidden">
           <div className="theme-border theme-surface-muted flex w-72 shrink-0 flex-col overflow-hidden border-r">
-            <div className="theme-border border-b p-3">
+            <div className="theme-border border-b px-3 py-2">
               <div
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`cursor-pointer rounded-xl border-2 border-dashed px-4 py-4 text-center transition-all ${
-                  isUploading ? "pointer-events-none opacity-60" : ""
-                } ${
+                className={cn(
+                  "flex items-center justify-between gap-2 rounded-lg border border-dashed px-2.5 py-2 transition-all",
+                  isUploading ? "pointer-events-none opacity-60" : "",
                   isDragging
                     ? "border-deep-space-blue-500 bg-deep-space-blue-50 dark:border-deep-space-blue-400 dark:bg-deep-space-blue-950/30"
-                    : "border-gray-300 bg-white hover:border-gray-400 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:hover:border-gray-500 dark:hover:bg-gray-800"
-                }`}
+                    : "border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-900",
+                )}
               >
                 {isUploading ? (
-                  <div className="flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                    <svg className="h-4 w-4 animate-spin text-deep-space-blue-500" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
+                  <div className="flex min-w-0 items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-deep-space-blue-500" />
                     Uploading...
                   </div>
                 ) : (
                   <>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Upload</p>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Click or drag in a file</p>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Drop files here</p>
+                      <p className="truncate text-[11px] text-gray-500 dark:text-gray-400">20 MB max</p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="h-7 px-2"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                      Upload
+                    </Button>
                   </>
                 )}
               </div>
               {uploadError ? (
-                <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+                <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
                   {uploadError}
                 </div>
               ) : null}
@@ -677,17 +681,17 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                 </div>
               ) : tree.length === 0 ? (
                 <div className="rounded-xl border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
-                  No project documents yet.
+                  No knowledge items yet.
                 </div>
               ) : (
                 <div className="space-y-0.5">
                   {tree.map((node) => (
-                    <DocumentTreeNode
+                    <ItemTreeNode
                       key={node.path}
                       node={node}
                       depth={0}
-                      selectedDocumentId={selectedDocId}
-                      onSelect={setSelectedDocId}
+                      selectedItemId={selectedItemId}
+                      onSelect={setSelectedItemId}
                     />
                   ))}
                 </div>
@@ -695,17 +699,17 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
             </div>
           </div>
 
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="theme-border theme-surface-muted flex shrink-0 items-center justify-between gap-4 border-b px-4 py-2">
+          <div className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-gray-900">
+            <div className="theme-border flex shrink-0 items-center justify-between gap-4 border-b bg-white px-4 py-3 dark:bg-gray-900">
               <div className="min-w-0">
-                <div className="truncate text-sm font-medium text-gray-800 dark:text-gray-200">
-                  {selectedDoc?.path ?? selectedDoc?.filename ?? "No document selected"}
+                <div className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {selectedItem?.path ?? selectedItem?.filename ?? "No item selected"}
                 </div>
                 <div className="truncate text-xs text-gray-500 dark:text-gray-400">
-                  {selectedDoc?.title ?? "Upload or select a document from the left"}
+                  {selectedItem?.title ?? "Upload or select an item from the left"}
                 </div>
               </div>
-              {selectedDoc ? (
+              {selectedItem ? (
                 <div className="flex shrink-0 items-center gap-2">
                   <div className="theme-surface flex gap-1 rounded-lg p-0.5">
                     <button
@@ -732,30 +736,31 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                     </button>
                   </div>
                   <a
-                    href={downloadProjectDocumentUrl(projectId, selectedDoc.id)}
+                    href={downloadKnowledgeItemUrl(packId, selectedItem.id)}
                     download
-                    className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300"
-                    title="Download document"
+                    className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                    title="Download item"
                   >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                    </svg>
+                    <ArrowDownToLine className="h-4 w-4" />
                   </a>
-                  {confirmDeleteId === selectedDoc.id ? (
+                  {confirmDeleteId === selectedItem.id ? (
                     <>
                       <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteId(null)}>
                         Cancel
                       </Button>
-                      <Button size="sm" onClick={() => handleDelete(selectedDoc)}>
+                      <Button size="sm" variant="danger" onClick={() => handleDelete(selectedItem)}>
+                        <Trash2 className="h-4 w-4" />
                         Delete
                       </Button>
                     </>
                   ) : (
                     <>
-                      <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteId(selectedDoc.id)}>
+                      <Button size="sm" variant="ghost" onClick={() => setConfirmDeleteId(selectedItem.id)}>
+                        <Trash2 className="h-4 w-4" />
                         Delete
                       </Button>
                       <Button size="sm" onClick={handleSaveContent} disabled={!contentDirty || isSavingContent || contentMode !== "edit" || !!contentError}>
+                        <Save className="h-4 w-4" />
                         {isSavingContent ? "Saving..." : "Save"}
                       </Button>
                     </>
@@ -765,9 +770,9 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
             </div>
 
             <div className="flex-1 overflow-hidden">
-              {!selectedDoc ? (
+              {!selectedItem ? (
                 <div className="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-                  Select a document from the left to start editing.
+                  Select an item from the left to start editing.
                 </div>
               ) : isLoadingContent ? (
                 <div className="space-y-3 p-6">
@@ -819,7 +824,7 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                   <textarea
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
-                    className="h-full w-full resize-none rounded-lg border border-gray-300 bg-white p-4 font-mono text-sm text-gray-800 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+                    className="h-full w-full resize-none rounded-lg border border-gray-200 bg-gray-50/70 p-4 font-mono text-sm leading-6 text-gray-800 shadow-inner focus:border-deep-space-blue-400 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-700 dark:bg-gray-950/40 dark:text-gray-200 dark:focus:bg-gray-950"
                     placeholder="Write your markdown content here..."
                   />
                 </div>
@@ -829,8 +834,8 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
             <div className="theme-border flex shrink-0 items-center justify-between border-t px-4 py-1.5 text-xs text-gray-400 dark:text-gray-500">
               <div className="flex items-center gap-4">
                 <span>{editContent.length.toLocaleString()} chars</span>
-                {selectedDoc ? <span>{formatFileSize(selectedDoc.size_bytes)}</span> : null}
-                {selectedDoc ? <span>Updated {formatDate(selectedDoc.updated_at)}</span> : null}
+                {selectedItem ? <span>{formatFileSize(selectedItem.size_bytes)}</span> : null}
+                {selectedItem ? <span>Updated {formatDate(selectedItem.updated_at)}</span> : null}
               </div>
               <div className="flex items-center gap-2">
                 {contentDirty ? <span className="text-amber-500 dark:text-amber-400">Unsaved changes</span> : null}
@@ -842,37 +847,41 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
           <ResizeHandle onMouseDown={rightPanel.onMouseDown} />
           <div style={{ width: rightPanel.width }} className="theme-surface-muted theme-border flex shrink-0 flex-col overflow-hidden border-l">
             <div className="flex-1 overflow-y-auto p-4">
-              {selectedDoc ? (
+              {selectedItem ? (
                 <div className="space-y-5">
-                  <section className="space-y-3">
+                  <section className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Metadata</h3>
+                      <div className="flex items-center gap-2">
+                        <PanelRight className="h-4 w-4 text-gray-400" />
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Metadata</h3>
+                      </div>
                       <Button size="sm" onClick={handleSaveMetadata} disabled={isSavingMetadata}>
+                        <Save className="h-4 w-4" />
                         {isSavingMetadata ? "Saving..." : "Save"}
                       </Button>
                     </div>
 
                     <div>
                       <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Filename</label>
-                      <Input value={docFilename} onChange={(e) => setDocFilename(e.target.value)} placeholder="random.md" />
+                      <Input value={itemFilename} onChange={(e) => setItemFilename(e.target.value)} placeholder="random.md" />
                     </div>
 
                     <div>
                       <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Path</label>
-                      <Input value={docPath} onChange={(e) => setDocPath(e.target.value)} placeholder="domain" />
+                      <Input value={itemPath} onChange={(e) => setItemPath(e.target.value)} placeholder="domain" />
                     </div>
 
                     <div>
                       <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Title</label>
-                      <Input value={docTitle} onChange={(e) => setDocTitle(e.target.value)} placeholder="Billing Domain" />
+                      <Input value={itemTitle} onChange={(e) => setItemTitle(e.target.value)} placeholder="Billing Domain" />
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div>
                         <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Kind</label>
-                        <Select value={docKind} onChange={(e) => setDocKind(e.target.value as ProjectDocumentKind | "")}>
+                        <Select value={itemKind} onChange={(e) => setItemKind(e.target.value as KnowledgeItemKind | "")}>
                           <option value="">None</option>
-                          {DOCUMENT_KINDS.map((option) => (
+                          {ITEM_KINDS.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
                             </option>
@@ -882,8 +891,8 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
 
                       <div>
                         <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Authority</label>
-                        <Select value={docAuthority} onChange={(e) => setDocAuthority(e.target.value as ProjectDocumentAuthority)}>
-                          {DOCUMENT_AUTHORITIES.map((option) => (
+                        <Select value={itemAuthority} onChange={(e) => setItemAuthority(e.target.value as KnowledgeItemAuthority)}>
+                          {ITEM_AUTHORITIES.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
                             </option>
@@ -894,14 +903,14 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
 
                     <div>
                       <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Status</label>
-                      <Input value={docStatus} onChange={(e) => setDocStatus(e.target.value)} placeholder="active, review, archived" />
+                      <Input value={itemStatus} onChange={(e) => setItemStatus(e.target.value)} placeholder="active, review, archived" />
                     </div>
 
                     <div>
                       <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Summary</label>
                       <Textarea
-                        value={docSummary}
-                        onChange={(e) => setDocSummary(e.target.value)}
+                        value={itemSummary}
+                        onChange={(e) => setItemSummary(e.target.value)}
                         placeholder="Compact knowledge summary used by prompts and agents."
                         className="min-h-[110px]"
                       />
@@ -910,8 +919,8 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                     <div>
                       <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Tags</label>
                       <TagInput
-                        value={docTags}
-                        onChange={setDocTags}
+                        value={itemTags}
+                        onChange={setItemTags}
                         suggestions={["canonical", "policy", "entity", "taxonomy", "guide", "reference", "project"]}
                       />
                     </div>
@@ -919,8 +928,8 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                     <div>
                       <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Aliases</label>
                       <TagInput
-                        value={docAliases}
-                        onChange={setDocAliases}
+                        value={itemAliases}
+                        onChange={setItemAliases}
                         placeholder="Add an alias..."
                         preserveValue
                       />
@@ -929,8 +938,8 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                     <div>
                       <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Keywords</label>
                       <TagInput
-                        value={docKeywords}
-                        onChange={setDocKeywords}
+                        value={itemKeywords}
+                        onChange={setItemKeywords}
                         placeholder="Add a keyword..."
                         preserveValue
                       />
@@ -941,21 +950,24 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                     ) : null}
                   </section>
 
-                  <section className="space-y-3 border-t border-gray-200 pt-5 dark:border-gray-700">
+                  <section className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
                     <div>
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Relationships</h3>
+                      <div className="flex items-center gap-2">
+                        <Link2 className="h-4 w-4 text-gray-400" />
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Relationships</h3>
+                      </div>
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Link this document to other project docs using the canonical relationship types.
+                        Link this item to other knowledge items using the canonical relationship types.
                       </p>
                     </div>
 
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Target document</label>
-                      <Select value={selectedTargetDocumentId} onChange={(e) => setSelectedTargetDocumentId(e.target.value)}>
-                        <option value="">Select a document</option>
-                        {relatedDocumentOptions.map((doc) => (
-                          <option key={doc.id} value={doc.id}>
-                            {doc.title ?? doc.path ?? doc.filename}
+                      <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Target item</label>
+                      <Select value={selectedTargetItemId} onChange={(e) => setSelectedTargetItemId(e.target.value)}>
+                        <option value="">Select an item</option>
+                        {relatedItemOptions.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.title ?? item.path ?? item.filename}
                           </option>
                         ))}
                       </Select>
@@ -963,8 +975,8 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
 
                     <div>
                       <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Relationship type</label>
-                      <Select value={selectedEdgeType} onChange={(e) => setSelectedEdgeType(e.target.value as ProjectDocumentEdgeType)}>
-                        {DOCUMENT_EDGE_TYPES.map((option) => (
+                      <Select value={selectedEdgeType} onChange={(e) => setSelectedEdgeType(e.target.value as KnowledgeItemEdgeType)}>
+                        {ITEM_EDGE_TYPES.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
                           </option>
@@ -983,7 +995,8 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                     </div>
 
                     <div className="flex justify-end">
-                      <Button size="sm" onClick={handleCreateEdge} disabled={!selectedTargetDocumentId || isSavingEdge}>
+                      <Button size="sm" onClick={handleCreateEdge} disabled={!selectedTargetItemId || isSavingEdge}>
+                        <Link2 className="h-4 w-4" />
                         {isSavingEdge ? "Linking..." : "Add Relationship"}
                       </Button>
                     </div>
@@ -995,26 +1008,26 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                     <div className="space-y-2">
                       {isLoadingEdges ? (
                         <div className="text-xs text-gray-500 dark:text-gray-400">Loading relationships...</div>
-                      ) : documentEdges.length === 0 ? (
+                      ) : itemEdges.length === 0 ? (
                         <div className="text-xs text-gray-500 dark:text-gray-400">No relationships yet.</div>
                       ) : (
-                        documentEdges.map((edge) => {
+                        itemEdges.map((edge) => {
                           const targetId =
-                            edge.source_document_id === selectedDocId
-                              ? edge.target_document_id
-                              : edge.source_document_id;
+                            edge.source_item_id === selectedItemId
+                              ? edge.target_item_id
+                              : edge.source_item_id;
                           const direction =
-                            edge.source_document_id === selectedDocId ? "outgoing" : "incoming";
+                            edge.source_item_id === selectedItemId ? "outgoing" : "incoming";
 
                           return (
-                            <div key={edge.id} className="rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
+                            <div key={edge.id} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-950/40">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                   <p className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                     {direction} · {edge.edge_type.replaceAll("_", " ")}
                                   </p>
                                   <p className="truncate text-sm text-gray-900 dark:text-gray-100">
-                                    {documentNameById.get(targetId) ?? targetId}
+                                    {itemNameById.get(targetId) ?? targetId}
                                   </p>
                                   {edge.note ? (
                                     <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">{edge.note}</p>
@@ -1026,9 +1039,7 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                                   className="rounded-md p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 dark:hover:text-red-400"
                                   title="Delete relationship"
                                 >
-                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                                  </svg>
+                                  <Trash2 className="h-4 w-4" />
                                 </button>
                               </div>
                             </div>
@@ -1040,7 +1051,7 @@ export function ProductDocSection({ projectId }: ProductDocSectionProps) {
                 </div>
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-                  Select a document to edit metadata.
+                  Select an item to edit metadata.
                 </div>
               )}
             </div>

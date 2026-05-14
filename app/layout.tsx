@@ -9,15 +9,41 @@ import { Analytics } from "@vercel/analytics/next"
 import './globals.css'
 
 const WEBSITE_UUID = '05016a17-3f9b-4d9a-97f7-989353c2fa40'
+const SITE_URL = 'https://nenjo.ai'
+const SITE_DESCRIPTION = 'Nenjo is an agent-first platform for teams building real agent products.'
+const LINK_PREVIEW_IMAGE = '/link-preview-image.png'
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
     default: 'Nenjo',
     template: '%s | Nenjo',
   },
-  description: 'Nenjo is an agent-first platform for teams building real agent products.',
+  description: SITE_DESCRIPTION,
   applicationName: 'Nenjo',
   manifest: '/manifest.webmanifest',
+  openGraph: {
+    type: 'website',
+    url: '/',
+    siteName: 'Nenjo',
+    title: 'Nenjo',
+    description: SITE_DESCRIPTION,
+    images: [
+      {
+        url: LINK_PREVIEW_IMAGE,
+        width: 1200,
+        height: 630,
+        alt: 'Nenjo',
+        type: 'image/png',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Nenjo',
+    description: SITE_DESCRIPTION,
+    images: [LINK_PREVIEW_IMAGE],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',

@@ -10,7 +10,7 @@
     "license:check": "npx license-checker-rseidelsohn --production --excludePrivatePackages --onlyAllow \"MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;Zlib;0BSD;CC0-1.0;Unicode-3.0;Unicode-DFS-2016\""
   },
   "dependencies": {
-    "@clerk/nextjs": "^6.37.4",
+    "@clerk/nextjs": "^6.39.3",
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/state": "^6.5.4",
     "@codemirror/view": "^6.39.15",
@@ -27,9 +27,9 @@
     "fumadocs-ui": "^16.6.17",
     "jszip": "^3.10.1",
     "lucide-react": "^0.577.0",
-    "mermaid": "^11.12.2",
+    "mermaid": "^11.15.0",
     "motion": "^12.34.3",
-    "next": "^16.1.6",
+    "next": "^16.2.6",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-is": "^19.2.5",
@@ -48,8 +48,13 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.1.6",
     "fumadocs-mdx": "^14.2.10",
-    "postcss": "^8.4.32",
+    "postcss": "^8.5.14",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "dompurify": "^3.4.3",
+    "postcss": "^8.5.14",
+    "uuid": "^14.0.0"
   }
 }

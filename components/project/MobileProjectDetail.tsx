@@ -1,11 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ArrowUpRight, FileText, GitBranch, PlayCircle } from "lucide-react";
+import { ArrowUpRight, GitBranch, PlayCircle } from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
-import type { ExecutionDetails, Project, ProjectDocument, Task } from "@/lib/types";
+import type { ExecutionDetails, Project, Task } from "@/lib/types";
 
-type MobileProjectTab = "tasks" | "documents" | "context" | "execution" | "settings";
+type MobileProjectTab = "tasks" | "context" | "execution" | "settings";
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "Unknown";
@@ -60,7 +60,6 @@ function statusTone(status: string): string {
 export function MobileProjectDetail({
   project,
   tasks,
-  documents,
   executions,
   activeTab,
   onTabChange,
@@ -68,7 +67,6 @@ export function MobileProjectDetail({
 }: {
   project: Project;
   tasks: Task[] | undefined;
-  documents: ProjectDocument[] | undefined;
   executions: ExecutionDetails[] | undefined;
   activeTab: MobileProjectTab;
   onTabChange: (tab: MobileProjectTab) => void;
@@ -86,9 +84,6 @@ export function MobileProjectDetail({
         <div className="mt-4 flex flex-wrap gap-2">
           <span className="rounded-full border border-black/5 bg-black/[0.03] px-2.5 py-1 text-[11px] font-medium text-gray-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-300">
             {tasks?.length ?? 0} tasks
-          </span>
-          <span className="rounded-full border border-black/5 bg-black/[0.03] px-2.5 py-1 text-[11px] font-medium text-gray-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-300">
-            {documents?.length ?? 0} docs
           </span>
           <span className="rounded-full border border-black/5 bg-black/[0.03] px-2.5 py-1 text-[11px] font-medium text-gray-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-300">
             {executions?.length ?? 0} runs
@@ -118,27 +113,6 @@ export function MobileProjectDetail({
           {(!tasks || tasks.length === 0) && (
             <div className="rounded-[1.4rem] border border-dashed border-black/10 bg-transparent p-5 text-sm text-gray-500 dark:border-white/10 dark:text-gray-400">
               No tasks yet.
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === "documents" && (
-        <div className="space-y-3">
-          {(documents ?? []).map((document) => (
-            <section key={document.id} className="flex items-center gap-3 rounded-[1.4rem] border border-black/10 bg-transparent p-4 dark:border-white/10">
-              <div className="flex h-10 w-10 items-center justify-center rounded-[0.9rem] border border-black/10 text-gray-700 dark:border-white/10 dark:text-gray-200">
-                <FileText className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="truncate text-sm font-semibold text-gray-950 dark:text-gray-50">{document.filename}</h3>
-                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{formatDate(document.updated_at)}</p>
-              </div>
-            </section>
-          ))}
-          {(!documents || documents.length === 0) && (
-            <div className="rounded-[1.4rem] border border-dashed border-black/10 bg-transparent p-5 text-sm text-gray-500 dark:border-white/10 dark:text-gray-400">
-              No documents uploaded.
             </div>
           )}
         </div>
