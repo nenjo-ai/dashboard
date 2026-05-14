@@ -904,17 +904,30 @@ export interface ApiError {
 }
 
 // ---------------------------------------------------------------------------
-// Project Documents (stored in Garage object storage)
+// Workspace Knowledge (stored in Garage object storage)
 // ---------------------------------------------------------------------------
 
-export interface ProjectDocument {
+export interface KnowledgePack {
   id: string;
-  project_id: string;
+  org_id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  status: "active" | "archived";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeItem {
+  id: string;
+  org_id: string;
+  pack_id: string;
+  slug: string;
   filename: string;
   path: string | null;
   title: string | null;
-  kind: ProjectDocumentKind | null;
-  authority: ProjectDocumentAuthority;
+  kind: KnowledgeItemKind | null;
+  authority: KnowledgeItemAuthority;
   summary: string | null;
   status: string | null;
   tags: string[];
@@ -926,7 +939,7 @@ export interface ProjectDocument {
   updated_at: string;
 }
 
-export type ProjectDocumentKind =
+export type KnowledgeItemKind =
   | "guide"
   | "reference"
   | "taxonomy"
@@ -934,25 +947,25 @@ export type ProjectDocumentKind =
   | "entity"
   | "policy";
 
-export type ProjectDocumentAuthority =
+export type KnowledgeItemAuthority =
   | "canonical"
   | "supporting"
   | "reference"
   | "draft"
   | "deprecated";
 
-export interface ProjectDocumentEdge {
+export interface KnowledgeItemEdge {
   id: string;
-  project_id: string;
-  source_document_id: string;
-  target_document_id: string;
-  edge_type: ProjectDocumentEdgeType;
+  org_id: string;
+  source_item_id: string;
+  target_item_id: string;
+  edge_type: KnowledgeItemEdgeType;
   note: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export type ProjectDocumentEdgeType =
+export type KnowledgeItemEdgeType =
   | "part_of"
   | "defines"
   | "governs"

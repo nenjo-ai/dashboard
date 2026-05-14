@@ -315,8 +315,9 @@ function isCatalogUrl(url: string): boolean {
   if (url === projectsUrl()) return true;
   if (url === modelsUrl()) return true;
   if (url.startsWith(`${modelsUrl()}?`)) return true;
-  if (/\/api\/v1\/projects\/[^/]+\/documents$/.test(url)) return true;
-  if (/\/api\/v1\/projects\/[^/]+\/documents\/[^/]+\/edges$/.test(url)) return true;
+  if (/\/api\/v1\/knowledge$/.test(url)) return true;
+  if (/\/api\/v1\/knowledge\/[^/]+\/items$/.test(url)) return true;
+  if (/\/api\/v1\/knowledge\/[^/]+\/items\/[^/]+\/edges$/.test(url)) return true;
   return [
     agentsUrl(),
     domainsUrl(),
@@ -510,14 +511,15 @@ function invalidateRoutinesCatalogCache(): void {
   clearCatalogCache(routinesUrl());
 }
 
-function invalidateProjectDocumentsCatalogCache(projectId: string): void {
-  clearCatalogCache(projectDocumentsUrl(projectId));
+function invalidateKnowledgeCatalogCache(packId?: string): void {
+  clearCatalogCache(knowledgePacksUrl());
+  if (packId) clearCatalogCache(knowledgeItemsUrl(packId));
 }
 
-function invalidateProjectDocumentCache(projectId: string, docId: string): void {
-  invalidateProjectDocumentsCatalogCache(projectId);
-  clearCatalogCache(projectDocumentEdgesUrl(projectId, docId));
-  clearDocumentContentCache(projectDocumentContentUrl(projectId, docId));
+function invalidateKnowledgeItemCache(packId: string, itemId: string): void {
+  invalidateKnowledgeCatalogCache(packId);
+  clearCatalogCache(knowledgeItemEdgesUrl(packId, itemId));
+  clearDocumentContentCache(knowledgeItemContentUrl(packId, itemId));
 }
 
 // ---------------------------------------------------------------------------
@@ -1019,45 +1021,89 @@ export async function fetchAllTags(projectId?: string): Promise<string[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Project Documents (Garage object storage)
+// Knowledge (Garage object storage)
 // ---------------------------------------------------------------------------
 
-export function projectDocumentsUrl(projectId: string): string {
-  return `${API_V1}/projects/${projectId}/documents`;
+export function knowledgePacksUrl(): string {
+  return `${API_V1}/knowledge`;
 }
 
-export function projectDocumentUrl(projectId: string, docId: string): string {
-  return `${API_V1}/projects/${projectId}/documents/${docId}`;
+export function knowledgePackUrl(packId: string): string {
+  return `${API_V1}/knowledge/${packId}`;
 }
 
-export async function fetchProjectDocuments(
-  projectId: string,
-): Promise<import("./types").ProjectDocument[]> {
-  return catalogFetcher(projectDocumentsUrl(projectId));
+export function knowledgeItemsUrl(packId: string): string {
+  return `${knowledgePackUrl(packId)}/items`;
 }
 
-export async function uploadProjectDocument(
-  projectId: string,
+export function knowledgeItemUrl(packId: string, itemId: string): string {
+  return `${knowledgeItemsUrl(packId)}/${itemId}`;
+}
+
+function knowledgeItemUploadsUrl(packId: string): string {
+  return `${knowledgeItemsUrl(packId)}/uploads`;
+}
+
+function knowledgeItemUploadCompleteUrl(packId: string, itemId: string): string {
+  return `${knowledgeItemUploadsUrl(packId)}/${itemId}/complete`;
+}
+
+export async function fetchKnowledgePacks(): Promise<import("./types").KnowledgePack[]> {
+  return catalogFetcher(knowledgePacksUrl());
+}
+
+export async function createKnowledgePack(
+  data: Pick<import("./types").KnowledgePack, "name"> & Partial<Pick<import("./types").KnowledgePack, "slug" | "description">>,
+): Promise<import("./types").KnowledgePack> {
+  const res = await authFetch(knowledgePacksUrl(), {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  const pack = await res.json() as import("./types").KnowledgePack;
+  invalidateKnowledgeCatalogCache();
+  return pack;
+}
+
+export async function updateKnowledgePack(
+  packId: string,
+  data: Partial<Pick<import("./types").KnowledgePack, "name" | "slug" | "description" | "status">>,
+): Promise<import("./types").KnowledgePack> {
+  const res = await authFetch(knowledgePackUrl(packId), {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  const pack = await res.json() as import("./types").KnowledgePack;
+  invalidateKnowledgeCatalogCache(packId);
+  return pack;
+}
+
+export async function deleteKnowledgePack(packId: string): Promise<void> {
+  await authFetch(knowledgePackUrl(packId), { method: "DELETE" });
+  invalidateKnowledgeCatalogCache(packId);
+}
+
+export async function fetchKnowledgeItems(
+  packId: string,
+): Promise<import("./types").KnowledgeItem[]> {
+  return catalogFetcher(knowledgeItemsUrl(packId));
+}
+
+export async function uploadKnowledgeItem(
+  packId: string,
   file: File,
-  metadata?: Partial<Pick<import("./types").ProjectDocument, "path" | "title" | "kind" | "authority" | "summary" | "status" | "tags" | "aliases" | "keywords">>,
-): Promise<import("./types").ProjectDocument> {
-  const formData = new FormData();
-  formData.append("file", file);
-  if (metadata?.path) formData.append("path", metadata.path);
-  if (metadata?.title) formData.append("title", metadata.title);
-  if (metadata?.kind) formData.append("kind", metadata.kind);
-  if (metadata?.authority) formData.append("authority", metadata.authority);
-  if (metadata?.summary) formData.append("summary", metadata.summary);
-  if (metadata?.status) formData.append("status", metadata.status);
-  if (metadata?.tags) formData.append("tags", JSON.stringify(metadata.tags));
-  if (metadata?.aliases) formData.append("aliases", JSON.stringify(metadata.aliases));
-  if (metadata?.keywords) formData.append("keywords", JSON.stringify(metadata.keywords));
+  metadata?: Partial<Pick<import("./types").KnowledgeItem, "slug" | "path" | "title" | "kind" | "authority" | "summary" | "status" | "tags" | "aliases" | "keywords">>,
+): Promise<import("./types").KnowledgeItem> {
+  if (file.size > 20 * 1024 * 1024) {
+    throw new ApiError("Knowledge items are limited to 20 MB.", 400);
+  }
+  let uploadFile = file;
+  let encryptedPayload: EncryptedPayload | null = null;
   if (isTextDocumentFile(file)) {
     const currentUser = await fetchCurrentUser();
     if (!currentUser.org_id) {
-      throw new ApiError("An active org is required before uploading shared documents", 400);
+      throw new ApiError("An active org is required before uploading knowledge items", 400);
     }
-    const encryptedPayload = await encryptOrgContentPayload({
+    encryptedPayload = await encryptOrgContentPayload({
       orgId: currentUser.org_id,
       objectId: crypto.randomUUID(),
       objectType: "manifest.document.content",
@@ -1069,41 +1115,76 @@ export async function uploadProjectDocument(
         409,
       );
     }
-    formData.append("encrypted_payload", JSON.stringify(encryptedPayload));
+    uploadFile = new File([JSON.stringify(encryptedPayload)], file.name, {
+      type: file.type || "text/plain",
+    });
   }
 
-  // For file uploads, we need to let the browser set the Content-Type
-  // (with boundary), so we override the default JSON content type.
-  const headers = await authHeaders();
-  delete headers["Content-Type"];
+  const contentType = file.type || "application/octet-stream";
+  const uploadMetadata = {
+    slug: metadata?.slug,
+    path: metadata?.path,
+    title: metadata?.title,
+    kind: metadata?.kind,
+    authority: metadata?.authority,
+    summary: metadata?.summary,
+    status: metadata?.status,
+    tags: metadata?.tags ?? [],
+    aliases: metadata?.aliases ?? [],
+    keywords: metadata?.keywords ?? [],
+  };
+  const uploadRequest = {
+    filename: file.name,
+    content_type: contentType,
+    size_bytes: uploadFile.size,
+    metadata: uploadMetadata,
+    encrypted_payload: encryptedPayload,
+  };
 
-  const res = await fetch(projectDocumentsUrl(projectId), {
+  const initRes = await authFetch(knowledgeItemUploadsUrl(packId), {
     method: "POST",
-    headers,
-    body: formData,
+    body: JSON.stringify(uploadRequest),
   });
+  const init = await initRes.json() as {
+    doc_id: string;
+    upload_url: string;
+    expires_in: number;
+    headers?: Record<string, string>;
+  };
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "Unknown error");
-    throw new ApiError(body, res.status);
+  const put = await fetch(init.upload_url, {
+    method: "PUT",
+    headers: init.headers ?? { "Content-Type": contentType },
+    body: uploadFile,
+  });
+  if (!put.ok) {
+    const body = await put.text().catch(() => "Upload failed");
+    throw new ApiError(body || "Upload failed", put.status);
   }
 
-  const document = await res.json() as import("./types").ProjectDocument;
-  invalidateProjectDocumentsCatalogCache(projectId);
-  return document;
+  const completeRes = await authFetch(
+    knowledgeItemUploadCompleteUrl(packId, init.doc_id),
+    {
+      method: "POST",
+      body: JSON.stringify(uploadRequest),
+    },
+  );
+  const item = await completeRes.json() as import("./types").KnowledgeItem;
+  invalidateKnowledgeCatalogCache(packId);
+  return item;
 }
 
-export async function createProjectDocument(
-  projectId: string,
-): Promise<import("./types").ProjectDocument> {
+export async function createKnowledgeItem(
+  packId: string,
+): Promise<import("./types").KnowledgeItem> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const title = "Untitled document";
+  const title = "Untitled knowledge";
   const filename = `untitled-${timestamp}.md`;
   const file = new File([`# ${title}\n\n`], filename, {
     type: "text/markdown",
   });
 
-  return uploadProjectDocument(projectId, file, {
+  return uploadKnowledgeItem(packId, file, {
     title,
     kind: "guide",
     authority: "draft",
@@ -1111,35 +1192,35 @@ export async function createProjectDocument(
   });
 }
 
-export async function deleteProjectDocument(
-  projectId: string,
-  docId: string,
+export async function deleteKnowledgeItem(
+  packId: string,
+  itemId: string,
 ): Promise<void> {
-  await authFetch(projectDocumentUrl(projectId, docId), {
+  await authFetch(knowledgeItemUrl(packId, itemId), {
     method: "DELETE",
   });
-  invalidateProjectDocumentCache(projectId, docId);
+  invalidateKnowledgeItemCache(packId, itemId);
 }
 
-export function downloadProjectDocumentUrl(
-  projectId: string,
-  docId: string,
+export function downloadKnowledgeItemUrl(
+  packId: string,
+  itemId: string,
 ): string {
-  return projectDocumentUrl(projectId, docId);
+  return knowledgeItemUrl(packId, itemId);
 }
 
-export function projectDocumentContentUrl(
-  projectId: string,
-  docId: string,
+export function knowledgeItemContentUrl(
+  packId: string,
+  itemId: string,
 ): string {
-  return `${API_V1}/projects/${projectId}/documents/${docId}/content`;
+  return `${knowledgeItemUrl(packId, itemId)}/content`;
 }
 
-export async function fetchDocumentContent(
-  projectId: string,
-  docId: string,
+export async function fetchKnowledgeItemContent(
+  packId: string,
+  itemId: string,
 ): Promise<DocumentContentResult> {
-  const url = projectDocumentContentUrl(projectId, docId);
+  const url = knowledgeItemContentUrl(packId, itemId);
   const cached = readDocumentContentCache(url);
   if (cached) return cached;
 
@@ -1167,12 +1248,12 @@ export async function fetchDocumentContent(
       writeDocumentContentCache(url, result);
       return result;
     } catch (error) {
-      console.warn("Failed to parse decrypted document content payload", {
-        docId,
+      console.warn("Failed to parse decrypted knowledge content payload", {
+        itemId,
         objectId: response.encrypted_payload.object_id,
         error,
       });
-      throw new ApiError("Shared document content was not encoded correctly", 500);
+      throw new ApiError("Shared knowledge content was not encoded correctly", 500);
     }
   }
 
@@ -1186,18 +1267,18 @@ export async function fetchDocumentContent(
   return result;
 }
 
-export async function updateDocumentContent(
-  projectId: string,
-  docId: string,
+export async function updateKnowledgeItemContent(
+  packId: string,
+  itemId: string,
   content: string,
-): Promise<import("./types").ProjectDocument> {
+): Promise<import("./types").KnowledgeItem> {
   const currentUser = await fetchCurrentUser();
   if (!currentUser.org_id) {
-    throw new ApiError("An active org is required before updating shared documents", 400);
+    throw new ApiError("An active org is required before updating shared knowledge", 400);
   }
   const encryptedPayload = await encryptOrgContentPayload({
     orgId: currentUser.org_id,
-    objectId: docId,
+    objectId: itemId,
     objectType: "manifest.document.content",
     plaintext: JSON.stringify(content),
   });
@@ -1207,14 +1288,14 @@ export async function updateDocumentContent(
       409,
     );
   }
-  const res = await authFetch(projectDocumentContentUrl(projectId, docId), {
+  const res = await authFetch(knowledgeItemContentUrl(packId, itemId), {
     method: "PUT",
-    body: JSON.stringify({ content, encrypted_payload: encryptedPayload }),
+    body: JSON.stringify({ encrypted_payload: encryptedPayload }),
   });
 
-  const document = await res.json() as import("./types").ProjectDocument;
-  invalidateProjectDocumentCache(projectId, docId);
-  return document;
+  const item = await res.json() as import("./types").KnowledgeItem;
+  invalidateKnowledgeItemCache(packId, itemId);
+  return item;
 }
 
 function isTextDocumentFile(file: File): boolean {
@@ -1244,59 +1325,59 @@ function isTextDocumentFile(file: File): boolean {
   ].includes(ext);
 }
 
-export async function updateProjectDocumentMetadata(
-  projectId: string,
-  docId: string,
-  data: Partial<Pick<import("./types").ProjectDocument, "filename" | "path" | "title" | "kind" | "authority" | "summary" | "status" | "tags" | "aliases" | "keywords">>,
-): Promise<import("./types").ProjectDocument> {
-  const res = await authFetch(projectDocumentUrl(projectId, docId), {
+export async function updateKnowledgeItemMetadata(
+  packId: string,
+  itemId: string,
+  data: Partial<Pick<import("./types").KnowledgeItem, "filename" | "path" | "title" | "kind" | "authority" | "summary" | "status" | "tags" | "aliases" | "keywords">>,
+): Promise<import("./types").KnowledgeItem> {
+  const res = await authFetch(knowledgeItemUrl(packId, itemId), {
     method: "PATCH",
     body: JSON.stringify(data),
   });
 
-  const document = await res.json() as import("./types").ProjectDocument;
-  invalidateProjectDocumentCache(projectId, docId);
-  return document;
+  const item = await res.json() as import("./types").KnowledgeItem;
+  invalidateKnowledgeItemCache(packId, itemId);
+  return item;
 }
 
-export function projectDocumentEdgesUrl(projectId: string, docId: string): string {
-  return `${API_V1}/projects/${projectId}/documents/${docId}/edges`;
+export function knowledgeItemEdgesUrl(packId: string, itemId: string): string {
+  return `${knowledgeItemUrl(packId, itemId)}/edges`;
 }
 
-export async function fetchProjectDocumentEdges(
-  projectId: string,
-  docId: string,
-): Promise<import("./types").ProjectDocumentEdge[]> {
-  return catalogFetcher(projectDocumentEdgesUrl(projectId, docId));
+export async function fetchKnowledgeItemEdges(
+  packId: string,
+  itemId: string,
+): Promise<import("./types").KnowledgeItemEdge[]> {
+  return catalogFetcher(knowledgeItemEdgesUrl(packId, itemId));
 }
 
-export async function createProjectDocumentEdge(
-  projectId: string,
-  docId: string,
-  data: Pick<import("./types").ProjectDocumentEdge, "target_document_id" | "edge_type"> & { note?: string | null },
-): Promise<import("./types").ProjectDocumentEdge> {
-  const res = await authFetch(projectDocumentEdgesUrl(projectId, docId), {
+export async function createKnowledgeItemEdge(
+  packId: string,
+  itemId: string,
+  data: Pick<import("./types").KnowledgeItemEdge, "edge_type"> & { target_item_id: string; note?: string | null },
+): Promise<import("./types").KnowledgeItemEdge> {
+  const res = await authFetch(knowledgeItemEdgesUrl(packId, itemId), {
     method: "POST",
     body: JSON.stringify(data),
   });
 
-  const edge = await res.json() as import("./types").ProjectDocumentEdge;
-  invalidateProjectDocumentsCatalogCache(projectId);
-  clearCatalogCache(projectDocumentEdgesUrl(projectId, docId));
-  clearCatalogCache(projectDocumentEdgesUrl(projectId, edge.target_document_id));
+  const edge = await res.json() as import("./types").KnowledgeItemEdge;
+  invalidateKnowledgeCatalogCache(packId);
+  clearCatalogCache(knowledgeItemEdgesUrl(packId, itemId));
+  clearCatalogCache(knowledgeItemEdgesUrl(packId, edge.target_item_id));
   return edge;
 }
 
-export async function deleteProjectDocumentEdge(
-  projectId: string,
-  docId: string,
+export async function deleteKnowledgeItemEdge(
+  packId: string,
+  itemId: string,
   edgeId: string,
 ): Promise<void> {
-  await authFetch(`${projectDocumentEdgesUrl(projectId, docId)}/${edgeId}`, {
+  await authFetch(`${knowledgeItemEdgesUrl(packId, itemId)}/${edgeId}`, {
     method: "DELETE",
   });
-  invalidateProjectDocumentsCatalogCache(projectId);
-  clearCatalogCache(projectDocumentEdgesUrl(projectId, docId));
+  invalidateKnowledgeCatalogCache(packId);
+  clearCatalogCache(knowledgeItemEdgesUrl(packId, itemId));
 }
 
 // ---------------------------------------------------------------------------

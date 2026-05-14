@@ -392,7 +392,7 @@ const LayersSections = () => (
               { key:'"prompt_config":', val:'{', type:'normal' },
               { key:'"system_prompt":', val:'"You are a support agent.', type:'normal', indent:true },
               { key:'', val:' Be concise and helpful."', type:'normal', indent:true },
-              { key:'"developer_prompt":', val:'"{{project.documents}}"', type:'accent', indent:true },
+              { key:'"developer_prompt":', val:'"{{lib.product}}"', type:'accent', indent:true },
               { divider:true },
               { key:'"templates":', val:'{', type:'normal', indent:true },
               { key:'"task":', val:'"{{task}}"', type:'accent', indent:true, indent2:true },

@@ -28,6 +28,10 @@ export interface TemplateVariableReferenceProps {
   contextBlocksOnly?: boolean;
   /** If true, only show flat vars — no context blocks (for context block editor). */
   flatVarsOnly?: boolean;
+  /** Optional flat variable group allow-list. */
+  includeGroups?: string[];
+  /** Optional flat variable group deny-list. */
+  excludeGroups?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -38,6 +42,8 @@ export function TemplateVariableReference({
   onInsertVariable,
   contextBlocksOnly = false,
   flatVarsOnly = false,
+  includeGroups,
+  excludeGroups,
 }: TemplateVariableReferenceProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const { contextBlocks } = useContextBlocks();
@@ -47,14 +53,19 @@ export function TemplateVariableReference({
   // Falls back to empty if still loading (the loading state is shown separately).
   const flatVarGroups: VariableGroup[] = useMemo(() => {
     if (!varGroups || varGroups.length === 0) return [];
-    return varGroups.map((g) => ({
-      title: g.name,
-      variables: g.variables.map((v) => ({
-        name: v.name,
-        description: v.description,
-      })),
-    }));
-  }, [varGroups]);
+    const include = includeGroups ? new Set(includeGroups) : null;
+    const exclude = excludeGroups ? new Set(excludeGroups) : null;
+    return varGroups
+      .filter((g) => (include ? include.has(g.name) : true))
+      .filter((g) => (exclude ? !exclude.has(g.name) : true))
+      .map((g) => ({
+        title: g.name,
+        variables: g.variables.map((v) => ({
+          name: v.name,
+          description: v.description,
+        })),
+      }));
+  }, [varGroups, includeGroups, excludeGroups]);
 
   // Build context blocks group from DB — with dotted paths and group entries
   const contextBlockGroup: VariableGroup = useMemo(() => {

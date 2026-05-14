@@ -14,7 +14,8 @@ import {
   activityUrl,
   dependencyGraphUrl,
   modelsUrl,
-  projectDocumentsUrl,
+  knowledgeItemsUrl,
+  knowledgePacksUrl,
   apiKeysUrl,
   authMeUrl,
   currentOrgUrl,
@@ -51,7 +52,8 @@ import type {
   ExecutionTask,
   DependencyGraph,
   Model,
-  ProjectDocument,
+  KnowledgeItem,
+  KnowledgePack,
   ApiKey,
   RoutineSummary,
   RoutineDetail,
@@ -418,20 +420,36 @@ export function useDependencyGraph(projectId: string | undefined) {
 }
 
 // ---------------------------------------------------------------------------
-// Project Documents
+// Knowledge
 // ---------------------------------------------------------------------------
 
-export function useProjectDocuments(projectId: string | undefined) {
-  const url = projectId ? projectDocumentsUrl(projectId) : null;
+export function useKnowledgePacks() {
+  const { data, error, isLoading, mutate } = useSWR<KnowledgePack[]>(
+    knowledgePacksUrl(),
+    catalogFetcher,
+    catalogSWROptions,
+  );
 
-  const { data, error, isLoading, mutate } = useSWR<ProjectDocument[]>(
+  return {
+    packs: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useKnowledgeItems(packId: string | undefined) {
+  const url = packId ? knowledgeItemsUrl(packId) : null;
+
+  const { data, error, isLoading, mutate } = useSWR<KnowledgeItem[]>(
     url,
     catalogFetcher,
     catalogSWROptions,
   );
 
   return {
-    documents: data,
+    items: data,
     isLoading,
     isError: !!error,
     error,
