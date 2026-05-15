@@ -22,6 +22,19 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "mcp", label: "MCP" },
 ];
 
+function isManagedSkillAbility(ability: Ability): boolean {
+  return ability.source_type === "skill" || ability.read_only;
+}
+
+function metadataString(metadata: Record<string, unknown>, path: string[]): string | null {
+  let current: unknown = metadata;
+  for (const segment of path) {
+    if (!current || typeof current !== "object" || !(segment in current)) return null;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return typeof current === "string" && current.trim() ? current : null;
+}
+
 // ---------------------------------------------------------------------------
 // Main inline editor
 // ---------------------------------------------------------------------------
@@ -33,6 +46,7 @@ interface AbilityEditorInlineProps {
 }
 
 export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEditorInlineProps) {
+  const isManaged = isManagedSkillAbility(ability);
   const [activeTab, setActiveTab] = useState<TabId>("prompt");
   const [displayName, setDisplayName] = useState(ability.display_name ?? "");
   const [name, setName] = useState(ability.name);
@@ -58,6 +72,7 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
   }, [ability.id]);
 
   useEffect(() => {
+    if (isManaged) return;
     let cancelled = false;
     fetchAbilityPrompt(ability.id)
       .then((value) => {
@@ -67,9 +82,10 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
     return () => {
       cancelled = true;
     };
-  }, [ability.id]);
+  }, [ability.id, isManaged]);
 
   const handleSave = useCallback(async () => {
+    if (isManaged) return;
     setSaving(true);
     setError(null);
     setSaved(false);
@@ -87,18 +103,23 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
     } finally {
       setSaving(false);
     }
-  }, [ability.id, displayName, activationCondition, prompt, onSaved]);
+  }, [ability.id, displayName, activationCondition, prompt, onSaved, isManaged]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (isManaged) return;
     if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       handleSave();
     }
-  }, [handleSave]);
+  }, [handleSave, isManaged]);
 
   const handleInsertVariable = useCallback((text: string) => {
     editorRef.current?.insertAtCursor(text);
   }, []);
+
+  if (isManaged) {
+    return <ManagedAbilityDetails ability={ability} />;
+  }
 
   return (
     <div ref={containerRef} tabIndex={-1} onKeyDown={handleKeyDown} className="flex h-full flex-col outline-none">
@@ -224,6 +245,135 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
           {error && <span className="text-red-500 dark:text-red-400">{error}</span>}
         </div>
       )}
+    </div>
+  );
+}
+
+function ManagedAbilityDetails({ ability }: { ability: Ability }) {
+  const { mcpServers, isLoading } = useMcpServers();
+  const attachedServers = useMemo(() => {
+    const assigned = new Set(ability.mcp_server_ids);
+    return (mcpServers ?? []).filter((server) => assigned.has(server.id));
+  }, [ability.mcp_server_ids, mcpServers]);
+  const selector =
+    metadataString(ability.metadata, ["install", "selector"]) ??
+    metadataString(ability.metadata, ["selector"]);
+  const sourceRepo =
+    metadataString(ability.metadata, ["source", "repo"]) ??
+    metadataString(ability.metadata, ["install", "repo"]);
+  const sourceOwner =
+    metadataString(ability.metadata, ["source", "owner"]) ??
+    metadataString(ability.metadata, ["install", "owner"]);
+  const sourceRef =
+    metadataString(ability.metadata, ["version", "requested_ref"]) ??
+    metadataString(ability.metadata, ["version", "ref"]) ??
+    metadataString(ability.metadata, ["source", "ref"]);
+  const sourceLabel = sourceOwner && sourceRepo ? `${sourceOwner}/${sourceRepo}` : sourceRepo;
+
+  return (
+    <div className="flex h-full flex-col outline-none">
+      <div className="theme-border flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="theme-text truncate text-sm font-semibold">
+              {ability.display_name || ability.name}
+            </h2>
+            <span className="theme-surface-muted-strong theme-text shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium">
+              {ability.source_type === "skill" ? "Skill" : "Read-only"}
+            </span>
+            {ability.is_system && (
+              <span className="theme-surface-muted theme-text-muted shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium">
+                System
+              </span>
+            )}
+          </div>
+          <div className="mt-1 flex min-w-0 items-center gap-2">
+            <code className="theme-surface-muted theme-text-muted rounded px-1.5 py-0.5 text-xs">
+              {ability.name}
+            </code>
+            {selector && (
+              <code className="theme-text-muted truncate text-xs">
+                {selector}
+              </code>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="max-w-3xl space-y-4">
+          {ability.description && (
+            <section>
+              <h3 className="theme-text-muted mb-1 text-[10px] font-semibold uppercase tracking-wider">Description</h3>
+              <p className="theme-text text-sm">{ability.description}</p>
+            </section>
+          )}
+
+          <section>
+            <h3 className="theme-text-muted mb-1 text-[10px] font-semibold uppercase tracking-wider">Activation</h3>
+            <p className="theme-surface-muted theme-text rounded-md px-3 py-2 text-sm">
+              {ability.activation_condition || "No activation condition configured."}
+            </p>
+          </section>
+
+          <section>
+            <h3 className="theme-text-muted mb-1 text-[10px] font-semibold uppercase tracking-wider">Source</h3>
+            <div className="theme-border theme-surface-muted grid gap-2 rounded-lg border p-3 text-sm sm:grid-cols-2">
+              <ReadOnlyField label="Type" value={ability.source_type === "skill" ? "Skill" : "Managed ability"} />
+              <ReadOnlyField label="Repository" value={sourceLabel ?? "Unknown"} />
+              <ReadOnlyField label="Ref" value={sourceRef ?? "Pinned by marketplace"} />
+              <ReadOnlyField label="Selector" value={selector ?? "Not set"} />
+            </div>
+          </section>
+
+          <section>
+            <h3 className="theme-text-muted mb-1 text-[10px] font-semibold uppercase tracking-wider">Attached MCP</h3>
+            {isLoading ? (
+              <LoadingSkeleton />
+            ) : attachedServers.length > 0 ? (
+              <div className="space-y-1.5">
+                {attachedServers.map((server) => (
+                  <div key={server.id} className="theme-border theme-surface-muted flex items-center justify-between rounded-lg border px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="theme-text truncate text-sm font-medium">{server.display_name}</p>
+                      {server.description && <p className="theme-text-muted truncate text-xs">{server.description}</p>}
+                    </div>
+                    <span className="theme-surface-muted-strong theme-text-muted ml-3 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium">
+                      {server.transport}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyMessage text="No MCP servers attached." />
+            )}
+          </section>
+
+          <section>
+            <h3 className="theme-text-muted mb-1 text-[10px] font-semibold uppercase tracking-wider">Platform Scopes</h3>
+            {ability.platform_scopes.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {ability.platform_scopes.map((scope) => (
+                  <code key={scope} className="theme-surface-muted theme-text-muted rounded px-1.5 py-0.5 text-xs">
+                    {scope}
+                  </code>
+                ))}
+              </div>
+            ) : (
+              <EmptyMessage text="No platform scopes assigned." />
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="theme-text-muted text-[10px] font-semibold uppercase tracking-wider">{label}</div>
+      <div className="theme-text mt-0.5 truncate text-xs">{value}</div>
     </div>
   );
 }

@@ -52,7 +52,7 @@ export function Tabs({ tabs, activeTab, onChange, className, layoutId = "tab-ind
           const className = cn(
             "relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
             isActive
-              ? "text-gray-900 dark:text-gray-100"
+              ? "text-gray-950 dark:text-gray-950"
               : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
           );
           const content = (
@@ -60,7 +60,7 @@ export function Tabs({ tabs, activeTab, onChange, className, layoutId = "tab-ind
               {isActive && (
                 <motion.div
                   layoutId={layoutId}
-                  className="theme-surface-elevated pointer-events-none absolute inset-0 rounded-md shadow-xs"
+                  className="pointer-events-none absolute inset-0 rounded-md bg-sunflower-gold-500 shadow-xs dark:bg-sunflower-gold-500"
                   transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
                 />
               )}
@@ -72,7 +72,7 @@ export function Tabs({ tabs, activeTab, onChange, className, layoutId = "tab-ind
                     className={cn(
                       "ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
                       isActive
-                        ? "bg-deep-space-blue-100 text-deep-space-blue-700 dark:bg-deep-space-blue-900/50 dark:text-deep-space-blue-300"
+                        ? "bg-white/70 text-gray-900 dark:bg-white/70 dark:text-gray-900"
                         : "bg-gray-200 text-gray-500 dark:bg-gray-600 dark:text-gray-400",
                     )}
                   >

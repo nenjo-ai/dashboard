@@ -318,6 +318,7 @@ function isCatalogUrl(url: string): boolean {
   if (/\/api\/v1\/knowledge$/.test(url)) return true;
   if (/\/api\/v1\/knowledge\/[^/]+\/items$/.test(url)) return true;
   if (/\/api\/v1\/knowledge\/[^/]+\/items\/[^/]+\/edges$/.test(url)) return true;
+  if (/\/api\/v1\/marketplaces$/.test(url)) return true;
   return [
     agentsUrl(),
     domainsUrl(),
@@ -501,6 +502,11 @@ function invalidateContextBlocksCatalogCache(): void {
 
 function invalidateMcpServersCatalogCache(): void {
   clearCatalogCache(mcpServersUrl());
+}
+
+function invalidateMarketplacesCatalogCache(sourceId?: string): void {
+  clearCatalogCache(marketplaceSourcesUrl());
+  void sourceId;
 }
 
 function invalidateCouncilsCatalogCache(): void {
@@ -1028,6 +1034,10 @@ export function knowledgePacksUrl(): string {
   return `${API_V1}/knowledge`;
 }
 
+export function knowledgePackInstallUrl(): string {
+  return `${knowledgePacksUrl()}/install`;
+}
+
 export function knowledgePackUrl(packId: string): string {
   return `${API_V1}/knowledge/${packId}`;
 }
@@ -1062,6 +1072,92 @@ export async function createKnowledgePack(
   const pack = await res.json() as import("./types").KnowledgePack;
   invalidateKnowledgeCatalogCache();
   return pack;
+}
+
+export async function installKnowledgePack(
+  data: import("./types").InstallKnowledgePackRequest,
+): Promise<import("./types").KnowledgePack> {
+  const res = await authFetch(knowledgePackInstallUrl(), {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  const pack = await res.json() as import("./types").KnowledgePack;
+  invalidateKnowledgeCatalogCache();
+  return pack;
+}
+
+// ---------------------------------------------------------------------------
+// Marketplaces
+// ---------------------------------------------------------------------------
+
+export function marketplaceSourcesUrl(): string {
+  return `${API_V1}/marketplaces`;
+}
+
+export function marketplaceSourceUrl(sourceId: string): string {
+  return `${marketplaceSourcesUrl()}/${sourceId}`;
+}
+
+export function marketplaceClaudePluginInstallUrl(sourceId: string): string {
+  return `${marketplaceSourcesUrl()}/${sourceId}/install/claude-plugin`;
+}
+
+export async function fetchMarketplaceSources(): Promise<import("./types").MarketplaceSource[]> {
+  return catalogFetcher(marketplaceSourcesUrl());
+}
+
+export async function createMarketplaceSource(
+  data: import("./types").CreateMarketplaceSourceRequest,
+): Promise<import("./types").MarketplaceSource> {
+  const res = await authFetch(marketplaceSourcesUrl(), {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  const source = await res.json() as import("./types").MarketplaceSource;
+  invalidateMarketplacesCatalogCache();
+  return source;
+}
+
+export async function updateMarketplaceSource(
+  sourceId: string,
+  data: import("./types").UpdateMarketplaceSourceRequest,
+): Promise<import("./types").MarketplaceSource> {
+  const res = await authFetch(marketplaceSourceUrl(sourceId), {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  const source = await res.json() as import("./types").MarketplaceSource;
+  invalidateMarketplacesCatalogCache(sourceId);
+  return source;
+}
+
+export async function deleteMarketplaceSource(sourceId: string): Promise<void> {
+  await authFetch(marketplaceSourceUrl(sourceId), { method: "DELETE" });
+  invalidateMarketplacesCatalogCache(sourceId);
+}
+
+export function marketplacePluginInstallUrl(mcpServerId: string): string {
+  return `${marketplaceSourcesUrl()}/plugin-installs/${mcpServerId}`;
+}
+
+export async function uninstallPluginInstall(mcpServerId: string): Promise<void> {
+  await authFetch(marketplacePluginInstallUrl(mcpServerId), { method: "DELETE" });
+  invalidateAbilitiesCatalogCache();
+  invalidateMcpServersCatalogCache();
+}
+
+export async function installClaudePlugin(
+  sourceId: string,
+  data: import("./types").InstallClaudePluginRequest,
+): Promise<import("./types").InstallClaudePluginResponse> {
+  const res = await authFetch(marketplaceClaudePluginInstallUrl(sourceId), {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  const install = await res.json() as import("./types").InstallClaudePluginResponse;
+  invalidateAbilitiesCatalogCache();
+  invalidateMcpServersCatalogCache();
+  return install;
 }
 
 export async function updateKnowledgePack(
@@ -3340,6 +3436,10 @@ export function abilitiesUrl(): string {
   return `${API_V1}/abilities`;
 }
 
+export function skillsInstallUrl(): string {
+  return `${abilitiesUrl()}/install`;
+}
+
 export function abilityUrl(id: string): string {
   return `${API_V1}/abilities/${id}`;
 }
@@ -3391,6 +3491,18 @@ export async function createAbility(
   return ability;
 }
 
+export async function installSkill(
+  data: import("./types").InstallSkillRequest,
+): Promise<import("./types").Ability> {
+  const res = await authFetch(skillsInstallUrl(), {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  const ability = await res.json() as import("./types").Ability;
+  invalidateAbilitiesCatalogCache();
+  return ability;
+}
+
 export async function updateAbility(
   id: string,
   data: import("./types").UpdateAbilityRequest,
@@ -3398,6 +3510,18 @@ export async function updateAbility(
   const res = await authFetch(abilityUrl(id), {
     method: "PATCH",
     body: JSON.stringify(data),
+  });
+  invalidateAbilitiesCatalogCache();
+  return res.json() as Promise<import("./types").Ability>;
+}
+
+export async function updateSkillRuntimeEnvNames(
+  id: string,
+  envNames: string[],
+): Promise<import("./types").Ability> {
+  const res = await authFetch(`${abilityUrl(id)}/skill-runtime`, {
+    method: "PATCH",
+    body: JSON.stringify({ env_names: envNames }),
   });
   invalidateAbilitiesCatalogCache();
   return res.json() as Promise<import("./types").Ability>;
@@ -3452,6 +3576,11 @@ export async function updateAbilityPrompt(
 
 export async function deleteAbility(id: string): Promise<void> {
   await authFetch(abilityUrl(id), { method: "DELETE" });
+  invalidateAbilitiesCatalogCache();
+}
+
+export async function uninstallSkillAbility(id: string): Promise<void> {
+  await authFetch(`${abilityUrl(id)}/uninstall`, { method: "DELETE" });
   invalidateAbilitiesCatalogCache();
 }
 
