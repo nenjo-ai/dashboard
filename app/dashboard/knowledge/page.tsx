@@ -979,7 +979,7 @@ function githubInstallMetadata(
     distribution: {
       type: "github_directory",
       path,
-      ...(kind === "skill" ? { entrypoint: "SKILL.md" } : { manifest_path: "knowledge_manifest.yaml" }),
+      ...(kind === "skill" ? { entrypoint: "SKILL.md" } : { manifest_path: "manifest.yaml" }),
     },
   };
 }

@@ -236,6 +236,9 @@ async function authFetch(
     if (initHeaders) {
       Object.assign(headers, initHeaders);
     }
+    if (typeof FormData !== "undefined" && init?.body instanceof FormData) {
+      delete headers["Content-Type"];
+    }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -1050,14 +1053,6 @@ export function knowledgeItemUrl(packId: string, itemId: string): string {
   return `${knowledgeItemsUrl(packId)}/${itemId}`;
 }
 
-function knowledgeItemUploadsUrl(packId: string): string {
-  return `${knowledgeItemsUrl(packId)}/uploads`;
-}
-
-function knowledgeItemUploadCompleteUrl(packId: string, itemId: string): string {
-  return `${knowledgeItemUploadsUrl(packId)}/${itemId}/complete`;
-}
-
 export async function fetchKnowledgePacks(): Promise<import("./types").KnowledgePack[]> {
   return catalogFetcher(knowledgePacksUrl());
 }
@@ -1192,80 +1187,64 @@ export async function uploadKnowledgeItem(
   if (file.size > 20 * 1024 * 1024) {
     throw new ApiError("Knowledge items are limited to 20 MB.", 400);
   }
-  let uploadFile = file;
-  let encryptedPayload: EncryptedPayload | null = null;
-  if (isTextDocumentFile(file)) {
-    const currentUser = await fetchCurrentUser();
-    if (!currentUser.org_id) {
-      throw new ApiError("An active org is required before uploading knowledge items", 400);
+  if (!isTextDocumentFile(file)) {
+    throw new ApiError(
+      "Browser knowledge uploads must be text documents so they can be encrypted before upload.",
+      400,
+    );
+  }
+  const currentUser = await fetchCurrentUser();
+  if (!currentUser.org_id) {
+    throw new ApiError("An active org is required before uploading knowledge items", 400);
+  }
+  const encryptedPayload = await encryptOrgContentPayload({
+    orgId: currentUser.org_id,
+    objectId: crypto.randomUUID(),
+    objectType: "manifest.document.content",
+    plaintext: JSON.stringify(await file.text()),
+  });
+  if (!encryptedPayload) {
+    throw new ApiError(
+      "Shared document encryption is not available on this device for the current org",
+      409,
+    );
+  }
+  const uploadFile = new File([JSON.stringify(encryptedPayload)], file.name, {
+    type: file.type || "text/plain",
+  });
+
+  const form = new FormData();
+  form.append("file", uploadFile, file.name);
+  form.append("encrypted_payload", JSON.stringify(encryptedPayload));
+
+  const appendOptional = (key: string, value: string | undefined | null) => {
+    const trimmed = value?.trim();
+    if (trimmed) {
+      form.append(key, trimmed);
     }
-    encryptedPayload = await encryptOrgContentPayload({
-      orgId: currentUser.org_id,
-      objectId: crypto.randomUUID(),
-      objectType: "manifest.document.content",
-      plaintext: JSON.stringify(await file.text()),
-    });
-    if (!encryptedPayload) {
-      throw new ApiError(
-        "Shared document encryption is not available on this device for the current org",
-        409,
-      );
-    }
-    uploadFile = new File([JSON.stringify(encryptedPayload)], file.name, {
-      type: file.type || "text/plain",
-    });
+  };
+  appendOptional("slug", metadata?.slug);
+  appendOptional("path", metadata?.path);
+  appendOptional("title", metadata?.title);
+  appendOptional("kind", metadata?.kind);
+  appendOptional("authority", metadata?.authority);
+  appendOptional("summary", metadata?.summary);
+  appendOptional("status", metadata?.status);
+  if (metadata?.tags?.length) {
+    form.append("tags", JSON.stringify(metadata.tags));
+  }
+  if (metadata?.aliases?.length) {
+    form.append("aliases", JSON.stringify(metadata.aliases));
+  }
+  if (metadata?.keywords?.length) {
+    form.append("keywords", JSON.stringify(metadata.keywords));
   }
 
-  const contentType = file.type || "application/octet-stream";
-  const uploadMetadata = {
-    slug: metadata?.slug,
-    path: metadata?.path,
-    title: metadata?.title,
-    kind: metadata?.kind,
-    authority: metadata?.authority,
-    summary: metadata?.summary,
-    status: metadata?.status,
-    tags: metadata?.tags ?? [],
-    aliases: metadata?.aliases ?? [],
-    keywords: metadata?.keywords ?? [],
-  };
-  const uploadRequest = {
-    filename: file.name,
-    content_type: contentType,
-    size_bytes: uploadFile.size,
-    metadata: uploadMetadata,
-    encrypted_payload: encryptedPayload,
-  };
-
-  const initRes = await authFetch(knowledgeItemUploadsUrl(packId), {
+  const res = await authFetch(knowledgeItemsUrl(packId), {
     method: "POST",
-    body: JSON.stringify(uploadRequest),
+    body: form,
   });
-  const init = await initRes.json() as {
-    doc_id: string;
-    upload_url: string;
-    expires_in: number;
-    headers?: Record<string, string>;
-  };
-
-  const put = await fetch(init.upload_url, {
-    method: "PUT",
-    headers: init.headers ?? { "Content-Type": contentType },
-    body: uploadFile,
-  });
-  if (!put.ok) {
-    const body = await put.text().catch(() => "Upload failed");
-    throw new ApiError(body || "Upload failed", put.status);
-  }
-
-  const completeRes = await authFetch(
-    knowledgeItemUploadCompleteUrl(packId, init.doc_id),
-    {
-      method: "POST",
-      body: JSON.stringify(uploadRequest),
-    },
-  );
-  const item = await completeRes.json() as import("./types").KnowledgeItem;
+  const item = await res.json() as import("./types").KnowledgeItem;
   invalidateKnowledgeCatalogCache(packId);
   return item;
 }
@@ -1274,13 +1253,16 @@ export async function createKnowledgeItem(
   packId: string,
 ): Promise<import("./types").KnowledgeItem> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const suffix = crypto.randomUUID().slice(0, 8);
   const title = "Untitled knowledge";
-  const filename = `untitled-${timestamp}.md`;
+  const slug = `untitled-${timestamp}-${suffix}`.toLowerCase();
+  const filename = `${slug}.md`;
   const file = new File([`# ${title}\n\n`], filename, {
     type: "text/markdown",
   });
 
   return uploadKnowledgeItem(packId, file, {
+    slug,
     title,
     kind: "guide",
     authority: "draft",
