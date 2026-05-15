@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   DndContext,
   type DragEndEvent,
@@ -47,6 +48,10 @@ interface FileNode {
 }
 
 type TreeEntry = FolderNode | FileNode;
+
+function canManageAbility(ability: Ability): boolean {
+  return !ability.is_system && !ability.read_only && ability.source_type !== "skill";
+}
 
 function buildTree(abilities: Ability[]): TreeEntry[] {
   const folderMap = new Map<string, FolderNode>();
@@ -128,16 +133,18 @@ function DraggableFile({
   onContextMenu: (e: React.MouseEvent) => void;
   depth: number;
 }) {
+  const canDrag = canManageAbility(ability);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: ability.id,
     data: { type: "ability", ability },
+    disabled: !canDrag,
   });
 
   return (
     <button
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
+      {...(canDrag ? listeners : {})}
+      {...(canDrag ? attributes : {})}
       type="button"
       onClick={onClick}
       onContextMenu={onContextMenu}
@@ -178,6 +185,11 @@ function DraggableFile({
             d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
           />
         </svg>
+      )}
+      {!ability.is_system && (ability.read_only || ability.source_type === "skill") && (
+        <span className="theme-surface-muted theme-text-muted shrink-0 rounded px-1 py-0.5 text-[9px] font-medium">
+          {ability.source_type === "skill" ? "Skill" : "Read-only"}
+        </span>
       )}
     </button>
   );
@@ -433,6 +445,7 @@ function FileContextMenu({
   onDelete: (ability: Ability) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const canManage = canManageAbility(ability);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -448,21 +461,27 @@ function FileContextMenu({
       className="theme-surface-elevated theme-border fixed z-50 w-40 rounded-lg border py-1 shadow-lg"
       style={{ left: x, top: y }}
     >
-      <button
-        type="button"
-        className="theme-text flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:[background:var(--app-hover)]"
-        onClick={() => onMoveTo(ability)}
-      >
-        Move to...
-      </button>
-      {!ability.is_system && (
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-flag-red-500 hover:bg-red-50 dark:hover:bg-red-900/30"
-          onClick={() => onDelete(ability)}
-        >
-          Delete
-        </button>
+      {canManage ? (
+        <>
+          <button
+            type="button"
+            className="theme-text flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:[background:var(--app-hover)]"
+            onClick={() => onMoveTo(ability)}
+          >
+            Move to...
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-flag-red-500 hover:bg-red-50 dark:hover:bg-red-900/30"
+            onClick={() => onDelete(ability)}
+          >
+            Delete
+          </button>
+        </>
+      ) : (
+        <div className="theme-text-muted px-3 py-1.5 text-xs">
+          Managed {ability.source_type === "skill" ? "skill" : "ability"}
+        </div>
       )}
     </div>
   );
@@ -500,6 +519,7 @@ function saveSelectedId(id: string | null) {
 
 export function AbilitiesExplorer() {
   const { abilities, isLoading, isError, mutate } = useAbilities();
+  const searchParams = useSearchParams();
   const [selectedAbility, setSelectedAbilityRaw] = useState<Ability | null>(null);
   const [expanded, setExpandedRaw] = useState<Set<string>>(loadExpanded);
   const [didRestore, setDidRestore] = useState(false);
@@ -531,14 +551,15 @@ export function AbilitiesExplorer() {
     });
   }, []);
 
-  // Restore selected ability from localStorage when data loads
+  // Restore selected ability from ?ability= query param or localStorage when data loads.
   useEffect(() => {
     if (didRestore || !abilities?.length) return;
-    const savedId = loadSelectedId();
-    if (savedId) {
-      const match = abilities.find((a) => a.id === savedId);
+    const targetId = searchParams.get("ability") ?? loadSelectedId();
+    if (targetId) {
+      const match = abilities.find((a) => a.id === targetId);
       if (match) {
         setSelectedAbilityRaw(match);
+        saveSelectedId(match.id);
         // Expand ancestor folders
         if (match.path) {
           const parts = match.path.split("/");
@@ -551,7 +572,7 @@ export function AbilitiesExplorer() {
       }
     }
     setDidRestore(true);
-  }, [abilities, didRestore]);
+  }, [abilities, didRestore, searchParams]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -597,7 +618,8 @@ export function AbilitiesExplorer() {
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
     if (active.data.current?.type === "ability") {
-      setDraggingAbility(active.data.current.ability as Ability);
+      const ability = active.data.current.ability as Ability;
+      if (canManageAbility(ability)) setDraggingAbility(ability);
     }
   }, []);
 
@@ -611,7 +633,7 @@ export function AbilitiesExplorer() {
       if (!overId.startsWith("folder:")) return;
       const newPath = overId.replace("folder:", "");
       const ability = abilities?.find((a) => a.id === abilityId);
-      if (!ability || ability.path === newPath) return;
+      if (!ability || !canManageAbility(ability) || ability.path === newPath) return;
       try {
         await moveAbility(abilityId, newPath);
         mutate();
@@ -625,6 +647,10 @@ export function AbilitiesExplorer() {
 
   const handleDeleteAbility = async () => {
     if (!confirmDeleteAbility) return;
+    if (!canManageAbility(confirmDeleteAbility)) {
+      setConfirmDeleteAbility(null);
+      return;
+    }
     setDeletingId(confirmDeleteAbility.id);
     try {
       await deleteAbility(confirmDeleteAbility.id);
@@ -690,6 +716,11 @@ export function AbilitiesExplorer() {
 
   const handleMoveAbility = useCallback(
     async (abilityId: string, newPath: string) => {
+      const ability = abilities?.find((a) => a.id === abilityId);
+      if (!ability || !canManageAbility(ability)) {
+        setMovingAbility(null);
+        return;
+      }
       try {
         await moveAbility(abilityId, newPath);
         mutate();
@@ -699,7 +730,7 @@ export function AbilitiesExplorer() {
       } catch { /* */ }
       setMovingAbility(null);
     },
-    [mutate],
+    [abilities, mutate],
   );
 
   if (isLoading) {
@@ -788,7 +819,7 @@ export function AbilitiesExplorer() {
               ability={currentSelected}
               onSaved={() => mutate()}
               onDelete={
-                currentSelected.is_system
+                !canManageAbility(currentSelected)
                   ? undefined
                   : () => setConfirmDeleteAbility(currentSelected)
               }

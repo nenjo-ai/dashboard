@@ -914,8 +914,24 @@ export interface KnowledgePack {
   name: string;
   description: string | null;
   status: "active" | "archived";
+  source_type: "uploaded" | "github";
+  read_only: boolean;
+  is_system: boolean;
+  metadata: Record<string, unknown>;
+  selector: string | null;
+  version: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface InstallKnowledgePackRequest {
+  name: string;
+  slug?: string;
+  description?: string | null;
+  selector: string;
+  source_type?: "github";
+  read_only?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 export interface KnowledgeItem {
@@ -1035,6 +1051,9 @@ export interface McpServer {
   category: string | null;
   tags: string[] | null;
   is_system: boolean;
+  source_type: "native" | "plugin";
+  read_only: boolean;
+  metadata: Record<string, unknown>;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -1093,6 +1112,7 @@ export interface UpdateContextBlockRequest {
 export interface Ability {
   id: string;
   name: string;
+  tool_name: string;
   path: string;
   display_name: string | null;
   description: string | null;
@@ -1101,6 +1121,9 @@ export interface Ability {
   platform_scopes: string[];
   mcp_server_ids: string[];
   is_system: boolean;
+  source_type: "native" | "skill";
+  read_only: boolean;
+  metadata: Record<string, unknown>;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -1117,6 +1140,108 @@ export interface CreateAbilityRequest {
   prompt?: string;
   platform_scopes?: string[];
   mcp_server_ids?: string[];
+  source_type?: "native" | "skill";
+  read_only?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface InstallSkillRequest {
+  name: string;
+  tool_name: string;
+  path?: string;
+  display_name?: string;
+  description?: string;
+  activation_condition?: string;
+  selector: string;
+  metadata?: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Marketplaces
+// ---------------------------------------------------------------------------
+
+export type MarketplaceSourceType = "github" | "url" | "local_system";
+export type MarketplacePackageKind = "knowledge_pack" | "skill" | "plugin";
+
+export interface MarketplaceSource {
+  id: string;
+  org_id: string | null;
+  name: string;
+  source_type: MarketplaceSourceType;
+  metadata: Record<string, unknown>;
+  status: "active" | "archived";
+  is_system: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MarketplacePackage {
+  id: string;
+  marketplace_source_id: string;
+  package_id: string;
+  kind: MarketplacePackageKind;
+  name: string;
+  display_name: string | null;
+  description: string | null;
+  latest_version: string | null;
+  metadata: Record<string, unknown>;
+  synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateMarketplaceSourceRequest {
+  name: string;
+  source_type: MarketplaceSourceType;
+  metadata?: Record<string, unknown>;
+}
+
+export interface UpdateMarketplaceSourceRequest {
+  name?: string;
+  metadata?: Record<string, unknown>;
+  status?: "active" | "archived";
+}
+
+export interface ClaudeMcpServerConfig {
+  command?: string | null;
+  args?: string[] | null;
+  url?: string | null;
+  transport?: "stdio" | "http" | string | null;
+  env?: Record<string, unknown>;
+  cwd?: string | null;
+}
+
+export interface InstallClaudeSkillRequest {
+  name: string;
+  display_name?: string | null;
+  description?: string | null;
+  entrypoint: string;
+  runtime?: {
+    env_names?: string[];
+  };
+}
+
+export interface InstallClaudePluginRequest {
+  name: string;
+  display_name?: string | null;
+  description?: string | null;
+  source: {
+    path: string;
+  };
+  version?: {
+    ref_?: string | null;
+    resolved_commit_sha?: string | null;
+    package_version?: string | null;
+  };
+  skills?: InstallClaudeSkillRequest[];
+  mcp_servers?: Record<string, ClaudeMcpServerConfig>;
+}
+
+export interface InstallClaudePluginResponse {
+  source: MarketplaceSource;
+  abilities: Ability[];
+  mcp_servers: McpServer[];
 }
 
 export interface UpdateAbilityRequest {

@@ -53,6 +53,7 @@ import type {
 
 interface KnowledgeSectionProps {
   packId: string;
+  readOnly?: boolean;
 }
 
 interface TreeNode {
@@ -266,7 +267,7 @@ function formatDate(iso: string): string {
   });
 }
 
-export function KnowledgeSection({ packId }: KnowledgeSectionProps) {
+export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const rightPanel = useResizablePanel(360, 300, 560);
 
@@ -424,6 +425,7 @@ export function KnowledgeSection({ packId }: KnowledgeSectionProps) {
 
   const handleUpload = useCallback(
     async (file: File) => {
+      if (readOnly) return;
       if (file.size > 20 * 1024 * 1024) {
         setUploadError("File exceeds maximum size of 20 MB.");
         return;
@@ -440,10 +442,11 @@ export function KnowledgeSection({ packId }: KnowledgeSectionProps) {
         setIsUploading(false);
       }
     },
-    [packId, mutateItems],
+    [packId, mutateItems, readOnly],
   );
 
   const handleCreateItem = useCallback(async () => {
+    if (readOnly) return;
     setIsCreatingItem(true);
     setUploadError(null);
     try {
@@ -458,10 +461,11 @@ export function KnowledgeSection({ packId }: KnowledgeSectionProps) {
     } finally {
       setIsCreatingItem(false);
     }
-  }, [packId, mutateItems]);
+  }, [packId, mutateItems, readOnly]);
 
   const handleDelete = useCallback(
     async (item: KnowledgeItem) => {
+      if (readOnly) return;
       try {
         await deleteKnowledgeItem(packId, item.id);
         await mutateItems();
@@ -474,10 +478,11 @@ export function KnowledgeSection({ packId }: KnowledgeSectionProps) {
         setConfirmDeleteId(null);
       }
     },
-    [packId, mutateItems, selectedItemId, items],
+    [packId, mutateItems, selectedItemId, items, readOnly],
   );
 
   const handleSaveContent = async () => {
+    if (readOnly) return;
     if (!selectedItemId) return;
     setIsSavingContent(true);
     setContentError(null);
@@ -495,6 +500,7 @@ export function KnowledgeSection({ packId }: KnowledgeSectionProps) {
   };
 
   const handleSaveMetadata = async () => {
+    if (readOnly) return;
     if (!selectedItemId) return;
     const filename = itemFilename.trim();
     if (!filename) {
@@ -527,6 +533,7 @@ export function KnowledgeSection({ packId }: KnowledgeSectionProps) {
   };
 
   const handleCreateEdge = async () => {
+    if (readOnly) return;
     if (!selectedItemId || !selectedTargetItemId) return;
     setIsSavingEdge(true);
     setEdgeError(null);
@@ -550,6 +557,7 @@ export function KnowledgeSection({ packId }: KnowledgeSectionProps) {
   };
 
   const handleDeleteEdge = async (edgeId: string) => {
+    if (readOnly) return;
     if (!selectedItemId) return;
     setEdgeError(null);
     try {
@@ -602,17 +610,19 @@ export function KnowledgeSection({ packId }: KnowledgeSectionProps) {
               <CardTitle className="text-base">Documents</CardTitle>
             </div>
             <CardDescription className="mt-1">
-              Edit content, metadata, tags, and relationships for this pack.
+              {readOnly ? "Browse documents, metadata, tags, and relationships for this pack." : "Edit content, metadata, tags, and relationships for this pack."}
             </CardDescription>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <div className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700">
               {(items?.length ?? 0).toLocaleString()} items
             </div>
-            <Button size="sm" onClick={handleCreateItem} disabled={isCreatingItem || isUploading}>
-              {isCreatingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              New Item
-            </Button>
+            {!readOnly ? (
+              <Button size="sm" onClick={handleCreateItem} disabled={isCreatingItem || isUploading}>
+                {isCreatingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                New Item
+              </Button>
+            ) : null}
           </div>
         </div>
       </CardHeader>
@@ -629,6 +639,7 @@ export function KnowledgeSection({ packId }: KnowledgeSectionProps) {
         <div className="flex min-h-[780px] overflow-hidden">
           <div className="theme-border theme-surface-muted flex w-72 shrink-0 flex-col overflow-hidden border-r">
             <div className="theme-border border-b px-3 py-2">
+              {!readOnly ? (
               <div
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
@@ -665,6 +676,7 @@ export function KnowledgeSection({ packId }: KnowledgeSectionProps) {
                   </>
                 )}
               </div>
+              ) : null}
               {uploadError ? (
                 <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
                   {uploadError}
