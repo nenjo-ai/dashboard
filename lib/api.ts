@@ -31,9 +31,6 @@ import type {
   ChatMessagePage,
   ChatSession,
   PromptContextVariableGroup,
-  Lambda,
-  CreateLambdaRequest,
-  UpdateLambdaRequest,
   ChatSessionExtended,
   PushConfigResponse,
   PushSubscriptionRecord,
@@ -61,7 +58,7 @@ const FETCH_TIMEOUT_MS = 15000;
 const RATE_LIMIT_MAX_ATTEMPTS = 3;
 const RATE_LIMIT_FALLBACK_DELAY_MS = 1000;
 const RATE_LIMIT_MAX_DELAY_MS = 10000;
-const CATALOG_CACHE_VERSION = 1;
+const CATALOG_CACHE_VERSION = 2;
 const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
 const CATALOG_CACHE_MAX_BYTES = 512 * 1024;
 const CATALOG_CACHE_PREFIX = "nenjo.catalog-cache";
@@ -80,6 +77,8 @@ interface DocumentContentCacheEntry {
   savedAt: number;
   data: DocumentContentResult;
 }
+
+type ProjectSettingsPayload = Record<string, unknown>;
 
 const documentContentCache = new Map<string, DocumentContentCacheEntry>();
 
@@ -512,6 +511,15 @@ function invalidateMarketplacesCatalogCache(sourceId?: string): void {
   void sourceId;
 }
 
+function invalidatePackageCatalogCache(sourceId?: string): void {
+  clearCatalogCacheMatching((url) => {
+    if (url === packageSourcesUrl() || url === packageInstallsUrl()) return true;
+    if (!url.startsWith(`${API_V1}/packages/catalog`)) return false;
+    if (!sourceId) return true;
+    return url.includes(`source_id=${encodeURIComponent(sourceId)}`);
+  });
+}
+
 function invalidateCouncilsCatalogCache(): void {
   clearCatalogCache(councilsUrl());
 }
@@ -543,6 +551,61 @@ export function projectUrl(id: string): string {
   return `${API_V1}/projects/${id}`;
 }
 
+async function decryptProjectSettings(
+  project: Project,
+): Promise<Project> {
+  const settings = project.settings as ProjectSettingsPayload;
+  if (!isEncryptedPayload(project.encrypted_payload)) {
+    return project;
+  }
+
+  const encryptedSettings = await decryptJsonPayload<ProjectSettingsPayload>(
+    project.encrypted_payload,
+    {},
+    "project settings",
+  );
+  return {
+    ...project,
+    settings: {
+      ...settings,
+      ...encryptedSettings,
+    },
+  };
+}
+
+async function encryptProjectSettingsForWrite(
+  projectId: string,
+  settings: ProjectSettingsPayload,
+): Promise<{
+  settings: ProjectSettingsPayload;
+  encrypted_payload?: import("./types").EncryptedPayload;
+}> {
+  const next: ProjectSettingsPayload = { ...settings };
+  const sensitiveSettings: ProjectSettingsPayload = {};
+
+  if (typeof settings.context === "string") {
+    sensitiveSettings.context = settings.context;
+    delete next.context;
+  }
+
+  if (settings.metadata && typeof settings.metadata === "object") {
+    sensitiveSettings.metadata = settings.metadata;
+    delete next.metadata;
+  }
+
+  return {
+    settings: next,
+    encrypted_payload: Object.keys(sensitiveSettings).length
+      ? await encryptOrgJsonPayload({
+          objectId: projectId,
+          objectType: "project.settings",
+          value: sensitiveSettings,
+          label: "Project settings",
+        })
+      : undefined,
+  };
+}
+
 // ---- Prompt Context Variables -----------------------------------------------
 
 export function promptContextVariablesUrl(): string {
@@ -554,11 +617,12 @@ export async function fetchPromptContextVariables(): Promise<PromptContextVariab
 }
 
 export async function fetchProjects(): Promise<Project[]> {
-  return catalogFetcher<Project[]>(projectsUrl());
+  const projects = await catalogFetcher<Project[]>(projectsUrl());
+  return Promise.all(projects.map(decryptProjectSettings));
 }
 
 export async function fetchProject(id: string): Promise<Project> {
-  return fetcher<Project>(projectUrl(id));
+  return decryptProjectSettings(await fetcher<Project>(projectUrl(id)));
 }
 
 export async function createProject(
@@ -582,13 +646,21 @@ export async function updateProject(
   id: string,
   data: Partial<Pick<Project, "name" | "description" | "settings">>,
 ): Promise<Project> {
+  const encryptedSettings = data.settings
+    ? await encryptProjectSettingsForWrite(id, data.settings as ProjectSettingsPayload)
+    : undefined;
+  const payload = {
+    ...data,
+    settings: encryptedSettings?.settings,
+    encrypted_payload: encryptedSettings?.encrypted_payload,
+  };
   const res = await authFetch(projectUrl(id), {
     method: "PATCH",
-    body: JSON.stringify(data),
+    body: JSON.stringify(payload),
   });
 
   invalidateProjectCatalogCache();
-  return res.json() as Promise<Project>;
+  return decryptProjectSettings(await res.json() as Project);
 }
 
 export async function deleteAllTasks(
@@ -1153,6 +1225,139 @@ export async function installClaudePlugin(
   invalidateAbilitiesCatalogCache();
   invalidateMcpServersCatalogCache();
   return install;
+}
+
+// ---------------------------------------------------------------------------
+// Packages
+// ---------------------------------------------------------------------------
+
+export function packageSourcesUrl(): string {
+  return `${API_V1}/packages/sources`;
+}
+
+export function packageSourceUrl(sourceId: string): string {
+  return `${packageSourcesUrl()}/${sourceId}`;
+}
+
+export function packageCatalogUrl(sourceId: string): string {
+  return `${API_V1}/packages/catalog?source_id=${encodeURIComponent(sourceId)}`;
+}
+
+export function packageInstallsUrl(): string {
+  return `${API_V1}/packages/installs`;
+}
+
+export function packageInstallUrl(installId: string): string {
+  return `${packageInstallsUrl()}/${installId}`;
+}
+
+export async function fetchPackageSources(): Promise<import("./types").PackageSource[]> {
+  return catalogFetcher(packageSourcesUrl());
+}
+
+export async function createPackageSource(
+  data: import("./types").CreatePackageSourceRequest,
+): Promise<import("./types").PackageSource> {
+  const res = await authFetch(packageSourcesUrl(), {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  const source = await res.json() as import("./types").PackageSource;
+  invalidatePackageCatalogCache();
+  return source;
+}
+
+const OFFICIAL_NENJO_PACKAGE_SOURCE = {
+  name: "Nenjo Official Packages",
+  source_type: "github" as const,
+  adapter: "nenjo_packages" as const,
+  metadata: {
+    owner: "nenjo-ai",
+    repo: "packages",
+    ref: "feature/platform-knowledge",
+    manifest_path: "packages.yaml",
+  },
+};
+
+function isOfficialNenjoPackageSource(source: import("./types").PackageSource): boolean {
+  const metadata = source.metadata ?? {};
+  return (
+    source.source_type === "github" &&
+    source.adapter === "nenjo_packages" &&
+    metadata.owner === OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.owner &&
+    metadata.repo === OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.repo &&
+    (metadata.manifest_path ?? "packages.yaml") === OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.manifest_path
+  );
+}
+
+export async function ensureOfficialNenjoPackageSource(): Promise<import("./types").PackageSource> {
+  const existing = (await fetchPackageSources()).find(isOfficialNenjoPackageSource);
+  if (existing) {
+    if (existing.status !== "active") {
+      return updatePackageSource(existing.id, {
+        status: "active",
+        metadata: {
+          ...existing.metadata,
+          ...OFFICIAL_NENJO_PACKAGE_SOURCE.metadata,
+        },
+      });
+    }
+    return existing;
+  }
+
+  try {
+    return await createPackageSource(OFFICIAL_NENJO_PACKAGE_SOURCE);
+  } catch (error) {
+    invalidatePackageCatalogCache();
+    const retry = (await fetchPackageSources()).find(isOfficialNenjoPackageSource);
+    if (retry) return retry;
+    throw error;
+  }
+}
+
+export async function updatePackageSource(
+  sourceId: string,
+  data: import("./types").UpdatePackageSourceRequest,
+): Promise<import("./types").PackageSource> {
+  const res = await authFetch(packageSourceUrl(sourceId), {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  const source = await res.json() as import("./types").PackageSource;
+  invalidatePackageCatalogCache(sourceId);
+  return source;
+}
+
+export async function deletePackageSource(sourceId: string): Promise<void> {
+  await authFetch(packageSourceUrl(sourceId), { method: "DELETE" });
+  invalidatePackageCatalogCache(sourceId);
+}
+
+export async function installPackage(
+  data: import("./types").InstallPackageRequest,
+): Promise<import("./types").PackageInstallDetail> {
+  const res = await authFetch(`${API_V1}/packages/install`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  const install = await res.json() as import("./types").PackageInstallDetail;
+  invalidatePackageCatalogCache(data.source_id);
+  invalidateKnowledgeCatalogCache();
+  invalidateAbilitiesCatalogCache();
+  invalidateAgentsCatalogCache();
+  return install;
+}
+
+export async function installOfficialNenjoPackages(): Promise<void> {
+  const source = await ensureOfficialNenjoPackageSource();
+  await installPackage({
+    source_id: source.id,
+    path: "nenjo/knowledge/platform/package.yaml",
+  });
+  await installPackage({
+    source_id: source.id,
+    path: "nenjo/agents/nenji/package.yaml",
+  });
 }
 
 export async function updateKnowledgePack(
@@ -2201,6 +2406,70 @@ async function encryptDomainPromptConfig(
   });
 }
 
+function requireEncryptedPayload(
+  payload: EncryptedPayload | null,
+  label: string,
+): EncryptedPayload {
+  if (!payload) {
+    throw new ApiError(`${label} could not be encrypted`, 409);
+  }
+  return payload;
+}
+
+function isEncryptedPayload(value: unknown): value is EncryptedPayload {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.account_id === "string" &&
+    typeof record.object_id === "string" &&
+    typeof record.object_type === "string" &&
+    typeof record.algorithm === "string" &&
+    typeof record.nonce === "string" &&
+    typeof record.ciphertext === "string"
+  );
+}
+
+async function encryptOrgJsonPayload(params: {
+  objectId: string;
+  objectType: string;
+  value: unknown;
+  label: string;
+}): Promise<EncryptedPayload> {
+  const currentUser = await fetchCurrentUser();
+  if (!currentUser.org_id) {
+    throw new ApiError(`${params.label} requires an active org`, 400);
+  }
+
+  return requireEncryptedPayload(
+    await encryptOrgContentPayload({
+      orgId: currentUser.org_id,
+      objectId: params.objectId,
+      objectType: params.objectType,
+      plaintext: JSON.stringify(params.value),
+    }),
+    params.label,
+  );
+}
+
+async function decryptJsonPayload<T>(
+  payload: unknown,
+  fallback: T,
+  label: string,
+): Promise<T> {
+  if (!isEncryptedPayload(payload)) return fallback;
+  try {
+    const plaintext = await decryptContentPayload(payload);
+    if (!plaintext) return fallback;
+    return JSON.parse(plaintext) as T;
+  } catch (error) {
+    console.warn(`Failed to decrypt ${label}`, {
+      objectId: payload.object_id,
+      error,
+    });
+    return fallback;
+  }
+}
+
 async function encryptContextBlockTemplate(
   contextBlockId: string,
   template: string,
@@ -2342,11 +2611,13 @@ export async function updateAgentPrompt(
   agentId: string,
   promptConfig: import("./types").PromptConfig,
 ): Promise<import("./types").PromptConfig> {
-  const encryptedPayload = await encryptAgentPromptConfig(agentId, promptConfig);
+  const encryptedPayload = requireEncryptedPayload(
+    await encryptAgentPromptConfig(agentId, promptConfig),
+    "Agent prompt",
+  );
   const res = await authFetch(agentPromptUrl(agentId), {
     method: "PATCH",
     body: JSON.stringify({
-      prompt_config: promptConfig,
       encrypted_payload: encryptedPayload,
     }),
   });
@@ -2840,7 +3111,6 @@ export async function createDomain(data: CreateDomainRequest): Promise<Domain> {
       display_name: data.display_name,
       description: data.description,
       command: data.command,
-      prompt_config: manifest?.prompt,
       platform_scopes: manifest?.platform_scopes,
       ability_ids: manifest?.ability_ids,
       mcp_server_ids: manifest?.mcp_server_ids,
@@ -2848,17 +3118,17 @@ export async function createDomain(data: CreateDomainRequest): Promise<Domain> {
   });
   const domain = await res.json() as Domain;
   if (manifest?.prompt) {
-    const promptEncryptedPayload = await encryptDomainPromptConfig(domain.id, manifest.prompt);
-    if (promptEncryptedPayload) {
-      await authFetch(domainPromptUrl(domain.id), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt_config: manifest.prompt,
-          encrypted_payload: promptEncryptedPayload,
-        }),
-      });
-    }
+    const promptEncryptedPayload = requireEncryptedPayload(
+      await encryptDomainPromptConfig(domain.id, manifest.prompt),
+      "Domain prompt",
+    );
+    await authFetch(domainPromptUrl(domain.id), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        encrypted_payload: promptEncryptedPayload,
+      }),
+    });
   }
   invalidateDomainsCatalogCache();
   return domain;
@@ -2881,12 +3151,14 @@ export async function updateDomainManifest(
   id: string,
   manifest: DomainManifest,
 ): Promise<DomainManifest> {
-  const encryptedPayload = await encryptDomainPromptConfig(id, manifest.prompt);
+  const encryptedPayload = requireEncryptedPayload(
+    await encryptDomainPromptConfig(id, manifest.prompt),
+    "Domain prompt",
+  );
   const res = await authFetch(domainPromptUrl(id), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      prompt_config: manifest.prompt,
       encrypted_payload: encryptedPayload,
     }),
   });
@@ -2928,17 +3200,6 @@ export async function deleteDomainFolder(path: string): Promise<void> {
 export async function renameDomainFolder(oldPath: string, newPath: string): Promise<void> {
   await authFetch(`${API_V1}/domains/folders/rename`, { method: "PATCH", body: JSON.stringify({ old_path: oldPath, new_path: newPath }) });
   invalidateDomainsCatalogCache();
-}
-
-export async function uploadDomain(file: File): Promise<Domain> {
-  const form = new FormData();
-  form.append("file", file);
-  const res = await authFetch(`${domainsUrl()}/upload`, {
-    method: "POST",
-    body: form,
-  });
-  invalidateDomainsCatalogCache();
-  return res.json() as Promise<Domain>;
 }
 
 // ---------------------------------------------------------------------------
@@ -3047,49 +3308,6 @@ export async function fetchActiveDomainSession(
   );
   if (res.status === 204) return null;
   return res.json() as Promise<DomainSession>;
-}
-
-// ---------------------------------------------------------------------------
-// Lambdas
-// ---------------------------------------------------------------------------
-
-export function lambdasUrl(): string {
-  return `${API_V1}/lambdas`;
-}
-
-export function lambdaUrl(id: string): string {
-  return `${API_V1}/lambdas/${id}`;
-}
-
-export async function fetchLambdas(): Promise<Lambda[]> {
-  return fetcher<Lambda[]>(lambdasUrl());
-}
-
-export async function fetchLambda(id: string): Promise<Lambda> {
-  return fetcher<Lambda>(lambdaUrl(id));
-}
-
-export async function createLambda(data: CreateLambdaRequest): Promise<Lambda> {
-  const res = await authFetch(lambdasUrl(), {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-  return res.json() as Promise<Lambda>;
-}
-
-export async function updateLambda(
-  id: string,
-  data: UpdateLambdaRequest,
-): Promise<Lambda> {
-  const res = await authFetch(lambdaUrl(id), {
-    method: "PATCH",
-    body: JSON.stringify(data),
-  });
-  return res.json() as Promise<Lambda>;
-}
-
-export async function deleteLambda(id: string): Promise<void> {
-  await authFetch(lambdaUrl(id), { method: "DELETE" });
 }
 
 // ---------------------------------------------------------------------------
@@ -3296,25 +3514,26 @@ export async function fetchContextBlocks(): Promise<import("./types").ContextBlo
 export async function createContextBlock(
   data: import("./types").CreateContextBlockRequest,
 ): Promise<import("./types").ContextBlock> {
+  const { template, ...createData } = data;
   const res = await authFetch(contextBlocksUrl(), {
     method: "POST",
     body: JSON.stringify({
-      ...data,
-      template: data.template ?? "",
+      ...createData,
+      template: "",
     }),
   });
   const block = await res.json() as import("./types").ContextBlock;
-  if (data.template) {
-    const encryptedPayload = await encryptContextBlockTemplate(block.id, data.template);
-    if (encryptedPayload) {
-      await authFetch(contextBlockContentUrl(block.id), {
-        method: "PATCH",
-        body: JSON.stringify({
-          template: data.template,
-          encrypted_payload: encryptedPayload,
-        }),
-      });
-    }
+  if (template) {
+    const encryptedPayload = requireEncryptedPayload(
+      await encryptContextBlockTemplate(block.id, template),
+      "Context block content",
+    );
+    await authFetch(contextBlockContentUrl(block.id), {
+      method: "PATCH",
+      body: JSON.stringify({
+        encrypted_payload: encryptedPayload,
+      }),
+    });
   }
   invalidateContextBlocksCatalogCache();
   return block;
@@ -3353,10 +3572,13 @@ export async function updateContextBlockContent(
   id: string,
   template: string,
 ): Promise<{ template?: string }> {
-  const encryptedPayload = await encryptContextBlockTemplate(id, template);
+  const encryptedPayload = requireEncryptedPayload(
+    await encryptContextBlockTemplate(id, template),
+    "Context block content",
+  );
   const res = await authFetch(contextBlockContentUrl(id), {
     method: "PATCH",
-    body: JSON.stringify({ template, encrypted_payload: encryptedPayload }),
+    body: JSON.stringify({ encrypted_payload: encryptedPayload }),
   });
   const response = await res.json() as {
     template?: string;
@@ -3445,29 +3667,23 @@ export async function fetchAbility(id: string): Promise<import("./types").Abilit
 export async function createAbility(
   data: import("./types").CreateAbilityRequest,
 ): Promise<import("./types").Ability> {
+  const { prompt, ...createData } = data;
   const res = await authFetch(abilitiesUrl(), {
     method: "POST",
-    body: JSON.stringify({
-      ...data,
-      prompt_config: {
-        developer_prompt: data.prompt ?? "",
-      },
-    }),
+    body: JSON.stringify(createData),
   });
   const ability = await res.json() as import("./types").Ability;
-  if (data.prompt) {
-    const encryptedPayload = await encryptAbilityPromptConfig(ability.id, data.prompt);
-    if (encryptedPayload) {
-      await authFetch(abilityPromptUrl(ability.id), {
-        method: "PATCH",
-        body: JSON.stringify({
-          prompt_config: {
-            developer_prompt: data.prompt,
-          },
-          encrypted_payload: encryptedPayload,
-        }),
-      });
-    }
+  if (prompt) {
+    const encryptedPayload = requireEncryptedPayload(
+      await encryptAbilityPromptConfig(ability.id, prompt),
+      "Ability prompt",
+    );
+    await authFetch(abilityPromptUrl(ability.id), {
+      method: "PATCH",
+      body: JSON.stringify({
+        encrypted_payload: encryptedPayload,
+      }),
+    });
   }
   invalidateAbilitiesCatalogCache();
   return ability;
@@ -3529,13 +3745,13 @@ export async function updateAbilityPrompt(
   id: string,
   prompt: string,
 ): Promise<string> {
-  const encryptedPayload = await encryptAbilityPromptConfig(id, prompt);
+  const encryptedPayload = requireEncryptedPayload(
+    await encryptAbilityPromptConfig(id, prompt),
+    "Ability prompt",
+  );
   const res = await authFetch(abilityPromptUrl(id), {
     method: "PATCH",
     body: JSON.stringify({
-      prompt_config: {
-        developer_prompt: prompt,
-      },
       encrypted_payload: encryptedPayload,
     }),
   });

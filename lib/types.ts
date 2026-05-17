@@ -9,6 +9,7 @@ export interface Project {
   description: string | null;
   owner_id: string;
   settings: Record<string, unknown>;
+  encrypted_payload?: EncryptedPayload | null;
   created_at: string;
   updated_at: string;
 }
@@ -930,7 +931,6 @@ export interface InstallKnowledgePackRequest {
   description?: string | null;
   selector: string;
   source_type?: "github";
-  read_only?: boolean;
   metadata?: Record<string, unknown>;
 }
 
@@ -1086,6 +1086,9 @@ export interface ContextBlock {
   template?: string;
   is_system: boolean;
   source_block_id: string | null;
+  source_type?: "native";
+  read_only?: boolean;
+  metadata?: Record<string, unknown>;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -1244,6 +1247,84 @@ export interface InstallClaudePluginResponse {
   mcp_servers: McpServer[];
 }
 
+// ---------------------------------------------------------------------------
+// Packages
+// ---------------------------------------------------------------------------
+
+export type PackageSourceAdapter = "nenjo_packages" | "claude_marketplace" | "codex_plugin";
+
+export interface PackageSource {
+  id: string;
+  org_id: string;
+  name: string;
+  source_type: "github";
+  adapter: PackageSourceAdapter;
+  metadata: Record<string, unknown>;
+  status: "active" | "archived";
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePackageSourceRequest {
+  name: string;
+  source_type?: "github";
+  adapter?: PackageSourceAdapter;
+  metadata?: Record<string, unknown>;
+}
+
+export interface UpdatePackageSourceRequest {
+  name?: string;
+  metadata?: Record<string, unknown>;
+  status?: "active" | "archived";
+}
+
+export interface PackageInstall {
+  id: string;
+  org_id: string;
+  package_source_id: string;
+  root_path: string;
+  root_type: string;
+  root_resource_id: string | null;
+  requested_ref: string;
+  resolved_commit_sha: string;
+  status: "installed" | "failed" | "archived";
+  current_lock_id: string | null;
+  metadata: Record<string, unknown>;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PackageInstallResource {
+  id: string;
+  org_id: string;
+  package_install_id: string;
+  package_source_id: string;
+  source_path: string;
+  resource_type: string;
+  resource_name: string;
+  resource_id: string;
+  resource_version: string | null;
+  source_hash: string;
+  install_state: "installed" | "skipped_customized" | "removed" | "failed";
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PackageInstallDetail {
+  install: PackageInstall;
+  resources: PackageInstallResource[];
+  lock: Record<string, unknown> | null;
+}
+
+export interface InstallPackageRequest {
+  source_id: string;
+  path: string;
+  ref_?: string | null;
+}
+
 export interface UpdateAbilityRequest {
   display_name?: string;
   description?: string;
@@ -1325,6 +1406,7 @@ export interface Routine {
   is_default: boolean;
   max_retries: number;
   metadata: Record<string, unknown>;
+  encrypted_payload?: EncryptedPayload | null;
   last_run_at: string | null;
   next_run_at: string | null;
   created_at: string;
@@ -1340,6 +1422,7 @@ export interface RoutineStep {
   council_id: string | null;
   agent_id: string | null;
   config: Record<string, unknown>;
+  encrypted_payload?: EncryptedPayload | null;
   position_x: number; // i32 from backend
   position_y: number; // i32 from backend
   order_index: number;
@@ -1377,6 +1460,7 @@ export interface RoutineSummary {
 }
 
 export interface CreateRoutineRequest {
+  id?: string;
   name: string;
   description?: string;
   project_id?: string | null;
@@ -1384,6 +1468,7 @@ export interface CreateRoutineRequest {
   is_active?: boolean;
   max_retries?: number;
   metadata?: Record<string, unknown>;
+  encrypted_payload?: EncryptedPayload | null;
 }
 
 export interface UpdateRoutineRequest {
@@ -1394,14 +1479,17 @@ export interface UpdateRoutineRequest {
   is_active?: boolean;
   max_retries?: number;
   metadata?: Record<string, unknown>;
+  encrypted_payload?: EncryptedPayload | null;
 }
 
 export interface CreateStepRequest {
+  id?: string;
   name: string;
   step_type?: RoutineStepType;
   council_id?: string;
   agent_id?: string;
   config?: Record<string, unknown>;
+  encrypted_payload?: EncryptedPayload | null;
   position_x?: number;
   position_y?: number;
   order_index?: number;
@@ -1413,6 +1501,7 @@ export interface UpdateStepRequest {
   council_id?: string;
   agent_id?: string | null;
   config?: Record<string, unknown>;
+  encrypted_payload?: EncryptedPayload | null;
   position_x?: number;
   position_y?: number;
   order_index?: number;
@@ -1432,6 +1521,7 @@ export interface SaveRoutineGraphStepRequest {
   council_id?: string;
   agent_id?: string | null;
   config?: Record<string, unknown>;
+  encrypted_payload?: EncryptedPayload | null;
   position_x: number;
   position_y: number;
   order_index: number;
@@ -1509,6 +1599,9 @@ export interface AgentDefinition {
   /** The model assigned directly to this agent. */
   model_id: string | null;
   model_name?: string | null;
+  source_type: "native";
+  read_only: boolean;
+  metadata: Record<string, unknown>;
   domain_ids?: string[];
   mcp_server_ids?: string[];
   ability_ids?: string[];
@@ -1733,6 +1826,9 @@ export interface Domain {
   category: string | null;
   tags: string[];
   is_system: boolean;
+  source_type?: "native";
+  read_only?: boolean;
+  metadata?: Record<string, unknown>;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -1800,46 +1896,4 @@ export interface UpdateDomainRequest {
   platform_scopes?: string[];
   ability_ids?: string[];
   mcp_server_ids?: string[];
-}
-
-// ---------------------------------------------------------------------------
-// Lambdas
-// ---------------------------------------------------------------------------
-
-export type LambdaInterpreter = "auto" | "bash" | "sh" | "python3" | "node";
-
-export const LAMBDA_INTERPRETERS: { id: LambdaInterpreter; label: string }[] = [
-  { id: "auto", label: "Auto (shebang)" },
-  { id: "bash", label: "Bash" },
-  { id: "sh", label: "Shell (sh)" },
-  { id: "python3", label: "Python 3" },
-  { id: "node", label: "Node.js" },
-];
-
-export interface Lambda {
-  id: string;
-  name: string;
-  description: string | null;
-  path: string;
-  body: string;
-  interpreter: LambdaInterpreter;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateLambdaRequest {
-  name: string;
-  description?: string;
-  path: string;
-  body: string;
-  interpreter?: LambdaInterpreter;
-}
-
-export interface UpdateLambdaRequest {
-  name?: string;
-  description?: string;
-  path?: string;
-  body?: string;
-  interpreter?: LambdaInterpreter;
 }

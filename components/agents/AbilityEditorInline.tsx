@@ -7,6 +7,7 @@ import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference } from "./TemplateVariableReference";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
 import { Button } from "@/components/ui/Button";
+import { SourceManagedResourcePanel } from "@/components/resources/SourceManagedResourcePanel";
 import { MCP_RESOURCE_SCOPES } from "@/lib/types";
 import type { Ability, McpServer } from "@/lib/types";
 
@@ -255,6 +256,25 @@ function ManagedAbilityDetails({ ability }: { ability: Ability }) {
     const assigned = new Set(ability.mcp_server_ids);
     return (mcpServers ?? []).filter((server) => assigned.has(server.id));
   }, [ability.mcp_server_ids, mcpServers]);
+
+  if (ability.read_only && ability.source_type !== "skill") {
+    return (
+      <SourceManagedResourcePanel
+        resource={ability}
+        title={ability.display_name || ability.name}
+        description={ability.description}
+        fallbackContent={JSON.stringify({
+          name: ability.name,
+          display_name: ability.display_name,
+          description: ability.description,
+          activation_condition: ability.activation_condition,
+          platform_scopes: ability.platform_scopes,
+          mcp_server_ids: ability.mcp_server_ids,
+        }, null, 2)}
+        fallbackLanguage="yaml"
+      />
+    );
+  }
   const selector =
     metadataString(ability.metadata, ["install", "selector"]) ??
     metadataString(ability.metadata, ["selector"]);

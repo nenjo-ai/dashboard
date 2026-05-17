@@ -10,6 +10,7 @@ import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference } from "./TemplateVariableReference";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
 import { Button } from "@/components/ui/Button";
+import { SourceManagedResourcePanel } from "@/components/resources/SourceManagedResourcePanel";
 import type { ContextBlock } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -267,6 +268,22 @@ interface ContextBlockEditorInlineProps {
 }
 
 export function ContextBlockEditorInline({ block, onSaved, onDelete }: ContextBlockEditorInlineProps) {
+  if (block.read_only || block.metadata?.install) {
+    return (
+      <SourceManagedResourcePanel
+        resource={block}
+        title={block.display_name || block.name}
+        description={block.description}
+        fallbackContent={block.template ?? ""}
+        fallbackLanguage="markdown"
+      />
+    );
+  }
+
+  return <EditableContextBlockEditorInline block={block} onSaved={onSaved} onDelete={onDelete} />;
+}
+
+function EditableContextBlockEditorInline({ block, onSaved, onDelete }: ContextBlockEditorInlineProps) {
   const editor = useBlockEditor(block, onSaved);
   const containerRef = useRef<HTMLDivElement>(null);
   const panel = useResizablePanel(280, 200, 480);

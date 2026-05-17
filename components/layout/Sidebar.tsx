@@ -11,7 +11,7 @@ import { catalogFetcher, catalogSWROptions, projectsUrl } from "@/lib/api";
 import type { Project } from "@/lib/types";
 import { CreateProjectModal } from "@/components/dashboard/CreateProjectModal";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
-import { Bot, GitBranch, LibraryBig } from "lucide-react";
+import { Bot, GitBranch, LibraryBig, Package } from "lucide-react";
 
 
 interface NavItem {
@@ -52,8 +52,13 @@ const navigation: NavItem[] = [
   },
   {
     label: "Library",
-    href: "/dashboard/knowledge",
+    href: "/dashboard/library",
     icon: <LibraryBig className="h-5 w-5" />,
+  },
+  {
+    label: "Packages",
+    href: "/dashboard/packages",
+    icon: <Package className="h-5 w-5" />,
   },
   {
     label: "Routines",

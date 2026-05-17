@@ -46,6 +46,10 @@ export function StepConfigPanel({
   const [localRoleId, setLocalRoleId] = useState<string>((config?.agent_id as string) ?? agentId ?? "");
   const [localInterval, setLocalInterval] = useState<string>((config?.interval as string) ?? "60s");
   const [localTimeout, setLocalTimeout] = useState<string>((config?.timeout as string) ?? "24h");
+  const [localInstructions, setLocalInstructions] = useState<string>(
+    (config?.instructions as string) ?? (config?.description as string) ?? (config?.context as string) ?? "",
+  );
+  const [localCriteria, setLocalCriteria] = useState<string>((config?.criteria as string) ?? "");
   const [localFailureReason, setLocalFailureReason] = useState<string>((config?.failure_reason as string) ?? "");
   const [localMetadata, setLocalMetadata] = useState<string>(
     config?.metadata ? JSON.stringify(config.metadata, null, 2) : "",
@@ -64,6 +68,8 @@ export function StepConfigPanel({
     setLocalRoleId((config?.agent_id as string) ?? agentId ?? "");
     setLocalInterval((config?.interval as string) ?? "60s");
     setLocalTimeout((config?.timeout as string) ?? "24h");
+    setLocalInstructions((config?.instructions as string) ?? (config?.description as string) ?? (config?.context as string) ?? "");
+    setLocalCriteria((config?.criteria as string) ?? "");
     setLocalFailureReason((config?.failure_reason as string) ?? "");
     setLocalMetadata(config?.metadata ? JSON.stringify(config.metadata, null, 2) : "");
     setMetadataError(null);
@@ -105,6 +111,29 @@ export function StepConfigPanel({
     } else {
       delete parsedConfig.interval;
       delete parsedConfig.timeout;
+    }
+
+    if (localStepType === "agent" || localStepType === "gate" || localStepType === "council" || localStepType === "cron") {
+      if (localInstructions.trim()) {
+        parsedConfig.instructions = localInstructions.trim();
+      } else {
+        delete parsedConfig.instructions;
+      }
+    } else {
+      delete parsedConfig.instructions;
+    }
+    delete parsedConfig.description;
+    delete parsedConfig.context;
+    delete parsedConfig.max_turns;
+
+    if (localStepType === "gate") {
+      if (localCriteria.trim()) {
+        parsedConfig.criteria = localCriteria.trim();
+      } else {
+        delete parsedConfig.criteria;
+      }
+    } else {
+      delete parsedConfig.criteria;
     }
 
     if (localStepType === "terminal_fail") {
@@ -283,6 +312,22 @@ export function StepConfigPanel({
             </>
           )}
 
+          {localStepType === "council" && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Step Instructions</label>
+                <textarea
+                  value={localInstructions}
+                  onChange={(e) => setLocalInstructions(e.target.value)}
+                  rows={4}
+                  placeholder="Instructions for this council step."
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                />
+              </div>
+
+            </>
+          )}
+
           {(localStepType === "agent" || localStepType === "gate" || localStepType === "cron") && (
             <>
               <div>
@@ -310,9 +355,22 @@ export function StepConfigPanel({
               </div>
 
               {localStepType === "gate" && (
-                <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2">
-                  Gate steps produce pass/fail outcomes. Use edge conditions to route the flow based on the result.
-                </p>
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Gate Criteria</label>
+                    <textarea
+                      value={localCriteria}
+                      onChange={(e) => setLocalCriteria(e.target.value)}
+                      rows={3}
+                      placeholder="Describe what must be true for this gate to pass."
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                    />
+                  </div>
+
+                  <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2">
+                    Gate steps produce pass/fail outcomes. Use edge settings to cap retry loops.
+                  </p>
+                </>
               )}
 
               {localStepType === "cron" && (
@@ -358,6 +416,17 @@ export function StepConfigPanel({
                   </p>
                 </>
               )}
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Step Instructions</label>
+                <textarea
+                  value={localInstructions}
+                  onChange={(e) => setLocalInstructions(e.target.value)}
+                  rows={4}
+                  placeholder="Task-specific instructions for this step."
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+                />
+              </div>
 
               <div>
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
