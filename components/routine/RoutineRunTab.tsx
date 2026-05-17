@@ -45,6 +45,23 @@ function describeSchedule(schedule: string): string {
   return schedule;
 }
 
+function browserTimezone(): string {
+  if (typeof window === "undefined") return "UTC";
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+function scheduleMetadata(
+  metadata: Record<string, unknown>,
+  schedule: string,
+  timezone: string,
+): Record<string, unknown> {
+  return {
+    ...metadata,
+    schedule,
+    timezone: timezone.trim() || browserTimezone(),
+  };
+}
+
 /** Trigger label from type */
 function triggerLabel(trigger: string): string {
   return ROUTINE_TRIGGERS.find((t) => t.id === trigger)?.label ?? trigger;
@@ -141,8 +158,13 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
     (routine.metadata?.schedule as string) ||
     (routine.metadata?.interval as string) ||
     "";
+  const currentTimezone =
+    typeof routine.metadata?.timezone === "string" && routine.metadata.timezone.trim()
+      ? routine.metadata.timezone.trim()
+      : browserTimezone();
   const [editingSchedule, setEditingSchedule] = useState(false);
   const [draftSchedule, setDraftSchedule] = useState(currentSchedule);
+  const [draftTimezone, setDraftTimezone] = useState(currentTimezone);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const scheduleInputRef = useRef<HTMLInputElement>(null);
 
@@ -150,6 +172,10 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
   useEffect(() => {
     if (!editingSchedule) setDraftSchedule(currentSchedule);
   }, [currentSchedule, editingSchedule]);
+
+  useEffect(() => {
+    setDraftTimezone(currentTimezone);
+  }, [currentTimezone]);
 
   useEffect(() => {
     if (editingSchedule) scheduleInputRef.current?.focus();
@@ -239,7 +265,7 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
     try {
       await updateRoutine(routine.id, {
         is_active: true,
-        metadata: { ...routine.metadata, schedule },
+        metadata: scheduleMetadata(routine.metadata, schedule, draftTimezone),
       });
       setLoopActive(true);
       onSaved?.();
@@ -252,7 +278,7 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
       setToggleAction(null);
       setTogglingLoop(false);
     }
-  }, [routine.id, routine.metadata, currentSchedule, onSaved, mutateExecutions, routine.is_active]);
+  }, [routine.id, routine.metadata, currentSchedule, draftTimezone, onSaved, mutateExecutions, routine.is_active]);
 
   const handleStop = useCallback(async () => {
     setError(null);
@@ -303,7 +329,7 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
     setSavingSchedule(true);
     try {
       await updateRoutine(routine.id, {
-        metadata: { ...routine.metadata, schedule: trimmed },
+        metadata: scheduleMetadata(routine.metadata, trimmed, draftTimezone),
       });
       onSaved?.();
     } catch {
@@ -312,7 +338,23 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
       setSavingSchedule(false);
       setEditingSchedule(false);
     }
-  }, [draftSchedule, currentSchedule, routine.id, routine.metadata, onSaved]);
+  }, [draftSchedule, currentSchedule, draftTimezone, routine.id, routine.metadata, onSaved]);
+
+  const handleSaveTimezone = useCallback(async () => {
+    const timezone = draftTimezone.trim() || browserTimezone();
+    if (timezone === currentTimezone) return;
+    setSavingSchedule(true);
+    try {
+      await updateRoutine(routine.id, {
+        metadata: scheduleMetadata(routine.metadata, currentSchedule, timezone),
+      });
+      onSaved?.();
+    } catch {
+      setDraftTimezone(currentTimezone);
+    } finally {
+      setSavingSchedule(false);
+    }
+  }, [draftTimezone, currentTimezone, currentSchedule, routine.id, routine.metadata, onSaved]);
 
   const handleScheduleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
@@ -429,6 +471,29 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
                   </p>
                 )}
               </div>
+            </div>
+            <div className="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700">
+              <label className="text-xs text-gray-500 dark:text-gray-400" htmlFor="routine-timezone">
+                Timezone
+              </label>
+              <input
+                id="routine-timezone"
+                type="text"
+                value={draftTimezone}
+                onChange={(e) => setDraftTimezone(e.target.value)}
+                onBlur={handleSaveTimezone}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.currentTarget.blur();
+                  }
+                }}
+                disabled={savingSchedule}
+                placeholder="America/Chicago"
+                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 disabled:opacity-50"
+              />
+              <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                Uses your browser timezone by default. Edit this if your browser location is not where the schedule should run.
+              </p>
             </div>
           </Card>
         </div>

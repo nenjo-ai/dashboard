@@ -11,6 +11,11 @@ import {
 import { useAgentExecutions, useAgentHeartbeat } from "@/lib/hooks";
 import { Button } from "@/components/ui/Button";
 
+function browserTimezone(): string {
+  if (typeof window === "undefined") return "UTC";
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) return "Never";
   return new Date(value).toLocaleString();
@@ -30,6 +35,7 @@ export function AgentHeartbeatTab({
   const { heartbeat, mutate: mutateHeartbeat, isLoading } = useAgentHeartbeat(agentId);
   const { executions, mutate: mutateExecutions } = useAgentExecutions(agentId, 15);
   const [interval, setInterval] = useState(initialInterval ?? heartbeat?.interval ?? "");
+  const [timezone, setTimezone] = useState("UTC");
   const [saving, setSaving] = useState(false);
   const [runningAction, setRunningAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +43,15 @@ export function AgentHeartbeatTab({
   useEffect(() => {
     setInterval(heartbeat?.interval ?? initialInterval ?? "");
   }, [heartbeat?.interval, initialInterval]);
+
+  useEffect(() => {
+    const savedTimezone = heartbeat?.metadata?.timezone;
+    setTimezone(
+      typeof savedTimezone === "string" && savedTimezone.trim()
+        ? savedTimezone.trim()
+        : browserTimezone(),
+    );
+  }, [heartbeat?.metadata]);
 
   async function refreshAll() {
     await Promise.all([mutateHeartbeat(), mutateExecutions(), onSaved?.()]);
@@ -46,7 +61,13 @@ export function AgentHeartbeatTab({
     setSaving(true);
     setError(null);
     try {
-      await updateAgentHeartbeat(agentId, { interval });
+      await updateAgentHeartbeat(agentId, {
+        interval,
+        metadata: {
+          ...(heartbeat?.metadata ?? {}),
+          timezone: timezone.trim() || browserTimezone(),
+        },
+      });
       await refreshAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save heartbeat");
@@ -59,7 +80,16 @@ export function AgentHeartbeatTab({
     setRunningAction(kind);
     setError(null);
     try {
-      if (kind === "start") await startAgentHeartbeat(agentId);
+      if (kind === "start") {
+        await updateAgentHeartbeat(agentId, {
+          interval,
+          metadata: {
+            ...(heartbeat?.metadata ?? {}),
+            timezone: timezone.trim() || browserTimezone(),
+          },
+        });
+        await startAgentHeartbeat(agentId);
+      }
       if (kind === "stop") await stopAgentHeartbeat(agentId);
       if (kind === "trigger") await triggerAgentHeartbeat(agentId);
       await refreshAll();
@@ -112,6 +142,7 @@ export function AgentHeartbeatTab({
         </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,360px)_1fr]">
+          <div className="grid gap-4">
           <label className="block">
             <span className="theme-text-muted mb-2 block text-xs font-medium uppercase tracking-[0.18em]">
               Interval
@@ -126,6 +157,21 @@ export function AgentHeartbeatTab({
               Examples: `30s`, `5m`, `1h`
             </p>
           </label>
+          <label className="block">
+            <span className="theme-text-muted mb-2 block text-xs font-medium uppercase tracking-[0.18em]">
+              Timezone
+            </span>
+            <input
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              placeholder="America/Chicago"
+              className="theme-surface theme-border theme-text w-full rounded-xl border px-3 py-2 text-sm outline-none transition focus:border-deep-space-blue-400 focus:ring-2 focus:ring-deep-space-blue-200"
+            />
+            <p className="theme-text-muted mt-2 text-xs">
+              Defaults to your browser timezone. Edit this if VPN or travel changes the browser location.
+            </p>
+          </label>
+          </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="theme-surface-muted rounded-xl p-4">
@@ -151,7 +197,7 @@ export function AgentHeartbeatTab({
 
         <div className="mt-4 flex items-center gap-3">
           <Button size="sm" isLoading={saving} onClick={handleSave} disabled={!interval.trim()}>
-            Save Interval
+            Save Schedule
           </Button>
           {isLoading && <span className="theme-text-muted text-xs">Loading state…</span>}
           {error && <span className="text-xs text-red-500">{error}</span>}

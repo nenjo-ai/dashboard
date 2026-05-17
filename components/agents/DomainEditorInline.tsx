@@ -7,6 +7,7 @@ import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference } from "./TemplateVariableReference";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
 import { Button } from "@/components/ui/Button";
+import { SourceManagedResourcePanel } from "@/components/resources/SourceManagedResourcePanel";
 import { MCP_RESOURCE_SCOPES } from "@/lib/types";
 import type { Domain, DomainManifest, Ability, McpServer } from "@/lib/types";
 
@@ -40,6 +41,22 @@ interface DomainEditorInlineProps {
 }
 
 export function DomainEditorInline({ domain, onSaved, onDelete }: DomainEditorInlineProps) {
+  if (domain.read_only || domain.metadata?.install) {
+    return (
+      <SourceManagedResourcePanel
+        resource={domain}
+        title={domain.display_name || domain.name}
+        description={domain.description}
+        fallbackContent={JSON.stringify(domain.manifest ?? {}, null, 2)}
+        fallbackLanguage="yaml"
+      />
+    );
+  }
+
+  return <EditableDomainEditorInline domain={domain} onSaved={onSaved} onDelete={onDelete} />;
+}
+
+function EditableDomainEditorInline({ domain, onSaved, onDelete }: DomainEditorInlineProps) {
   const [activeTab, setActiveTab] = useState<TabId>("prompt");
   const [displayName, setDisplayName] = useState(domain.display_name ?? "");
   const [saving, setSaving] = useState(false);

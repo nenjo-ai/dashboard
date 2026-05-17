@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useRoutines } from "@/lib/hooks";
 import { createRoutine, deleteRoutine } from "@/lib/api";
@@ -12,6 +12,11 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { MotionList, MotionItem } from "@/components/ui/motion";
 import { toast } from "@/lib/toast";
+
+function browserTimezone(): string {
+  if (typeof window === "undefined") return "UTC";
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
 
 // ---------------------------------------------------------------------------
 // RoutineSection — card grid of routines, optionally filtered by trigger type
@@ -38,20 +43,27 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
   const availableTriggers = triggerFilter
     ? ROUTINE_TRIGGERS.filter((t) => triggerFilter.includes(t.id))
     : ROUTINE_TRIGGERS;
-  const [newTrigger, setNewTrigger] = useState<RoutineTrigger>(availableTriggers[0]?.id ?? "task");
+  const defaultTrigger = availableTriggers[0]?.id ?? "task";
+  const [newTrigger, setNewTrigger] = useState<RoutineTrigger>(defaultTrigger);
   const [newSchedule, setNewSchedule] = useState("");
+  const [newTimezone, setNewTimezone] = useState("UTC");
+
+  useEffect(() => {
+    setNewTimezone(browserTimezone());
+  }, []);
 
   // ── Delete state ────────────────────────────────────────────────────────
   const [confirmDelete, setConfirmDelete] = useState<RoutineSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setNewName("");
     setNewDescription("");
-    setNewTrigger(availableTriggers[0]?.id ?? "task");
+    setNewTrigger(defaultTrigger);
     setNewSchedule("");
+    setNewTimezone(browserTimezone());
     setShowCreate(false);
-  };
+  }, [defaultTrigger]);
 
   const handleCreate = useCallback(async () => {
     if (!newName.trim()) return;
@@ -62,7 +74,7 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
         description: newDescription.trim() || undefined,
         trigger: newTrigger,
         metadata: newTrigger === "cron" && newSchedule.trim()
-          ? { schedule: newSchedule.trim() }
+          ? { schedule: newSchedule.trim(), timezone: newTimezone.trim() || browserTimezone() }
           : undefined,
       };
       const created = await createRoutine(data);
@@ -75,7 +87,7 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
     } finally {
       setCreating(false);
     }
-  }, [newName, newDescription, newTrigger, newSchedule, mutate]);
+  }, [newName, newDescription, newTrigger, newSchedule, newTimezone, resetForm, mutate, router]);
 
   const handleDelete = useCallback(async () => {
     if (!confirmDelete) return;
@@ -201,20 +213,34 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
             )}
 
             {newTrigger === "cron" && (
-              <div>
-                <label className="theme-text-muted mb-1 block text-xs font-medium">
-                  Schedule
-                </label>
-                <input
-                  type="text"
-                  value={newSchedule}
-                  onChange={(e) => setNewSchedule(e.target.value)}
-                  placeholder='e.g., "30m", "1h", or "0 9 * * *"'
-                  className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm font-mono placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
-                />
-                <p className="theme-text-muted mt-1 text-[10px]">
-                  Interval (30s, 5m, 1h) or cron expression. Can be set later.
-                </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="theme-text-muted mb-1 block text-xs font-medium">
+                    Schedule
+                  </label>
+                  <input
+                    type="text"
+                    value={newSchedule}
+                    onChange={(e) => setNewSchedule(e.target.value)}
+                    placeholder='e.g., "30m", "1h", or "0 9 * * *"'
+                    className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm font-mono placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
+                  />
+                  <p className="theme-text-muted mt-1 text-[10px]">
+                    Interval (30s, 5m, 1h) or cron expression. Can be set later.
+                  </p>
+                </div>
+                <div>
+                  <label className="theme-text-muted mb-1 block text-xs font-medium">
+                    Timezone
+                  </label>
+                  <input
+                    type="text"
+                    value={newTimezone}
+                    onChange={(e) => setNewTimezone(e.target.value)}
+                    placeholder="America/Chicago"
+                    className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
+                  />
+                </div>
               </div>
             )}
 

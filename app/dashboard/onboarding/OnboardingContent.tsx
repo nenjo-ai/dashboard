@@ -33,7 +33,9 @@ import {
   fetcher,
   fetchCurrentUser,
   authMeUrl,
+  ensureOfficialNenjoPackageSource,
   listTrustedDevices,
+  installOfficialNenjoPackages,
   updateCurrentOrg,
   updateAgent,
   createChatSession,
@@ -170,7 +172,7 @@ function StepIndicator({
 function StepSecureWorkspace({
   onContinue,
 }: {
-  onContinue: () => void;
+  onContinue: () => void | Promise<void>;
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -285,7 +287,7 @@ function StepSecureWorkspace({
         throw new Error("This browser does not have local access to shared org content yet.");
       }
       sessionStorage.removeItem(RECOVERY_DRAFT_SESSION_KEY);
-      onContinue();
+      await onContinue();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to store the recovery bundle.");
     } finally {
@@ -411,7 +413,7 @@ function StepSecureWorkspace({
 function StepCreateOrganization({
   onContinue,
 }: {
-  onContinue: (orgName: string) => void;
+  onContinue: (orgName: string) => void | Promise<void>;
 }) {
   const [orgName, setOrgName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -423,7 +425,8 @@ function StepCreateOrganization({
     try {
       const trimmed = orgName.trim();
       await updateCurrentOrg({ name: trimmed });
-      onContinue(trimmed);
+      await ensureOfficialNenjoPackageSource();
+      await onContinue(trimmed);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update organization");
     } finally {
@@ -1328,6 +1331,7 @@ function StepRestoreDevice({
         // Ignore storage failures.
       }
       setActiveOrgIdGetter(() => created.org_id);
+      await ensureOfficialNenjoPackageSource();
       onStartFresh(created.org_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create a new organization.");
@@ -1556,6 +1560,8 @@ export default function OnboardingContent() {
   const { user, isLoaded } = useUser();
   const router = useRouter();
   const redirected = useRef(false);
+  const officialSourceEnsuredForOrg = useRef<string | null>(null);
+  const officialPackagesInstalledForOrg = useRef<string | null>(null);
   const { data: currentUser } = useSWR(user ? authMeUrl() : null, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 30000,
@@ -1614,6 +1620,11 @@ export default function OnboardingContent() {
         if (cancelled || redirected.current) return;
 
         const hasOrg = Boolean(me.org_id);
+        if (me.org_id && officialSourceEnsuredForOrg.current !== me.org_id) {
+          officialSourceEnsuredForOrg.current = me.org_id;
+          await ensureOfficialNenjoPackageSource();
+          if (cancelled || redirected.current) return;
+        }
         const hasExistingWorkspace =
           Boolean(me.onboarded) ||
           Boolean(bootstrap?.has_recovery_bundle) ||
@@ -1724,7 +1735,14 @@ export default function OnboardingContent() {
 
         {onboardingMode === "fresh" && currentStep === 2 && (
           <StepSecureWorkspace
-            onContinue={() => setCurrentStep(3)}
+            onContinue={async () => {
+              const orgId = selectedOrgId ?? currentUser?.org_id ?? null;
+              if (!orgId || officialPackagesInstalledForOrg.current !== orgId) {
+                await installOfficialNenjoPackages();
+                if (orgId) officialPackagesInstalledForOrg.current = orgId;
+              }
+              setCurrentStep(3);
+            }}
           />
         )}
 

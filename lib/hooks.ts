@@ -4,6 +4,9 @@ import useSWR from "swr";
 import {
   catalogFetcher,
   catalogSWROptions,
+  fetchProject,
+  fetchProjects,
+  fetchRoutine,
   fetcher,
   fetchTasks,
   projectsUrl,
@@ -16,6 +19,8 @@ import {
   modelsUrl,
   knowledgeItemsUrl,
   knowledgePacksUrl,
+  packageSourcesUrl,
+  packageInstallsUrl,
   marketplaceSourcesUrl,
   apiKeysUrl,
   authMeUrl,
@@ -29,7 +34,6 @@ import {
   agentUrl,
   domainsUrl,
   agentDomainsUrl,
-  lambdasUrl,
   mcpServersUrl,
   agentMcpUrl,
   abilitiesUrl,
@@ -55,6 +59,8 @@ import type {
   Model,
   KnowledgeItem,
   KnowledgePack,
+  PackageInstall,
+  PackageSource,
   MarketplaceSource,
   ApiKey,
   RoutineSummary,
@@ -65,7 +71,6 @@ import type {
   Domain,
   AgentDomainAssignment,
   McpServer,
-  Lambda,
   Ability,
   PromptContextVariableGroup,
   OrganizationSummary,
@@ -168,7 +173,7 @@ export function useTabParam<T extends string>(
 export function useProjects() {
   const { data, error, isLoading, mutate } = useSWR<Project[]>(
     projectsUrl(),
-    catalogFetcher,
+    fetchProjects,
     catalogSWROptions,
   );
 
@@ -214,7 +219,7 @@ export function useTemplateVars() {
 export function useProject(id: string | undefined) {
   const { data, error, isLoading, mutate } = useSWR<Project>(
     id ? projectUrl(id) : null,
-    fetcher,
+    () => fetchProject(id!),
     {
       revalidateOnFocus: false,
       // Poll every 3s while a repo sync is in progress
@@ -472,6 +477,38 @@ export function useMarketplaceSources() {
 
   return {
     sources: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function usePackageSources() {
+  const { data, error, isLoading, mutate } = useSWR<PackageSource[]>(
+    packageSourcesUrl(),
+    catalogFetcher,
+    catalogSWROptions,
+  );
+
+  return {
+    sources: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function usePackageInstalls() {
+  const { data, error, isLoading, mutate } = useSWR<PackageInstall[]>(
+    packageInstallsUrl(),
+    catalogFetcher,
+    catalogSWROptions,
+  );
+
+  return {
+    installs: data,
     isLoading,
     isError: !!error,
     error,
@@ -774,7 +811,7 @@ export function useRoutine(routineId: string | undefined) {
 
   const { data, error, isLoading, mutate } = useSWR<RoutineDetail>(
     url,
-    fetcher,
+    routineId ? () => fetchRoutine(routineId) : null,
     { revalidateOnFocus: false },
   );
 
@@ -990,24 +1027,4 @@ export function useAllAgentDomains(agentIds: string[]) {
   }, [data]);
 
   return { domainToAgentMap };
-}
-
-// ---------------------------------------------------------------------------
-// Lambdas
-// ---------------------------------------------------------------------------
-
-export function useLambdas() {
-  const { data, error, isLoading, mutate } = useSWR<Lambda[]>(
-    lambdasUrl(),
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
-  );
-
-  return {
-    lambdas: data,
-    isLoading,
-    isError: !!error,
-    error,
-    mutate,
-  };
 }

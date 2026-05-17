@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Activity, Bot, FolderKanban, Gauge, LibraryBig, MessageSquare, PlaySquare, Settings, Workflow } from "lucide-react";
+import { Activity, Bot, FolderKanban, Gauge, LibraryBig, MessageSquare, Package, PlaySquare, Settings, Workflow } from "lucide-react";
 
 export interface MobileNavItem {
   label: string;
@@ -37,9 +37,15 @@ export const mobileTabNavItems: MobileNavItem[] = [
   },
   {
     label: "Library",
-    href: "/dashboard/knowledge",
+    href: "/dashboard/library",
     icon: <LibraryBig className="h-5 w-5" />,
-    match: (pathname) => pathname.startsWith("/dashboard/knowledge"),
+    match: (pathname) => pathname.startsWith("/dashboard/library"),
+  },
+  {
+    label: "Packages",
+    href: "/dashboard/packages",
+    icon: <Package className="h-5 w-5" />,
+    match: (pathname) => pathname.startsWith("/dashboard/packages"),
   },
   {
     label: "Activity",

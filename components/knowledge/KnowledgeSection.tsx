@@ -16,6 +16,8 @@ import {
   Upload,
 } from "lucide-react";
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
+import { KnowledgeGraphView } from "@/components/knowledge/KnowledgeGraphView";
+import { knowledgeItemsToManifest } from "@/components/knowledge/knowledgeManifestGraph";
 import { useKnowledgeItems } from "@/lib/hooks";
 import {
   createKnowledgeItem,
@@ -283,6 +285,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
   const [contentError, setContentError] = useState<string | null>(null);
   const [isSavingContent, setIsSavingContent] = useState(false);
   const [contentMode, setContentMode] = useState<"edit" | "preview">("edit");
+  const [activeView, setActiveView] = useState<"documents" | "graph">("documents");
 
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [isSavingMetadata, setIsSavingMetadata] = useState(false);
@@ -298,6 +301,8 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
   const [itemKeywords, setItemKeywords] = useState<string[]>([]);
 
   const [itemEdges, setItemEdges] = useState<KnowledgeItemEdge[]>([]);
+  const [graphEdges, setGraphEdges] = useState<KnowledgeItemEdge[]>([]);
+  const [isLoadingGraphEdges, setIsLoadingGraphEdges] = useState(false);
   const [isLoadingEdges, setIsLoadingEdges] = useState(false);
   const [edgeError, setEdgeError] = useState<string | null>(null);
   const [isSavingEdge, setIsSavingEdge] = useState(false);
@@ -314,6 +319,33 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
   } = useKnowledgeItems(packId);
 
   const selectedItem = items?.find((item) => item.id === selectedItemId) ?? null;
+
+  useEffect(() => {
+    if (!items?.length) {
+      setGraphEdges([]);
+      return;
+    }
+    let cancelled = false;
+    setIsLoadingGraphEdges(true);
+    Promise.all(items.map((item) => fetchKnowledgeItemEdges(packId, item.id).catch(() => [])))
+      .then((edgeSets) => {
+        if (cancelled) return;
+        const seen = new Set<string>();
+        const nextEdges: KnowledgeItemEdge[] = [];
+        for (const edge of edgeSets.flat()) {
+          if (seen.has(edge.id)) continue;
+          seen.add(edge.id);
+          nextEdges.push(edge);
+        }
+        setGraphEdges(nextEdges);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingGraphEdges(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [items, packId]);
 
   useEffect(() => {
     if (!items || items.length === 0) {
@@ -599,6 +631,10 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
     (items ?? []).map((item) => [item.id, item.title ?? item.path ?? item.filename]),
   );
   const contentDirty = itemContent !== null && editContent !== itemContent;
+  const graphManifest = useMemo(
+    () => knowledgeItemsToManifest("Knowledge pack", items ?? [], graphEdges),
+    [graphEdges, items],
+  );
 
   return (
     <Card static className="overflow-hidden rounded-lg bg-white dark:bg-gray-900">
@@ -614,6 +650,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
             </CardDescription>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <ViewToggle activeView={activeView} onChange={setActiveView} />
             <div className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700">
               {(items?.length ?? 0).toLocaleString()} items
             </div>
@@ -628,6 +665,19 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
       </CardHeader>
 
       <CardContent className="p-0">
+        {activeView === "graph" ? (
+          <div className="p-4 pb-0">
+            {isLoading || isLoadingGraphEdges ? (
+              <div className="flex h-[calc(100vh-22rem)] min-h-[760px] items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading graph...
+              </div>
+            ) : (
+              <KnowledgeGraphView manifest={graphManifest} />
+            )}
+          </div>
+        ) : (
+        <>
         <input
           ref={fileInputRef}
           type="file"
@@ -1069,7 +1119,30 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
             </div>
           </div>
         </div>
+        </>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+function ViewToggle({ activeView, onChange }: { activeView: "documents" | "graph"; onChange: (view: "documents" | "graph") => void }) {
+  return (
+    <div className="flex rounded-lg bg-white p-0.5 ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
+      {(["documents", "graph"] as const).map((view) => (
+        <button
+          key={view}
+          type="button"
+          onClick={() => onChange(view)}
+          className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+            activeView === view
+              ? "bg-deep-space-blue-50 text-deep-space-blue-700 shadow-sm dark:bg-deep-space-blue-950/40 dark:text-deep-space-blue-300"
+              : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          }`}
+        >
+          {view}
+        </button>
+      ))}
+    </div>
   );
 }

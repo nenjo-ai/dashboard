@@ -1,6 +1,11 @@
 const CACHE_NAME = 'nenjo-pwa-v2'
 const STREAM_DB = 'nenjo-chat-streams'
 const STREAM_STORE = 'snapshots'
+const CRYPTO_DB = 'nenjo-crypto'
+const CRYPTO_STORE = 'secrets'
+const WRAP_KEY_ENTRY = 'device-wrap-key'
+const PAYLOAD_ALGORITHM = 'aes-256-gcm'
+const AES_ALGORITHM = 'AES-GCM'
 const APP_SHELL_ASSETS = [
   '/offline',
   '/manifest.webmanifest',
@@ -34,6 +39,121 @@ async function writeSnapshot(snapshot) {
     request.onsuccess = () => resolve()
     request.onerror = () => reject(request.error)
   })
+}
+
+function base64ToBytes(value) {
+  const binary = atob(value)
+  const out = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) {
+    out[i] = binary.charCodeAt(i)
+  }
+  return out
+}
+
+function bytesToBase64(bytes) {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i] ?? 0)
+  }
+  return btoa(binary)
+}
+
+function openCryptoDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(CRYPTO_DB, 1)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(CRYPTO_STORE)) {
+        db.createObjectStore(CRYPTO_STORE)
+      }
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+function readCryptoEntry(db, key) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(CRYPTO_STORE, 'readonly')
+    const store = tx.objectStore(CRYPTO_STORE)
+    const request = store.get(key)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+async function loadStoredOrgContentKey(orgId, keyVersion) {
+  const db = await openCryptoDb()
+  const wrapKey = await readCryptoEntry(db, WRAP_KEY_ENTRY)
+  const stored = await readCryptoEntry(db, `encrypted-ock:${orgId}:${keyVersion}`)
+  if (!wrapKey || !stored?.nonce || !stored?.ciphertext) return null
+
+  const plaintext = await crypto.subtle.decrypt(
+    { name: AES_ALGORITHM, iv: base64ToBytes(stored.nonce) },
+    wrapKey,
+    base64ToBytes(stored.ciphertext)
+  )
+  return bytesToBase64(new Uint8Array(plaintext))
+}
+
+function payloadAad(accountId, objectId, objectType) {
+  return new TextEncoder().encode(`${accountId}:${objectId}:${objectType}`)
+}
+
+async function decryptOrgPayload(payload) {
+  if (!payload || payload.algorithm !== PAYLOAD_ALGORITHM || payload.encryption_scope !== 'org') {
+    return null
+  }
+  const base64Key = await loadStoredOrgContentKey(payload.account_id, payload.key_version)
+  if (!base64Key) return null
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    base64ToBytes(base64Key),
+    { name: AES_ALGORITHM, length: 256 },
+    false,
+    ['decrypt']
+  )
+  const plaintext = await crypto.subtle.decrypt(
+    {
+      name: AES_ALGORITHM,
+      iv: base64ToBytes(payload.nonce),
+      additionalData: payloadAad(payload.account_id, payload.object_id, payload.object_type),
+    },
+    key,
+    base64ToBytes(payload.ciphertext)
+  )
+  return new TextDecoder().decode(plaintext)
+}
+
+async function resolveEncryptedNotification(data) {
+  const options = {
+    body: data.body || 'New encrypted notification',
+    icon: data.icon || '/pwa-icon-192.png',
+    badge: data.badge || '/pwa-icon-192.png',
+    tag: data.tag,
+    data: { url: '/notifications' },
+  }
+
+  try {
+    const plaintext = await decryptOrgPayload(data.encrypted_payload)
+    if (plaintext) {
+      const decrypted = JSON.parse(plaintext)
+      if (typeof decrypted.body === 'string' && decrypted.body.trim()) {
+        options.body = decrypted.body
+      }
+      if (typeof decrypted.tag === 'string' && decrypted.tag.trim()) {
+        options.tag = decrypted.tag
+      }
+    }
+  } catch {
+    // Keep the generic fallback if local decryption is unavailable or fails.
+  }
+
+  return {
+    title: data.title || 'Nenjo',
+    options,
+  }
 }
 
 function isStaticAsset(pathname) {
@@ -106,18 +226,24 @@ self.addEventListener('fetch', (event) => {
 
 self.addEventListener('push', (event) => {
   const data = event.data ? event.data.json() : {}
-  const title = data.title || 'Nenjo'
-  const options = {
-    body: data.body || '',
-    icon: data.icon || '/pwa-icon-192.png',
-    badge: data.badge || '/pwa-icon-192.png',
-    tag: data.tag,
-    data: {
-      url: data.url || '/dashboard/chat?channel=notifications',
-    },
-  }
+  event.waitUntil((async () => {
+    const notification = data.kind === 'encrypted_notification'
+      ? await resolveEncryptedNotification(data)
+      : {
+          title: data.title || 'Nenjo',
+          options: {
+            body: data.body || '',
+            icon: data.icon || '/pwa-icon-192.png',
+            badge: data.badge || '/pwa-icon-192.png',
+            tag: data.tag,
+            data: {
+              url: data.url || '/dashboard/chat?channel=notifications',
+            },
+          },
+        }
 
-  event.waitUntil(self.registration.showNotification(title, options))
+    await self.registration.showNotification(notification.title, notification.options)
+  })())
 })
 
 self.addEventListener('notificationclick', (event) => {

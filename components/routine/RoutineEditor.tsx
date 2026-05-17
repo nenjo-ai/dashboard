@@ -180,9 +180,16 @@ function routineEdgesToFlowEdges(edges: RoutineEdgeType[], steps: RoutineStep[])
       animated: style.animated,
       markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: style.stroke },
       style: { strokeWidth: 2, stroke: style.stroke },
-      data: { condition: edge.condition },
+      data: { condition: edge.condition, metadata: edge.metadata ?? {} },
     };
   });
+}
+
+function edgeMetadata(edge: Edge | undefined): Record<string, unknown> {
+  const metadata = (edge?.data as Record<string, unknown> | undefined)?.metadata;
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? metadata as Record<string, unknown>
+    : {};
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +264,7 @@ function RoutineEditorInner({
 
   const [trigger, setTrigger] = useState<RoutineTrigger>(initialTrigger);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -328,6 +336,10 @@ function RoutineEditorInner({
     [nodes, selectedNodeId],
   );
   const selectedNodeData = selectedNode?.data as StepNodeData | undefined;
+  const selectedEdge = useMemo(
+    () => edges.find((edge) => edge.id === selectedEdgeId),
+    [edges, selectedEdgeId],
+  );
 
   // ── Callbacks (all local-only — no API calls) ──────────────────────────
 
@@ -378,7 +390,7 @@ function RoutineEditorInner({
             animated: style.animated,
             markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: style.stroke },
             style: { strokeWidth: 2, stroke: style.stroke },
-            data: { condition },
+            data: { condition, metadata: {} },
           },
           eds,
         ),
@@ -391,13 +403,40 @@ function RoutineEditorInner({
   // Click a node → open config panel (not for trigger node)
   const onNodeClick: NodeMouseHandler = useCallback((_event, node) => {
     if (node.id === TRIGGER_NODE_ID) return;
+    setSelectedEdgeId(null);
     setSelectedNodeId(node.id);
   }, []);
 
-  // Click an edge → delete it locally
-  const onEdgeClick: EdgeMouseHandler = useCallback(
-    (_event, edge) => {
-      setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+  // Click an edge → open config panel.
+  const onEdgeClick: EdgeMouseHandler = useCallback((_event, edge) => {
+    setSelectedNodeId(null);
+    setSelectedEdgeId(edge.id);
+  }, []);
+
+  const handleUpdateEdge = useCallback(
+    (edgeId: string, metadata: Record<string, unknown>) => {
+      setEdges((eds) =>
+        eds.map((edge) =>
+          edge.id === edgeId
+            ? {
+                ...edge,
+                data: {
+                  ...(edge.data as Record<string, unknown> | undefined),
+                  metadata,
+                },
+              }
+            : edge,
+        ),
+      );
+      setIsDirty(true);
+    },
+    [setEdges],
+  );
+
+  const handleDeleteEdge = useCallback(
+    (edgeId: string) => {
+      setEdges((eds) => eds.filter((edge) => edge.id !== edgeId));
+      setSelectedEdgeId(null);
       setIsDirty(true);
     },
     [setEdges],
@@ -406,6 +445,7 @@ function RoutineEditorInner({
   // Click canvas background → deselect
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null);
+    setSelectedEdgeId(null);
   }, []);
 
   // Node drag stop → just mark dirty (position is tracked in ReactFlow state)
@@ -576,6 +616,7 @@ function RoutineEditorInner({
       return next;
     });
     setSelectedNodeId(null);
+    setSelectedEdgeId(null);
     setIsDirty(true);
   }, [selectedNodeId, setNodes, setEdges]);
 
@@ -612,7 +653,7 @@ function RoutineEditorInner({
         source_ref: edge.source,
         target_ref: edge.target,
         condition: ((edge.data as Record<string, unknown>)?.condition as RoutineEdgeCondition | undefined) ?? "always",
-        metadata: {},
+        metadata: edgeMetadata(edge),
       }));
 
       const entryStepRefs = edges
@@ -677,7 +718,7 @@ function RoutineEditorInner({
 
           {/* Hint — hidden on mobile */}
           <span className="hidden lg:inline text-[10px] text-gray-400 dark:text-gray-500">
-            Click an edge to delete · Gate nodes have pass/fail outputs
+            Click an edge to configure retry routing · Gate nodes have pass/fail outputs
           </span>
         </div>
 
@@ -783,6 +824,16 @@ function RoutineEditorInner({
             onClose={() => setSelectedNodeId(null)}
           />
         )}
+
+        {selectedEdge && (
+          <EdgeConfigPanel
+            edge={selectedEdge}
+            steps={nodes.filter((node) => node.id !== TRIGGER_NODE_ID)}
+            onUpdate={handleUpdateEdge}
+            onDelete={handleDeleteEdge}
+            onClose={() => setSelectedEdgeId(null)}
+          />
+        )}
       </div>
 
       <AddStepModal
@@ -791,6 +842,109 @@ function RoutineEditorInner({
         onAdd={handleAddStep}
         onClose={() => setAddStepOpen(false)}
       />
+    </div>
+  );
+}
+
+function EdgeConfigPanel({
+  edge,
+  steps,
+  onUpdate,
+  onDelete,
+  onClose,
+}: {
+  edge: Edge;
+  steps: Node[];
+  onUpdate: (edgeId: string, metadata: Record<string, unknown>) => void;
+  onDelete: (edgeId: string) => void;
+  onClose: () => void;
+}) {
+  const metadata = edgeMetadata(edge);
+  const [maxAttempts, setMaxAttempts] = useState(
+    metadata.max_attempts != null ? String(metadata.max_attempts) : "",
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const nextMetadata = edgeMetadata(edge);
+    setMaxAttempts(nextMetadata.max_attempts != null ? String(nextMetadata.max_attempts) : "");
+    setError(null);
+  }, [edge]);
+
+  const sourceStep = steps.find((step) => step.id === edge.source);
+  const sourceData = sourceStep?.data as StepNodeData | undefined;
+  const sourceLabel = sourceData?.label;
+  const targetLabel = steps.find((step) => step.id === edge.target)?.data?.label as string | undefined;
+  const canRetry = sourceData?.stepType === "gate" || sourceData?.stepType === "cron";
+
+  const handleApply = () => {
+    const nextMetadata = { ...metadata };
+    if (canRetry && maxAttempts.trim()) {
+      const parsed = Number.parseInt(maxAttempts, 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        setError("Max attempts must be a positive number");
+        return;
+      }
+      nextMetadata.max_attempts = parsed;
+    } else {
+      delete nextMetadata.max_attempts;
+    }
+    delete nextMetadata.on_exhausted_step_id;
+
+    setError(null);
+    onUpdate(edge.id, nextMetadata);
+  };
+
+  return (
+    <div className="absolute inset-0 z-10 flex h-full w-full flex-col border-l-0 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 md:relative md:inset-auto md:w-80 md:border-l">
+      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Configure Edge</h3>
+        <button
+          onClick={onClose}
+          className="text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-300"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+          <div className="truncate">{sourceLabel ?? edge.source}</div>
+          <div className="text-gray-400">to</div>
+          <div className="truncate">{targetLabel ?? edge.target}</div>
+        </div>
+
+        {canRetry ? (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Max Attempts</label>
+            <input
+              type="number"
+              min={1}
+              value={maxAttempts}
+              onChange={(event) => setMaxAttempts(event.target.value)}
+              placeholder="No limit"
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+            />
+          </div>
+        ) : (
+          <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+            Retry attempts are only available on edges leaving gate or cron steps.
+          </p>
+        )}
+
+        {error && <p className="text-xs text-red-500">{error}</p>}
+      </div>
+
+      <div className="space-y-2 border-t border-gray-200 p-4 dark:border-gray-700">
+        <Button onClick={handleApply} size="sm" className="w-full">
+          Apply
+        </Button>
+        <Button onClick={() => onDelete(edge.id)} variant="danger" size="sm" className="w-full">
+          Delete Edge
+        </Button>
+      </div>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { useAgentDomains, useContextBlocks } from "@/lib/hooks";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference, JinjaGuide } from "./TemplateVariableReference";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
+import { SourceManagedResourcePanel } from "@/components/resources/SourceManagedResourcePanel";
 
 // ---------------------------------------------------------------------------
 // File-tree node for context blocks
@@ -300,6 +301,19 @@ export function AgentPromptEditor({
   const { agentDomains, mutate: mutateAgentDomains } = useAgentDomains(role.id);
 
   const isLocked = role.prompt_locked;
+  const isSourceManaged = Boolean(role.read_only || role.metadata?.install);
+
+  if (isSourceManaged) {
+    return (
+      <SourceManagedResourcePanel
+        resource={role}
+        title={role.display_name || role.name}
+        description={role.description}
+        fallbackContent={JSON.stringify(promptConfig, null, 2)}
+        fallbackLanguage="yaml"
+      />
+    );
+  }
 
   const handleToggleLock = useCallback(async () => {
     setLockToggling(true);
@@ -1006,7 +1020,23 @@ export function AgentPromptEditor({
 // Inline content variant (for agent detail page — no overlay/modal)
 // ---------------------------------------------------------------------------
 
-export function AgentPromptEditorContent({
+export function AgentPromptEditorContent(props: AgentPromptEditorContentProps) {
+  const { role, promptConfig } = props;
+  if (role.read_only || role.metadata?.install) {
+    return (
+      <SourceManagedResourcePanel
+        resource={role}
+        title={role.display_name || role.name}
+        description={role.description}
+        fallbackContent={JSON.stringify(promptConfig, null, 2)}
+        fallbackLanguage="yaml"
+      />
+    );
+  }
+  return <EditableAgentPromptEditorContent {...props} />;
+}
+
+function EditableAgentPromptEditorContent({
   role,
   promptConfig,
   onSaved,

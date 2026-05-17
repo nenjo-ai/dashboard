@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -10,6 +10,11 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import type { RoutineSummary, CreateRoutineRequest } from "@/lib/types";
 import { ROUTINE_TRIGGERS } from "@/lib/types";
 import { createRoutine, deleteRoutine, triggerRoutine } from "@/lib/api";
+
+function browserTimezone(): string {
+  if (typeof window === "undefined") return "UTC";
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -38,9 +43,14 @@ export function RoutineList({
   const [newDescription, setNewDescription] = useState("");
   const [newTrigger, setNewTrigger] = useState("task");
   const [newSchedule, setNewSchedule] = useState("");
+  const [newTimezone, setNewTimezone] = useState("UTC");
   const [error, setError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    setNewTimezone(browserTimezone());
+  }, []);
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
@@ -57,12 +67,13 @@ export function RoutineList({
         description: newDescription.trim() || undefined,
         trigger: newTrigger as CreateRoutineRequest["trigger"],
         ...(newTrigger === "cron" && newSchedule.trim()
-          ? { metadata: { schedule: newSchedule.trim() } }
+          ? { metadata: { schedule: newSchedule.trim(), timezone: newTimezone.trim() || browserTimezone() } }
           : {}),
       });
       setNewName("");
       setNewDescription("");
       setNewSchedule("");
+      setNewTimezone(browserTimezone());
       setShowCreateForm(false);
       onRefresh();
       // Open the newly created routine
@@ -195,21 +206,35 @@ export function RoutineList({
               </select>
             </div>
             {newTrigger === "cron" && (
-              <div>
-                <label className="theme-text-muted mb-1 block text-xs font-medium">
-                  Schedule
-                </label>
-                <input
-                  type="text"
-                  value={newSchedule}
-                  onChange={(e) => setNewSchedule(e.target.value)}
-                  placeholder="e.g., 0 9 * * * or 30m"
-                  className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
-                  onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                />
-                <p className="theme-text-muted mt-1 text-xs">
-                  Cron expression (e.g. &quot;0 9 * * *&quot;) or interval (e.g. &quot;30m&quot;, &quot;6h&quot;)
-                </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="theme-text-muted mb-1 block text-xs font-medium">
+                    Schedule
+                  </label>
+                  <input
+                    type="text"
+                    value={newSchedule}
+                    onChange={(e) => setNewSchedule(e.target.value)}
+                    placeholder="e.g., 0 9 * * * or 30m"
+                    className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
+                    onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                  />
+                  <p className="theme-text-muted mt-1 text-xs">
+                    Cron expression (e.g. &quot;0 9 * * *&quot;) or interval (e.g. &quot;30m&quot;, &quot;6h&quot;)
+                  </p>
+                </div>
+                <div>
+                  <label className="theme-text-muted mb-1 block text-xs font-medium">
+                    Timezone
+                  </label>
+                  <input
+                    type="text"
+                    value={newTimezone}
+                    onChange={(e) => setNewTimezone(e.target.value)}
+                    placeholder="America/Chicago"
+                    className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
+                  />
+                </div>
               </div>
             )}
             <div className="flex gap-2">
@@ -224,6 +249,7 @@ export function RoutineList({
                   setNewName("");
                   setNewDescription("");
                   setNewSchedule("");
+                  setNewTimezone(browserTimezone());
                 }}
               >
                 Cancel
