@@ -18,6 +18,7 @@ import { formatToolCallSignature } from "@/lib/toolCallDisplay";
 import { useUser } from "@clerk/nextjs";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { DomainSlashCommandDropdown } from "@/components/project/DomainSlashCommandDropdown";
+import { PendingDomainPill } from "@/components/project/PendingDomainPill";
 import { Button } from "@/components/ui/Button";
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
 import { motion, AnimatePresence } from "motion/react";
@@ -787,6 +788,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
   const [showDomainDropdown, setShowDomainDropdown] = useState(false);
   const [domainFilter, setDomainFilter] = useState("");
   const [selectedDomainIndex, setSelectedDomainIndex] = useState(0);
+  const [pendingDomain, setPendingDomain] = useState<Domain | null>(null);
   const [showCommandDropdown, setShowCommandDropdown] = useState(false);
   const [commandFilter, setCommandFilter] = useState("");
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
@@ -1132,7 +1134,17 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
     setShowAgentDropdown(false);
     setMentionFilter("");
 
-    if (value.startsWith("#") && !activeDomainSession) {
+    if (value.startsWith("#") && activeDomainSession) {
+      const domainText = value.slice(1);
+      if (!/\s/.test(domainText)) {
+        setShowDomainDropdown(true);
+        setDomainFilter(domainText);
+        setSelectedDomainIndex(0);
+        return;
+      }
+    }
+
+    if (value.startsWith("#") && !activeDomainSession && !pendingDomain) {
       const domainText = value.slice(1);
       if (!/\s/.test(domainText)) {
         setShowDomainDropdown(true);
@@ -1148,12 +1160,13 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
 
   const handleDomainSelect = useCallback(
     (domain: Domain) => {
+      setPendingDomain(domain);
       setInput("");
       setShowDomainDropdown(false);
       setDomainFilter("");
-      enterDomain(domain.id, domain.command, agentId);
+      inputRef.current?.focus();
     },
-    [enterDomain, agentId],
+    [],
   );
 
   // Step 1: user selects an agent from @mention dropdown → always show session picker
@@ -1277,12 +1290,30 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
       }
     }
 
+    if (pendingDomain && !activeDomainSession) {
+      setInput("");
+      resetInputHeight();
+      enterDomain(pendingDomain.id, pendingDomain.command, agentId, text);
+      setPendingDomain(null);
+      return;
+    }
+
     if (text.startsWith("#") && !activeDomainSession && availableDomains.length > 0) {
-      const matchedDomain = availableDomains.find((m) => m.command.toLowerCase() === text.toLowerCase());
+      const matchedDomain = [...availableDomains]
+        .sort((a, b) => b.command.length - a.command.length)
+        .find((m) => {
+          const command = m.command.toLowerCase();
+          const lowerText = text.toLowerCase();
+          return lowerText === command || lowerText.startsWith(`${command} `);
+        });
       if (matchedDomain) {
+        const userMessage = text.slice(matchedDomain.command.length).trim();
+        if (!userMessage) {
+          return;
+        }
         setInput("");
         resetInputHeight();
-        enterDomain(matchedDomain.id, matchedDomain.command, agentId);
+        enterDomain(matchedDomain.id, matchedDomain.command, agentId, userMessage);
         return;
       }
     }
@@ -1300,6 +1331,12 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (pendingDomain && !input.trim() && (e.key === "Backspace" || e.key === "Escape")) {
+      e.preventDefault();
+      setPendingDomain(null);
+      return;
+    }
+
     // Local slash command keyboard nav
     if (showCommandDropdown && filteredCommands.length > 0) {
       if (e.key === "Escape") { e.preventDefault(); setShowCommandDropdown(false); return; }
@@ -1309,7 +1346,20 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
     }
 
     // Domain dropdown keyboard nav
-    if (showDomainDropdown && filteredDomains.length > 0) {
+    if (showDomainDropdown && activeDomainSession) {
+      if (e.key === "Escape") { e.preventDefault(); setShowDomainDropdown(false); return; }
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        setInput("");
+        resetInputHeight();
+        setShowDomainDropdown(false);
+        exitDomain();
+        return;
+      }
+    }
+
+    // Domain dropdown keyboard nav
+    if (showDomainDropdown && filteredDomains.length > 0 && !activeDomainSession) {
       if (e.key === "Escape") { e.preventDefault(); setShowDomainDropdown(false); return; }
       if (e.key === "ArrowDown") { e.preventDefault(); setSelectedDomainIndex((prev) => prev < filteredDomains.length - 1 ? prev + 1 : 0); return; }
       if (e.key === "ArrowUp") { e.preventDefault(); setSelectedDomainIndex((prev) => prev > 0 ? prev - 1 : filteredDomains.length - 1); return; }
@@ -1368,8 +1418,10 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
 
   // Mobile: handle enter domain via MobileEmptyState
   const handleEnterDomainFromChip = useCallback((domain: Domain) => {
-    enterDomain(domain.id, domain.command, agentId);
-  }, [enterDomain, agentId]);
+    setPendingDomain(domain);
+    setInput("");
+    inputRef.current?.focus();
+  }, []);
 
   const messageContent = useMemo(() => {
     if (isLoadingHistory) {
@@ -1553,50 +1605,6 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
         />
       )}
 
-      {/* Domain banner at top — appears after border animation settles (desktop only) */}
-      <AnimatePresence>
-        {!isMobile && showDomainBanner && activeDomainSession && activeAgent && (() => {
-          const activeDomain = availableDomains.find((m) => m.id === activeDomainSession.domain_id);
-          return (
-            <motion.div
-              key="domain-banner"
-              initial={{ opacity: 0, y: -20, height: 0 }}
-              animate={{ opacity: 1, y: 0, height: "auto" }}
-              exit={{ opacity: 0, y: -20, height: 0, transition: { duration: 1, ease: "easeIn" } }}
-              transition={{
-                duration: 0.5,
-                ease: [0.22, 1, 0.36, 1],
-              }}
-              className="shrink-0 overflow-hidden"
-            >
-              <div
-                className="flex items-center justify-between px-4 py-2"
-                style={agentColor ? {
-                  background: `linear-gradient(90deg, ${agentColor}08 0%, ${agentColor}15 50%, ${agentColor}08 100%)`,
-                } : undefined}
-              >
-                <span
-                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
-                  style={agentColor ? { backgroundColor: `${agentColor}20`, color: agentColor } : undefined}
-                >
-                  {activeDomain?.command ?? "/domain"} · {activeDomain?.display_name ?? "Domain"}
-                </span>
-                <button
-                  type="button"
-                  onClick={exitDomain}
-                  className="rounded-full p-1 text-gray-400 transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
-                  title="Exit domain"
-                >
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </motion.div>
-          );
-        })()}
-      </AnimatePresence>
-
       {/* Messages */}
       <div
         ref={scrollRef}
@@ -1649,7 +1657,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
               />
             </div>
           )}
-          {showDomainDropdown && filteredDomains.length > 0 && (
+          {showDomainDropdown && (filteredDomains.length > 0 || activeDomainSession) && (
             <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-50 px-4 pb-2">
               <DomainSlashCommandDropdown
                 domains={filteredDomains}
@@ -1657,14 +1665,22 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                 onSelect={handleDomainSelect}
                 onClose={() => setShowDomainDropdown(false)}
                 anchorRef={inputRef}
+                accentColor={agentColor}
+                exitMode={!!activeDomainSession}
+                onExitDomain={() => {
+                  setInput("");
+                  resetInputHeight();
+                  setShowDomainDropdown(false);
+                  exitDomain();
+                }}
               />
             </div>
           )}
           {showAgentDropdown && !selectedMentionAgent && filteredAgents.length > 0 && (
-            <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-50 px-4 pb-2">
+            <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-[100] px-4 pb-2">
               <div
                 ref={dropdownRef}
-                className="theme-border theme-overlay w-full max-h-48 overflow-y-auto rounded-[1.35rem] border shadow-[0_20px_50px_rgba(15,23,42,0.16)] backdrop-blur-xl"
+                className="theme-border w-full max-h-48 overflow-y-auto rounded-[1.35rem] border bg-white shadow-[0_20px_50px_rgba(15,23,42,0.24)] dark:bg-gray-900"
               >
                 {filteredAgents.map((agent: AgentDefinition, index: number) => (
                   <button
@@ -1686,12 +1702,12 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
             </div>
           )}
           {selectedMentionAgent && (
-            <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-50 px-4 pb-2">
+            <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-[100] px-4 pb-2">
               <div
                 ref={dropdownRef}
-                className="theme-border theme-overlay w-full max-h-72 overflow-y-auto rounded-[1.35rem] border shadow-[0_20px_50px_rgba(15,23,42,0.16)] backdrop-blur-xl"
+                className="theme-border w-full max-h-72 overflow-y-auto rounded-[1.35rem] border bg-white shadow-[0_20px_50px_rgba(15,23,42,0.24)] dark:bg-gray-900"
               >
-                <div className="theme-border theme-surface-muted sticky top-0 flex items-center gap-2 border-b px-3 py-2">
+                <div className="theme-border sticky top-0 flex items-center gap-2 border-b bg-gray-50 px-3 py-2 dark:bg-gray-800">
                   <RoleIdenticon roleId={selectedMentionAgent.id} color={selectedMentionAgent.color} size={18} className="shrink-0" name={selectedMentionAgent.name} />
                   <span className="text-xs font-medium text-gray-700 dark:text-gray-300">@{selectedMentionAgent.name}</span>
                   <span className="text-xs text-gray-400">— {mentionStep === "project" ? "pick a project" : "pick a session"}</span>
@@ -1718,22 +1734,22 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                     <button
                       type="button"
                       onMouseDown={(e) => { e.preventDefault(); handleNewChatFromMention(); }}
-                      className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors", sessionPickerIndex === 0 ? "bg-deep-space-blue-500 text-white" : "hover:[background:var(--app-hover)]")}
+                      className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors", sessionPickerIndex === 0 ? "bg-gray-100 dark:bg-gray-800" : "hover:[background:var(--app-hover)]")}
                     >
-                      <svg className="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <svg className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                       </svg>
-                      <span className="font-medium text-gray-700 dark:text-gray-300">New chat</span>
+                      <span className="font-medium text-gray-900 dark:text-gray-100">New chat</span>
                     </button>
                     {mentionAgentSessions.map((session, index) => (
                       <button
                         key={session.id}
                         type="button"
                         onMouseDown={(e) => { e.preventDefault(); handleSessionSelect(session); }}
-                        className={cn("flex w-full flex-col px-3 py-2 text-left transition-colors", index + 1 === sessionPickerIndex ? "bg-deep-space-blue-500 text-white" : "hover:[background:var(--app-hover)]")}
+                        className={cn("flex w-full flex-col px-3 py-2 text-left transition-colors", index + 1 === sessionPickerIndex ? "bg-gray-100 dark:bg-gray-800" : "hover:[background:var(--app-hover)]")}
                       >
-                        <span className={cn("truncate text-sm font-medium", index + 1 === sessionPickerIndex ? "text-white" : "text-gray-900 dark:text-gray-100")}>{session.title}</span>
-                        <span className={cn("mt-0.5 flex items-center gap-1.5 text-[11px]", index + 1 === sessionPickerIndex ? "text-deep-space-blue-100" : "text-gray-500 dark:text-gray-400")}>
+                        <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{session.title}</span>
+                        <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
                           <span className="truncate">{displayProjectName(session.project_name)}</span>
                           <span>·</span>
                           <span className="shrink-0">{timeAgo(session.updated_at)}</span>
@@ -1754,7 +1770,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                           key={project.id ?? "general"}
                           type="button"
                           onMouseDown={(e) => { e.preventDefault(); handleProjectSelect(project); }}
-                          className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors", index === sessionPickerIndex ? "bg-deep-space-blue-500 text-white" : "hover:[background:var(--app-hover)]")}
+                          className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors", index === sessionPickerIndex ? "bg-gray-100 dark:bg-gray-800" : "hover:[background:var(--app-hover)]")}
                         >
                           <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold", index === sessionPickerIndex ? "bg-deep-space-blue-500 text-white" : "theme-surface-muted theme-text-muted")}>
                             {project.id === null ? "G" : project.name.charAt(0).toUpperCase()}
@@ -1790,6 +1806,8 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
             inDomain={inDomain}
             onExitDomain={exitDomain}
             activeDomainLabel={activeDomainSession ? availableDomains.find((m) => m.id === activeDomainSession.domain_id)?.command : undefined}
+            pendingDomain={pendingDomain}
+            onClearPendingDomain={() => setPendingDomain(null)}
           />
         </div>
       )}
@@ -1807,24 +1825,32 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
             />
           )}
 
-          {showDomainDropdown && filteredDomains.length > 0 && (
-            <DomainSlashCommandDropdown
-              domains={filteredDomains}
-              selectedIndex={selectedDomainIndex}
-              onSelect={handleDomainSelect}
-              onClose={() => setShowDomainDropdown(false)}
-              anchorRef={inputRef}
-            />
+          {showDomainDropdown && (filteredDomains.length > 0 || activeDomainSession) && (
+              <DomainSlashCommandDropdown
+                domains={filteredDomains}
+                selectedIndex={selectedDomainIndex}
+                onSelect={handleDomainSelect}
+                onClose={() => setShowDomainDropdown(false)}
+                anchorRef={inputRef}
+                accentColor={agentColor}
+                exitMode={!!activeDomainSession}
+                onExitDomain={() => {
+                  setInput("");
+                  resetInputHeight();
+                  setShowDomainDropdown(false);
+                  exitDomain();
+                }}
+              />
           )}
 
           {/* @mention navigation: Step 2 (session picker) or Step 3 (project picker) */}
           {selectedMentionAgent && (
             <div
               ref={dropdownRef}
-              className="theme-border theme-surface absolute bottom-full left-0 mb-1 z-50 w-80 max-h-72 overflow-y-auto rounded-lg border shadow-lg"
+              className="theme-border absolute bottom-full left-0 mb-1 z-[100] w-80 max-h-72 overflow-y-auto rounded-lg border bg-white shadow-xl dark:bg-gray-900"
             >
               {/* Header showing selected agent */}
-              <div className="theme-border theme-surface-muted sticky top-0 flex items-center gap-2 border-b px-3 py-2">
+              <div className="theme-border sticky top-0 flex items-center gap-2 border-b bg-gray-50 px-3 py-2 dark:bg-gray-800">
                 <RoleIdenticon roleId={selectedMentionAgent.id} color={selectedMentionAgent.color} size={18} className="shrink-0" name={selectedMentionAgent.name} />
                 <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
                   @{selectedMentionAgent.name}
@@ -1865,14 +1891,14 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                     className={cn(
                       "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
                       sessionPickerIndex === 0
-                        ? "bg-deep-space-blue-500 text-white"
+                        ? "bg-gray-100 dark:bg-gray-800"
                         : "hover:[background:var(--app-hover)]",
                     )}
                   >
-                    <svg className="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <svg className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                     </svg>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">New chat</span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100">New chat</span>
                   </button>
 
                   {/* Existing sessions */}
@@ -1884,20 +1910,14 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                       className={cn(
                         "flex w-full flex-col px-3 py-2 text-left transition-colors",
                         index + 1 === sessionPickerIndex
-                          ? "bg-deep-space-blue-500 text-white"
+                          ? "bg-gray-100 dark:bg-gray-800"
                           : "hover:[background:var(--app-hover)]",
                       )}
                     >
-                      <span className={cn(
-                        "truncate text-sm font-medium",
-                        index + 1 === sessionPickerIndex ? "text-white" : "text-gray-900 dark:text-gray-100",
-                      )}>
+                      <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
                         {session.title}
                       </span>
-                      <span className={cn(
-                        "mt-0.5 flex items-center gap-1.5 text-[11px]",
-                        index + 1 === sessionPickerIndex ? "text-deep-space-blue-100" : "text-gray-500 dark:text-gray-400",
-                      )}>
+                      <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
                         <span className="truncate">
                           {displayProjectName(session.project_name)}
                         </span>
@@ -1929,7 +1949,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                         className={cn(
                           "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
                           index === sessionPickerIndex
-                            ? "bg-deep-space-blue-500 text-white"
+                            ? "bg-gray-100 dark:bg-gray-800"
                             : "hover:[background:var(--app-hover)]",
                         )}
                       >
@@ -1962,7 +1982,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
           {showAgentDropdown && !selectedMentionAgent && filteredAgents.length > 0 && (
             <div
               ref={dropdownRef}
-              className="theme-border theme-surface absolute bottom-full left-0 mb-1 z-50 w-64 max-h-48 overflow-y-auto rounded-lg border shadow-lg"
+              className="theme-border absolute bottom-full left-0 mb-1 z-[100] w-64 max-h-48 overflow-y-auto rounded-lg border bg-white shadow-xl dark:bg-gray-900"
             >
               {filteredAgents.map((agent: AgentDefinition, index: number) => (
                 <button
@@ -1982,6 +2002,49 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
               ))}
             </div>
           )}
+
+          <AnimatePresence>
+            {!isMobile && showDomainBanner && activeDomainSession && activeAgent && (() => {
+              const activeDomain = availableDomains.find((m) => m.id === activeDomainSession.domain_id);
+              return (
+                <motion.div
+                  key="domain-banner"
+                  initial={{ opacity: 0, y: 8, height: 0 }}
+                  animate={{ opacity: 1, y: 0, height: "auto" }}
+                  exit={{ opacity: 0, y: 8, height: 0, transition: { duration: 1, ease: "easeIn" } }}
+                  transition={{
+                    duration: 0.5,
+                    ease: [0.22, 1, 0.36, 1],
+                  }}
+                  className="mb-2 overflow-hidden"
+                >
+                  <div
+                    className="flex items-center justify-between rounded-lg px-3 py-2"
+                    style={agentColor ? {
+                      background: `linear-gradient(90deg, ${agentColor}08 0%, ${agentColor}15 50%, ${agentColor}08 100%)`,
+                    } : undefined}
+                  >
+                    <span
+                      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
+                      style={agentColor ? { backgroundColor: `${agentColor}20`, color: agentColor } : undefined}
+                    >
+                      {activeDomain?.command ?? "#domain"} · {activeDomain?.display_name ?? "Domain"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={exitDomain}
+                      className="rounded-full p-1 text-gray-400 transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
+                      title="Exit domain"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })()}
+          </AnimatePresence>
 
           <div className="flex items-end gap-2">
             <div className="relative flex-1">
@@ -2004,23 +2067,41 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
                   }}
                 />
               )}
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder={isDomainPending ? "Activating domain..." : placeholder}
-                disabled={isDomainPending}
-                rows={1}
+              <div
                 className={cn(
-                  "theme-surface w-full resize-none overflow-y-auto rounded-lg px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-hidden dark:text-gray-100 dark:placeholder:text-gray-500",
+                  "theme-surface flex min-h-10 w-full items-end gap-2 rounded-lg px-2 py-1.5",
                   borderPhase
                     ? "border border-transparent"
-                    : "theme-border border focus:border-deep-space-blue-500 focus:ring-1 focus:ring-deep-space-blue-500",
+                    : "theme-border border focus-within:border-deep-space-blue-500 focus-within:ring-1 focus-within:ring-deep-space-blue-500",
                   isDomainPending && "opacity-60",
                 )}
-                style={{ maxHeight: 200 }}
-              />
+              >
+                {pendingDomain && (
+                  <PendingDomainPill
+                    domain={pendingDomain}
+                    onClear={() => setPendingDomain(null)}
+                    accentColor={agentColor}
+                    className="mb-0.5"
+                  />
+                )}
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder={
+                    isDomainPending
+                      ? "Activating domain..."
+                      : pendingDomain
+                        ? "Describe what to do in this domain..."
+                        : placeholder
+                  }
+                  disabled={isDomainPending}
+                  rows={1}
+                  className="min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-0.5 text-sm placeholder:text-gray-400 focus:outline-hidden focus:ring-0 dark:text-gray-100 dark:placeholder:text-gray-500"
+                  style={{ maxHeight: 200 }}
+                />
+              </div>
               {isDomainPending && (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
                   <svg className="h-4 w-4 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
