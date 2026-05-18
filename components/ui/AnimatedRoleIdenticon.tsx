@@ -6,7 +6,7 @@ import * as rings from "@dicebear/rings";
 
 interface AnimatedRoleIdenticonProps {
   roleId: string;
-  color: string;
+  color?: string | null;
   size?: number;
   className?: string;
 }
@@ -25,6 +25,11 @@ const RING_DURATIONS = [3, 2.4, 1.8];
 const PENDULUM_KEY_TIMES = "0;0.25;0.4;0.5;0.6;0.75;1";
 const PENDULUM_VALUES_CW = "0 50 50;20 50 50;60 50 50;180 50 50;300 50 50;340 50 50;360 50 50";
 const PENDULUM_VALUES_CCW = "0 50 50;-20 50 50;-60 50 50;-180 50 50;-300 50 50;-340 50 50;-360 50 50";
+
+function normalizedRingColor(color: string | null | undefined): string {
+  const hex = color?.trim().replace(/^#/, "") ?? "";
+  return /^[0-9a-fA-F]{6}$/.test(hex) ? hex : "0EA5E9";
+}
 
 /**
  * Injects native SVG <animateTransform> elements into the DiceBear rings SVG.
@@ -132,16 +137,16 @@ export function AnimatedRoleIdenticon({
   const rawId = useId();
   const uid = rawId.replace(/:/g, "");
   const containerRef = useRef<HTMLDivElement>(null);
+  const ringColor = normalizedRingColor(color);
 
   const svgString = useMemo(() => {
-    const hex = color.startsWith("#") ? color.slice(1) : color;
     const avatar = createAvatar(rings, {
       seed: roleId,
       size,
-      ringColor: [hex],
+      ringColor: [ringColor],
     });
     return avatar.toString();
-  }, [roleId, color, size]);
+  }, [roleId, ringColor, size]);
 
   const animatedSvg = useMemo(
     () => buildAnimatedSvg(svgString, uid),
@@ -157,20 +162,12 @@ export function AnimatedRoleIdenticon({
 
   // SSR fallback or parse failure
   if (!animatedSvg) {
-    const hex = color.startsWith("#") ? color.slice(1) : color;
-    const avatar = createAvatar(rings, {
-      seed: roleId,
-      size,
-      ringColor: [hex],
-    });
     return (
-      <img
-        src={avatar.toDataUri()}
-        alt=""
-        width={size}
-        height={size}
+      <div
+        aria-hidden="true"
         className={className}
-        style={{ borderRadius: "50%" }}
+        style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden" }}
+        dangerouslySetInnerHTML={{ __html: svgString }}
       />
     );
   }

@@ -4,18 +4,22 @@ import { useMemo } from "react";
 import { createAvatar } from "@dicebear/core";
 import * as rings from "@dicebear/rings";
 import { AnimatedRoleIdenticon } from "./AnimatedRoleIdenticon";
-import { SystemRoleIcon } from "./SystemRoleIcon";
 
 interface RoleIdenticonProps {
-  roleId: string;
-  color: string;
+  roleId?: string | null;
+  color?: string | null;
   size?: number;
   className?: string;
   animate?: boolean;
-  /** When the agent name is "system", renders the hardcoded system icon instead. */
+  /** Deprecated. Identicons are keyed by `roleId`, not agent name. */
   name?: string;
   /** Deprecated alias for `name`. */
   roleName?: string;
+}
+
+function normalizedRingColor(color: string | null | undefined): string {
+  const hex = color?.trim().replace(/^#/, "") ?? "";
+  return /^[0-9a-fA-F]{6}$/.test(hex) ? hex : "0EA5E9";
 }
 
 export function RoleIdenticon({
@@ -24,38 +28,24 @@ export function RoleIdenticon({
   size = 32,
   className,
   animate = false,
-  name,
-  roleName,
 }: RoleIdenticonProps) {
-  const resolvedName = name ?? roleName;
-  const isSystemRole = resolvedName?.trim().toLowerCase() === "system";
+  const seed = roleId?.trim() || "agent";
+  const ringColor = normalizedRingColor(color);
 
-  const dataUri = useMemo(() => {
-    // DiceBear expects hex colors without the '#' prefix
-    const hex = color.startsWith("#") ? color.slice(1) : color;
+  const svg = useMemo(() => {
     const avatar = createAvatar(rings, {
-      seed: roleId,
+      seed,
       size,
-      ringColor: [hex],
+      ringColor: [ringColor],
     });
-    return avatar.toDataUri();
-  }, [roleId, color, size]);
-
-  if (isSystemRole) {
-    return (
-      <SystemRoleIcon
-        size={size}
-        className={className}
-        animate={animate}
-      />
-    );
-  }
+    return avatar.toString();
+  }, [seed, ringColor, size]);
 
   if (animate) {
     return (
       <AnimatedRoleIdenticon
-        roleId={roleId}
-        color={color}
+        roleId={seed}
+        color={ringColor}
         size={size}
         className={className}
       />
@@ -63,13 +53,11 @@ export function RoleIdenticon({
   }
 
   return (
-    <img
-      src={dataUri}
-      alt=""
-      width={size}
-      height={size}
+    <div
+      aria-hidden="true"
       className={className}
-      style={{ borderRadius: "50%" }}
+      style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden" }}
+      dangerouslySetInnerHTML={{ __html: svg }}
     />
   );
 }

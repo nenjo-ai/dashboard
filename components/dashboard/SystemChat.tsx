@@ -4,7 +4,7 @@ import { cn } from "@/lib/cn";
 import { useState, useRef, useEffect, useMemo, useCallback, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { ChatMessage, AgentDefinition } from "@/lib/types";
+import type { ChatMessage, AgentDefinition, Domain } from "@/lib/types";
 import {
   useAgents,
   useAgentDomains,
@@ -15,6 +15,7 @@ import { useUser } from "@clerk/nextjs";
 import { SystemRoleIcon } from "@/components/ui/SystemRoleIcon";
 import { DomainSlashCommandDropdown } from "@/components/project/DomainSlashCommandDropdown";
 import { DomainIndicator } from "@/components/project/DomainIndicator";
+import { PendingDomainPill } from "@/components/project/PendingDomainPill";
 import ChatSessionList from "@/components/project/ChatSessionList";
 
 
@@ -200,6 +201,7 @@ export function SystemChat() {
   const [showDomainDropdown, setShowDomainDropdown] = useState(false);
   const [domainFilter, setDomainFilter] = useState("");
   const [selectedDomainIndex, setSelectedDomainIndex] = useState(0);
+  const [pendingDomain, setPendingDomain] = useState<Domain | null>(null);
 
   // Pre-filter domains by the current filter
   const filteredDomains = useMemo(
@@ -227,6 +229,32 @@ export function SystemChat() {
       return;
     }
 
+    if (pendingDomain && !chat.activeDomainSession) {
+      chat.enterDomain(pendingDomain.id, pendingDomain.command, systemAgentId, text);
+      setInputValue("");
+      setPendingDomain(null);
+      return;
+    }
+
+    if (text.startsWith("#") && !chat.activeDomainSession && availableDomains.length > 0) {
+      const matchedDomain = [...availableDomains]
+        .sort((a, b) => b.command.length - a.command.length)
+        .find((m) => {
+          const command = m.command.toLowerCase();
+          const lowerText = text.toLowerCase();
+          return lowerText === command || lowerText.startsWith(`${command} `);
+        });
+      if (matchedDomain) {
+        const userMessage = text.slice(matchedDomain.command.length).trim();
+        if (!userMessage) {
+          return;
+        }
+        chat.enterDomain(matchedDomain.id, matchedDomain.command, systemAgentId, userMessage);
+        setInputValue("");
+        return;
+      }
+    }
+
     chat.sendMessage(text);
     setInputValue("");
 
@@ -234,11 +262,32 @@ export function SystemChat() {
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
-  }, [inputValue, systemAgentId, chat]);
+  }, [inputValue, systemAgentId, chat, availableDomains, pendingDomain]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (pendingDomain && !inputValue.trim() && (e.key === "Backspace" || e.key === "Escape")) {
+      e.preventDefault();
+      setPendingDomain(null);
+      return;
+    }
+
     // Handle domain dropdown keyboard navigation
-    if (showDomainDropdown) {
+    if (showDomainDropdown && chat.activeDomainSession) {
+      if (e.key === "Escape") {
+        setShowDomainDropdown(false);
+        return;
+      }
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        setInputValue("");
+        setShowDomainDropdown(false);
+        chat.exitDomain();
+        return;
+      }
+    }
+
+    // Handle domain dropdown keyboard navigation
+    if (showDomainDropdown && filteredDomains.length > 0 && !chat.activeDomainSession) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedDomainIndex((prev) => Math.min(prev + 1, filteredDomains.length - 1));
@@ -252,9 +301,10 @@ export function SystemChat() {
       if (e.key === "Enter" && filteredDomains[selectedDomainIndex]) {
         e.preventDefault();
         const dm = filteredDomains[selectedDomainIndex];
-        chat.enterDomain(dm.id, dm.command, systemAgentId);
+        setPendingDomain(dm);
         setInputValue("");
         setShowDomainDropdown(false);
+        inputRef.current?.focus();
         return;
       }
       if (e.key === "Escape") {
@@ -279,13 +329,22 @@ export function SystemChat() {
     el.style.height = Math.min(el.scrollHeight, 120) + "px";
 
     // Detect # for domain commands
-    if (value === "#" || (value.startsWith("#") && !value.includes(" "))) {
+    if (chat.activeDomainSession && value.startsWith("#") && !value.includes(" ")) {
       setShowDomainDropdown(true);
       setDomainFilter(value.slice(1));
       setSelectedDomainIndex(0);
-    } else {
-      setShowDomainDropdown(false);
+      return;
     }
+
+    // Detect # for domain commands
+    if (!pendingDomain && (value === "#" || (value.startsWith("#") && !value.includes(" ")))) {
+      setShowDomainDropdown(true);
+      setDomainFilter(value.slice(1));
+      setSelectedDomainIndex(0);
+      return;
+    }
+
+    setShowDomainDropdown(false);
   };
 
   // Not ready states
@@ -319,22 +378,6 @@ export function SystemChat() {
           <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
             System Assistant
           </h3>
-          {chat.activeDomainSession && (
-            <DomainIndicator
-              session={chat.activeDomainSession}
-              domainName={
-                availableDomains.find((m) => m.id === chat.activeDomainSession?.domain_id)
-                  ?.display_name ?? "Domain"
-              }
-              domainCommand={
-                availableDomains.find((m) => m.id === chat.activeDomainSession?.domain_id)
-                  ?.command ?? ""
-              }
-              onExit={chat.exitDomain}
-              onCancel={chat.cancelDomain}
-              agentColor={systemAgent?.color}
-            />
-          )}
         </div>
         {chat.isTyping && (
           <button
@@ -395,35 +438,74 @@ export function SystemChat() {
 
       {/* Input */}
       <div className="relative border-t border-gray-100 px-4 py-3 dark:border-gray-700">
-        {showDomainDropdown && filteredDomains.length > 0 && (
+        {showDomainDropdown && (filteredDomains.length > 0 || chat.activeDomainSession) && (
           <DomainSlashCommandDropdown
             domains={filteredDomains}
             selectedIndex={selectedDomainIndex}
             onSelect={(domain) => {
-              chat.enterDomain(domain.id, domain.command, systemAgentId);
+              setPendingDomain(domain);
               setInputValue("");
               setShowDomainDropdown(false);
+              inputRef.current?.focus();
             }}
             onClose={() => setShowDomainDropdown(false)}
             anchorRef={inputRef}
+            accentColor={systemAgent?.color}
+            exitMode={!!chat.activeDomainSession}
+            onExitDomain={() => {
+              setInputValue("");
+              setShowDomainDropdown(false);
+              chat.exitDomain();
+            }}
           />
         )}
 
+        {chat.activeDomainSession && (
+          <div className="mb-2">
+            <DomainIndicator
+              session={chat.activeDomainSession}
+              domainName={
+                availableDomains.find((m) => m.id === chat.activeDomainSession?.domain_id)
+                  ?.display_name ?? "Domain"
+              }
+              domainCommand={
+                availableDomains.find((m) => m.id === chat.activeDomainSession?.domain_id)
+                  ?.command ?? ""
+              }
+              onExit={chat.exitDomain}
+              onCancel={chat.cancelDomain}
+              agentColor={systemAgent?.color}
+            />
+          </div>
+        )}
+
         <div className="flex items-end gap-2">
-          <textarea
-            ref={inputRef}
-            value={inputValue}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              chat.activeDomainSession
-                ? "Message in domain session..."
-                : "Ask about your platform..."
-            }
-            rows={1}
-            className="flex-1 resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 outline-hidden focus:border-violet-400 focus:ring-1 focus:ring-violet-400 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:border-violet-500 dark:focus:ring-violet-500"
-            style={{ maxHeight: 120 }}
-          />
+          <div className="flex min-h-9 flex-1 items-end gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 focus-within:border-violet-400 focus-within:ring-1 focus-within:ring-violet-400 dark:border-gray-600 dark:bg-gray-900 dark:focus:border-violet-500 dark:focus:ring-violet-500">
+            {pendingDomain && (
+              <PendingDomainPill
+                domain={pendingDomain}
+                onClear={() => setPendingDomain(null)}
+                accentColor={systemAgent?.color}
+                className="mb-0.5"
+              />
+            )}
+            <textarea
+              ref={inputRef}
+              value={inputValue}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                chat.activeDomainSession
+                  ? "Message in domain session..."
+                  : pendingDomain
+                    ? "Describe what to do in this domain..."
+                    : "Ask about your platform..."
+              }
+              rows={1}
+              className="min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-0.5 text-sm text-gray-900 placeholder-gray-400 outline-hidden focus:ring-0 dark:text-gray-100 dark:placeholder-gray-500"
+              style={{ maxHeight: 120 }}
+            />
+          </div>
           <button
             type="button"
             onClick={handleSend}

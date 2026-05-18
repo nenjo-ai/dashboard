@@ -11,7 +11,6 @@ import {
   createDomainSession,
   completeDomainSession,
   cancelDomainSession,
-  enterChatDomain,
   exitChatDomain,
   fetchActiveDomainSession,
   fetchChatSessions,
@@ -1820,7 +1819,15 @@ export function usePlannerChat(
   }, [livePreview]);
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (
+      text: string,
+      options?: {
+        domainActivation?: {
+          domain_session_id: string;
+          domain_command: string;
+        };
+      },
+    ) => {
       const trimmed = text.trim();
       if (!trimmed || !activeSessionId) return;
 
@@ -1924,9 +1931,14 @@ export function usePlannerChat(
         message: "[Encrypted message]",
         encrypted_message: encryptedMessage,
         session_id: activeSessionId,
-        ...(activeDomainSession
-          ? { domain_session_id: activeDomainSession.id }
-          : {}),
+        ...(options?.domainActivation
+          ? {
+              domain_session_id: options.domainActivation.domain_session_id,
+              domain_activation: options.domainActivation,
+            }
+          : activeDomainSession
+            ? { domain_session_id: activeDomainSession.id }
+            : {}),
         agent_id: agentId!,
         ...(projectId ? { project_id: projectId } : {}),
       };
@@ -2025,9 +2037,12 @@ export function usePlannerChat(
       domainId: string,
       domainCommand: string,
       overrideRoleId?: string,
+      userMessage?: string,
     ) => {
       const effectiveRoleId = overrideRoleId ?? agentId;
       if (!effectiveRoleId || activeDomainSession) return;
+      const message = userMessage?.trim();
+      if (!message) return;
 
       try {
         suppressedDomainRestoreRef.current.delete(
@@ -2044,11 +2059,11 @@ export function usePlannerChat(
         setIsDomainPending(false);
         pendingDomainSessionRef.current = null;
 
-        await enterChatDomain({
-          project_id: projectId ?? null,
-          agent_id: effectiveRoleId,
-          domain_command: domainCommand,
-          session_id: session.id,
+        await sendMessage(message, {
+          domainActivation: {
+            domain_session_id: session.id,
+            domain_command: domainCommand,
+          },
         });
       } catch (err) {
         pendingDomainSessionRef.current = null;
@@ -2065,7 +2080,7 @@ export function usePlannerChat(
         ]);
       }
     },
-    [projectId, agentId, activeDomainSession, domainRestoreKey],
+    [projectId, agentId, activeDomainSession, domainRestoreKey, sendMessage],
   );
 
   // Exit the active domain
@@ -2083,6 +2098,7 @@ export function usePlannerChat(
         project_id: projectId ?? null,
         agent_id: agentId,
         domain_session_id: activeDomainSession.id,
+        chat_session_id: activeSessionId ?? null,
       });
     } catch (err) {
       suppressedDomainRestoreRef.current.delete(
@@ -2090,7 +2106,7 @@ export function usePlannerChat(
       );
       console.error("Failed to exit domain:", err);
     }
-  }, [projectId, agentId, activeDomainSession, domainRestoreKey]);
+  }, [projectId, agentId, activeSessionId, activeDomainSession, domainRestoreKey]);
 
   // Cancel the active domain (discard artifact)
   const cancelDomain = useCallback(async () => {
@@ -2107,6 +2123,7 @@ export function usePlannerChat(
         project_id: projectId ?? null,
         agent_id: agentId,
         domain_session_id: activeDomainSession.id,
+        chat_session_id: activeSessionId ?? null,
       });
     } catch (err) {
       suppressedDomainRestoreRef.current.delete(
@@ -2114,7 +2131,7 @@ export function usePlannerChat(
       );
       console.error("Failed to cancel domain:", err);
     }
-  }, [projectId, agentId, activeDomainSession, domainRestoreKey]);
+  }, [projectId, agentId, activeSessionId, activeDomainSession, domainRestoreKey]);
 
   const deleteMessage = useCallback(
     (messageId: string) => {

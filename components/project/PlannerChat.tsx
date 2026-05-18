@@ -20,6 +20,7 @@ import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { agentColorBg, agentColorText } from "@/lib/agent-colors";
 import { DomainSlashCommandDropdown } from "./DomainSlashCommandDropdown";
 import { DomainIndicator } from "./DomainIndicator";
+import { PendingDomainPill } from "./PendingDomainPill";
 import ChatSessionList from "./ChatSessionList";
 
 
@@ -306,6 +307,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
   const [showDomainDropdown, setShowDomainDropdown] = useState(false);
   const [domainFilter, setDomainFilter] = useState("");
   const [selectedDomainIndex, setSelectedDomainIndex] = useState(0);
+  const [pendingDomain, setPendingDomain] = useState<Domain | null>(null);
   const hasSetDefaultAgent = useRef(false);
 
   const { agents: allAgents } = useAgents();
@@ -534,7 +536,17 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
     setMentionFilter("");
 
     // Check for # command (only at the start of input)
-    if (value.startsWith("#") && !activeDomainSession) {
+    if (value.startsWith("#") && activeDomainSession) {
+      const domainText = value.slice(1);
+      if (!/\s/.test(domainText)) {
+        setShowDomainDropdown(true);
+        setDomainFilter(domainText);
+        setSelectedDomainIndex(0);
+        return;
+      }
+    }
+
+    if (value.startsWith("#") && !activeDomainSession && !pendingDomain) {
       const domainText = value.slice(1);
       if (!/\s/.test(domainText)) {
         setShowDomainDropdown(true);
@@ -550,18 +562,13 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
 
   const handleDomainSelect = useCallback(
     (domain: Domain) => {
+      setPendingDomain(domain);
       setInput("");
       setShowDomainDropdown(false);
       setDomainFilter("");
-
-      const ownerAgentId = domainToAgentMap.get(domain.id);
-      if (ownerAgentId && ownerAgentId !== activeAgentId) {
-        setActiveAgentId(ownerAgentId);
-        hasSetDefaultAgent.current = true;
-      }
-      enterDomain(domain.id, domain.command, ownerAgentId ?? activeAgentId);
+      inputRef.current?.focus();
     },
-    [enterDomain, domainToAgentMap, activeAgentId, setActiveAgentId],
+    [],
   );
 
   const handleAgentSelect = (agent: AgentDefinition) => {
@@ -599,15 +606,40 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
     }
 
     // Check for domain enter via # command (always allowed)
+    if (pendingDomain && !activeDomainSession) {
+      setInput("");
+      const ownerAgentId = domainToAgentMap.get(pendingDomain.id);
+      if (ownerAgentId && ownerAgentId !== activeAgentId) {
+        setActiveAgentId(ownerAgentId);
+        hasSetDefaultAgent.current = true;
+      }
+      enterDomain(
+        pendingDomain.id,
+        pendingDomain.command,
+        ownerAgentId ?? activeAgentId,
+        text,
+      );
+      setPendingDomain(null);
+      return;
+    }
+
     if (
       text.startsWith("#") &&
       !activeDomainSession &&
       availableDomains.length > 0
     ) {
-      const matchedDomain = availableDomains.find(
-        (m) => m.command.toLowerCase() === text.toLowerCase(),
-      );
+      const matchedDomain = [...availableDomains]
+        .sort((a, b) => b.command.length - a.command.length)
+        .find((m) => {
+          const command = m.command.toLowerCase();
+          const lowerText = text.toLowerCase();
+          return lowerText === command || lowerText.startsWith(`${command} `);
+        });
       if (matchedDomain) {
+        const userMessage = text.slice(matchedDomain.command.length).trim();
+        if (!userMessage) {
+          return;
+        }
         setInput("");
         const ownerAgentId = domainToAgentMap.get(matchedDomain.id);
         if (ownerAgentId && ownerAgentId !== activeAgentId) {
@@ -618,6 +650,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
           matchedDomain.id,
           matchedDomain.command,
           ownerAgentId ?? activeAgentId,
+          userMessage,
         );
         return;
       }
@@ -655,7 +688,29 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Domain dropdown keyboard nav
-    if (showDomainDropdown && filteredDomains.length > 0) {
+    if (pendingDomain && !input.trim() && (e.key === "Backspace" || e.key === "Escape")) {
+      e.preventDefault();
+      setPendingDomain(null);
+      return;
+    }
+
+    if (showDomainDropdown && activeDomainSession) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowDomainDropdown(false);
+        return;
+      }
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        setInput("");
+        setShowDomainDropdown(false);
+        exitDomain();
+        return;
+      }
+    }
+
+    // Domain dropdown keyboard nav
+    if (showDomainDropdown && filteredDomains.length > 0 && !activeDomainSession) {
       if (e.key === "Escape") {
         e.preventDefault();
         setShowDomainDropdown(false);
@@ -843,13 +898,20 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
 
         <div className="relative">
           {/* Domain command dropdown */}
-          {showDomainDropdown && filteredDomains.length > 0 && (
+          {showDomainDropdown && (filteredDomains.length > 0 || activeDomainSession) && (
             <DomainSlashCommandDropdown
               domains={filteredDomains}
               selectedIndex={selectedDomainIndex}
               onSelect={handleDomainSelect}
               onClose={() => setShowDomainDropdown(false)}
               anchorRef={inputRef}
+              accentColor={agentColor}
+              exitMode={!!activeDomainSession}
+              onExitDomain={() => {
+                setInput("");
+                setShowDomainDropdown(false);
+                exitDomain();
+              }}
             />
           )}
 
@@ -857,7 +919,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
           {showAgentDropdown && filteredAgents.length > 0 && (
             <div
               ref={dropdownRef}
-              className="absolute bottom-full left-0 mb-1 z-50 w-64 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800"
+              className="absolute bottom-full left-0 mb-1 z-[100] w-64 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900"
             >
               {filteredAgents.map(
                 (agent: AgentDefinition, index: number) => (
@@ -892,16 +954,26 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
           )}
 
           <div className="flex items-end gap-2">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder={placeholder}
-              rows={1}
-              className="flex-1 resize-none overflow-y-auto rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500"
-              style={{ maxHeight: 200 }}
-            />
+            <div className="flex min-h-10 flex-1 items-end gap-2 rounded-lg border border-gray-300 px-2 py-1.5 focus-within:border-deep-space-blue-500 focus-within:ring-1 focus-within:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-900">
+              {pendingDomain && (
+                <PendingDomainPill
+                  domain={pendingDomain}
+                  onClear={() => setPendingDomain(null)}
+                  accentColor={agentColor}
+                  className="mb-0.5"
+                />
+              )}
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={pendingDomain ? "Describe what to do in this domain..." : placeholder}
+                rows={1}
+                className="min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-0.5 text-sm placeholder:text-gray-400 focus:outline-hidden focus:ring-0 dark:text-gray-100 dark:placeholder:text-gray-500"
+                style={{ maxHeight: 200 }}
+              />
+            </div>
             {isTyping && (
               <button
                 onMouseDown={handleCancelHoldStart}

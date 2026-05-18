@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { motion, AnimatePresence } from "motion/react";
 import type { AgentDefinition, Domain } from "@/lib/types";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
+import { PendingDomainPill } from "@/components/project/PendingDomainPill";
 import { MobileTouchButton } from "./MobileTouchButton";
 import { MobileBottomSheet } from "./MobileBottomSheet";
 
@@ -31,6 +32,8 @@ interface MobileInputBarProps {
   inDomain?: boolean;
   onExitDomain?: () => void;
   activeDomainLabel?: string;
+  pendingDomain?: Domain | null;
+  onClearPendingDomain?: () => void;
 }
 
 export function MobileInputBar({
@@ -54,6 +57,8 @@ export function MobileInputBar({
   inDomain,
   onExitDomain,
   activeDomainLabel,
+  pendingDomain,
+  onClearPendingDomain,
 }: MobileInputBarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -274,7 +279,7 @@ export function MobileInputBar({
       root.style.removeProperty("--mobile-composer-height");
       root.style.removeProperty("--mobile-composer-dock-height");
     };
-  }, [inDomain, shouldRenderComposer]);
+  }, [inDomain, pendingDomain, shouldRenderComposer]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -342,20 +347,36 @@ export function MobileInputBar({
         </div>
 
         {/* Text input */}
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={onInputChange}
-          onKeyDown={onKeyDown}
-          placeholder={isDomainPending ? "Activating domain..." : placeholder}
-          disabled={disabled || isDomainPending}
-          rows={1}
-          className={cn(
-            "relative z-10 w-full resize-none overflow-y-auto border-0 bg-transparent px-5 pt-3 pb-1.5 text-[16px] leading-6 tracking-[-0.01em] text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-0 dark:text-gray-50 dark:placeholder:text-gray-500",
-            isDomainPending && "opacity-60",
+        <div className="relative z-10 flex items-end gap-2 px-3 pt-3">
+          {pendingDomain && onClearPendingDomain && (
+            <PendingDomainPill
+              domain={pendingDomain}
+              onClear={onClearPendingDomain}
+              accentColor={agentColor}
+              className="mb-1"
+            />
           )}
-          style={{ maxHeight: 120, colorScheme: "light" }}
-        />
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={onInputChange}
+            onKeyDown={onKeyDown}
+            placeholder={
+              isDomainPending
+                ? "Activating domain..."
+                : pendingDomain
+                  ? "Describe what to do..."
+                  : placeholder
+            }
+            disabled={disabled || isDomainPending}
+            rows={1}
+            className={cn(
+              "min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-2 pb-1.5 text-[16px] leading-6 tracking-[-0.01em] text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-0 dark:text-gray-50 dark:placeholder:text-gray-500",
+              isDomainPending && "opacity-60",
+            )}
+            style={{ maxHeight: 120, colorScheme: "light" }}
+          />
+        </div>
 
         {isDomainPending && (
           <div className="absolute right-5 top-4 z-10">
@@ -513,7 +534,7 @@ export function MobileInputBar({
       <MobileBottomSheet
         open={shouldRenderComposer && sheetOpen === "domain"}
         onClose={closeSheet}
-        title="Domain expansion"
+        title="Domain Expansion"
       >
         <div className="space-y-1">
           {availableDomains.map((domain) => (

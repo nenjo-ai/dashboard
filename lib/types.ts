@@ -320,6 +320,10 @@ export interface ChatStreamRequest {
   encrypted_message?: EncryptedPayload;
   session_id: string;
   domain_session_id?: string;
+  domain_activation?: {
+    domain_session_id: string;
+    domain_command: string;
+  };
   agent_id: string;
   project_id?: string;
 }
@@ -502,14 +506,6 @@ export interface WorkerAccountKeyTarget {
   enc_public_key: string;
 }
 
-export interface ChatDomainEnterOutbound {
-  type: "chat.domain_enter";
-  project_id?: string | null;
-  agent_id: string;
-  domain_command: string;
-  session_id: string;
-}
-
 export interface ChatCancelOutbound {
   type: "chat.cancel";
   project_id: string;
@@ -529,17 +525,11 @@ export interface ChatCancelRequest {
   session_id?: string;
 }
 
-export interface ChatDomainEnterRequest {
-  project_id?: string | null;
-  agent_id: string;
-  domain_command: string;
-  session_id: string;
-}
-
 export interface ChatDomainExitRequest {
   project_id?: string | null;
   agent_id: string;
   domain_session_id: string;
+  chat_session_id?: string | null;
 }
 
 export interface ChatSessionDeleteRequest {

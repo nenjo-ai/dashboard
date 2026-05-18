@@ -29,10 +29,22 @@ interface SourceKnowledgeManifest {
   name?: string;
   version?: string;
   manifest?: {
+    name?: string;
     description?: string;
+    docs?: SourceKnowledgeDoc[];
+    edges?: KnowledgeManifestEdge[];
   };
   docs?: SourceKnowledgeDoc[];
   edges?: KnowledgeManifestEdge[];
+}
+
+interface SourceKnowledgePackage {
+  name?: string;
+  version?: string;
+  entry?: string;
+  metadata?: {
+    description?: string;
+  };
 }
 
 interface SourceKnowledgeInfo {
@@ -53,18 +65,32 @@ export function SourceKnowledgeSection({ pack }: { pack: KnowledgePack }) {
   useEffect(() => {
     if (!source) return;
     let cancelled = false;
-    const url = rawUrl(source, source.manifestPath);
-    fetchText(url)
-      .then((text) => parseStructuredText<SourceKnowledgeManifest>(text))
-      .then((nextManifest) => {
+    const packageUrl = rawUrl(source, "package.yaml");
+    setManifestLoad({ url: packageUrl, manifest: null, error: null });
+
+    fetchText(packageUrl)
+      .then((text) => parseStructuredText<SourceKnowledgePackage>(text))
+      .catch(() => ({ entry: source.manifestPath }) satisfies SourceKnowledgePackage)
+      .then(async (pkg) => {
+        const entry = pkg.entry?.trim() || source.manifestPath;
+        const url = rawUrl(source, entry);
+        const text = await fetchText(url);
+        const rawManifest = parseStructuredText<SourceKnowledgeManifest>(text);
+        return { url, manifest: normalizeSourceKnowledgeManifest(rawManifest, pkg) };
+      })
+      .then(({ url, manifest: nextManifest }) => {
         if (cancelled) return;
         setManifestLoad({ url, manifest: nextManifest, error: null });
-        setSelectedPath((current) => current ?? nextManifest.docs?.[0]?.source_path ?? null);
+        setSelectedPath((current) =>
+          current && nextManifest.docs?.some((doc) => doc.source_path === current)
+            ? current
+            : nextManifest.docs?.[0]?.source_path ?? null,
+        );
       })
       .catch((err) => {
         if (!cancelled) {
           setManifestLoad({
-            url,
+            url: packageUrl,
             manifest: null,
             error: err instanceof Error ? err.message : "Failed to load source manifest",
           });
@@ -75,10 +101,8 @@ export function SourceKnowledgeSection({ pack }: { pack: KnowledgePack }) {
     };
   }, [source]);
 
-  const manifestUrl = source ? rawUrl(source, source.manifestPath) : null;
-  const manifestForUrl = manifestUrl && manifestLoad?.url === manifestUrl ? manifestLoad : null;
-  const manifest = manifestForUrl?.manifest ?? null;
-  const manifestError = manifestForUrl?.error ?? null;
+  const manifest = manifestLoad?.manifest ?? null;
+  const manifestError = manifestLoad?.error ?? null;
   const docs = manifest?.docs ?? [];
   const selectedDoc = docs.find((doc) => doc.source_path === selectedPath) ?? null;
 
@@ -293,6 +317,24 @@ function parseStructuredText<T>(text: string): T {
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) return JSON.parse(text) as T;
   if (trimmed.startsWith("---")) return matter(text).data as T;
   return matter(`---\n${text.trim()}\n---\n`).data as T;
+}
+
+function normalizeSourceKnowledgeManifest(
+  raw: SourceKnowledgeManifest,
+  pkg: SourceKnowledgePackage,
+): SourceKnowledgeManifest {
+  const nested = raw.manifest;
+  return {
+    ...raw,
+    name: raw.name ?? nested?.name ?? pkg.name,
+    version: raw.version ?? pkg.version,
+    manifest: {
+      ...nested,
+      description: nested?.description ?? pkg.metadata?.description,
+    },
+    docs: raw.docs ?? nested?.docs ?? [],
+    edges: raw.edges ?? nested?.edges ?? [],
+  };
 }
 
 function LoadingLabel({ text }: { text: string }) {

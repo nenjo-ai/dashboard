@@ -35,7 +35,6 @@ import type {
   PushConfigResponse,
   PushSubscriptionRecord,
   ChatCancelRequest,
-  ChatDomainEnterRequest,
   ChatDomainExitRequest,
   ChatSessionDeleteRequest,
   ChatStreamRequest,
@@ -1352,7 +1351,7 @@ export async function installOfficialNenjoPackages(): Promise<void> {
   const source = await ensureOfficialNenjoPackageSource();
   await installPackage({
     source_id: source.id,
-    path: "nenjo/knowledge/platform/package.yaml",
+    path: "nenjo/knowledge/core/package.yaml",
   });
   await installPackage({
     source_id: source.id,
@@ -2921,17 +2920,6 @@ export async function createExecutionEventStream(
 export async function cancelChat(body: ChatCancelRequest): Promise<void> {
   const projectId = normalizeOptionalProjectId(body.project_id);
   await authFetch(`${API_V1}/chat-commands/cancel`, {
-    method: "POST",
-    body: JSON.stringify({
-      ...body,
-      project_id: projectId,
-    }),
-  });
-}
-
-export async function enterChatDomain(body: ChatDomainEnterRequest): Promise<void> {
-  const projectId = normalizeOptionalProjectId(body.project_id);
-  await authFetch(`${API_V1}/chat-commands/domain-enter`, {
     method: "POST",
     body: JSON.stringify({
       ...body,
