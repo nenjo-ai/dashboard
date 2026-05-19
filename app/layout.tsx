@@ -12,7 +12,7 @@ const WEBSITE_UUID = '05016a17-3f9b-4d9a-97f7-989353c2fa40'
 const SITE_URL = 'https://nenjo.ai'
 const SITE_DESCRIPTION = 'Nenjo is a modular agentic control plane for building AI workers with native packages, Rust foundations, and infrastructure you control.'
 const SITE_PREVIEW_TITLE = 'Nenjo - Modular agentic control plane'
-const LINK_PREVIEW_IMAGE = '/link-preview-image.png'
+const LINK_PREVIEW_IMAGE = '/link-preview-image.png?v=2'
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
