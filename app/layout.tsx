@@ -10,7 +10,8 @@ import './globals.css'
 
 const WEBSITE_UUID = '05016a17-3f9b-4d9a-97f7-989353c2fa40'
 const SITE_URL = 'https://nenjo.ai'
-const SITE_DESCRIPTION = 'Nenjo is an agent-first platform for teams building real agent products.'
+const SITE_DESCRIPTION = 'Nenjo is a modular agentic control plane for building AI workers with native packages, Rust foundations, and infrastructure you control.'
+const SITE_PREVIEW_TITLE = 'Nenjo - Modular agentic control plane'
 const LINK_PREVIEW_IMAGE = '/link-preview-image.png'
 
 export const metadata: Metadata = {
@@ -26,21 +27,21 @@ export const metadata: Metadata = {
     type: 'website',
     url: '/',
     siteName: 'Nenjo',
-    title: 'Nenjo',
+    title: SITE_PREVIEW_TITLE,
     description: SITE_DESCRIPTION,
     images: [
       {
         url: LINK_PREVIEW_IMAGE,
         width: 1200,
         height: 630,
-        alt: 'Nenjo',
+        alt: 'Nenjo modular agentic control plane',
         type: 'image/png',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Nenjo',
+    title: SITE_PREVIEW_TITLE,
     description: SITE_DESCRIPTION,
     images: [LINK_PREVIEW_IMAGE],
   },
