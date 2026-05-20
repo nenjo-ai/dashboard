@@ -1268,24 +1268,27 @@ export async function createPackageSource(
 
 const OFFICIAL_NENJO_PACKAGE_SOURCE = {
   name: "Nenjo Official Packages",
-  source_type: "github" as const,
+  source_type: "registry" as const,
   adapter: "nenjo_packages" as const,
   metadata: {
-    owner: "nenjo-ai",
-    repo: "packages",
-    ref: "feature/platform-knowledge",
-    manifest_path: "packages.yaml",
+    source: {
+      kind: "git",
+      url: "https://github.com/nenjo-ai/packages.git",
+      reference: "feature/platform-knowledge",
+      manifest_path: "packages.yaml",
+    },
   },
 };
 
 function isOfficialNenjoPackageSource(source: import("./types").PackageSource): boolean {
   const metadata = source.metadata ?? {};
+  const packageSource = metadata.source as Record<string, unknown> | undefined;
   return (
-    source.source_type === "github" &&
+    source.source_type === "registry" &&
     source.adapter === "nenjo_packages" &&
-    metadata.owner === OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.owner &&
-    metadata.repo === OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.repo &&
-    (metadata.manifest_path ?? "packages.yaml") === OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.manifest_path
+    packageSource?.kind === OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.source.kind &&
+    packageSource?.url === OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.source.url &&
+    (packageSource?.manifest_path ?? "packages.yaml") === OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.source.manifest_path
   );
 }
 
@@ -1351,11 +1354,11 @@ export async function installOfficialNenjoPackages(): Promise<void> {
   const source = await ensureOfficialNenjoPackageSource();
   await installPackage({
     source_id: source.id,
-    path: "nenjo/knowledge/core/package.yaml",
+    path: "nenjo/core.package.yaml",
   });
   await installPackage({
     source_id: source.id,
-    path: "nenjo/agents/nenji/package.yaml",
+    path: "nenjo/nenji.package.yaml",
   });
 }
 

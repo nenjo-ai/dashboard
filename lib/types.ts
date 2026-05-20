@@ -1247,7 +1247,7 @@ export interface PackageSource {
   id: string;
   org_id: string;
   name: string;
-  source_type: "github";
+  source_type: "registry" | "git" | "artifact" | "github";
   adapter: PackageSourceAdapter;
   metadata: Record<string, unknown>;
   status: "active" | "archived";
@@ -1258,7 +1258,7 @@ export interface PackageSource {
 
 export interface CreatePackageSourceRequest {
   name: string;
-  source_type?: "github";
+  source_type?: "registry" | "git" | "artifact" | "github";
   adapter?: PackageSourceAdapter;
   metadata?: Record<string, unknown>;
 }

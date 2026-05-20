@@ -110,7 +110,15 @@ interface NenjoPackagesManifest {
     entrypoint?: string | null;
     version?: string | null;
     metadata?: Record<string, unknown> | null;
-  }>;
+  }> | Record<string, string>;
+}
+
+interface NenjoModulePackageManifest {
+  schema?: string;
+  name?: string;
+  version?: string | null;
+  description?: string | null;
+  modules?: Array<string | { path?: string | null }>;
 }
 
 interface GithubTreeResponse {
@@ -276,15 +284,17 @@ function sourceGitHubInfo(source: PackageSource | MarketplaceSource): {
   resolvedCommitSha: string | null;
   marketplacePath: string;
 } | null {
-  const owner = metadataText(source.metadata, ["owner"]);
-  const repo = metadataText(source.metadata, ["repo"]);
+  const packageSourceUrl = metadataText(source.metadata, ["source", "url"]);
+  const parsedSourceUrl = packageSourceUrl ? parseGitHubRepoUrl(packageSourceUrl) : null;
+  const owner = metadataText(source.metadata, ["owner"]) ?? parsedSourceUrl?.owner ?? null;
+  const repo = metadataText(source.metadata, ["repo"]) ?? parsedSourceUrl?.repo ?? null;
   if (!owner || !repo) return null;
   return {
     owner,
     repo,
-    ref: metadataText(source.metadata, ["ref"]) ?? "main",
+    ref: metadataText(source.metadata, ["ref"]) ?? metadataText(source.metadata, ["source", "reference"]) ?? "main",
     resolvedCommitSha: metadataText(source.metadata, ["resolved_commit_sha"]),
-    marketplacePath: metadataText(source.metadata, ["manifest_path"]) ?? metadataText(source.metadata, ["marketplace_path"]) ?? "packages.yaml",
+    marketplacePath: metadataText(source.metadata, ["manifest_path"]) ?? metadataText(source.metadata, ["source", "manifest_path"]) ?? metadataText(source.metadata, ["marketplace_path"]) ?? "packages.yaml",
   };
 }
 
@@ -329,6 +339,57 @@ async function fetchMarketplacePackages(source: PackageSource): Promise<Marketpl
   const manifest = await fetchJson<ClaudeMarketplaceManifest & NenjoPackagesManifest>(
     githubRawUrl(info.owner, info.repo, sourceFetchRef(info), info.marketplacePath),
   );
+  if (manifest.packages && !Array.isArray(manifest.packages)) {
+    return Promise.all(Object.entries(manifest.packages).map(async ([packageName, packagePath]) => {
+      const path = packagePath.trim().replace(/^\.?\//, "").replace(/\/+$/, "");
+      let packageManifest: NenjoModulePackageManifest | null = null;
+      try {
+        packageManifest = await fetchJson<NenjoModulePackageManifest>(
+          githubRawUrl(info.owner, info.repo, sourceFetchRef(info), path),
+        );
+      } catch {
+        packageManifest = null;
+      }
+      const modules = packageManifest?.modules?.map((module) => (
+        typeof module === "string" ? module : module.path ?? ""
+      )) ?? [];
+      const kind = modules.some((module) => module.includes("/agents/"))
+        ? "agent"
+        : modules.some((module) => module.includes("/knowledge/"))
+          ? "knowledge"
+          : modules.some((module) => module.includes("/context_blocks/"))
+            ? "context_block"
+            : "ability";
+      return {
+        id: `${source.id}:${path || packageName}`,
+        kind,
+        name: packageManifest?.name ?? packageName,
+        display_name: packageManifest?.name ?? packageName,
+        description: packageManifest?.description ?? null,
+        latest_version: packageManifest?.version ?? null,
+        synced_at: null,
+        source_path: path,
+        metadata: {
+          source: {
+            provider: "github",
+            owner: info.owner,
+            repo: info.repo,
+            path,
+            package: packageManifest?.name ?? packageName,
+          },
+          version: {
+            ref: info.ref,
+            resolved_commit_sha: info.resolvedCommitSha,
+            package_version: packageManifest?.version ?? null,
+          },
+          install: {
+            kind,
+            selector: packageManifest?.name ?? packageName,
+          },
+        },
+      };
+    }));
+  }
   if (Array.isArray(manifest.packages)) {
     return manifest.packages.map((pkg) => {
       const kind = pkg.kind ?? pkg.type ?? "knowledge";
@@ -671,14 +732,14 @@ export default function KnowledgePage() {
   useEffect(() => {
     if (sourcesLoading || !sources || officialSourceEnsureInFlight.current) return;
     const hasOfficialSource = sources.some((source) => {
-      const metadata = source.metadata ?? {};
+      const info = sourceGitHubInfo(source);
       return (
         source.status === "active" &&
-        source.source_type === "github" &&
+        source.source_type === "registry" &&
         source.adapter === "nenjo_packages" &&
-        metadataText(metadata, ["owner"]) === "nenjo-ai" &&
-        metadataText(metadata, ["repo"]) === "packages" &&
-        (metadataText(metadata, ["manifest_path"]) ?? "packages.yaml") === "packages.yaml"
+        info?.owner === "nenjo-ai" &&
+        info.repo === "packages" &&
+        info.marketplacePath === "packages.yaml"
       );
     });
     if (hasOfficialSource) return;
@@ -766,17 +827,28 @@ export default function KnowledgePage() {
     try {
       const ref = sourceRef.trim() || "main";
       const resolvedCommitSha = await resolveGitHubCommitSha(owner, repo, ref);
+      const manifestPath = sourceManifestPath.trim() || (sourceAdapter === "claude_marketplace" ? ".claude-plugin/marketplace.json" : "packages.yaml");
       const created = await createPackageSource({
         name: sourceName.trim() || `${owner}/${repo}`,
-        source_type: "github",
+        source_type: sourceAdapter === "nenjo_packages" ? "registry" : "github",
         adapter: sourceAdapter,
-        metadata: {
-          owner,
-          repo,
-          ref,
-          resolved_commit_sha: resolvedCommitSha,
-          manifest_path: sourceManifestPath.trim() || (sourceAdapter === "claude_marketplace" ? ".claude-plugin/marketplace.json" : "packages.yaml"),
-        },
+        metadata: sourceAdapter === "nenjo_packages"
+          ? {
+              source: {
+                kind: "git",
+                url: `https://github.com/${owner}/${repo}.git`,
+                reference: ref,
+                manifest_path: manifestPath,
+              },
+              resolved_commit_sha: resolvedCommitSha,
+            }
+          : {
+              owner,
+              repo,
+              ref,
+              resolved_commit_sha: resolvedCommitSha,
+              manifest_path: manifestPath,
+            },
       });
       await mutateSources();
       setSourceId(created.id);
@@ -815,10 +887,16 @@ export default function KnowledgePage() {
     resetNotice();
     resolveGitHubCommitSha(info.owner, info.repo, info.ref)
       .then(async (resolvedCommitSha) => {
+        const sourceMetadata = source.metadata?.source && typeof source.metadata.source === "object" && !Array.isArray(source.metadata.source)
+          ? {
+              ...(source.metadata.source as Record<string, unknown>),
+              reference: info.ref,
+            }
+          : undefined;
         const updated = await updatePackageSource(source.id, {
           metadata: {
             ...source.metadata,
-            ref: info.ref,
+            ...(sourceMetadata ? { source: sourceMetadata } : { ref: info.ref }),
             resolved_commit_sha: resolvedCommitSha,
           },
         });
@@ -1314,7 +1392,8 @@ function isPackageInstalled(
 function packageSourceLabel(metadata: Record<string, unknown>): string | null {
   const owner = metadataText(metadata, ["source", "owner"]);
   const repo = metadataText(metadata, ["source", "repo"]);
-  return owner && repo ? `${owner}/${repo}` : null;
+  if (owner && repo) return `${owner}/${repo}`;
+  return metadataText(metadata, ["source", "url"]);
 }
 
 function packageVersionBadge(metadata: Record<string, unknown>): string | null {
@@ -1822,9 +1901,9 @@ function PackageDetailsModal({
 
   const activePkg = current ?? pkg;
   const activeKind = details?.descriptor?.type ?? activePkg?.kind ?? null;
-  const sourceOwner = activePkg ? metadataText(activePkg.metadata, ["source", "owner"]) : null;
-  const sourceRepo = activePkg ? metadataText(activePkg.metadata, ["source", "repo"]) : null;
   const sourceInfo = source ? sourceGitHubInfo(source) : null;
+  const sourceOwner = activePkg ? metadataText(activePkg.metadata, ["source", "owner"]) ?? sourceInfo?.owner ?? null : null;
+  const sourceRepo = activePkg ? metadataText(activePkg.metadata, ["source", "repo"]) ?? sourceInfo?.repo ?? null : null;
   const ref = activePkg ? metadataText(activePkg.metadata, ["version", "ref"]) ?? metadataText(activePkg.metadata, ["version", "requested_ref"]) ?? sourceInfo?.ref ?? null : null;
   const sha = activePkg ? metadataText(activePkg.metadata, ["version", "resolved_commit_sha"]) ?? sourceInfo?.resolvedCommitSha ?? null : null;
   const refDetail = ref && sha ? `${ref}  ${sha.slice(0, 7)}` : ref;
@@ -2554,6 +2633,10 @@ function SourceCard(props: {
   const licensePolicy = metadataText(props.source.metadata, ["license", "policy"]);
   const licenseReason = metadataText(props.source.metadata, ["license", "reason"]);
   const requiresReview = metadataBool(props.source.metadata, ["license", "requires_confirmation"]) ?? false;
+  const sourceInfo = sourceGitHubInfo(props.source);
+  const sourceLabel = sourceInfo
+    ? `${sourceInfo.owner}/${sourceInfo.repo}`
+    : metadataText(props.source.metadata, ["source", "url"]) ?? "Custom package source";
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900 md:flex-row md:items-center md:justify-between">
@@ -2566,9 +2649,7 @@ function SourceCard(props: {
           {requiresReview ? <Badge>review required</Badge> : null}
         </div>
         <p className="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">
-          {metadataText(props.source.metadata, ["owner"]) && metadataText(props.source.metadata, ["repo"])
-            ? `${metadataText(props.source.metadata, ["owner"])}/${metadataText(props.source.metadata, ["repo"])}`
-            : "Custom package source"}
+          {sourceLabel}
         </p>
         {licenseReason ? (
           <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{licenseReason}</p>
