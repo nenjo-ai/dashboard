@@ -33,7 +33,7 @@ export default function KnowledgePage() {
   const [error, setError] = useState<string | null>(null);
 
   const platformPacks = useMemo(
-    () => (packs ?? []).filter((pack) => pack.status !== "archived" && pack.source_type !== "github"),
+    () => (packs ?? []).filter((pack) => pack.status !== "archived" && pack.source_type !== "package"),
     [packs],
   );
   const selectedPack = platformPacks.find((pack) => pack.id === selectedPackId) ?? null;
@@ -84,7 +84,7 @@ export default function KnowledgePage() {
               {selectedPack.version ? <Badge>{selectedPack.version}</Badge> : null}
             </div>
           </div>
-          {selectedPack.source_type === "github" && selectedPack.read_only ? (
+          {selectedPack.source_type === "package" && selectedPack.read_only ? (
             <SourceKnowledgeSection pack={selectedPack} />
           ) : (
             <KnowledgeSection packId={selectedPack.id} readOnly={selectedPack.read_only} />

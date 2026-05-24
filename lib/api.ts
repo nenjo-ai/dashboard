@@ -81,7 +81,9 @@ type ProjectSettingsPayload = Record<string, unknown>;
 
 const documentContentCache = new Map<string, DocumentContentCacheEntry>();
 
-function normalizeOptionalProjectId(projectId: string | null | undefined): string | null {
+function normalizeOptionalProjectId(
+  projectId: string | null | undefined,
+): string | null {
   return projectId && projectId !== NIL_UUID ? projectId : null;
 }
 
@@ -121,7 +123,10 @@ function retryDelayFromResponse(response: Response, attempt: number): number {
 
     const retryAt = Date.parse(retryAfter);
     if (Number.isFinite(retryAt)) {
-      return Math.min(Math.max(retryAt - Date.now(), 0), RATE_LIMIT_MAX_DELAY_MS);
+      return Math.min(
+        Math.max(retryAt - Date.now(), 0),
+        RATE_LIMIT_MAX_DELAY_MS,
+      );
     }
   }
 
@@ -145,19 +150,17 @@ function retryDelayFromResponse(response: Response, attempt: number): number {
  * useEffect(() => { setAuthTokenGetter(getToken); }, [getToken]);
  * ```
  */
-type AuthTokenGetter = (options?: { skipCache?: boolean }) => Promise<string | null>;
+type AuthTokenGetter = (options?: {
+  skipCache?: boolean;
+}) => Promise<string | null>;
 
 let _getActiveOrgId: (() => string | null) | null = null;
 
-export function setAuthTokenGetter(
-  getter: AuthTokenGetter | null,
-) {
+export function setAuthTokenGetter(getter: AuthTokenGetter | null) {
   void getter;
 }
 
-export function setActiveOrgIdGetter(
-  getter: (() => string | null) | null,
-) {
+export function setActiveOrgIdGetter(getter: (() => string | null) | null) {
   _getActiveOrgId = getter;
 }
 
@@ -208,17 +211,14 @@ export async function authRequestHeaders(
  * which authenticates the Clerk cookie session server-side and attaches the
  * internal platform credential.
  */
-async function authFetch(
-  url: string,
-  init?: RequestInit,
-): Promise<Response> {
+async function authFetch(url: string, init?: RequestInit): Promise<Response> {
   const resolvedUrl = resolveApiUrl(url);
   const includeOrgHeader =
-    !resolvedUrl.endsWith("/api/platform/auth/me")
-    && !resolvedUrl.endsWith("/api/platform/auth/bootstrap-status")
-    && !resolvedUrl.endsWith("/api/platform/orgs")
-    && !resolvedUrl.endsWith("/api/platform/orgs/")
-    && !resolvedUrl.endsWith("/api/platform/orgs/current");
+    !resolvedUrl.endsWith("/api/platform/auth/me") &&
+    !resolvedUrl.endsWith("/api/platform/auth/bootstrap-status") &&
+    !resolvedUrl.endsWith("/api/platform/orgs") &&
+    !resolvedUrl.endsWith("/api/platform/orgs/") &&
+    !resolvedUrl.endsWith("/api/platform/orgs/current");
   const initHeaders =
     init?.headers instanceof Headers
       ? Object.fromEntries(init.headers.entries())
@@ -243,10 +243,17 @@ async function authFetch(
 
     let res: Response;
     try {
-      res = await fetch(resolvedUrl, { ...init, headers, signal: controller.signal });
+      res = await fetch(resolvedUrl, {
+        ...init,
+        headers,
+        signal: controller.signal,
+      });
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
-        throw new ApiError(`Request timed out after ${FETCH_TIMEOUT_MS / 1000}s`, 504);
+        throw new ApiError(
+          `Request timed out after ${FETCH_TIMEOUT_MS / 1000}s`,
+          504,
+        );
       }
       throw error;
     } finally {
@@ -318,7 +325,8 @@ function isCatalogUrl(url: string): boolean {
   if (url.startsWith(`${modelsUrl()}?`)) return true;
   if (/\/api\/v1\/knowledge$/.test(url)) return true;
   if (/\/api\/v1\/knowledge\/[^/]+\/items$/.test(url)) return true;
-  if (/\/api\/v1\/knowledge\/[^/]+\/items\/[^/]+\/edges$/.test(url)) return true;
+  if (/\/api\/v1\/knowledge\/[^/]+\/items\/[^/]+\/edges$/.test(url))
+    return true;
   if (/\/api\/v1\/marketplaces$/.test(url)) return true;
   return [
     agentsUrl(),
@@ -351,7 +359,10 @@ function readDocumentContentCache(url: string): DocumentContentResult | null {
   return entry.data;
 }
 
-function writeDocumentContentCache(url: string, data: DocumentContentResult): void {
+function writeDocumentContentCache(
+  url: string,
+  data: DocumentContentResult,
+): void {
   const orgId = activeCatalogOrgId();
   if (!orgId) return;
 
@@ -433,7 +444,9 @@ function writeCatalogCache<T>(url: string, data: T): void {
   }
 }
 
-function clearCatalogCacheMatching(shouldClear: (url: string) => boolean): void {
+function clearCatalogCacheMatching(
+  shouldClear: (url: string) => boolean,
+): void {
   if (typeof window === "undefined") return;
 
   const orgId = activeCatalogOrgId();
@@ -453,13 +466,13 @@ function clearCatalogCacheMatching(shouldClear: (url: string) => boolean): void 
     // Ignore storage failures.
   }
 
-  void mutateSWR(
-    (key) => typeof key === "string" && shouldClear(key),
-  );
+  void mutateSWR((key) => typeof key === "string" && shouldClear(key));
 }
 
 export function clearCatalogCache(url?: string): void {
-  clearCatalogCacheMatching(url ? (cachedUrl) => cachedUrl === url : isCatalogUrl);
+  clearCatalogCacheMatching(
+    url ? (cachedUrl) => cachedUrl === url : isCatalogUrl,
+  );
 }
 
 export async function catalogFetcher<T>(url: string): Promise<T> {
@@ -482,7 +495,9 @@ function invalidateProjectCatalogCache(): void {
 }
 
 function invalidateModelsCatalogCache(): void {
-  clearCatalogCacheMatching((url) => url === modelsUrl() || url.startsWith(`${modelsUrl()}?`));
+  clearCatalogCacheMatching(
+    (url) => url === modelsUrl() || url.startsWith(`${modelsUrl()}?`),
+  );
 }
 
 function invalidateAgentsCatalogCache(): void {
@@ -512,7 +527,8 @@ function invalidateMarketplacesCatalogCache(sourceId?: string): void {
 
 function invalidatePackageCatalogCache(sourceId?: string): void {
   clearCatalogCacheMatching((url) => {
-    if (url === packageSourcesUrl() || url === packageInstallsUrl()) return true;
+    if (url === packageSourcesUrl() || url === packageInstallsUrl())
+      return true;
     if (!url.startsWith(`${API_V1}/packages/catalog`)) return false;
     if (!sourceId) return true;
     return url.includes(`source_id=${encodeURIComponent(sourceId)}`);
@@ -550,9 +566,7 @@ export function projectUrl(id: string): string {
   return `${API_V1}/projects/${id}`;
 }
 
-async function decryptProjectSettings(
-  project: Project,
-): Promise<Project> {
+async function decryptProjectSettings(project: Project): Promise<Project> {
   const settings = project.settings as ProjectSettingsPayload;
   if (!isEncryptedPayload(project.encrypted_payload)) {
     return project;
@@ -611,7 +625,9 @@ export function promptContextVariablesUrl(): string {
   return `${API_V1}/prompt-context-variables`;
 }
 
-export async function fetchPromptContextVariables(): Promise<PromptContextVariableGroup[]> {
+export async function fetchPromptContextVariables(): Promise<
+  PromptContextVariableGroup[]
+> {
   return fetcher<PromptContextVariableGroup[]>(promptContextVariablesUrl());
 }
 
@@ -646,7 +662,10 @@ export async function updateProject(
   data: Partial<Pick<Project, "name" | "description" | "settings">>,
 ): Promise<Project> {
   const encryptedSettings = data.settings
-    ? await encryptProjectSettingsForWrite(id, data.settings as ProjectSettingsPayload)
+    ? await encryptProjectSettingsForWrite(
+        id,
+        data.settings as ProjectSettingsPayload,
+      )
     : undefined;
   const payload = {
     ...data,
@@ -659,7 +678,7 @@ export async function updateProject(
   });
 
   invalidateProjectCatalogCache();
-  return decryptProjectSettings(await res.json() as Project);
+  return decryptProjectSettings((await res.json()) as Project);
 }
 
 export async function deleteAllTasks(
@@ -694,11 +713,14 @@ export async function disconnectRepo(projectId: string): Promise<void> {
 // Tasks
 // ---------------------------------------------------------------------------
 
-export function tasksUrl(projectId: string, params?: {
-  status?: string;
-  limit?: number;
-  offset?: number;
-}): string {
+export function tasksUrl(
+  projectId: string,
+  params?: {
+    status?: string;
+    limit?: number;
+    offset?: number;
+  },
+): string {
   const search = new URLSearchParams();
   search.set("project_id", projectId);
   if (params?.status) search.set("status", params.status);
@@ -774,19 +796,17 @@ export async function fetchTasks(
   return Promise.all(tasks.map(resolveTask));
 }
 
-export async function createTask(
-  data: {
-    project_id: string;
-    title: string;
-    description?: string;
-    acceptance_criteria?: string;
-    status?: string;
-    priority?: Task["priority"];
-    type?: Task["type"];
-    complexity?: number | null;
-    tags?: string[];
-  },
-): Promise<Task> {
+export async function createTask(data: {
+  project_id: string;
+  title: string;
+  description?: string;
+  acceptance_criteria?: string;
+  status?: string;
+  priority?: Task["priority"];
+  type?: Task["type"];
+  complexity?: number | null;
+  tags?: string[];
+}): Promise<Task> {
   const taskId = crypto.randomUUID();
   const needsEncryptedContent =
     Boolean(data.description?.trim()) ||
@@ -799,7 +819,10 @@ export async function createTask(
       })
     : null;
   if (needsEncryptedContent && !encryptedPayload) {
-    throw new ApiError("Task encryption is required before creating a task", 400);
+    throw new ApiError(
+      "Task encryption is required before creating a task",
+      400,
+    );
   }
   const res = await authFetch(`${API_V1}/tasks`, {
     method: "POST",
@@ -842,7 +865,10 @@ export async function updateTask(
       })
     : undefined;
   if (needsEncryptedContent && !encryptedPayload) {
-    throw new ApiError("Task encryption is required before updating a task", 400);
+    throw new ApiError(
+      "Task encryption is required before updating a task",
+      400,
+    );
   }
   const res = await authFetch(taskUrl(id), {
     method: "PATCH",
@@ -902,14 +928,20 @@ export async function fetchDependencyGraph(
 // Task Dependencies
 // ---------------------------------------------------------------------------
 
-export async function addDependency(taskId: string, dependsOnId: string): Promise<void> {
+export async function addDependency(
+  taskId: string,
+  dependsOnId: string,
+): Promise<void> {
   await authFetch(`${API_V1}/tasks/${taskId}/dependencies`, {
     method: "POST",
     body: JSON.stringify({ depends_on_id: dependsOnId }),
   });
 }
 
-export async function removeDependency(taskId: string, depId: string): Promise<void> {
+export async function removeDependency(
+  taskId: string,
+  depId: string,
+): Promise<void> {
   await authFetch(`${API_V1}/tasks/${taskId}/dependencies/${depId}`, {
     method: "DELETE",
   });
@@ -988,7 +1020,13 @@ export async function fetchExecutions(
   agentId?: string,
 ): Promise<ExecutionDetails[]> {
   return fetcher<ExecutionDetails[]>(
-    executionsUrl({ project_id: projectId, agent_id: agentId, routine_id: routineId, status, limit }),
+    executionsUrl({
+      project_id: projectId,
+      agent_id: agentId,
+      routine_id: routineId,
+      status,
+      limit,
+    }),
   );
 }
 
@@ -1045,9 +1083,7 @@ export async function sendExecutionCommand(
 // Models (LLM instances — previously "Agents")
 // ---------------------------------------------------------------------------
 
-export function modelsUrl(params?: {
-  project_id?: string;
-}): string {
+export function modelsUrl(params?: { project_id?: string }): string {
   const search = new URLSearchParams();
   if (params?.project_id) search.set("project_id", params.project_id);
   const qs = search.toString();
@@ -1124,18 +1160,21 @@ export function knowledgeItemUrl(packId: string, itemId: string): string {
   return `${knowledgeItemsUrl(packId)}/${itemId}`;
 }
 
-export async function fetchKnowledgePacks(): Promise<import("./types").KnowledgePack[]> {
+export async function fetchKnowledgePacks(): Promise<
+  import("./types").KnowledgePack[]
+> {
   return catalogFetcher(knowledgePacksUrl());
 }
 
 export async function createKnowledgePack(
-  data: Pick<import("./types").KnowledgePack, "name"> & Partial<Pick<import("./types").KnowledgePack, "slug" | "description">>,
+  data: Pick<import("./types").KnowledgePack, "name"> &
+    Partial<Pick<import("./types").KnowledgePack, "slug" | "description">>,
 ): Promise<import("./types").KnowledgePack> {
   const res = await authFetch(knowledgePacksUrl(), {
     method: "POST",
     body: JSON.stringify(data),
   });
-  const pack = await res.json() as import("./types").KnowledgePack;
+  const pack = (await res.json()) as import("./types").KnowledgePack;
   invalidateKnowledgeCatalogCache();
   return pack;
 }
@@ -1147,7 +1186,7 @@ export async function installKnowledgePack(
     method: "POST",
     body: JSON.stringify(data),
   });
-  const pack = await res.json() as import("./types").KnowledgePack;
+  const pack = (await res.json()) as import("./types").KnowledgePack;
   invalidateKnowledgeCatalogCache();
   return pack;
 }
@@ -1168,7 +1207,9 @@ export function marketplaceClaudePluginInstallUrl(sourceId: string): string {
   return `${marketplaceSourcesUrl()}/${sourceId}/install/claude-plugin`;
 }
 
-export async function fetchMarketplaceSources(): Promise<import("./types").MarketplaceSource[]> {
+export async function fetchMarketplaceSources(): Promise<
+  import("./types").MarketplaceSource[]
+> {
   return catalogFetcher(marketplaceSourcesUrl());
 }
 
@@ -1179,7 +1220,7 @@ export async function createMarketplaceSource(
     method: "POST",
     body: JSON.stringify(data),
   });
-  const source = await res.json() as import("./types").MarketplaceSource;
+  const source = (await res.json()) as import("./types").MarketplaceSource;
   invalidateMarketplacesCatalogCache();
   return source;
 }
@@ -1192,7 +1233,7 @@ export async function updateMarketplaceSource(
     method: "PATCH",
     body: JSON.stringify(data),
   });
-  const source = await res.json() as import("./types").MarketplaceSource;
+  const source = (await res.json()) as import("./types").MarketplaceSource;
   invalidateMarketplacesCatalogCache(sourceId);
   return source;
 }
@@ -1206,8 +1247,12 @@ export function marketplacePluginInstallUrl(mcpServerId: string): string {
   return `${marketplaceSourcesUrl()}/plugin-installs/${mcpServerId}`;
 }
 
-export async function uninstallPluginInstall(mcpServerId: string): Promise<void> {
-  await authFetch(marketplacePluginInstallUrl(mcpServerId), { method: "DELETE" });
+export async function uninstallPluginInstall(
+  mcpServerId: string,
+): Promise<void> {
+  await authFetch(marketplacePluginInstallUrl(mcpServerId), {
+    method: "DELETE",
+  });
   invalidateAbilitiesCatalogCache();
   invalidateMcpServersCatalogCache();
 }
@@ -1220,7 +1265,8 @@ export async function installClaudePlugin(
     method: "POST",
     body: JSON.stringify(data),
   });
-  const install = await res.json() as import("./types").InstallClaudePluginResponse;
+  const install =
+    (await res.json()) as import("./types").InstallClaudePluginResponse;
   invalidateAbilitiesCatalogCache();
   invalidateMcpServersCatalogCache();
   return install;
@@ -1250,7 +1296,9 @@ export function packageInstallUrl(installId: string): string {
   return `${packageInstallsUrl()}/${installId}`;
 }
 
-export async function fetchPackageSources(): Promise<import("./types").PackageSource[]> {
+export async function fetchPackageSources(): Promise<
+  import("./types").PackageSource[]
+> {
   return catalogFetcher(packageSourcesUrl());
 }
 
@@ -1261,7 +1309,7 @@ export async function createPackageSource(
     method: "POST",
     body: JSON.stringify(data),
   });
-  const source = await res.json() as import("./types").PackageSource;
+  const source = (await res.json()) as import("./types").PackageSource;
   invalidatePackageCatalogCache();
   return source;
 }
@@ -1280,20 +1328,28 @@ const OFFICIAL_NENJO_PACKAGE_SOURCE = {
   },
 };
 
-function isOfficialNenjoPackageSource(source: import("./types").PackageSource): boolean {
+function isOfficialNenjoPackageSource(
+  source: import("./types").PackageSource,
+): boolean {
   const metadata = source.metadata ?? {};
   const packageSource = metadata.source as Record<string, unknown> | undefined;
   return (
     source.source_type === "registry" &&
     source.adapter === "nenjo_packages" &&
-    packageSource?.kind === OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.source.kind &&
+    packageSource?.kind ===
+      OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.source.kind &&
     packageSource?.url === OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.source.url &&
-    (packageSource?.manifest_path ?? "packages.yaml") === OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.source.manifest_path
+    (packageSource?.manifest_path ?? "packages.yaml") ===
+      OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.source.manifest_path
   );
 }
 
-export async function ensureOfficialNenjoPackageSource(): Promise<import("./types").PackageSource> {
-  const existing = (await fetchPackageSources()).find(isOfficialNenjoPackageSource);
+export async function ensureOfficialNenjoPackageSource(): Promise<
+  import("./types").PackageSource
+> {
+  const existing = (await fetchPackageSources()).find(
+    isOfficialNenjoPackageSource,
+  );
   if (existing) {
     if (existing.status !== "active") {
       return updatePackageSource(existing.id, {
@@ -1311,7 +1367,9 @@ export async function ensureOfficialNenjoPackageSource(): Promise<import("./type
     return await createPackageSource(OFFICIAL_NENJO_PACKAGE_SOURCE);
   } catch (error) {
     invalidatePackageCatalogCache();
-    const retry = (await fetchPackageSources()).find(isOfficialNenjoPackageSource);
+    const retry = (await fetchPackageSources()).find(
+      isOfficialNenjoPackageSource,
+    );
     if (retry) return retry;
     throw error;
   }
@@ -1325,7 +1383,7 @@ export async function updatePackageSource(
     method: "PATCH",
     body: JSON.stringify(data),
   });
-  const source = await res.json() as import("./types").PackageSource;
+  const source = (await res.json()) as import("./types").PackageSource;
   invalidatePackageCatalogCache(sourceId);
   return source;
 }
@@ -1342,7 +1400,7 @@ export async function installPackage(
     method: "POST",
     body: JSON.stringify(data),
   });
-  const install = await res.json() as import("./types").PackageInstallDetail;
+  const install = (await res.json()) as import("./types").PackageInstallDetail;
   invalidatePackageCatalogCache(data.source_id);
   invalidateKnowledgeCatalogCache();
   invalidateAbilitiesCatalogCache();
@@ -1364,13 +1422,18 @@ export async function installOfficialNenjoPackages(): Promise<void> {
 
 export async function updateKnowledgePack(
   packId: string,
-  data: Partial<Pick<import("./types").KnowledgePack, "name" | "slug" | "description" | "status">>,
+  data: Partial<
+    Pick<
+      import("./types").KnowledgePack,
+      "name" | "slug" | "description" | "status"
+    >
+  >,
 ): Promise<import("./types").KnowledgePack> {
   const res = await authFetch(knowledgePackUrl(packId), {
     method: "PATCH",
     body: JSON.stringify(data),
   });
-  const pack = await res.json() as import("./types").KnowledgePack;
+  const pack = (await res.json()) as import("./types").KnowledgePack;
   invalidateKnowledgeCatalogCache(packId);
   return pack;
 }
@@ -1389,7 +1452,17 @@ export async function fetchKnowledgeItems(
 export async function uploadKnowledgeItem(
   packId: string,
   file: File,
-  metadata?: Partial<Pick<import("./types").KnowledgeItem, "slug" | "path" | "title" | "kind" | "authority" | "summary" | "status" | "tags" | "aliases" | "keywords">>,
+  metadata?: Partial<
+    Pick<
+      import("./types").KnowledgeItem,
+      | "slug"
+      | "path"
+      | "title"
+      | "kind"
+      | "summary"
+      | "tags"
+    >
+  >,
 ): Promise<import("./types").KnowledgeItem> {
   if (file.size > 20 * 1024 * 1024) {
     throw new ApiError("Knowledge items are limited to 20 MB.", 400);
@@ -1402,7 +1475,10 @@ export async function uploadKnowledgeItem(
   }
   const currentUser = await fetchCurrentUser();
   if (!currentUser.org_id) {
-    throw new ApiError("An active org is required before uploading knowledge items", 400);
+    throw new ApiError(
+      "An active org is required before uploading knowledge items",
+      400,
+    );
   }
   const encryptedPayload = await encryptOrgContentPayload({
     orgId: currentUser.org_id,
@@ -1434,24 +1510,16 @@ export async function uploadKnowledgeItem(
   appendOptional("path", metadata?.path);
   appendOptional("title", metadata?.title);
   appendOptional("kind", metadata?.kind);
-  appendOptional("authority", metadata?.authority);
   appendOptional("summary", metadata?.summary);
-  appendOptional("status", metadata?.status);
   if (metadata?.tags?.length) {
     form.append("tags", JSON.stringify(metadata.tags));
-  }
-  if (metadata?.aliases?.length) {
-    form.append("aliases", JSON.stringify(metadata.aliases));
-  }
-  if (metadata?.keywords?.length) {
-    form.append("keywords", JSON.stringify(metadata.keywords));
   }
 
   const res = await authFetch(knowledgeItemsUrl(packId), {
     method: "POST",
     body: form,
   });
-  const item = await res.json() as import("./types").KnowledgeItem;
+  const item = (await res.json()) as import("./types").KnowledgeItem;
   invalidateKnowledgeCatalogCache(packId);
   return item;
 }
@@ -1472,8 +1540,6 @@ export async function createKnowledgeItem(
     slug,
     title,
     kind: "guide",
-    authority: "draft",
-    status: "draft",
   });
 }
 
@@ -1520,7 +1586,10 @@ export async function fetchKnowledgeItemContent(
   if (response.encrypted_payload) {
     const plaintext = await decryptContentPayload(response.encrypted_payload);
     if (!plaintext) {
-      throw new ApiError("Shared document content could not be decrypted on this device", 409);
+      throw new ApiError(
+        "Shared document content could not be decrypted on this device",
+        409,
+      );
     }
 
     try {
@@ -1538,7 +1607,10 @@ export async function fetchKnowledgeItemContent(
         objectId: response.encrypted_payload.object_id,
         error,
       });
-      throw new ApiError("Shared knowledge content was not encoded correctly", 500);
+      throw new ApiError(
+        "Shared knowledge content was not encoded correctly",
+        500,
+      );
     }
   }
 
@@ -1559,7 +1631,10 @@ export async function updateKnowledgeItemContent(
 ): Promise<import("./types").KnowledgeItem> {
   const currentUser = await fetchCurrentUser();
   if (!currentUser.org_id) {
-    throw new ApiError("An active org is required before updating shared knowledge", 400);
+    throw new ApiError(
+      "An active org is required before updating shared knowledge",
+      400,
+    );
   }
   const encryptedPayload = await encryptOrgContentPayload({
     orgId: currentUser.org_id,
@@ -1578,7 +1653,7 @@ export async function updateKnowledgeItemContent(
     body: JSON.stringify({ encrypted_payload: encryptedPayload }),
   });
 
-  const item = await res.json() as import("./types").KnowledgeItem;
+  const item = (await res.json()) as import("./types").KnowledgeItem;
   invalidateKnowledgeItemCache(packId, itemId);
   return item;
 }
@@ -1613,14 +1688,24 @@ function isTextDocumentFile(file: File): boolean {
 export async function updateKnowledgeItemMetadata(
   packId: string,
   itemId: string,
-  data: Partial<Pick<import("./types").KnowledgeItem, "filename" | "path" | "title" | "kind" | "authority" | "summary" | "status" | "tags" | "aliases" | "keywords">>,
+  data: Partial<
+    Pick<
+      import("./types").KnowledgeItem,
+      | "filename"
+      | "path"
+      | "title"
+      | "kind"
+      | "summary"
+      | "tags"
+    >
+  >,
 ): Promise<import("./types").KnowledgeItem> {
   const res = await authFetch(knowledgeItemUrl(packId, itemId), {
     method: "PATCH",
     body: JSON.stringify(data),
   });
 
-  const item = await res.json() as import("./types").KnowledgeItem;
+  const item = (await res.json()) as import("./types").KnowledgeItem;
   invalidateKnowledgeItemCache(packId, itemId);
   return item;
 }
@@ -1639,14 +1724,17 @@ export async function fetchKnowledgeItemEdges(
 export async function createKnowledgeItemEdge(
   packId: string,
   itemId: string,
-  data: Pick<import("./types").KnowledgeItemEdge, "edge_type"> & { target_item_id: string; note?: string | null },
+  data: Pick<import("./types").KnowledgeItemEdge, "edge_type"> & {
+    target_item_id: string;
+    note?: string | null;
+  },
 ): Promise<import("./types").KnowledgeItemEdge> {
   const res = await authFetch(knowledgeItemEdgesUrl(packId, itemId), {
     method: "POST",
     body: JSON.stringify(data),
   });
 
-  const edge = await res.json() as import("./types").KnowledgeItemEdge;
+  const edge = (await res.json()) as import("./types").KnowledgeItemEdge;
   invalidateKnowledgeCatalogCache(packId);
   clearCatalogCache(knowledgeItemEdgesUrl(packId, itemId));
   clearCatalogCache(knowledgeItemEdgesUrl(packId, edge.target_item_id));
@@ -1726,7 +1814,10 @@ export function orgInvitationAcceptUrl(token: string): string {
   return `${API_V1}/orgs/invitations/${token}/accept`;
 }
 
-export function orgInvitationResendUrl(orgId: string, invitationId: string): string {
+export function orgInvitationResendUrl(
+  orgId: string,
+  invitationId: string,
+): string {
   return `${orgInvitationUrl(orgId, invitationId)}/resend`;
 }
 
@@ -1734,7 +1825,10 @@ export function orgContentKeyRequestsUrl(orgId: string): string {
   return `${API_V1}/orgs/${orgId}/org-content-key-requests`;
 }
 
-export function orgContentKeyRequestApproveUrl(orgId: string, requestId: string): string {
+export function orgContentKeyRequestApproveUrl(
+  orgId: string,
+  requestId: string,
+): string {
   return `${orgContentKeyRequestsUrl(orgId)}/${requestId}/approve`;
 }
 
@@ -1750,22 +1844,35 @@ export async function updateOrgMember(
   return res.json() as Promise<import("./types").OrgMember>;
 }
 
-export async function removeOrgMember(orgId: string, userId: string): Promise<void> {
+export async function removeOrgMember(
+  orgId: string,
+  userId: string,
+): Promise<void> {
   await authFetch(orgMemberUrl(orgId, userId), { method: "DELETE" });
 }
 
 export async function createOrgInvitation(
   orgId: string,
-  data: { email: string; role: string; scopes?: string[]; expires_in_days?: number },
+  data: {
+    email: string;
+    role: string;
+    scopes?: string[];
+    expires_in_days?: number;
+  },
 ): Promise<import("./types").OrgInvitation & { invite_token: string }> {
   const res = await authFetch(orgInvitationsUrl(orgId), {
     method: "POST",
     body: JSON.stringify(data),
   });
-  return res.json() as Promise<import("./types").OrgInvitation & { invite_token: string }>;
+  return res.json() as Promise<
+    import("./types").OrgInvitation & { invite_token: string }
+  >;
 }
 
-export async function revokeOrgInvitation(orgId: string, invitationId: string): Promise<void> {
+export async function revokeOrgInvitation(
+  orgId: string,
+  invitationId: string,
+): Promise<void> {
   await authFetch(orgInvitationUrl(orgId, invitationId), { method: "DELETE" });
 }
 
@@ -1776,12 +1883,14 @@ export async function resendOrgInvitation(
   const res = await authFetch(orgInvitationResendUrl(orgId, invitationId), {
     method: "POST",
   });
-  return res.json() as Promise<import("./types").OrgInvitation & { invite_token: string }>;
+  return res.json() as Promise<
+    import("./types").OrgInvitation & { invite_token: string }
+  >;
 }
 
-export async function updateCurrentOrg(
-  data: { name: string },
-): Promise<import("./types").CurrentOrg> {
+export async function updateCurrentOrg(data: {
+  name: string;
+}): Promise<import("./types").CurrentOrg> {
   const res = await authFetch(currentOrgUrl(), {
     method: "PATCH",
     body: JSON.stringify(data),
@@ -1789,9 +1898,9 @@ export async function updateCurrentOrg(
   return res.json() as Promise<import("./types").CurrentOrg>;
 }
 
-export async function createOrganization(
-  data: { name: string },
-): Promise<import("./types").CurrentOrg> {
+export async function createOrganization(data: {
+  name: string;
+}): Promise<import("./types").CurrentOrg> {
   const res = await authFetch(orgsUrl(), {
     method: "POST",
     body: JSON.stringify(data),
@@ -1808,14 +1917,18 @@ export async function fetchOrgInvitationPreview(
 export async function acceptOrgInvitation(
   token: string,
 ): Promise<import("./types").CurrentOrg> {
-  const res = await authFetch(orgInvitationAcceptUrl(token), { method: "POST" });
+  const res = await authFetch(orgInvitationAcceptUrl(token), {
+    method: "POST",
+  });
   return res.json() as Promise<import("./types").CurrentOrg>;
 }
 
 export async function fetchOrgContentKeyRequests(
   orgId: string,
 ): Promise<import("./types").OrgContentKeyAccessRequest[]> {
-  return fetcher<import("./types").OrgContentKeyAccessRequest[]>(orgContentKeyRequestsUrl(orgId));
+  return fetcher<import("./types").OrgContentKeyAccessRequest[]>(
+    orgContentKeyRequestsUrl(orgId),
+  );
 }
 
 export async function approveOrgContentKeyRequest(
@@ -1823,14 +1936,19 @@ export async function approveOrgContentKeyRequest(
   requestId: string,
   wrappedOck: import("./types").WrappedOrgContentKey,
 ): Promise<import("./types").OrgContentKeyAccessRequest> {
-  const res = await authFetch(orgContentKeyRequestApproveUrl(orgId, requestId), {
-    method: "POST",
-    body: JSON.stringify({ wrapped_ock: wrappedOck }),
-  });
+  const res = await authFetch(
+    orgContentKeyRequestApproveUrl(orgId, requestId),
+    {
+      method: "POST",
+      body: JSON.stringify({ wrapped_ock: wrappedOck }),
+    },
+  );
   return res.json() as Promise<import("./types").OrgContentKeyAccessRequest>;
 }
 
-export async function fetchBootstrapStatus(): Promise<import("./types").BootstrapStatus> {
+export async function fetchBootstrapStatus(): Promise<
+  import("./types").BootstrapStatus
+> {
   return fetcher<import("./types").BootstrapStatus>(bootstrapStatusUrl());
 }
 
@@ -1929,7 +2047,9 @@ export function workerEnrollmentApproveUrl(apiKeyId: string): string {
   return `${API_V1}/workers/enrollment/${apiKeyId}/approve`;
 }
 
-export async function fetchWorkerStatus(): Promise<import("./types").WorkerStatus> {
+export async function fetchWorkerStatus(): Promise<
+  import("./types").WorkerStatus
+> {
   return fetcher<import("./types").WorkerStatus>(workerStatusUrl());
 }
 
@@ -1938,11 +2058,17 @@ export async function pingWorker(): Promise<import("./types").WorkerStatus> {
   return res.json() as Promise<import("./types").WorkerStatus>;
 }
 
-export async function fetchWorkerApprovalKey(): Promise<import("./types").WorkerApprovalKeyResponse> {
-  return fetcher<import("./types").WorkerApprovalKeyResponse>(workerApprovalKeyUrl());
+export async function fetchWorkerApprovalKey(): Promise<
+  import("./types").WorkerApprovalKeyResponse
+> {
+  return fetcher<import("./types").WorkerApprovalKeyResponse>(
+    workerApprovalKeyUrl(),
+  );
 }
 
-export async function putWorkerApprovalKey(publicKey: string): Promise<import("./types").WorkerApprovalKeyResponse> {
+export async function putWorkerApprovalKey(
+  publicKey: string,
+): Promise<import("./types").WorkerApprovalKeyResponse> {
   const res = await authFetch(workerApprovalKeyUrl(), {
     method: "PUT",
     body: JSON.stringify({ public_key: publicKey }),
@@ -1954,7 +2080,9 @@ export async function deleteWorkerApprovalKey(): Promise<void> {
   await authFetch(workerApprovalKeyUrl(), { method: "DELETE" });
 }
 
-export async function fetchRecoveryBundle(): Promise<import("./types").RecoveryBundleResponse> {
+export async function fetchRecoveryBundle(): Promise<
+  import("./types").RecoveryBundleResponse
+> {
   return fetcher<import("./types").RecoveryBundleResponse>(recoveryBundleUrl());
 }
 
@@ -1972,7 +2100,9 @@ export async function deleteRecoveryBundle(): Promise<void> {
   await authFetch(recoveryBundleUrl(), { method: "DELETE" });
 }
 
-export async function listTrustedDevices(): Promise<import("./types").TrustedDevicePayload[]> {
+export async function listTrustedDevices(): Promise<
+  import("./types").TrustedDevicePayload[]
+> {
   return fetcher<import("./types").TrustedDevicePayload[]>(trustedDevicesUrl());
 }
 
@@ -1990,8 +2120,12 @@ export async function deleteTrustedDevice(deviceId: string): Promise<void> {
   await authFetch(trustedDeviceUrl(deviceId), { method: "DELETE" });
 }
 
-export async function listDeviceEnrollments(): Promise<import("./types").DeviceEnrollmentPayload[]> {
-  return fetcher<import("./types").DeviceEnrollmentPayload[]>(deviceEnrollmentsUrl());
+export async function listDeviceEnrollments(): Promise<
+  import("./types").DeviceEnrollmentPayload[]
+> {
+  return fetcher<import("./types").DeviceEnrollmentPayload[]>(
+    deviceEnrollmentsUrl(),
+  );
 }
 
 export async function registerDeviceEnrollment(
@@ -2007,7 +2141,9 @@ export async function registerDeviceEnrollment(
 export async function fetchDeviceEnrollment(
   deviceId: string,
 ): Promise<import("./types").DeviceEnrollmentPayload> {
-  return fetcher<import("./types").DeviceEnrollmentPayload>(deviceEnrollmentUrl(deviceId));
+  return fetcher<import("./types").DeviceEnrollmentPayload>(
+    deviceEnrollmentUrl(deviceId),
+  );
 }
 
 export async function approveDeviceEnrollment(
@@ -2025,8 +2161,12 @@ export async function deleteDeviceEnrollment(deviceId: string): Promise<void> {
   await authFetch(deviceEnrollmentUrl(deviceId), { method: "DELETE" });
 }
 
-export async function fetchCurrentOrgContentKeyStatus(): Promise<import("./types").CurrentOrgContentKeyStatus> {
-  return fetcher<import("./types").CurrentOrgContentKeyStatus>(currentOrgContentKeyUrl());
+export async function fetchCurrentOrgContentKeyStatus(): Promise<
+  import("./types").CurrentOrgContentKeyStatus
+> {
+  return fetcher<import("./types").CurrentOrgContentKeyStatus>(
+    currentOrgContentKeyUrl(),
+  );
 }
 
 export async function bootstrapCurrentOrgContentKey(
@@ -2039,24 +2179,35 @@ export async function bootstrapCurrentOrgContentKey(
   return res.json() as Promise<import("./types").CurrentOrgContentKeyStatus>;
 }
 
-export async function fetchCurrentOrgContentKeyRecovery(): Promise<import("./types").CurrentOrgContentKeyRecovery> {
-  return fetcher<import("./types").CurrentOrgContentKeyRecovery>(currentOrgContentKeyRecoveryUrl());
+export async function fetchCurrentOrgContentKeyRecovery(): Promise<
+  import("./types").CurrentOrgContentKeyRecovery
+> {
+  return fetcher<import("./types").CurrentOrgContentKeyRecovery>(
+    currentOrgContentKeyRecoveryUrl(),
+  );
 }
 
 export async function requestCurrentOrgContentKeyAccess(
   deviceId: string,
 ): Promise<import("./types").OrgContentKeyAccessRequestStatus> {
-  const res = await authFetch(`${API_V1}/content-encryption/org-content-key/request`, {
-    method: "POST",
-    body: JSON.stringify({ device_id: deviceId }),
-  });
-  return res.json() as Promise<import("./types").OrgContentKeyAccessRequestStatus>;
+  const res = await authFetch(
+    `${API_V1}/content-encryption/org-content-key/request`,
+    {
+      method: "POST",
+      body: JSON.stringify({ device_id: deviceId }),
+    },
+  );
+  return res.json() as Promise<
+    import("./types").OrgContentKeyAccessRequestStatus
+  >;
 }
 
 export async function fetchCurrentOrgContentKeyAccessRequest(
   deviceId: string,
 ): Promise<import("./types").OrgContentKeyAccessRequestStatus> {
-  return fetcher<import("./types").OrgContentKeyAccessRequestStatus>(currentOrgContentKeyRequestUrl(deviceId));
+  return fetcher<import("./types").OrgContentKeyAccessRequestStatus>(
+    currentOrgContentKeyRequestUrl(deviceId),
+  );
 }
 
 export async function createWorkerEnrollment(
@@ -2066,10 +2217,14 @@ export async function createWorkerEnrollment(
     method: "POST",
     body: JSON.stringify(body),
   });
-  return res.json() as Promise<import("./types").WorkerEnrollmentStatusResponse>;
+  return res.json() as Promise<
+    import("./types").WorkerEnrollmentStatusResponse
+  >;
 }
 
-export async function listWorkerEnrollments(): Promise<import("./types").WorkerEnrollmentStatusResponse[]> {
+export async function listWorkerEnrollments(): Promise<
+  import("./types").WorkerEnrollmentStatusResponse[]
+> {
   return fetcher<import("./types").WorkerEnrollmentStatusResponse[]>(
     workerEnrollmentUrl(),
   );
@@ -2091,26 +2246,36 @@ export async function approveWorkerEnrollment(
     method: "POST",
     body: JSON.stringify(body),
   });
-  return res.json() as Promise<import("./types").WorkerEnrollmentStatusResponse>;
+  return res.json() as Promise<
+    import("./types").WorkerEnrollmentStatusResponse
+  >;
 }
 
 export async function deleteWorkerEnrollment(apiKeyId: string): Promise<void> {
   await authFetch(workerEnrollmentDetailUrl(apiKeyId), { method: "DELETE" });
 }
 
-export async function listWorkerAccountKeyTargets(): Promise<import("./types").WorkerAccountKeyTarget[]> {
+export async function listWorkerAccountKeyTargets(): Promise<
+  import("./types").WorkerAccountKeyTarget[]
+> {
   return fetcher<import("./types").WorkerAccountKeyTarget[]>(
     `${workerEnrollmentUrl().replace(/\/enrollment$/, "")}/account-key-targets`,
   );
 }
 
-export async function syncWorkerAccountKeys(
-  body: { workers: Array<{ api_key_id: string; wrapped_ack: import("./types").WrappedAccountContentKey }> },
-): Promise<void> {
-  await authFetch(`${workerEnrollmentUrl().replace(/\/enrollment$/, "")}/account-key/sync`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+export async function syncWorkerAccountKeys(body: {
+  workers: Array<{
+    api_key_id: string;
+    wrapped_ack: import("./types").WrappedAccountContentKey;
+  }>;
+}): Promise<void> {
+  await authFetch(
+    `${workerEnrollmentUrl().replace(/\/enrollment$/, "")}/account-key/sync`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
 }
 
 export async function syncWorkerAccountKey(
@@ -2151,7 +2316,9 @@ export function routineEdgeUrl(routineId: string, edgeId: string): string {
   return `${API_V1}/routines/${routineId}/edges/${edgeId}`;
 }
 
-export async function fetchRoutines(): Promise<import("./types").RoutineSummary[]> {
+export async function fetchRoutines(): Promise<
+  import("./types").RoutineSummary[]
+> {
   return catalogFetcher(routinesUrl());
 }
 
@@ -2196,9 +2363,7 @@ export async function saveRoutineGraph(
   return res.json();
 }
 
-export async function deleteRoutine(
-  routineId: string,
-): Promise<void> {
+export async function deleteRoutine(routineId: string): Promise<void> {
   await authFetch(routineUrl(routineId), { method: "DELETE" });
   invalidateRoutinesCatalogCache();
 }
@@ -2523,7 +2688,9 @@ export async function deleteAgent(agentId: string): Promise<void> {
   invalidateAgentsCatalogCache();
 }
 
-export async function fetchAgentHeartbeat(agentId: string): Promise<AgentHeartbeat | null> {
+export async function fetchAgentHeartbeat(
+  agentId: string,
+): Promise<AgentHeartbeat | null> {
   return fetcher<AgentHeartbeat | null>(`${agentUrl(agentId)}/heartbeat`);
 }
 
@@ -2606,7 +2773,10 @@ export async function fetchAgentPrompt(
     return response.prompt_config;
   }
 
-  throw new ApiError("Agent prompt is not available in encrypted form yet", 409);
+  throw new ApiError(
+    "Agent prompt is not available in encrypted form yet",
+    409,
+  );
 }
 
 export async function updateAgentPrompt(
@@ -2708,7 +2878,10 @@ export function projectRoutineAssignmentsUrl(projectId: string): string {
   return `${API_V1}/projects/${projectId}/routine-assignments`;
 }
 
-export function projectRoutineAssignmentUrl(projectId: string, assignmentId: string): string {
+export function projectRoutineAssignmentUrl(
+  projectId: string,
+  assignmentId: string,
+): string {
   return `${API_V1}/projects/${projectId}/routine-assignments/${assignmentId}`;
 }
 
@@ -2741,10 +2914,13 @@ export async function updateProjectRoutineAssignment(
   assignmentId: string,
   data: import("./types").UpdateProjectRoutineAssignmentRequest,
 ): Promise<import("./types").ProjectRoutineAssignment> {
-  const res = await authFetch(projectRoutineAssignmentUrl(projectId, assignmentId), {
-    method: "PATCH",
-    body: JSON.stringify(data),
-  });
+  const res = await authFetch(
+    projectRoutineAssignmentUrl(projectId, assignmentId),
+    {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    },
+  );
   return res.json() as Promise<import("./types").ProjectRoutineAssignment>;
 }
 
@@ -2931,7 +3107,9 @@ export async function cancelChat(body: ChatCancelRequest): Promise<void> {
   });
 }
 
-export async function exitChatDomain(body: ChatDomainExitRequest): Promise<void> {
+export async function exitChatDomain(
+  body: ChatDomainExitRequest,
+): Promise<void> {
   const projectId = normalizeOptionalProjectId(body.project_id);
   await authFetch(`${API_V1}/chat-commands/domain-exit`, {
     method: "POST",
@@ -2973,7 +3151,11 @@ export async function deleteChatSession(id: string): Promise<void> {
   await authFetch(`${API_V1}/chat-sessions/${id}`, { method: "DELETE" });
 }
 
-export const allChatSessionsUrl = (limit = 50, offset = 0, channelType = "chat") =>
+export const allChatSessionsUrl = (
+  limit = 50,
+  offset = 0,
+  channelType = "chat",
+) =>
   `${API_V1}/chat-sessions/all?limit=${limit}&offset=${offset}&channel_type=${channelType}`;
 
 export async function fetchAllChatSessions(params?: {
@@ -2993,17 +3175,22 @@ export async function fetchAllChatSessions(params?: {
 export const notificationsUnreadUrl = () => `${API_V1}/notifications/unread`;
 
 export async function markNotificationRead(sessionId: string): Promise<void> {
-  await authFetch(`${API_V1}/notifications/${sessionId}/read`, { method: "POST" });
+  await authFetch(`${API_V1}/notifications/${sessionId}/read`, {
+    method: "POST",
+  });
 }
 
 export const pushConfigUrl = () => `${API_V1}/push-notifications/config`;
-export const pushSubscriptionsUrl = () => `${API_V1}/push-notifications/subscriptions`;
+export const pushSubscriptionsUrl = () =>
+  `${API_V1}/push-notifications/subscriptions`;
 
 export async function fetchPushConfig(): Promise<PushConfigResponse> {
   return fetcher<PushConfigResponse>(pushConfigUrl());
 }
 
-export async function listPushSubscriptions(): Promise<PushSubscriptionRecord[]> {
+export async function listPushSubscriptions(): Promise<
+  PushSubscriptionRecord[]
+> {
   return fetcher<PushSubscriptionRecord[]>(pushSubscriptionsUrl());
 }
 
@@ -3066,12 +3253,12 @@ export async function fetchDomainManifest(id: string): Promise<DomainManifest> {
     authFetch(domainUrl(id)),
     authFetch(domainPromptUrl(id)),
   ]);
-  const domain = await domainRes.json() as {
+  const domain = (await domainRes.json()) as {
     platform_scopes?: string[];
-    ability_ids?: string[];
+    abilities?: string[];
     mcp_server_ids?: string[];
   };
-  const promptData = await promptRes.json() as {
+  const promptData = (await promptRes.json()) as {
     prompt_config?: DomainManifest["prompt"];
     encrypted_payload?: EncryptedPayload | null;
   };
@@ -3086,7 +3273,7 @@ export async function fetchDomainManifest(id: string): Promise<DomainManifest> {
   return {
     prompt,
     platform_scopes: domain.platform_scopes ?? [],
-    ability_ids: domain.ability_ids ?? [],
+    abilities: domain.abilities ?? [],
     mcp_server_ids: domain.mcp_server_ids ?? [],
   };
 }
@@ -3103,11 +3290,11 @@ export async function createDomain(data: CreateDomainRequest): Promise<Domain> {
       description: data.description,
       command: data.command,
       platform_scopes: manifest?.platform_scopes,
-      ability_ids: manifest?.ability_ids,
+      abilities: manifest?.abilities,
       mcp_server_ids: manifest?.mcp_server_ids,
     }),
   });
-  const domain = await res.json() as Domain;
+  const domain = (await res.json()) as Domain;
   if (manifest?.prompt) {
     const promptEncryptedPayload = requireEncryptedPayload(
       await encryptDomainPromptConfig(domain.id, manifest.prompt),
@@ -3153,7 +3340,7 @@ export async function updateDomainManifest(
       encrypted_payload: encryptedPayload,
     }),
   });
-  const data = await res.json() as {
+  const data = (await res.json()) as {
     prompt_config?: DomainManifest["prompt"];
     encrypted_payload?: EncryptedPayload | null;
   };
@@ -3178,18 +3365,30 @@ export async function deleteDomain(id: string): Promise<void> {
 }
 
 export async function moveDomain(id: string, path: string): Promise<Domain> {
-  const res = await authFetch(`${domainUrl(id)}/move`, { method: "PATCH", body: JSON.stringify({ path }) });
+  const res = await authFetch(`${domainUrl(id)}/move`, {
+    method: "PATCH",
+    body: JSON.stringify({ path }),
+  });
   invalidateDomainsCatalogCache();
   return res.json() as Promise<Domain>;
 }
 
 export async function deleteDomainFolder(path: string): Promise<void> {
-  await authFetch(`${API_V1}/domains/folders/delete`, { method: "DELETE", body: JSON.stringify({ path }) });
+  await authFetch(`${API_V1}/domains/folders/delete`, {
+    method: "DELETE",
+    body: JSON.stringify({ path }),
+  });
   invalidateDomainsCatalogCache();
 }
 
-export async function renameDomainFolder(oldPath: string, newPath: string): Promise<void> {
-  await authFetch(`${API_V1}/domains/folders/rename`, { method: "PATCH", body: JSON.stringify({ old_path: oldPath, new_path: newPath }) });
+export async function renameDomainFolder(
+  oldPath: string,
+  newPath: string,
+): Promise<void> {
+  await authFetch(`${API_V1}/domains/folders/rename`, {
+    method: "PATCH",
+    body: JSON.stringify({ old_path: oldPath, new_path: newPath }),
+  });
   invalidateDomainsCatalogCache();
 }
 
@@ -3255,7 +3454,10 @@ export async function createDomainSession(
   const res = await authFetch(`${domainUrl(domainId)}/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ project_id: normalizedProjectId, agent_id: agentId }),
+    body: JSON.stringify({
+      project_id: normalizedProjectId,
+      agent_id: agentId,
+    }),
   });
   return res.json() as Promise<DomainSession>;
 }
@@ -3321,25 +3523,25 @@ export function agentMcpAssignmentUrl(agentId: string, mcpId: string): string {
   return `${API_V1}/agents/${agentId}/mcp/${mcpId}`;
 }
 
-export async function fetchMcpServers(): Promise<import("./types").McpServer[]> {
+export async function fetchMcpServers(): Promise<
+  import("./types").McpServer[]
+> {
   return catalogFetcher(mcpServersUrl());
 }
 
-export async function createMcpServer(
-  data: {
-    name: string;
-    display_name: string;
-    description?: string;
-    transport: "stdio" | "http";
-    command?: string;
-    args?: string[];
-    url?: string;
-    env_schema?: import("./types").McpEnvField[];
-    icon?: string;
-    category?: string;
-    tags?: string[];
-  },
-): Promise<import("./types").McpServer> {
+export async function createMcpServer(data: {
+  name: string;
+  display_name: string;
+  description?: string;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  url?: string;
+  env_schema?: import("./types").McpEnvField[];
+  icon?: string;
+  category?: string;
+  tags?: string[];
+}): Promise<import("./types").McpServer> {
   const res = await authFetch(mcpServersUrl(), {
     method: "POST",
     body: JSON.stringify(data),
@@ -3498,7 +3700,9 @@ export function contextBlockContentUrl(id: string): string {
   return `${API_V1}/context-blocks/${id}/content`;
 }
 
-export async function fetchContextBlocks(): Promise<import("./types").ContextBlock[]> {
+export async function fetchContextBlocks(): Promise<
+  import("./types").ContextBlock[]
+> {
   return catalogFetcher(contextBlocksUrl());
 }
 
@@ -3513,7 +3717,7 @@ export async function createContextBlock(
       template: "",
     }),
   });
-  const block = await res.json() as import("./types").ContextBlock;
+  const block = (await res.json()) as import("./types").ContextBlock;
   if (template) {
     const encryptedPayload = requireEncryptedPayload(
       await encryptContextBlockTemplate(block.id, template),
@@ -3571,14 +3775,17 @@ export async function updateContextBlockContent(
     method: "PATCH",
     body: JSON.stringify({ encrypted_payload: encryptedPayload }),
   });
-  const response = await res.json() as {
+  const response = (await res.json()) as {
     template?: string;
     encrypted_payload?: EncryptedPayload | null;
   };
   if (response.encrypted_payload) {
     const plaintext = await decryptContentPayload(response.encrypted_payload);
     if (!plaintext) {
-      throw new ApiError("Updated context block payload could not be decrypted", 500);
+      throw new ApiError(
+        "Updated context block payload could not be decrypted",
+        500,
+      );
     }
     invalidateContextBlocksCatalogCache();
     return { template: JSON.parse(plaintext) as string };
@@ -3651,7 +3858,9 @@ export async function fetchAbilities(): Promise<import("./types").Ability[]> {
   return catalogFetcher(abilitiesUrl());
 }
 
-export async function fetchAbility(id: string): Promise<import("./types").Ability> {
+export async function fetchAbility(
+  id: string,
+): Promise<import("./types").Ability> {
   return fetcher(abilityUrl(id));
 }
 
@@ -3663,7 +3872,7 @@ export async function createAbility(
     method: "POST",
     body: JSON.stringify(createData),
   });
-  const ability = await res.json() as import("./types").Ability;
+  const ability = (await res.json()) as import("./types").Ability;
   if (prompt) {
     const encryptedPayload = requireEncryptedPayload(
       await encryptAbilityPromptConfig(ability.id, prompt),
@@ -3687,7 +3896,7 @@ export async function installSkill(
     method: "POST",
     body: JSON.stringify(data),
   });
-  const ability = await res.json() as import("./types").Ability;
+  const ability = (await res.json()) as import("./types").Ability;
   invalidateAbilitiesCatalogCache();
   return ability;
 }
@@ -3746,7 +3955,7 @@ export async function updateAbilityPrompt(
       encrypted_payload: encryptedPayload,
     }),
   });
-  const data = await res.json() as {
+  const data = (await res.json()) as {
     prompt_config?: { developer_prompt?: string };
     encrypted_payload?: EncryptedPayload | null;
   };
@@ -3812,11 +4021,11 @@ export async function fetchAgentAbilities(
 
 export async function setAgentAbilities(
   agentId: string,
-  abilityIds: string[],
+  abilities: string[],
 ): Promise<import("./types").AgentAbilityAssignment[]> {
   const res = await authFetch(agentAbilitiesUrl(agentId), {
     method: "PUT",
-    body: JSON.stringify({ ability_ids: abilityIds }),
+    body: JSON.stringify({ abilities }),
   });
   return res.json() as Promise<import("./types").AgentAbilityAssignment[]>;
 }

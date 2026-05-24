@@ -50,7 +50,9 @@ interface FileNode {
 type TreeEntry = FolderNode | FileNode;
 
 function canManageAbility(ability: Ability): boolean {
-  return !ability.is_system && !ability.read_only && ability.source_type !== "skill";
+  return (
+    !ability.is_system && !ability.read_only && ability.source_type !== "skill"
+  );
 }
 
 function buildTree(abilities: Ability[]): TreeEntry[] {
@@ -72,7 +74,9 @@ function buildTree(abilities: Ability[]): TreeEntry[] {
     if (parts.length > 1) {
       const parentPath = parts.slice(0, -1).join("/");
       const parent = getOrCreateFolder(parentPath);
-      if (!parent.children.some((c) => c.type === "folder" && c.path === path)) {
+      if (
+        !parent.children.some((c) => c.type === "folder" && c.path === path)
+      ) {
         parent.children.push(node);
       }
     }
@@ -170,7 +174,7 @@ function DraggableFile({
           d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
         />
       </svg>
-      <span className="truncate text-xs">{ability.display_name || ability.name}</span>
+      <span className="truncate text-xs">{ability.name}</span>
       {ability.is_system && (
         <svg
           className="h-3 w-3 shrink-0 text-gray-300 dark:text-gray-600"
@@ -186,11 +190,12 @@ function DraggableFile({
           />
         </svg>
       )}
-      {!ability.is_system && (ability.read_only || ability.source_type === "skill") && (
-        <span className="theme-surface-muted theme-text-muted shrink-0 rounded px-1 py-0.5 text-[9px] font-medium">
-          {ability.source_type === "skill" ? "Skill" : "Read-only"}
-        </span>
-      )}
+      {!ability.is_system &&
+        (ability.read_only || ability.source_type === "skill") && (
+          <span className="theme-surface-muted theme-text-muted shrink-0 rounded px-1 py-0.5 text-[9px] font-medium">
+            {ability.source_type === "skill" ? "Skill" : "Read-only"}
+          </span>
+        )}
     </button>
   );
 }
@@ -246,13 +251,15 @@ function DroppableFolder({
           strokeWidth={2}
           stroke="currentColor"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M8.25 4.5l7.5 7.5-7.5 7.5"
+          />
         </svg>
         <svg
           className={`h-3.5 w-3.5 shrink-0 ${
-            isExpanded
-              ? "text-teal-500 dark:text-teal-400"
-              : "theme-text-muted"
+            isExpanded ? "text-teal-500 dark:text-teal-400" : "theme-text-muted"
           }`}
           fill="none"
           viewBox="0 0 24 24"
@@ -260,17 +267,35 @@ function DroppableFolder({
           stroke="currentColor"
         >
           {isExpanded ? (
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776"
+            />
           ) : (
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+            />
           )}
         </svg>
         <span className="theme-text truncate text-xs font-medium">
           {folder.name}
         </span>
         {folder.isSystem && (
-          <svg className="theme-text-muted h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+          <svg
+            className="theme-text-muted h-3 w-3 shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
+            />
           </svg>
         )}
       </button>
@@ -408,14 +433,20 @@ function ContextMenu({
           <button
             type="button"
             className="theme-text flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:[background:var(--app-hover)]"
-            onClick={() => { onRename(folder); onClose(); }}
+            onClick={() => {
+              onRename(folder);
+              onClose();
+            }}
           >
             Rename
           </button>
           <button
             type="button"
             className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-flag-red-500 hover:bg-red-50 dark:hover:bg-red-900/30"
-            onClick={() => { onDelete(folder); onClose(); }}
+            onClick={() => {
+              onDelete(folder);
+              onClose();
+            }}
           >
             Delete folder
           </button>
@@ -498,74 +529,100 @@ function loadExpanded(): Set<string> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_EXPANDED);
     if (raw) return new Set(JSON.parse(raw) as string[]);
-  } catch { /* */ }
+  } catch {
+    /* */
+  }
   return new Set(["nenjo", "nenjo/platform"]);
 }
 
 function saveExpanded(set: Set<string>) {
-  try { localStorage.setItem(STORAGE_KEY_EXPANDED, JSON.stringify(Array.from(set))); } catch { /* */ }
-}
-
-function loadSelectedId(): string | null {
-  try { return localStorage.getItem(STORAGE_KEY_SELECTED); } catch { return null; }
-}
-
-function saveSelectedId(id: string | null) {
   try {
-    if (id) localStorage.setItem(STORAGE_KEY_SELECTED, id);
+    localStorage.setItem(STORAGE_KEY_EXPANDED, JSON.stringify(Array.from(set)));
+  } catch {
+    /* */
+  }
+}
+
+function loadSelectedName(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY_SELECTED);
+  } catch {
+    return null;
+  }
+}
+
+function saveSelectedName(name: string | null) {
+  try {
+    if (name) localStorage.setItem(STORAGE_KEY_SELECTED, name);
     else localStorage.removeItem(STORAGE_KEY_SELECTED);
-  } catch { /* */ }
+  } catch {
+    /* */
+  }
 }
 
 export function AbilitiesExplorer() {
   const { abilities, isLoading, isError, mutate } = useAbilities();
   const searchParams = useSearchParams();
-  const [selectedAbility, setSelectedAbilityRaw] = useState<Ability | null>(null);
+  const [selectedAbility, setSelectedAbilityRaw] = useState<Ability | null>(
+    null,
+  );
   const [expanded, setExpandedRaw] = useState<Set<string>>(loadExpanded);
   const [didRestore, setDidRestore] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [confirmDeleteAbility, setConfirmDeleteAbility] = useState<Ability | null>(null);
-  const [confirmDeleteFolder, setConfirmDeleteFolder] = useState<FolderNode | null>(null);
+  const [confirmDeleteAbility, setConfirmDeleteAbility] =
+    useState<Ability | null>(null);
+  const [confirmDeleteFolder, setConfirmDeleteFolder] =
+    useState<FolderNode | null>(null);
   const [renamingFolder, setRenamingFolder] = useState<FolderNode | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; folder: FolderNode } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    folder: FolderNode;
+  } | null>(null);
   const [draggingAbility, setDraggingAbility] = useState<Ability | null>(null);
   const [localFolders, setLocalFolders] = useState<string[]>([]);
-  const [fileContextMenu, setFileContextMenu] = useState<{ x: number; y: number; ability: Ability } | null>(null);
+  const [fileContextMenu, setFileContextMenu] = useState<{
+    x: number;
+    y: number;
+    ability: Ability;
+  } | null>(null);
   const [movingAbility, setMovingAbility] = useState<Ability | null>(null);
 
   // Persist expanded/selected state
   const setSelectedAbility = useCallback((a: Ability | null) => {
     setSelectedAbilityRaw(a);
-    saveSelectedId(a?.id ?? null);
+    saveSelectedName(a?.name ?? null);
   }, []);
 
-  const setExpanded: React.Dispatch<React.SetStateAction<Set<string>>> = useCallback((updater) => {
-    setExpandedRaw((prev) => {
-      const next = typeof updater === "function" ? updater(prev) : updater;
-      saveExpanded(next);
-      return next;
-    });
-  }, []);
+  const setExpanded: React.Dispatch<React.SetStateAction<Set<string>>> =
+    useCallback((updater) => {
+      setExpandedRaw((prev) => {
+        const next = typeof updater === "function" ? updater(prev) : updater;
+        saveExpanded(next);
+        return next;
+      });
+    }, []);
 
   // Restore selected ability from ?ability= query param or localStorage when data loads.
   useEffect(() => {
     if (didRestore || !abilities?.length) return;
-    const targetId = searchParams.get("ability") ?? loadSelectedId();
-    if (targetId) {
-      const match = abilities.find((a) => a.id === targetId);
+    const targetName = searchParams.get("ability") ?? loadSelectedName();
+    if (targetName) {
+      const match = abilities.find((a) => a.name === targetName);
       if (match) {
         setSelectedAbilityRaw(match);
-        saveSelectedId(match.id);
+        saveSelectedName(match.name);
         // Expand ancestor folders
         if (match.path) {
           const parts = match.path.split("/");
           setExpandedRaw((prev) => {
             const next = new Set(prev);
-            for (let i = 1; i <= parts.length; i++) next.add(parts.slice(0, i).join("/"));
+            for (let i = 1; i <= parts.length; i++)
+              next.add(parts.slice(0, i).join("/"));
             return next;
           });
         }
@@ -633,14 +690,21 @@ export function AbilitiesExplorer() {
       if (!overId.startsWith("folder:")) return;
       const newPath = overId.replace("folder:", "");
       const ability = abilities?.find((a) => a.id === abilityId);
-      if (!ability || !canManageAbility(ability) || ability.path === newPath) return;
+      if (!ability || !canManageAbility(ability) || ability.path === newPath)
+        return;
       try {
         await moveAbility(abilityId, newPath);
         mutate();
         if (newPath) {
-          setExpanded((prev) => { const next = new Set(prev); next.add(newPath); return next; });
+          setExpanded((prev) => {
+            const next = new Set(prev);
+            next.add(newPath);
+            return next;
+          });
         }
-      } catch { /* */ }
+      } catch {
+        /* */
+      }
     },
     [abilities, mutate],
   );
@@ -654,9 +718,12 @@ export function AbilitiesExplorer() {
     setDeletingId(confirmDeleteAbility.id);
     try {
       await deleteAbility(confirmDeleteAbility.id);
-      if (selectedAbility?.id === confirmDeleteAbility.id) setSelectedAbility(null);
+      if (selectedAbility?.id === confirmDeleteAbility.id)
+        setSelectedAbility(null);
       mutate();
-    } catch { /* */ } finally {
+    } catch {
+      /* */
+    } finally {
       setDeletingId(null);
       setConfirmDeleteAbility(null);
     }
@@ -666,9 +733,13 @@ export function AbilitiesExplorer() {
     if (!confirmDeleteFolder) return;
     try {
       await deleteAbilityFolder(confirmDeleteFolder.path);
-      setLocalFolders((prev) => prev.filter((f) => f !== confirmDeleteFolder.path));
+      setLocalFolders((prev) =>
+        prev.filter((f) => f !== confirmDeleteFolder.path),
+      );
       mutate();
-    } catch { /* */ } finally {
+    } catch {
+      /* */
+    } finally {
       setConfirmDeleteFolder(null);
     }
   };
@@ -676,12 +747,16 @@ export function AbilitiesExplorer() {
   const handleRenameFolder = async () => {
     if (!renamingFolder || !renameValue.trim()) return;
     const newPath = renamingFolder.path.includes("/")
-      ? renamingFolder.path.split("/").slice(0, -1).join("/") + "/" + renameValue.trim()
+      ? renamingFolder.path.split("/").slice(0, -1).join("/") +
+        "/" +
+        renameValue.trim()
       : renameValue.trim();
     try {
       await renameAbilityFolder(renamingFolder.path, newPath);
       mutate();
-    } catch { /* */ } finally {
+    } catch {
+      /* */
+    } finally {
       setRenamingFolder(null);
       setRenameValue("");
     }
@@ -689,9 +764,16 @@ export function AbilitiesExplorer() {
 
   const handleCreateFolder = () => {
     if (!newFolderName.trim()) return;
-    const sanitized = newFolderName.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
+    const sanitized = newFolderName
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, "_");
     setLocalFolders((prev) => [...prev, sanitized]);
-    setExpanded((prev) => { const next = new Set(prev); next.add(sanitized); return next; });
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.add(sanitized);
+      return next;
+    });
     setNewFolderOpen(false);
     setNewFolderName("");
   };
@@ -725,9 +807,15 @@ export function AbilitiesExplorer() {
         await moveAbility(abilityId, newPath);
         mutate();
         if (newPath) {
-          setExpanded((prev) => { const next = new Set(prev); next.add(newPath); return next; });
+          setExpanded((prev) => {
+            const next = new Set(prev);
+            next.add(newPath);
+            return next;
+          });
         }
-      } catch { /* */ }
+      } catch {
+        /* */
+      }
       setMovingAbility(null);
     },
     [abilities, mutate],
@@ -735,7 +823,10 @@ export function AbilitiesExplorer() {
 
   if (isLoading) {
     return (
-      <div className="theme-border theme-surface flex rounded-xl border" style={{ height: "calc(100dvh - 200px)" }}>
+      <div
+        className="theme-border theme-surface flex rounded-xl border"
+        style={{ height: "calc(100dvh - 200px)" }}
+      >
         <div className="theme-border w-64 border-r p-3">
           <Skeleton className="mb-3 h-4 w-24" />
           {Array.from({ length: 8 }).map((_, i) => (
@@ -752,15 +843,26 @@ export function AbilitiesExplorer() {
   if (isError) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-red-200 bg-red-50 px-6 py-12 dark:border-red-900 dark:bg-red-950/50">
-        <h3 className="theme-text mt-4 text-lg font-semibold">Failed to load abilities</h3>
-        <p className="theme-text-muted mt-2 text-sm">Please check your connection and try again.</p>
+        <h3 className="theme-text mt-4 text-lg font-semibold">
+          Failed to load abilities
+        </h3>
+        <p className="theme-text-muted mt-2 text-sm">
+          Please check your connection and try again.
+        </p>
       </div>
     );
   }
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="theme-border theme-surface flex min-h-[400px] flex-1 overflow-hidden rounded-xl border" style={{ height: "calc(100dvh - 200px)" }}>
+    <DndContext
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <div
+        className="theme-border theme-surface flex min-h-[400px] flex-1 overflow-hidden rounded-xl border"
+        style={{ height: "calc(100dvh - 200px)" }}
+      >
         {/* Left panel - File tree */}
         <div className="theme-border theme-surface-muted flex w-64 shrink-0 flex-col border-r">
           <div className="theme-border flex items-center justify-between border-b px-3 py-2">
@@ -774,8 +876,18 @@ export function AbilitiesExplorer() {
                 className="theme-text-muted rounded p-1 transition-colors hover:[background:var(--app-hover)] hover:[color:var(--app-text)]"
                 title="New folder"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1.5}
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+                  />
                 </svg>
               </button>
               <button
@@ -784,17 +896,30 @@ export function AbilitiesExplorer() {
                 className="theme-text-muted rounded p-1 transition-colors hover:[background:var(--app-hover)] hover:[color:var(--app-text)]"
                 title="New ability"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1.5}
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 4.5v15m7.5-7.5h-15"
+                  />
                 </svg>
               </button>
             </div>
           </div>
 
           <RootDroppable>
-            {(!abilities || abilities.length === 0) && localFolders.length === 0 ? (
+            {(!abilities || abilities.length === 0) &&
+            localFolders.length === 0 ? (
               <div className="flex flex-col items-center justify-center px-4 py-8">
-                <p className="text-center text-xs text-gray-400 dark:text-gray-500">No abilities yet</p>
+                <p className="text-center text-xs text-gray-400 dark:text-gray-500">
+                  No abilities yet
+                </p>
               </div>
             ) : (
               <TreeNodeList
@@ -826,8 +951,18 @@ export function AbilitiesExplorer() {
             />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center text-gray-400 dark:text-gray-500">
-              <svg className="mb-3 h-12 w-12" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+              <svg
+                className="mb-3 h-12 w-12"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+                />
               </svg>
               <p className="text-sm">Select an ability to edit</p>
             </div>
@@ -839,7 +974,7 @@ export function AbilitiesExplorer() {
       <DragOverlay>
         {draggingAbility && (
           <div className="rounded-md border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700 shadow-lg dark:border-teal-800 dark:bg-teal-900/50 dark:text-teal-300">
-            {draggingAbility.display_name || draggingAbility.name}
+            {draggingAbility.name}
           </div>
         )}
       </DragOverlay>
@@ -851,7 +986,10 @@ export function AbilitiesExplorer() {
           y={contextMenu.y}
           folder={contextMenu.folder}
           onClose={() => setContextMenu(null)}
-          onRename={(f) => { setRenamingFolder(f); setRenameValue(f.name); }}
+          onRename={(f) => {
+            setRenamingFolder(f);
+            setRenameValue(f.name);
+          }}
           onDelete={(f) => setConfirmDeleteFolder(f)}
         />
       )}
@@ -863,14 +1001,24 @@ export function AbilitiesExplorer() {
           y={fileContextMenu.y}
           ability={fileContextMenu.ability}
           onClose={() => setFileContextMenu(null)}
-          onMoveTo={(a) => { setMovingAbility(a); setFileContextMenu(null); }}
-          onDelete={(a) => { setConfirmDeleteAbility(a); setFileContextMenu(null); }}
+          onMoveTo={(a) => {
+            setMovingAbility(a);
+            setFileContextMenu(null);
+          }}
+          onDelete={(a) => {
+            setConfirmDeleteAbility(a);
+            setFileContextMenu(null);
+          }}
         />
       )}
 
       {/* Move to folder modal */}
       {movingAbility && (
-        <Modal open onClose={() => setMovingAbility(null)} title={`Move "${movingAbility.display_name || movingAbility.name}"`}>
+        <Modal
+          open
+          onClose={() => setMovingAbility(null)}
+          title={`Move "${movingAbility.name}"`}
+        >
           <div className="space-y-1">
             {getAllFolderPaths(tree)
               .filter((f) => f !== "nenjo" && !f.startsWith("nenjo/"))
@@ -878,19 +1026,35 @@ export function AbilitiesExplorer() {
                 <button
                   key={folderPath}
                   type="button"
-                  onClick={() => handleMoveAbility(movingAbility.id, folderPath)}
+                  onClick={() =>
+                    handleMoveAbility(movingAbility.id, folderPath)
+                  }
                   className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${
                     movingAbility.path === folderPath
                       ? "bg-teal-50 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300"
                       : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                   }`}
                 >
-                  <svg className="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                  <svg
+                    className="h-4 w-4 shrink-0 text-gray-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={1.5}
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+                    />
                   </svg>
-                  <span className="font-mono text-xs">{folderPath || "(root)"}</span>
+                  <span className="font-mono text-xs">
+                    {folderPath || "(root)"}
+                  </span>
                   {movingAbility.path === folderPath && (
-                    <span className="ml-auto text-[10px] text-teal-500">current</span>
+                    <span className="ml-auto text-[10px] text-teal-500">
+                      current
+                    </span>
                   )}
                 </button>
               ))}
@@ -904,7 +1068,7 @@ export function AbilitiesExplorer() {
         onClose={() => setConfirmDeleteAbility(null)}
         onConfirm={handleDeleteAbility}
         title="Delete Ability"
-        message={`Delete ability "${confirmDeleteAbility?.display_name || confirmDeleteAbility?.name}"?`}
+        message={`Delete ability "${confirmDeleteAbility?.name}"?`}
         confirmLabel="Delete"
         variant="danger"
         loading={!!deletingId}
@@ -923,21 +1087,43 @@ export function AbilitiesExplorer() {
 
       {/* Rename folder modal */}
       {renamingFolder && (
-        <Modal open onClose={() => setRenamingFolder(null)} title="Rename Folder">
-          <form onSubmit={(e) => { e.preventDefault(); handleRenameFolder(); }} className="space-y-4">
+        <Modal
+          open
+          onClose={() => setRenamingFolder(null)}
+          title="Rename Folder"
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleRenameFolder();
+            }}
+            className="space-y-4"
+          >
             <div>
               <Label htmlFor="rename-folder">New name</Label>
               <Input
                 id="rename-folder"
                 value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"))}
+                onChange={(e) =>
+                  setRenameValue(
+                    e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"),
+                  )
+                }
                 className="font-mono"
                 autoFocus
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="secondary" onClick={() => setRenamingFolder(null)}>Cancel</Button>
-              <Button type="submit" disabled={!renameValue.trim()}>Rename</Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setRenamingFolder(null)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!renameValue.trim()}>
+                Rename
+              </Button>
             </div>
           </form>
         </Modal>
@@ -946,22 +1132,42 @@ export function AbilitiesExplorer() {
       {/* New folder modal */}
       {newFolderOpen && (
         <Modal open onClose={() => setNewFolderOpen(false)} title="New Folder">
-          <form onSubmit={(e) => { e.preventDefault(); handleCreateFolder(); }} className="space-y-4">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleCreateFolder();
+            }}
+            className="space-y-4"
+          >
             <div>
               <Label htmlFor="new-folder-name">Folder name</Label>
               <Input
                 id="new-folder-name"
                 value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"))}
+                onChange={(e) =>
+                  setNewFolderName(
+                    e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"),
+                  )
+                }
                 placeholder="custom"
                 className="font-mono"
                 autoFocus
               />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Lowercase letters, numbers, and underscores only</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Lowercase letters, numbers, and underscores only
+              </p>
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="secondary" onClick={() => setNewFolderOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={!newFolderName.trim()}>Create Folder</Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setNewFolderOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!newFolderName.trim()}>
+                Create Folder
+              </Button>
             </div>
           </form>
         </Modal>
@@ -971,7 +1177,10 @@ export function AbilitiesExplorer() {
       <CreateAbilityModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onSaved={() => { mutate(); setCreateOpen(false); }}
+        onSaved={() => {
+          mutate();
+          setCreateOpen(false);
+        }}
         folders={getAllFolderPaths(tree)}
       />
     </DndContext>
@@ -1013,35 +1222,40 @@ function CreateAbilityModal({
 }) {
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [activationCondition, setActivationCondition] = useState("");
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    const slug = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    if (!slug) return;
     setSaving(true);
     try {
       await createAbility({
-        name: name.trim(),
+        name: slug,
         path: path || undefined,
-        display_name: displayName.trim() || undefined,
         description: description.trim() || undefined,
         activation_condition: activationCondition.trim() || undefined,
       });
       setName("");
       setPath("");
-      setDisplayName("");
       setDescription("");
       setActivationCondition("");
       onSaved();
-    } catch { /* */ } finally {
+    } catch {
+      /* */
+    } finally {
       setSaving(false);
     }
   };
 
-  const availableFolders = folders.filter((f) => f !== "nenjo" && !f.startsWith("nenjo/"));
+  const availableFolders = folders.filter(
+    (f) => f !== "nenjo" && !f.startsWith("nenjo/"),
+  );
 
   return (
     <Modal open={open} onClose={onClose} title="Create Ability">
@@ -1051,13 +1265,20 @@ function CreateAbilityModal({
           <Input
             id="ab-name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) =>
+              setName(
+                e.target.value
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, "_")
+                  .replace(/^_+|_+$/g, ""),
+              )
+            }
             placeholder="code_review"
             required
             className="font-mono"
           />
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            System identifier. Becomes the tool name.
+            Stable ability slug.
           </p>
         </div>
         <div>
@@ -1070,26 +1291,43 @@ function CreateAbilityModal({
           >
             <option value="">(root)</option>
             {availableFolders.map((f) => (
-              <option key={f} value={f}>{f || "(root)"}</option>
+              <option key={f} value={f}>
+                {f || "(root)"}
+              </option>
             ))}
           </select>
         </div>
         <div>
-          <Label htmlFor="ab-display">Display Name</Label>
-          <Input id="ab-display" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Code Review" />
-        </div>
-        <div>
           <Label htmlFor="ab-desc">Description</Label>
-          <Textarea id="ab-desc" value={description} onChange={(e) => setDescription(e.target.value.slice(0, 280))} placeholder="What this ability does..." rows={2} maxLength={280} />
+          <Textarea
+            id="ab-desc"
+            value={description}
+            onChange={(e) => setDescription(e.target.value.slice(0, 280))}
+            placeholder="What this ability does..."
+            rows={2}
+            maxLength={280}
+          />
         </div>
         <div>
           <Label htmlFor="ab-activation">Activation Condition</Label>
-          <Textarea id="ab-activation" value={activationCondition} onChange={(e) => setActivationCondition(e.target.value)} placeholder="When the user asks to review code..." rows={2} />
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">This becomes the tool description the LLM sees.</p>
+          <Textarea
+            id="ab-activation"
+            value={activationCondition}
+            onChange={(e) => setActivationCondition(e.target.value)}
+            placeholder="When the user asks to review code..."
+            rows={2}
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            This becomes the tool description the LLM sees.
+          </p>
         </div>
         <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={saving || !name.trim()}>{saving ? "Creating..." : "Create Ability"}</Button>
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={saving || !name.trim()}>
+            {saving ? "Creating..." : "Create Ability"}
+          </Button>
         </div>
       </form>
     </Modal>

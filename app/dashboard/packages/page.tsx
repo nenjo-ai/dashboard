@@ -72,9 +72,24 @@ import type {
 
 type LibraryTab = "installed" | "packages" | "sources" | "imports";
 type ImportMode = "knowledge_pack" | "skill" | "claude_plugin";
-type MarketplacePackageKind = "knowledge" | "agent" | "ability" | "domain" | "context_block" | "mcp" | "routine" | "knowledge_pack" | "skill" | "plugin";
+type MarketplacePackageKind =
+  | "knowledge"
+  | "agent"
+  | "ability"
+  | "domain"
+  | "context_block"
+  | "mcp"
+  | "routine"
+  | "knowledge_pack"
+  | "skill"
+  | "plugin";
 
-const LIBRARY_TABS: LibraryTab[] = ["installed", "packages", "sources", "imports"];
+const LIBRARY_TABS: LibraryTab[] = [
+  "installed",
+  "packages",
+  "sources",
+  "imports",
+];
 
 interface MarketplacePackage {
   id: string;
@@ -98,19 +113,21 @@ interface ClaudeMarketplaceManifest {
 }
 
 interface NenjoPackagesManifest {
-  packages?: Array<{
-    type?: MarketplacePackageKind;
-    kind?: MarketplacePackageKind;
-    slug: string;
-    name?: string | null;
-    display_name?: string | null;
-    description?: string | null;
-    path: string;
-    manifest_path?: string | null;
-    entrypoint?: string | null;
-    version?: string | null;
-    metadata?: Record<string, unknown> | null;
-  }> | Record<string, string>;
+  packages?:
+    | Array<{
+        type?: MarketplacePackageKind;
+        kind?: MarketplacePackageKind;
+        slug: string;
+        name?: string | null;
+        display_name?: string | null;
+        description?: string | null;
+        path: string;
+        manifest_path?: string | null;
+        entrypoint?: string | null;
+        version?: string | null;
+        metadata?: Record<string, unknown> | null;
+      }>
+    | Record<string, string>;
 }
 
 interface NenjoModulePackageManifest {
@@ -149,7 +166,9 @@ interface SkillReview {
 interface PackageReview {
   pkg: MarketplacePackage;
   source: PackageSource | null;
-  plugin_request: Omit<InstallClaudePluginRequest, "skills"> & { skills: SkillReview[] };
+  plugin_request: Omit<InstallClaudePluginRequest, "skills"> & {
+    skills: SkillReview[];
+  };
   envNamesText: string;
   selectedSkillIndex: number;
 }
@@ -178,7 +197,10 @@ interface LoadedPackageDetails {
 
 function formatLibraryDate(iso: string | null | undefined): string {
   if (!iso) return "Never";
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function slugify(value: string): string {
@@ -195,19 +217,27 @@ function identifier(value: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
-function metadataText(metadata: Record<string, unknown>, path: string[]): string | null {
+function metadataText(
+  metadata: Record<string, unknown>,
+  path: string[],
+): string | null {
   let current: unknown = metadata;
   for (const key of path) {
-    if (!current || typeof current !== "object" || Array.isArray(current)) return null;
+    if (!current || typeof current !== "object" || Array.isArray(current))
+      return null;
     current = (current as Record<string, unknown>)[key];
   }
   return typeof current === "string" && current.trim() ? current : null;
 }
 
-function metadataBool(metadata: Record<string, unknown>, path: string[]): boolean | null {
+function metadataBool(
+  metadata: Record<string, unknown>,
+  path: string[],
+): boolean | null {
   let current: unknown = metadata;
   for (const key of path) {
-    if (!current || typeof current !== "object" || Array.isArray(current)) return null;
+    if (!current || typeof current !== "object" || Array.isArray(current))
+      return null;
     current = (current as Record<string, unknown>)[key];
   }
   return typeof current === "boolean" ? current : null;
@@ -225,15 +255,22 @@ function packageSelector(pkg: MarketplacePackage): string | null {
   if (!packageSupportsSelector(pkg.kind)) return null;
   const owner = metadataText(pkg.metadata, ["source", "owner"]);
   const repo = metadataText(pkg.metadata, ["source", "repo"]);
-  const packageName = metadataText(pkg.metadata, ["source", "package"]) ?? pkg.name;
+  const packageName =
+    metadataText(pkg.metadata, ["source", "package"]) ?? pkg.name;
   if (pkg.kind === "knowledge" || pkg.kind === "knowledge_pack") {
-    return owner && repo ? `git://${owner}/${repo}/${packageName}` : `git://${pkg.name}`;
+    return owner && repo
+      ? `git://${owner}/${repo}/${packageName}`
+      : `git://${pkg.name}`;
   }
   return packageName;
 }
 
 function packageSupportsSelector(kind: MarketplacePackageKind): boolean {
-  return kind === "knowledge" || kind === "knowledge_pack" || kind === "context_block";
+  return (
+    kind === "knowledge" ||
+    kind === "knowledge_pack" ||
+    kind === "context_block"
+  );
 }
 
 function packageKindFromPath(path: string): MarketplacePackageKind {
@@ -247,7 +284,10 @@ function packageKindFromPath(path: string): MarketplacePackageKind {
   return "knowledge";
 }
 
-function packageKindIcon(kind: string | null | undefined, className = "h-5 w-5") {
+function packageKindIcon(
+  kind: string | null | undefined,
+  className = "h-5 w-5",
+) {
   switch (kind) {
     case "agent":
       return <Bot className={className} />;
@@ -285,24 +325,43 @@ function sourceGitHubInfo(source: PackageSource | MarketplaceSource): {
   marketplacePath: string;
 } | null {
   const packageSourceUrl = metadataText(source.metadata, ["source", "url"]);
-  const parsedSourceUrl = packageSourceUrl ? parseGitHubRepoUrl(packageSourceUrl) : null;
-  const owner = metadataText(source.metadata, ["owner"]) ?? parsedSourceUrl?.owner ?? null;
-  const repo = metadataText(source.metadata, ["repo"]) ?? parsedSourceUrl?.repo ?? null;
+  const parsedSourceUrl = packageSourceUrl
+    ? parseGitHubRepoUrl(packageSourceUrl)
+    : null;
+  const owner =
+    metadataText(source.metadata, ["owner"]) ?? parsedSourceUrl?.owner ?? null;
+  const repo =
+    metadataText(source.metadata, ["repo"]) ?? parsedSourceUrl?.repo ?? null;
   if (!owner || !repo) return null;
   return {
     owner,
     repo,
-    ref: metadataText(source.metadata, ["ref"]) ?? metadataText(source.metadata, ["source", "reference"]) ?? "main",
+    ref:
+      metadataText(source.metadata, ["ref"]) ??
+      metadataText(source.metadata, ["source", "reference"]) ??
+      "main",
     resolvedCommitSha: metadataText(source.metadata, ["resolved_commit_sha"]),
-    marketplacePath: metadataText(source.metadata, ["manifest_path"]) ?? metadataText(source.metadata, ["source", "manifest_path"]) ?? metadataText(source.metadata, ["marketplace_path"]) ?? "packages.yaml",
+    marketplacePath:
+      metadataText(source.metadata, ["manifest_path"]) ??
+      metadataText(source.metadata, ["source", "manifest_path"]) ??
+      metadataText(source.metadata, ["marketplace_path"]) ??
+      "packages.yaml",
   };
 }
 
-function sourceFetchRef(info: { ref: string; resolvedCommitSha: string | null }): string {
+function sourceFetchRef(info: {
+  ref: string;
+  resolvedCommitSha: string | null;
+}): string {
   return info.resolvedCommitSha ?? info.ref;
 }
 
-function githubRawUrl(owner: string, repo: string, ref: string, path: string): string {
+function githubRawUrl(
+  owner: string,
+  repo: string,
+  ref: string,
+  path: string,
+): string {
   return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path.replace(/^\/+/, "")}`;
 }
 
@@ -326,82 +385,112 @@ async function fetchOptionalText(url: string): Promise<string | null> {
   return res.text();
 }
 
-async function resolveGitHubCommitSha(owner: string, repo: string, ref: string): Promise<string> {
+async function resolveGitHubCommitSha(
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<string> {
   const commit = await fetchJson<GithubCommitResponse>(
     `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`,
   );
   return commit.sha;
 }
 
-async function fetchMarketplacePackages(source: PackageSource): Promise<MarketplacePackage[]> {
+async function fetchMarketplacePackages(
+  source: PackageSource,
+): Promise<MarketplacePackage[]> {
   const info = sourceGitHubInfo(source);
   if (!info) return [];
-  const manifest = await fetchJson<ClaudeMarketplaceManifest & NenjoPackagesManifest>(
-    githubRawUrl(info.owner, info.repo, sourceFetchRef(info), info.marketplacePath),
+  const manifest = await fetchJson<
+    ClaudeMarketplaceManifest & NenjoPackagesManifest
+  >(
+    githubRawUrl(
+      info.owner,
+      info.repo,
+      sourceFetchRef(info),
+      info.marketplacePath,
+    ),
   );
   if (manifest.packages && !Array.isArray(manifest.packages)) {
-    return Promise.all(Object.entries(manifest.packages).map(async ([packageName, packagePath]) => {
-      const path = packagePath.trim().replace(/^\.?\//, "").replace(/\/+$/, "");
-      let packageManifest: NenjoModulePackageManifest | null = null;
-      try {
-        packageManifest = await fetchJson<NenjoModulePackageManifest>(
-          githubRawUrl(info.owner, info.repo, sourceFetchRef(info), path),
-        );
-      } catch {
-        packageManifest = null;
-      }
-      const modules = packageManifest?.modules?.map((module) => (
-        typeof module === "string" ? module : module.path ?? ""
-      )) ?? [];
-      const kind = modules.some((module) => module.includes("/agents/"))
-        ? "agent"
-        : modules.some((module) => module.includes("/knowledge/"))
-          ? "knowledge"
-          : modules.some((module) => module.includes("/context_blocks/"))
-            ? "context_block"
-            : "ability";
-      return {
-        id: `${source.id}:${path || packageName}`,
-        kind,
-        name: packageManifest?.name ?? packageName,
-        display_name: packageManifest?.name ?? packageName,
-        description: packageManifest?.description ?? null,
-        latest_version: packageManifest?.version ?? null,
-        synced_at: null,
-        source_path: path,
-        metadata: {
-          source: {
-            provider: "github",
-            owner: info.owner,
-            repo: info.repo,
-            path,
-            package: packageManifest?.name ?? packageName,
-          },
-          version: {
-            ref: info.ref,
-            resolved_commit_sha: info.resolvedCommitSha,
-            package_version: packageManifest?.version ?? null,
-          },
-          install: {
+    return Promise.all(
+      Object.entries(manifest.packages).map(
+        async ([packageName, packagePath]) => {
+          const path = packagePath
+            .trim()
+            .replace(/^\.?\//, "")
+            .replace(/\/+$/, "");
+          let packageManifest: NenjoModulePackageManifest | null = null;
+          try {
+            packageManifest = await fetchJson<NenjoModulePackageManifest>(
+              githubRawUrl(info.owner, info.repo, sourceFetchRef(info), path),
+            );
+          } catch {
+            packageManifest = null;
+          }
+          const modules =
+            packageManifest?.modules?.map((module) =>
+              typeof module === "string" ? module : (module.path ?? ""),
+            ) ?? [];
+          const kind = modules.some((module) => module.includes("/agents/"))
+            ? "agent"
+            : modules.some((module) => module.includes("/knowledge/"))
+              ? "knowledge"
+              : modules.some((module) => module.includes("/context_blocks/"))
+                ? "context_block"
+                : "ability";
+          return {
+            id: `${source.id}:${path || packageName}`,
             kind,
-            selector: packageManifest?.name ?? packageName,
-          },
+            name: packageManifest?.name ?? packageName,
+            display_name: packageManifest?.name ?? packageName,
+            description: packageManifest?.description ?? null,
+            latest_version: packageManifest?.version ?? null,
+            synced_at: null,
+            source_path: path,
+            metadata: {
+              source: {
+                provider: "github",
+                owner: info.owner,
+                repo: info.repo,
+                path,
+                package: packageManifest?.name ?? packageName,
+              },
+              version: {
+                ref: info.ref,
+                resolved_commit_sha: info.resolvedCommitSha,
+                package_version: packageManifest?.version ?? null,
+              },
+              install: {
+                kind,
+                selector: packageManifest?.name ?? packageName,
+              },
+            },
+          };
         },
-      };
-    }));
+      ),
+    );
   }
   if (Array.isArray(manifest.packages)) {
     return manifest.packages.map((pkg) => {
       const kind = pkg.kind ?? pkg.type ?? "knowledge";
-      const path = pkg.path.trim().replace(/^\.?\//, "").replace(/\/+$/, "");
+      const path = pkg.path
+        .trim()
+        .replace(/^\.?\//, "")
+        .replace(/\/+$/, "");
       const name = pkg.slug || pkg.name || path.split("/").pop() || "package";
-      const selector = packageSupportsSelector(kind) ? `git://${info.owner}/${info.repo}/${name}` : null;
+      const selector = packageSupportsSelector(kind)
+        ? `git://${info.owner}/${info.repo}/${name}`
+        : null;
       return {
         id: `${source.id}:${path || name}`,
         kind,
         name,
         display_name: pkg.display_name ?? pkg.name ?? name,
-        description: pkg.description ?? metadataText((pkg.metadata ?? {}) as Record<string, unknown>, ["description"]),
+        description:
+          pkg.description ??
+          metadataText((pkg.metadata ?? {}) as Record<string, unknown>, [
+            "description",
+          ]),
         latest_version: pkg.version ?? null,
         synced_at: null,
         source_path: path,
@@ -422,7 +511,9 @@ async function fetchMarketplacePackages(source: PackageSource): Promise<Marketpl
             type: "github_directory",
             path,
             ...(kind === "skill"
-              ? { entrypoint: pkg.entrypoint ?? pkg.manifest_path ?? "SKILL.md" }
+              ? {
+                  entrypoint: pkg.entrypoint ?? pkg.manifest_path ?? "SKILL.md",
+                }
               : { manifest_path: pkg.manifest_path ?? "manifest.yaml" }),
           },
           install: {
@@ -434,7 +525,10 @@ async function fetchMarketplacePackages(source: PackageSource): Promise<Marketpl
     });
   }
   return (manifest.plugins ?? []).map((plugin) => {
-    const path = plugin.source.trim().replace(/^\.?\//, "").replace(/\/+$/, "");
+    const path = plugin.source
+      .trim()
+      .replace(/^\.?\//, "")
+      .replace(/\/+$/, "");
     return {
       id: `${source.id}:${path || plugin.name}`,
       kind: "plugin",
@@ -482,21 +576,42 @@ function parseStructuredText<T>(text: string): T {
   return matter(`---\n${text.trim()}\n---\n`).data as T;
 }
 
-async function fetchPackageDetails(source: PackageSource, pkg: MarketplacePackage): Promise<LoadedPackageDetails> {
+async function fetchPackageDetails(
+  source: PackageSource,
+  pkg: MarketplacePackage,
+): Promise<LoadedPackageDetails> {
   const info = sourceGitHubInfo(source);
-  if (!info) throw new Error("Package source is missing GitHub owner/repo metadata");
+  if (!info)
+    throw new Error("Package source is missing GitHub owner/repo metadata");
   const descriptorPath = pkg.source_path.replace(/^\/+/, "");
   const descriptor = await fetchJson<NenjoPackageDescriptor>(
     githubRawUrl(info.owner, info.repo, sourceFetchRef(info), descriptorPath),
   );
-  const dir = descriptorPath.includes("/") ? descriptorPath.slice(0, descriptorPath.lastIndexOf("/")) : "";
+  const dir = descriptorPath.includes("/")
+    ? descriptorPath.slice(0, descriptorPath.lastIndexOf("/"))
+    : "";
   const entry = descriptor.entry?.trim() || "manifest.yaml";
   const manifestPath = `${dir ? `${dir}/` : ""}${entry.replace(/^\/+/, "")}`;
   const manifest = await fetchJson<Record<string, unknown>>(
     githubRawUrl(info.owner, info.repo, sourceFetchRef(info), manifestPath),
   );
-  const readme = await fetchOptionalText(githubRawUrl(info.owner, info.repo, sourceFetchRef(info), `${dir}/README.md`))
-    ?? await fetchOptionalText(githubRawUrl(info.owner, info.repo, sourceFetchRef(info), `${dir}/readme.md`));
+  const readme =
+    (await fetchOptionalText(
+      githubRawUrl(
+        info.owner,
+        info.repo,
+        sourceFetchRef(info),
+        `${dir}/README.md`,
+      ),
+    )) ??
+    (await fetchOptionalText(
+      githubRawUrl(
+        info.owner,
+        info.repo,
+        sourceFetchRef(info),
+        `${dir}/readme.md`,
+      ),
+    ));
   return {
     descriptor,
     manifest,
@@ -511,31 +626,55 @@ async function fetchClaudePluginInstallRequest(
   pkg: MarketplacePackage,
 ): Promise<PackageReview["plugin_request"]> {
   const info = sourceGitHubInfo(source);
-  if (!info) throw new Error("Marketplace source is missing GitHub owner/repo metadata");
+  if (!info)
+    throw new Error("Marketplace source is missing GitHub owner/repo metadata");
   const pluginPath = pkg.source_path;
   const pluginManifest = await fetchOptionalJson<ClaudePluginManifest>(
-    githubRawUrl(info.owner, info.repo, sourceFetchRef(info), `${pluginPath}/.claude-plugin/plugin.json`),
+    githubRawUrl(
+      info.owner,
+      info.repo,
+      sourceFetchRef(info),
+      `${pluginPath}/.claude-plugin/plugin.json`,
+    ),
   );
-  const mcpFile = await fetchOptionalJson<{ mcpServers?: Record<string, ClaudeMcpServerConfig>; mcp_servers?: Record<string, ClaudeMcpServerConfig> }>(
-    githubRawUrl(info.owner, info.repo, sourceFetchRef(info), `${pluginPath}/.mcp.json`),
+  const mcpFile = await fetchOptionalJson<{
+    mcpServers?: Record<string, ClaudeMcpServerConfig>;
+    mcp_servers?: Record<string, ClaudeMcpServerConfig>;
+  }>(
+    githubRawUrl(
+      info.owner,
+      info.repo,
+      sourceFetchRef(info),
+      `${pluginPath}/.mcp.json`,
+    ),
   );
   const tree = await fetchJson<GithubTreeResponse>(
     `https://api.github.com/repos/${info.owner}/${info.repo}/git/trees/${sourceFetchRef(info)}?recursive=1`,
   );
   const skillPrefix = `${pluginPath}/skills/`;
-  const skillEntries = (tree.tree ?? [])
-    .filter((entry) => entry.type === "blob" && entry.path.startsWith(skillPrefix) && entry.path.endsWith("/SKILL.md"));
-  const skills: SkillReview[] = await Promise.all(skillEntries.map(async (entry) => {
-      const skillName = entry.path.replace(skillPrefix, "").replace(/\/SKILL\.md$/, "");
+  const skillEntries = (tree.tree ?? []).filter(
+    (entry) =>
+      entry.type === "blob" &&
+      entry.path.startsWith(skillPrefix) &&
+      entry.path.endsWith("/SKILL.md"),
+  );
+  const skills: SkillReview[] = await Promise.all(
+    skillEntries.map(async (entry) => {
+      const skillName = entry.path
+        .replace(skillPrefix, "")
+        .replace(/\/SKILL\.md$/, "");
       return {
         name: skillName,
         display_name: skillName.replace(/[-_]/g, " "),
         description: pluginManifest?.description ?? pkg.description,
         entrypoint: entry.path.replace(`${pluginPath}/`, ""),
         skill_path: entry.path,
-        content: await fetchText(githubRawUrl(info.owner, info.repo, sourceFetchRef(info), entry.path)),
+        content: await fetchText(
+          githubRawUrl(info.owner, info.repo, sourceFetchRef(info), entry.path),
+        ),
       };
-    }));
+    }),
+  );
   const mcpServers = {
     ...(mcpFile?.mcpServers ?? {}),
     ...(mcpFile?.mcp_servers ?? {}),
@@ -557,11 +696,17 @@ async function fetchClaudePluginInstallRequest(
   };
 }
 
-async function fetchMarketplaceSkillReview(source: PackageSource | MarketplaceSource, pkg: MarketplacePackage): Promise<PackageReview["plugin_request"]> {
+async function fetchMarketplaceSkillReview(
+  source: PackageSource | MarketplaceSource,
+  pkg: MarketplacePackage,
+): Promise<PackageReview["plugin_request"]> {
   const info = sourceGitHubInfo(source);
-  if (!info) throw new Error("Marketplace source is missing GitHub owner/repo metadata");
+  if (!info)
+    throw new Error("Marketplace source is missing GitHub owner/repo metadata");
   const skillPath = `${pkg.source_path.replace(/\/+$/, "")}/SKILL.md`;
-  const content = await fetchText(githubRawUrl(info.owner, info.repo, sourceFetchRef(info), skillPath));
+  const content = await fetchText(
+    githubRawUrl(info.owner, info.repo, sourceFetchRef(info), skillPath),
+  );
   return {
     name: pkg.name,
     display_name: pkg.display_name,
@@ -572,14 +717,16 @@ async function fetchMarketplaceSkillReview(source: PackageSource | MarketplaceSo
       resolved_commit_sha: info.resolvedCommitSha,
       package_version: pkg.latest_version,
     },
-    skills: [{
-      name: pkg.name,
-      display_name: pkg.display_name,
-      description: pkg.description,
-      entrypoint: "SKILL.md",
-      skill_path: skillPath,
-      content,
-    }],
+    skills: [
+      {
+        name: pkg.name,
+        display_name: pkg.display_name,
+        description: pkg.description,
+        entrypoint: "SKILL.md",
+        skill_path: skillPath,
+        content,
+      },
+    ],
     mcp_servers: {},
   };
 }
@@ -588,7 +735,9 @@ function knowledgeSelector(pack: KnowledgePack): string {
   return pack.selector ?? `platform:${pack.slug}`;
 }
 
-function parseGitHubRepoUrl(value: string): { owner: string; repo: string } | null {
+function parseGitHubRepoUrl(
+  value: string,
+): { owner: string; repo: string } | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
 
@@ -599,7 +748,8 @@ function parseGitHubRepoUrl(value: string): { owner: string; repo: string } | nu
 
   try {
     const url = new URL(trimmed);
-    if (url.hostname !== "github.com" && url.hostname !== "www.github.com") return null;
+    if (url.hostname !== "github.com" && url.hostname !== "www.github.com")
+      return null;
     const [owner, rawRepo] = url.pathname.split("/").filter(Boolean);
     if (!owner || !rawRepo) return null;
     return { owner, repo: rawRepo.replace(/\.git$/, "") };
@@ -610,33 +760,67 @@ function parseGitHubRepoUrl(value: string): { owner: string; repo: string } | nu
 
 export default function KnowledgePage() {
   const router = useRouter();
-  const { packs, isLoading: packsLoading, mutate: mutatePacks } = useKnowledgePacks();
+  const {
+    packs,
+    isLoading: packsLoading,
+    mutate: mutatePacks,
+  } = useKnowledgePacks();
   const { agents, isLoading: agentsLoading } = useAgents();
-  const { abilities, isLoading: abilitiesLoading, mutate: mutateAbilities } = useAbilities();
-  const { mcpServers, isLoading: mcpLoading, mutate: mutateMcp } = useMcpServers();
-  const { sources, isLoading: sourcesLoading, mutate: mutateSources } = usePackageSources();
-  const { installs, isLoading: installsLoading, mutate: mutateInstalls } = usePackageInstalls();
+  const {
+    abilities,
+    isLoading: abilitiesLoading,
+    mutate: mutateAbilities,
+  } = useAbilities();
+  const {
+    mcpServers,
+    isLoading: mcpLoading,
+    mutate: mutateMcp,
+  } = useMcpServers();
+  const {
+    sources,
+    isLoading: sourcesLoading,
+    mutate: mutateSources,
+  } = usePackageSources();
+  const {
+    installs,
+    isLoading: installsLoading,
+    mutate: mutateInstalls,
+  } = usePackageInstalls();
   const officialSourceEnsureInFlight = useRef(false);
 
-  const [activeTab, setActiveTab] = useTabParam<LibraryTab>("installed", LIBRARY_TABS);
+  const [activeTab, setActiveTab] = useTabParam<LibraryTab>(
+    "installed",
+    LIBRARY_TABS,
+  );
   const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
   const [sourceId, setSourceId] = useState<string | undefined>(undefined);
-  const [kindFilter, setKindFilter] = useState<MarketplacePackageKind | "all">("all");
+  const [kindFilter, setKindFilter] = useState<MarketplacePackageKind | "all">(
+    "all",
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [packages, setPackages] = useState<MarketplacePackage[]>([]);
   const [packagesLoading, setPackagesLoading] = useState(false);
   const [marketplaceRefresh, setMarketplaceRefresh] = useState(0);
-  const [packageReview, setPackageReview] = useState<PackageReview | null>(null);
-  const [packageDetails, setPackageDetails] = useState<{ pkg: MarketplacePackage; source: PackageSource | null } | null>(null);
-  const [envEditor, setEnvEditor] = useState<{ ability: Ability; envNamesText: string } | null>(null);
+  const [packageReview, setPackageReview] = useState<PackageReview | null>(
+    null,
+  );
+  const [packageDetails, setPackageDetails] = useState<{
+    pkg: MarketplacePackage;
+    source: PackageSource | null;
+  } | null>(null);
+  const [envEditor, setEnvEditor] = useState<{
+    ability: Ability;
+    envNamesText: string;
+  } | null>(null);
 
   const [sourceName, setSourceName] = useState("");
   const [sourceRepoUrl, setSourceRepoUrl] = useState("");
   const [sourceRef, setSourceRef] = useState("main");
   const [sourceManifestPath, setSourceManifestPath] = useState("packages.yaml");
-  const [sourceAdapter, setSourceAdapter] = useState<PackageSourceAdapter>("nenjo_packages");
+  const [sourceAdapter, setSourceAdapter] =
+    useState<PackageSourceAdapter>("nenjo_packages");
   const [importMode, setImportMode] = useState<ImportMode>("knowledge_pack");
   const [importOwner, setImportOwner] = useState("");
   const [importRepo, setImportRepo] = useState("");
@@ -658,53 +842,85 @@ export default function KnowledgePage() {
       abilityPaths: new Set<string>(),
     };
     for (const install of activePackageInstalls) {
-      const rootType = install.root_type === "knowledge_pack" ? "knowledge" : install.root_type;
+      const rootType =
+        install.root_type === "knowledge_pack"
+          ? "knowledge"
+          : install.root_type;
       if (rootType === "knowledge") {
-        if (install.root_resource_id) refs.knowledgeIds.add(install.root_resource_id);
+        if (install.root_resource_id)
+          refs.knowledgeIds.add(install.root_resource_id);
         refs.knowledgePaths.add(install.root_path);
       } else if (rootType === "agent") {
-        if (install.root_resource_id) refs.agentIds.add(install.root_resource_id);
+        if (install.root_resource_id)
+          refs.agentIds.add(install.root_resource_id);
         refs.agentPaths.add(install.root_path);
       } else if (rootType === "ability") {
-        if (install.root_resource_id) refs.abilityIds.add(install.root_resource_id);
+        if (install.root_resource_id)
+          refs.abilityIds.add(install.root_resource_id);
         refs.abilityPaths.add(install.root_path);
       }
     }
     return refs;
   }, [activePackageInstalls]);
   const activePacks = useMemo(
-    () => (packs ?? []).filter((pack) => {
-      if (pack.status === "archived" || pack.source_type !== "github") return false;
-      const sourcePath = metadataText(pack.metadata, ["install", "source_path"]);
-      return packageRootRefs.knowledgeIds.has(pack.id) || Boolean(sourcePath && packageRootRefs.knowledgePaths.has(sourcePath));
-    }),
+    () =>
+      (packs ?? []).filter((pack) => {
+        if (pack.status === "archived" || pack.source_type !== "package")
+          return false;
+        const sourcePath = metadataText(pack.metadata, [
+          "install",
+          "source_path",
+        ]);
+        return (
+          packageRootRefs.knowledgeIds.has(pack.id) ||
+          Boolean(sourcePath && packageRootRefs.knowledgePaths.has(sourcePath))
+        );
+      }),
     [packageRootRefs, packs],
   );
   const packageAgents = useMemo(
-    () => (agents ?? []).filter((agent) => {
-      const sourcePath = metadataText(agent.metadata, ["install", "source_path"]);
-      return packageRootRefs.agentIds.has(agent.id) || Boolean(sourcePath && packageRootRefs.agentPaths.has(sourcePath));
-    }),
+    () =>
+      (agents ?? []).filter((agent) => {
+        const sourcePath = metadataText(agent.metadata, [
+          "install",
+          "source_path",
+        ]);
+        return (
+          packageRootRefs.agentIds.has(agent.id) ||
+          Boolean(sourcePath && packageRootRefs.agentPaths.has(sourcePath))
+        );
+      }),
     [agents, packageRootRefs],
   );
   const packageAbilities = useMemo(
-    () => (abilities ?? []).filter((ability) => {
-      if (ability.source_type !== "native") return false;
-      const sourcePath = metadataText(ability.metadata, ["install", "source_path"]);
-      return packageRootRefs.abilityIds.has(ability.id) || Boolean(sourcePath && packageRootRefs.abilityPaths.has(sourcePath));
-    }),
+    () =>
+      (abilities ?? []).filter((ability) => {
+        if (ability.source_type !== "package") return false;
+        const sourcePath = metadataText(ability.metadata, [
+          "install",
+          "source_path",
+        ]);
+        return (
+          packageRootRefs.abilityIds.has(ability.id) ||
+          Boolean(sourcePath && packageRootRefs.abilityPaths.has(sourcePath))
+        );
+      }),
     [abilities, packageRootRefs],
   );
   const skillAbilities = useMemo(
-    () => (abilities ?? []).filter((ability) => ability.source_type === "skill"),
+    () =>
+      (abilities ?? []).filter((ability) => ability.source_type === "skill"),
     [abilities],
   );
   const pluginMcpServers = useMemo(
-    () => (mcpServers ?? []).filter((server) => server.source_type === "plugin"),
+    () =>
+      (mcpServers ?? []).filter((server) => server.source_type === "plugin"),
     [mcpServers],
   );
-  const selectedPack = activePacks.find((pack) => pack.id === selectedPackId) ?? null;
-  const selectedSource = (sources ?? []).find((source) => source.id === sourceId) ?? null;
+  const selectedPack =
+    activePacks.find((pack) => pack.id === selectedPackId) ?? null;
+  const selectedSource =
+    (sources ?? []).find((source) => source.id === sourceId) ?? null;
   const installedCatalogKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const install of activePackageInstalls) {
@@ -730,7 +946,8 @@ export default function KnowledgePage() {
   }, [sourceId, sources]);
 
   useEffect(() => {
-    if (sourcesLoading || !sources || officialSourceEnsureInFlight.current) return;
+    if (sourcesLoading || !sources || officialSourceEnsureInFlight.current)
+      return;
     const hasOfficialSource = sources.some((source) => {
       const info = sourceGitHubInfo(source);
       return (
@@ -751,7 +968,11 @@ export default function KnowledgePage() {
         mutateSources();
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to add Nenjo official package source");
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to add Nenjo official package source",
+        );
       })
       .finally(() => {
         officialSourceEnsureInFlight.current = false;
@@ -760,7 +981,8 @@ export default function KnowledgePage() {
 
   useEffect(() => {
     if (!selectedPackId) return;
-    if (!activePacks.some((pack) => pack.id === selectedPackId)) setSelectedPackId(null);
+    if (!activePacks.some((pack) => pack.id === selectedPackId))
+      setSelectedPackId(null);
   }, [activePacks, selectedPackId]);
 
   useEffect(() => {
@@ -780,7 +1002,9 @@ export default function KnowledgePage() {
       .catch((err) => {
         if (!cancelled) {
           setPackages([]);
-          setError(err instanceof Error ? err.message : "Failed to load packages");
+          setError(
+            err instanceof Error ? err.message : "Failed to load packages",
+          );
         }
       })
       .finally(() => {
@@ -827,28 +1051,33 @@ export default function KnowledgePage() {
     try {
       const ref = sourceRef.trim() || "main";
       const resolvedCommitSha = await resolveGitHubCommitSha(owner, repo, ref);
-      const manifestPath = sourceManifestPath.trim() || (sourceAdapter === "claude_marketplace" ? ".claude-plugin/marketplace.json" : "packages.yaml");
+      const manifestPath =
+        sourceManifestPath.trim() ||
+        (sourceAdapter === "claude_marketplace"
+          ? ".claude-plugin/marketplace.json"
+          : "packages.yaml");
       const created = await createPackageSource({
         name: sourceName.trim() || `${owner}/${repo}`,
         source_type: sourceAdapter === "nenjo_packages" ? "registry" : "github",
         adapter: sourceAdapter,
-        metadata: sourceAdapter === "nenjo_packages"
-          ? {
-              source: {
-                kind: "git",
-                url: `https://github.com/${owner}/${repo}.git`,
-                reference: ref,
+        metadata:
+          sourceAdapter === "nenjo_packages"
+            ? {
+                source: {
+                  kind: "git",
+                  url: `https://github.com/${owner}/${repo}.git`,
+                  reference: ref,
+                  manifest_path: manifestPath,
+                },
+                resolved_commit_sha: resolvedCommitSha,
+              }
+            : {
+                owner,
+                repo,
+                ref,
+                resolved_commit_sha: resolvedCommitSha,
                 manifest_path: manifestPath,
               },
-              resolved_commit_sha: resolvedCommitSha,
-            }
-          : {
-              owner,
-              repo,
-              ref,
-              resolved_commit_sha: resolvedCommitSha,
-              manifest_path: manifestPath,
-            },
       });
       await mutateSources();
       setSourceId(created.id);
@@ -867,10 +1096,16 @@ export default function KnowledgePage() {
     setSourceAdapter(adapter);
     setSourceManifestPath((current) => {
       const trimmed = current.trim();
-      if (adapter === "claude_marketplace" && (!trimmed || trimmed === "packages.yaml")) {
+      if (
+        adapter === "claude_marketplace" &&
+        (!trimmed || trimmed === "packages.yaml")
+      ) {
         return ".claude-plugin/marketplace.json";
       }
-      if (adapter === "nenjo_packages" && (!trimmed || trimmed === ".claude-plugin/marketplace.json")) {
+      if (
+        adapter === "nenjo_packages" &&
+        (!trimmed || trimmed === ".claude-plugin/marketplace.json")
+      ) {
         return "packages.yaml";
       }
       return current;
@@ -887,16 +1122,21 @@ export default function KnowledgePage() {
     resetNotice();
     resolveGitHubCommitSha(info.owner, info.repo, info.ref)
       .then(async (resolvedCommitSha) => {
-        const sourceMetadata = source.metadata?.source && typeof source.metadata.source === "object" && !Array.isArray(source.metadata.source)
-          ? {
-              ...(source.metadata.source as Record<string, unknown>),
-              reference: info.ref,
-            }
-          : undefined;
+        const sourceMetadata =
+          source.metadata?.source &&
+          typeof source.metadata.source === "object" &&
+          !Array.isArray(source.metadata.source)
+            ? {
+                ...(source.metadata.source as Record<string, unknown>),
+                reference: info.ref,
+              }
+            : undefined;
         const updated = await updatePackageSource(source.id, {
           metadata: {
             ...source.metadata,
-            ...(sourceMetadata ? { source: sourceMetadata } : { ref: info.ref }),
+            ...(sourceMetadata
+              ? { source: sourceMetadata }
+              : { ref: info.ref }),
             resolved_commit_sha: resolvedCommitSha,
           },
         });
@@ -904,10 +1144,14 @@ export default function KnowledgePage() {
         setSourceId(updated.id);
         setActiveTab("packages");
         setMarketplaceRefresh((value) => value + 1);
-        setMessage(`${source.name} refreshed to ${resolvedCommitSha.slice(0, 7)}.`);
+        setMessage(
+          `${source.name} refreshed to ${resolvedCommitSha.slice(0, 7)}.`,
+        );
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to refresh source");
+        setError(
+          err instanceof Error ? err.message : "Failed to refresh source",
+        );
       })
       .finally(() => setBusyKey(null));
   };
@@ -924,9 +1168,10 @@ export default function KnowledgePage() {
     setBusyKey(`review:${pkg.id}`);
     resetNotice();
     try {
-      const pluginRequest = pkg.kind === "plugin"
-        ? await fetchClaudePluginInstallRequest(selectedSource, pkg)
-        : await fetchMarketplaceSkillReview(selectedSource, pkg);
+      const pluginRequest =
+        pkg.kind === "plugin"
+          ? await fetchClaudePluginInstallRequest(selectedSource, pkg)
+          : await fetchMarketplaceSkillReview(selectedSource, pkg);
       if (!pluginRequest.skills.length) {
         throw new Error("No SKILL.md files were found for this package");
       }
@@ -945,7 +1190,10 @@ export default function KnowledgePage() {
     }
   };
 
-  const handleInstallPackage = async (pkg: MarketplacePackage, review?: PackageReview) => {
+  const handleInstallPackage = async (
+    pkg: MarketplacePackage,
+    review?: PackageReview,
+  ) => {
     const selector = packageSelector(pkg);
     setBusyKey(`install:${pkg.id}`);
     resetNotice();
@@ -955,24 +1203,34 @@ export default function KnowledgePage() {
           source_id: selectedSource.id,
           path: pkg.source_path,
         });
-        await Promise.all([mutateInstalls(), mutatePacks(), mutateAbilities(), mutateMcp()]);
+        await Promise.all([
+          mutateInstalls(),
+          mutatePacks(),
+          mutateAbilities(),
+          mutateMcp(),
+        ]);
       } else if (pkg.kind === "plugin") {
         const source = review?.source ?? selectedSource;
         if (!source) throw new Error("Select a package source first");
         const request = review
-          ? pluginRequestWithRuntime(review.plugin_request, parseEnvNames(review.envNamesText))
-          : pluginRequestWithRuntime(await fetchClaudePluginInstallRequest(source, pkg), []);
+          ? pluginRequestWithRuntime(
+              review.plugin_request,
+              parseEnvNames(review.envNamesText),
+            )
+          : pluginRequestWithRuntime(
+              await fetchClaudePluginInstallRequest(source, pkg),
+              [],
+            );
         await installClaudePlugin(source.id, request);
         await Promise.all([mutateAbilities(), mutateMcp()]);
       } else if (pkg.kind === "skill") {
-        if (!selector) throw new Error("Skill package is missing an install selector");
+        if (!selector)
+          throw new Error("Skill package is missing an install selector");
         const name = identifier(pkg.name);
         const envNames = parseEnvNames(review?.envNamesText ?? "");
         await installSkill({
           name,
-          tool_name: name,
           path: "repo",
-          display_name: pkg.display_name ?? pkg.name,
           description: pkg.description ?? undefined,
           activation_condition: pkg.description ?? "",
           selector,
@@ -983,14 +1241,19 @@ export default function KnowledgePage() {
         });
         await mutateAbilities();
       } else {
-        if (!selector) throw new Error("Knowledge package is missing an install selector");
+        if (!selector)
+          throw new Error("Knowledge package is missing an install selector");
         await installKnowledgePack({
           name: pkg.display_name ?? pkg.name,
           slug: slugify(pkg.name),
           description: pkg.description,
           selector,
           source_type: "github",
-          metadata: withInstallSelector(pkg.metadata, selector, "knowledge_pack"),
+          metadata: withInstallSelector(
+            pkg.metadata,
+            selector,
+            "knowledge_pack",
+          ),
         });
         await mutatePacks();
       }
@@ -1011,9 +1274,11 @@ export default function KnowledgePage() {
     try {
       await uninstallSkillAbility(ability.id);
       await mutateAbilities();
-      setMessage(`${ability.display_name ?? ability.name} uninstalled.`);
+      setMessage(`${ability.name} uninstalled.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to uninstall skill");
+      setError(
+        err instanceof Error ? err.message : "Failed to uninstall skill",
+      );
     } finally {
       setBusyKey(null);
     }
@@ -1027,7 +1292,9 @@ export default function KnowledgePage() {
   };
 
   const handleOpenAbilityPage = (ability: Ability) => {
-    router.push(`/dashboard/agents?tab=abilities&ability=${encodeURIComponent(ability.id)}`);
+    router.push(
+      `/dashboard/agents?tab=abilities&ability=${encodeURIComponent(ability.name)}`,
+    );
   };
 
   const handleViewInstalledSkill = async (ability: Ability) => {
@@ -1048,12 +1315,19 @@ export default function KnowledgePage() {
     setBusyKey(`skill-env:${envEditor.ability.id}`);
     resetNotice();
     try {
-      await updateSkillRuntimeEnvNames(envEditor.ability.id, parseEnvNames(envEditor.envNamesText));
+      await updateSkillRuntimeEnvNames(
+        envEditor.ability.id,
+        parseEnvNames(envEditor.envNamesText),
+      );
       await mutateAbilities();
       setEnvEditor(null);
-      setMessage(`${envEditor.ability.display_name ?? envEditor.ability.name} environment updated.`);
+      setMessage(`${envEditor.ability.name} environment updated.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update skill environment");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update skill environment",
+      );
     } finally {
       setBusyKey(null);
     }
@@ -1067,7 +1341,9 @@ export default function KnowledgePage() {
       await Promise.all([mutateAbilities(), mutateMcp()]);
       setMessage(`${server.display_name} uninstalled.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to uninstall plugin");
+      setError(
+        err instanceof Error ? err.message : "Failed to uninstall plugin",
+      );
     } finally {
       setBusyKey(null);
     }
@@ -1105,7 +1381,11 @@ export default function KnowledgePage() {
     resetNotice();
     try {
       if (importMode === "claude_plugin") {
-        const resolvedCommitSha = await resolveGitHubCommitSha(owner, repo, ref);
+        const resolvedCommitSha = await resolveGitHubCommitSha(
+          owner,
+          repo,
+          ref,
+        );
         const source = await createMarketplaceSource({
           name: `${owner}/${repo}`,
           source_type: "github",
@@ -1116,7 +1396,8 @@ export default function KnowledgePage() {
             ref,
             resolved_commit_sha: resolvedCommitSha,
             manifest_path:
-              sourceManifestPath.trim() && sourceManifestPath.trim() !== "packages.yaml"
+              sourceManifestPath.trim() &&
+              sourceManifestPath.trim() !== "packages.yaml"
                 ? sourceManifestPath.trim()
                 : ".claude-plugin/marketplace.json",
           },
@@ -1143,11 +1424,17 @@ export default function KnowledgePage() {
         const normalizedName = identifier(name);
         await installSkill({
           name: normalizedName,
-          tool_name: normalizedName,
           path: "repo",
-          display_name: name,
           selector,
-          metadata: githubInstallMetadata(owner, repo, path, name, ref, selector, "skill"),
+          metadata: githubInstallMetadata(
+            owner,
+            repo,
+            path,
+            name,
+            ref,
+            selector,
+            "skill",
+          ),
         });
         await mutateAbilities();
       } else {
@@ -1157,7 +1444,15 @@ export default function KnowledgePage() {
           slug: slugify(name),
           selector,
           source_type: "github",
-          metadata: githubInstallMetadata(owner, repo, path, name, ref, selector, "knowledge_pack"),
+          metadata: githubInstallMetadata(
+            owner,
+            repo,
+            path,
+            name,
+            ref,
+            selector,
+            "knowledge_pack",
+          ),
         });
         await mutatePacks();
       }
@@ -1178,26 +1473,43 @@ export default function KnowledgePage() {
           <Breadcrumbs
             items={[
               { label: "Dashboard", href: "/dashboard" },
-              { label: "Packages", href: "/dashboard/packages", onClick: () => setSelectedPackId(null) },
+              {
+                label: "Packages",
+                href: "/dashboard/packages",
+                onClick: () => setSelectedPackId(null),
+              },
               { label: selectedPack.name },
             ]}
           />
           <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <h1 className="truncate text-xl font-semibold text-gray-950 dark:text-gray-50">{selectedPack.name}</h1>
-              <p className="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">{knowledgeSelector(selectedPack)}</p>
+              <h1 className="truncate text-xl font-semibold text-gray-950 dark:text-gray-50">
+                {selectedPack.name}
+              </h1>
+              <p className="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">
+                {knowledgeSelector(selectedPack)}
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge>{selectedPack.source_type === "github" ? "GitHub" : "Platform"}</Badge>
-              {selectedPack.version ? <Badge>{selectedPack.version}</Badge> : null}
+              <Badge>
+                {selectedPack.source_type === "package"
+                  ? "Package"
+                  : "Platform"}
+              </Badge>
+              {selectedPack.version ? (
+                <Badge>{selectedPack.version}</Badge>
+              ) : null}
               {selectedPack.read_only ? <Badge>Read-only</Badge> : null}
               {selectedPack.is_system ? <Badge>System</Badge> : null}
             </div>
           </div>
-          {selectedPack.source_type === "github" && selectedPack.read_only ? (
+          {selectedPack.source_type === "package" && selectedPack.read_only ? (
             <SourceKnowledgeSection pack={selectedPack} />
           ) : (
-            <KnowledgeSection packId={selectedPack.id} readOnly={selectedPack.read_only} />
+            <KnowledgeSection
+              packId={selectedPack.id}
+              readOnly={selectedPack.read_only}
+            />
           )}
         </PageContent>
       </>
@@ -1208,12 +1520,18 @@ export default function KnowledgePage() {
     <>
       <TopBar title="Packages" />
       <PageContent className="space-y-6">
-        <Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Packages" }]} />
+        <Breadcrumbs
+          items={[
+            { label: "Dashboard", href: "/dashboard" },
+            { label: "Packages" },
+          ]}
+        />
 
         <div>
           <h1 className="theme-text text-2xl font-semibold">Packages</h1>
           <p className="theme-text-muted mt-3 max-w-2xl text-sm leading-6">
-            Installed external packages, skills, plugins, and package sources for this org.
+            Installed external packages, skills, plugins, and package sources
+            for this org.
           </p>
         </div>
 
@@ -1241,9 +1559,17 @@ export default function KnowledgePage() {
             packageAbilities={packageAbilities}
             abilities={filteredSkills}
             mcpServers={filteredMcp}
-            isLoading={installsLoading || packsLoading || agentsLoading || abilitiesLoading || mcpLoading}
+            isLoading={
+              installsLoading ||
+              packsLoading ||
+              agentsLoading ||
+              abilitiesLoading ||
+              mcpLoading
+            }
             onOpenPack={setSelectedPackId}
-            onOpenAgent={(agent) => router.push(`/dashboard/agents/${agent.id}`)}
+            onOpenAgent={(agent) =>
+              router.push(`/dashboard/agents/${agent.id}`)
+            }
             onViewSkill={handleViewInstalledSkill}
             onOpenAbility={handleOpenAbilityPage}
             onUninstallSkill={handleUninstallSkill}
@@ -1263,7 +1589,9 @@ export default function KnowledgePage() {
             kindFilter={kindFilter}
             onKindFilterChange={setKindFilter}
             onOpen={handleReviewPackage}
-            onOpenDetails={(pkg) => setPackageDetails({ pkg, source: selectedSource })}
+            onOpenDetails={(pkg) =>
+              setPackageDetails({ pkg, source: selectedSource })
+            }
             onInstall={(pkg) => handleInstallPackage(pkg)}
             onRefresh={() => setMarketplaceRefresh((value) => value + 1)}
             installedKeys={installedCatalogKeys}
@@ -1316,24 +1644,51 @@ export default function KnowledgePage() {
         review={packageReview}
         busyKey={busyKey}
         onClose={() => setPackageReview(null)}
-        onEnvNamesChange={(value) => setPackageReview((current) => current ? { ...current, envNamesText: value } : current)}
-        onSelectedSkillChange={(index) => setPackageReview((current) => current ? { ...current, selectedSkillIndex: index } : current)}
-        onInstall={() => packageReview ? handleInstallPackage(packageReview.pkg, packageReview) : undefined}
+        onEnvNamesChange={(value) =>
+          setPackageReview((current) =>
+            current ? { ...current, envNamesText: value } : current,
+          )
+        }
+        onSelectedSkillChange={(index) =>
+          setPackageReview((current) =>
+            current ? { ...current, selectedSkillIndex: index } : current,
+          )
+        }
+        onInstall={() =>
+          packageReview
+            ? handleInstallPackage(packageReview.pkg, packageReview)
+            : undefined
+        }
       />
       <PackageDetailsModal
         key={packageDetails?.pkg.id ?? "package-details"}
         pkg={packageDetails?.pkg ?? null}
         source={packageDetails?.source ?? null}
-        installed={packageDetails ? isPackageInstalled(packageDetails.pkg, packageDetails.source, installedCatalogKeys, installedSelectors) : false}
+        installed={
+          packageDetails
+            ? isPackageInstalled(
+                packageDetails.pkg,
+                packageDetails.source,
+                installedCatalogKeys,
+                installedSelectors,
+              )
+            : false
+        }
         busyKey={busyKey}
         onClose={() => setPackageDetails(null)}
-        onInstall={() => packageDetails ? handleInstallPackage(packageDetails.pkg) : undefined}
+        onInstall={() =>
+          packageDetails ? handleInstallPackage(packageDetails.pkg) : undefined
+        }
       />
       <SkillEnvModal
         editor={envEditor}
         busyKey={busyKey}
         onClose={() => setEnvEditor(null)}
-        onChange={(value) => setEnvEditor((current) => current ? { ...current, envNamesText: value } : current)}
+        onChange={(value) =>
+          setEnvEditor((current) =>
+            current ? { ...current, envNamesText: value } : current,
+          )
+        }
         onSave={handleSaveEnvEditor}
       />
     </>
@@ -1348,8 +1703,10 @@ function withInstallSelector(
   return {
     ...metadata,
     install: {
-      ...(typeof metadata.install === "object" && metadata.install !== null && !Array.isArray(metadata.install)
-        ? metadata.install as Record<string, unknown>
+      ...(typeof metadata.install === "object" &&
+      metadata.install !== null &&
+      !Array.isArray(metadata.install)
+        ? (metadata.install as Record<string, unknown>)
         : {}),
       selector,
       kind,
@@ -1373,7 +1730,9 @@ function githubInstallMetadata(
     distribution: {
       type: "github_directory",
       path,
-      ...(kind === "skill" ? { entrypoint: "SKILL.md" } : { manifest_path: "manifest.yaml" }),
+      ...(kind === "skill"
+        ? { entrypoint: "SKILL.md" }
+        : { manifest_path: "manifest.yaml" }),
     },
   };
 }
@@ -1384,7 +1743,11 @@ function isPackageInstalled(
   installedKeys: Set<string>,
   installedSelectors: Set<string>,
 ): boolean {
-  if (source && installedKeys.has(packageInstallKey(source.id, pkg.source_path))) return true;
+  if (
+    source &&
+    installedKeys.has(packageInstallKey(source.id, pkg.source_path))
+  )
+    return true;
   const selector = packageSelector(pkg);
   return selector ? installedSelectors.has(selector) : false;
 }
@@ -1399,13 +1762,23 @@ function packageSourceLabel(metadata: Record<string, unknown>): string | null {
 function packageVersionBadge(metadata: Record<string, unknown>): string | null {
   const commit = metadataText(metadata, ["version", "resolved_commit_sha"]);
   if (commit) return commit.slice(0, 7);
-  return metadataText(metadata, ["version", "requested_ref"]) ?? metadataText(metadata, ["version", "ref"]);
+  return (
+    metadataText(metadata, ["version", "requested_ref"]) ??
+    metadataText(metadata, ["version", "ref"])
+  );
 }
 
-function inferMcpEnvNames(servers: Record<string, ClaudeMcpServerConfig>): string[] {
+function inferMcpEnvNames(
+  servers: Record<string, ClaudeMcpServerConfig>,
+): string[] {
   const names = new Set<string>();
   for (const server of Object.values(servers)) {
-    if (!server.env || typeof server.env !== "object" || Array.isArray(server.env)) continue;
+    if (
+      !server.env ||
+      typeof server.env !== "object" ||
+      Array.isArray(server.env)
+    )
+      continue;
     for (const key of Object.keys(server.env)) {
       if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) names.add(key);
     }
@@ -1429,30 +1802,48 @@ function abilityEnvNames(ability: Ability): string[] {
   const value = ability.metadata?.runtime;
   if (!value || typeof value !== "object" || Array.isArray(value)) return [];
   const envNames = (value as Record<string, unknown>).env_names;
-  return Array.isArray(envNames) ? envNames.filter((name): name is string => typeof name === "string") : [];
+  return Array.isArray(envNames)
+    ? envNames.filter((name): name is string => typeof name === "string")
+    : [];
 }
 
-async function fetchInstalledSkillReview(ability: Ability): Promise<PackageReview> {
+async function fetchInstalledSkillReview(
+  ability: Ability,
+): Promise<PackageReview> {
   const owner = metadataText(ability.metadata, ["source", "owner"]);
   const repo = metadataText(ability.metadata, ["source", "repo"]);
-  const packageName = metadataText(ability.metadata, ["source", "package"]) ?? ability.name;
+  const packageName =
+    metadataText(ability.metadata, ["source", "package"]) ?? ability.name;
   const sourcePath = metadataText(ability.metadata, ["source", "path"]);
-  const ref = metadataText(ability.metadata, ["version", "ref"]) ?? metadataText(ability.metadata, ["version", "requested_ref"]) ?? "main";
-  const resolvedCommitSha = metadataText(ability.metadata, ["version", "resolved_commit_sha"]);
-  const entrypoint = metadataText(ability.metadata, ["distribution", "entrypoint"]) ?? "SKILL.md";
+  const ref =
+    metadataText(ability.metadata, ["version", "ref"]) ??
+    metadataText(ability.metadata, ["version", "requested_ref"]) ??
+    "main";
+  const resolvedCommitSha = metadataText(ability.metadata, [
+    "version",
+    "resolved_commit_sha",
+  ]);
+  const entrypoint =
+    metadataText(ability.metadata, ["distribution", "entrypoint"]) ??
+    "SKILL.md";
   if (!owner || !repo || !sourcePath) {
     throw new Error("Installed skill is missing GitHub source metadata");
   }
   const fetchRef = resolvedCommitSha ?? ref;
   const skillPath = `${sourcePath.replace(/\/+$/, "")}/${entrypoint.replace(/^\/+/, "")}`;
-  const content = await fetchText(githubRawUrl(owner, repo, fetchRef, skillPath));
+  const content = await fetchText(
+    githubRawUrl(owner, repo, fetchRef, skillPath),
+  );
   const pkg: MarketplacePackage = {
     id: ability.id,
     kind: "skill",
     name: packageName,
-    display_name: ability.display_name ?? ability.name,
+    display_name: ability.name,
     description: ability.description,
-    latest_version: metadataText(ability.metadata, ["version", "package_version"]),
+    latest_version: metadataText(ability.metadata, [
+      "version",
+      "package_version",
+    ]),
     metadata: ability.metadata,
     synced_at: ability.updated_at,
     source_path: sourcePath,
@@ -1462,22 +1853,27 @@ async function fetchInstalledSkillReview(ability: Ability): Promise<PackageRevie
     source: null,
     plugin_request: {
       name: packageName,
-      display_name: ability.display_name ?? ability.name,
+      display_name: ability.name,
       description: ability.description,
       source: { path: sourcePath },
       version: {
         ref_: ref,
         resolved_commit_sha: resolvedCommitSha,
-        package_version: metadataText(ability.metadata, ["version", "package_version"]),
+        package_version: metadataText(ability.metadata, [
+          "version",
+          "package_version",
+        ]),
       },
-      skills: [{
-        name: ability.name,
-        display_name: ability.display_name,
-        description: ability.description,
-        entrypoint,
-        skill_path: skillPath,
-        content,
-      }],
+      skills: [
+        {
+          name: ability.name,
+          display_name: ability.name,
+          description: ability.description,
+          entrypoint,
+          skill_path: skillPath,
+          content,
+        },
+      ],
       mcp_servers: {},
     },
     envNamesText: abilityEnvNames(ability).join("\n"),
@@ -1501,10 +1897,16 @@ function pluginRequestWithRuntime(
   };
 }
 
-function splitFrontmatter(markdown: string): { frontmatter: Array<[string, string]>; body: string } {
+function splitFrontmatter(markdown: string): {
+  frontmatter: Array<[string, string]>;
+  body: string;
+} {
   const parsed = matter(markdown);
   return {
-    frontmatter: Object.entries(parsed.data).map(([key, value]) => [key, formatFrontmatterValue(value)]),
+    frontmatter: Object.entries(parsed.data).map(([key, value]) => [
+      key,
+      formatFrontmatterValue(value),
+    ]),
     body: parsed.content.trimStart(),
   };
 }
@@ -1517,11 +1919,17 @@ function formatFrontmatterValue(value: unknown): string {
   return String(value);
 }
 
-function frontmatterValue(entries: Array<[string, string]>, key: string): string | null {
+function frontmatterValue(
+  entries: Array<[string, string]>,
+  key: string,
+): string | null {
   return entries.find(([entryKey]) => entryKey === key)?.[1] || null;
 }
 
-function frontmatterEntriesWithout(entries: Array<[string, string]>, keys: string[]): Array<[string, string]> {
+function frontmatterEntriesWithout(
+  entries: Array<[string, string]>,
+  keys: string[],
+): Array<[string, string]> {
   return entries.filter(([key]) => !keys.includes(key));
 }
 
@@ -1537,11 +1945,22 @@ function Badge({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Notice({ tone, children }: { tone: "error" | "success"; children: React.ReactNode }) {
-  const cls = tone === "error"
-    ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300"
-    : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300";
-  return <div className={`rounded-lg border px-4 py-3 text-sm ${cls}`}>{children}</div>;
+function Notice({
+  tone,
+  children,
+}: {
+  tone: "error" | "success";
+  children: React.ReactNode;
+}) {
+  const cls =
+    tone === "error"
+      ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300"
+      : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300";
+  return (
+    <div className={`rounded-lg border px-4 py-3 text-sm ${cls}`}>
+      {children}
+    </div>
+  );
 }
 
 function InstalledTab({
@@ -1576,20 +1995,38 @@ function InstalledTab({
   busyKey: string | null;
 }) {
   if (isLoading) return <LoadingGrid />;
-  const hasInstalledItems = packs.length || agents.length || packageAbilities.length || abilities.length || mcpServers.length;
-  if (!hasInstalledItems) return <EmptyState text="No external packages installed." />;
+  const hasInstalledItems =
+    packs.length ||
+    agents.length ||
+    packageAbilities.length ||
+    abilities.length ||
+    mcpServers.length;
+  if (!hasInstalledItems)
+    return <EmptyState text="No external packages installed." />;
   return (
     <div className="space-y-7">
       {agents.length ? (
-        <CollapsibleAssetSection title="Agents" count={agents.length} icon={<Bot className="h-4 w-4" />}>
+        <CollapsibleAssetSection
+          title="Agents"
+          count={agents.length}
+          icon={<Bot className="h-4 w-4" />}
+        >
           {agents.map((agent) => (
             <AssetCard
               key={agent.id}
               icon={<Bot className="h-5 w-5" />}
               title={agent.display_name ?? agent.name}
-              subtitle={metadataText(agent.metadata, ["install", "source_path"]) ?? agent.name}
+              subtitle={
+                metadataText(agent.metadata, ["install", "source_path"]) ??
+                agent.name
+              }
               description={agent.description}
-              badges={["agent", packageSourceLabel(agent.metadata), packageVersionBadge(agent.metadata), agent.read_only ? "Read-only" : null]}
+              badges={[
+                "agent",
+                packageSourceLabel(agent.metadata),
+                packageVersionBadge(agent.metadata),
+                agent.read_only ? "Read-only" : null,
+              ]}
               updatedAt={agent.updated_at}
               onClick={() => onOpenAgent(agent)}
             />
@@ -1598,7 +2035,11 @@ function InstalledTab({
       ) : null}
 
       {packs.length ? (
-        <CollapsibleAssetSection title="Knowledge Packs" count={packs.length} icon={<BookOpen className="h-4 w-4" />}>
+        <CollapsibleAssetSection
+          title="Knowledge Packs"
+          count={packs.length}
+          icon={<BookOpen className="h-4 w-4" />}
+        >
           {packs.map((pack) => (
             <AssetCard
               key={pack.id}
@@ -1607,7 +2048,7 @@ function InstalledTab({
               subtitle={knowledgeSelector(pack)}
               description={pack.description}
               badges={[
-                pack.source_type === "github" ? "GitHub" : "Platform",
+                pack.source_type === "package" ? "Package" : "Platform",
                 pack.version,
                 pack.read_only ? "Read-only" : null,
                 pack.is_system ? "System" : null,
@@ -1620,15 +2061,27 @@ function InstalledTab({
       ) : null}
 
       {packageAbilities.length ? (
-        <CollapsibleAssetSection title="Abilities" count={packageAbilities.length} icon={<Zap className="h-4 w-4" />}>
+        <CollapsibleAssetSection
+          title="Abilities"
+          count={packageAbilities.length}
+          icon={<Zap className="h-4 w-4" />}
+        >
           {packageAbilities.map((ability) => (
             <AssetCard
               key={ability.id}
               icon={<Zap className="h-5 w-5" />}
-              title={ability.display_name ?? ability.name}
-              subtitle={metadataText(ability.metadata, ["install", "source_path"]) ?? ability.tool_name}
+              title={ability.name}
+              subtitle={
+                metadataText(ability.metadata, ["install", "source_path"]) ??
+                ability.name
+              }
               description={ability.description}
-              badges={["ability", packageSourceLabel(ability.metadata), packageVersionBadge(ability.metadata), ability.read_only ? "Read-only" : null]}
+              badges={[
+                "ability",
+                packageSourceLabel(ability.metadata),
+                packageVersionBadge(ability.metadata),
+                ability.read_only ? "Read-only" : null,
+              ]}
               updatedAt={ability.updated_at}
               onClick={() => onOpenAbility(ability)}
             />
@@ -1637,64 +2090,88 @@ function InstalledTab({
       ) : null}
 
       {abilities.length ? (
-        <CollapsibleAssetSection title="Skills" count={abilities.length} icon={<Sparkles className="h-4 w-4" />}>
+        <CollapsibleAssetSection
+          title="Skills"
+          count={abilities.length}
+          icon={<Sparkles className="h-4 w-4" />}
+        >
           {abilities.map((ability) => (
             <AssetCard
               key={ability.id}
               icon={<Sparkles className="h-5 w-5" />}
-              title={ability.display_name ?? ability.name}
-              subtitle={metadataText(ability.metadata, ["install", "selector"]) ?? ability.tool_name}
+              title={ability.name}
+              subtitle={
+                metadataText(ability.metadata, ["install", "selector"]) ??
+                ability.name
+              }
               description={ability.description}
-              badges={["Skill", `${ability.mcp_server_ids.length} MCP`, ability.read_only ? "Read-only" : null]}
+              badges={[
+                "Skill",
+                `${ability.mcp_server_ids.length} MCP`,
+                ability.read_only ? "Read-only" : null,
+              ]}
               updatedAt={ability.updated_at}
               onClick={() => onViewSkill(ability)}
               isBusy={busyKey === `view-skill:${ability.id}`}
-              actions={!ability.is_system ? (
-                <div className="grid gap-2 sm:grid-cols-3">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="w-full"
-                    onClick={() => onOpenAbility(ability)}
-                  >
-                    <Zap className="h-4 w-4" />
-                    Ability
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="w-full"
-                    onClick={() => onEditSkillEnv(ability)}
-                  >
-                    Edit env
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    className="w-full"
-                    onClick={() => onUninstallSkill(ability)}
-                    isLoading={busyKey === `uninstall-skill:${ability.id}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Uninstall
-                  </Button>
-                </div>
-              ) : null}
+              actions={
+                !ability.is_system ? (
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => onOpenAbility(ability)}
+                    >
+                      <Zap className="h-4 w-4" />
+                      Ability
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => onEditSkillEnv(ability)}
+                    >
+                      Edit env
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      className="w-full"
+                      onClick={() => onUninstallSkill(ability)}
+                      isLoading={busyKey === `uninstall-skill:${ability.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Uninstall
+                    </Button>
+                  </div>
+                ) : null
+              }
             />
           ))}
         </CollapsibleAssetSection>
-        ) : null}
+      ) : null}
 
-        {mcpServers.length ? (
-        <CollapsibleAssetSection title="Plugin MCP" count={mcpServers.length} icon={<PlugZap className="h-4 w-4" />}>
+      {mcpServers.length ? (
+        <CollapsibleAssetSection
+          title="Plugin MCP"
+          count={mcpServers.length}
+          icon={<PlugZap className="h-4 w-4" />}
+        >
           {mcpServers.map((server) => (
             <div key={server.id} className="space-y-3">
               <AssetCard
                 icon={<PlugZap className="h-5 w-5" />}
                 title={server.display_name}
-                subtitle={metadataText(server.metadata, ["install", "selector"]) ?? server.name}
+                subtitle={
+                  metadataText(server.metadata, ["install", "selector"]) ??
+                  server.name
+                }
                 description={server.description}
-                badges={["MCP", server.transport, server.read_only ? "Read-only" : null]}
+                badges={[
+                  "MCP",
+                  server.transport,
+                  server.read_only ? "Read-only" : null,
+                ]}
                 updatedAt={server.updated_at}
               />
               {!server.is_system ? (
@@ -1712,7 +2189,7 @@ function InstalledTab({
             </div>
           ))}
         </CollapsibleAssetSection>
-        ) : null}
+      ) : null}
     </div>
   );
 }
@@ -1748,16 +2225,34 @@ function MarketplaceTab({
   installedSelectors: Set<string>;
   busyKey: string | null;
 }) {
-  const selectedSource = sources.find((source) => source.id === selectedSourceId) ?? null;
+  const selectedSource =
+    sources.find((source) => source.id === selectedSourceId) ?? null;
   return (
     <div className="space-y-4">
       <div className="grid gap-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900 md:grid-cols-[minmax(0,1fr)_220px_auto]">
-        <Select value={selectedSourceId ?? ""} onChange={(event) => onSourceChange(event.target.value)} disabled={!sources.length}>
-          {sources.length ? sources.map((source) => (
-            <option key={source.id} value={source.id}>{source.name}</option>
-          )) : <option value="">No package sources</option>}
+        <Select
+          value={selectedSourceId ?? ""}
+          onChange={(event) => onSourceChange(event.target.value)}
+          disabled={!sources.length}
+        >
+          {sources.length ? (
+            sources.map((source) => (
+              <option key={source.id} value={source.id}>
+                {source.name}
+              </option>
+            ))
+          ) : (
+            <option value="">No package sources</option>
+          )}
         </Select>
-        <Select value={kindFilter} onChange={(event) => onKindFilterChange(event.target.value as MarketplacePackageKind | "all")}>
+        <Select
+          value={kindFilter}
+          onChange={(event) =>
+            onKindFilterChange(
+              event.target.value as MarketplacePackageKind | "all",
+            )
+          }
+        >
           <option value="all">All package types</option>
           <option value="knowledge">Knowledge</option>
           <option value="agent">Agents</option>
@@ -1766,19 +2261,31 @@ function MarketplaceTab({
           <option value="skill">Skills</option>
           <option value="plugin">Plugins</option>
         </Select>
-        <Button size="sm" variant="secondary" onClick={onRefresh} disabled={!selectedSourceId}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onRefresh}
+          disabled={!selectedSourceId}
+        >
           <RefreshCw className="h-4 w-4" />
           Refresh
         </Button>
       </div>
 
-      {isLoading ? <LoadingGrid /> : packages.length ? (
+      {isLoading ? (
+        <LoadingGrid />
+      ) : packages.length ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {packages.map((pkg) => (
             <PackageCatalogCard
               key={pkg.id}
               pkg={pkg}
-              installed={isPackageInstalled(pkg, selectedSource, installedKeys, installedSelectors)}
+              installed={isPackageInstalled(
+                pkg,
+                selectedSource,
+                installedKeys,
+                installedSelectors,
+              )}
               busyKey={busyKey}
               onOpen={onOpen}
               onOpenDetails={onOpenDetails}
@@ -1822,37 +2329,41 @@ function PackageCatalogCard({
       }}
       className="rounded-lg border border-gray-200 bg-white p-4 text-left transition-colors hover:border-deep-space-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-deep-space-blue-700"
     >
-              <AssetCard
-                icon={packageKindIcon(pkg.kind)}
-                title={pkg.display_name ?? pkg.name}
-                subtitle={packageSelector(pkg) ?? pkg.source_path}
-                description={pkg.description}
-                badges={[pkg.kind.replace("_", " "), sourceLabel(pkg.metadata), pkg.latest_version]}
-                updatedAt={pkg.synced_at}
-                framed={false}
+      <AssetCard
+        icon={packageKindIcon(pkg.kind)}
+        title={pkg.display_name ?? pkg.name}
+        subtitle={packageSelector(pkg) ?? pkg.source_path}
+        description={pkg.description}
+        badges={[
+          pkg.kind.replace("_", " "),
+          sourceLabel(pkg.metadata),
+          pkg.latest_version,
+        ]}
+        updatedAt={pkg.synced_at}
+        framed={false}
         statusLabel={installed ? "Installed" : "Available"}
-              />
+      />
       <div onClick={(event) => event.stopPropagation()}>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="mt-4 w-full"
-          onClick={() => isSkillLike ? onOpen(pkg) : onOpenDetails(pkg)}
-                isLoading={busyKey === `review:${pkg.id}`}
-              >
+        <Button
+          size="sm"
+          variant="secondary"
+          className="mt-4 w-full"
+          onClick={() => (isSkillLike ? onOpen(pkg) : onOpenDetails(pkg))}
+          isLoading={busyKey === `review:${pkg.id}`}
+        >
           <BookOpen className="h-4 w-4" />
           {isSkillLike ? "View" : "Details"}
-              </Button>
+        </Button>
         {!installed ? (
-              <Button
-                size="sm"
-                className="mt-2 w-full"
-                onClick={() => onInstall(pkg)}
-                isLoading={busyKey === `install:${pkg.id}`}
-              >
-                <Download className="h-4 w-4" />
-                Install
-              </Button>
+          <Button
+            size="sm"
+            className="mt-2 w-full"
+            onClick={() => onInstall(pkg)}
+            isLoading={busyKey === `install:${pkg.id}`}
+          >
+            <Download className="h-4 w-4" />
+            Install
+          </Button>
         ) : null}
       </div>
     </div>
@@ -1891,9 +2402,13 @@ function PackageDetailsModal({
       .catch((err) => {
         if (!cancelled) {
           setDetails(null);
-          setDetailsError(err instanceof Error ? err.message : "Failed to load package details");
+          setDetailsError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load package details",
+          );
         }
-      })
+      });
     return () => {
       cancelled = true;
     };
@@ -1902,16 +2417,41 @@ function PackageDetailsModal({
   const activePkg = current ?? pkg;
   const activeKind = details?.descriptor?.type ?? activePkg?.kind ?? null;
   const sourceInfo = source ? sourceGitHubInfo(source) : null;
-  const sourceOwner = activePkg ? metadataText(activePkg.metadata, ["source", "owner"]) ?? sourceInfo?.owner ?? null : null;
-  const sourceRepo = activePkg ? metadataText(activePkg.metadata, ["source", "repo"]) ?? sourceInfo?.repo ?? null : null;
-  const ref = activePkg ? metadataText(activePkg.metadata, ["version", "ref"]) ?? metadataText(activePkg.metadata, ["version", "requested_ref"]) ?? sourceInfo?.ref ?? null : null;
-  const sha = activePkg ? metadataText(activePkg.metadata, ["version", "resolved_commit_sha"]) ?? sourceInfo?.resolvedCommitSha ?? null : null;
+  const sourceOwner = activePkg
+    ? (metadataText(activePkg.metadata, ["source", "owner"]) ??
+      sourceInfo?.owner ??
+      null)
+    : null;
+  const sourceRepo = activePkg
+    ? (metadataText(activePkg.metadata, ["source", "repo"]) ??
+      sourceInfo?.repo ??
+      null)
+    : null;
+  const ref = activePkg
+    ? (metadataText(activePkg.metadata, ["version", "ref"]) ??
+      metadataText(activePkg.metadata, ["version", "requested_ref"]) ??
+      sourceInfo?.ref ??
+      null)
+    : null;
+  const sha = activePkg
+    ? (metadataText(activePkg.metadata, ["version", "resolved_commit_sha"]) ??
+      sourceInfo?.resolvedCommitSha ??
+      null)
+    : null;
   const refDetail = ref && sha ? `${ref}  ${sha.slice(0, 7)}` : ref;
-  const packageInstalled = activePkg ? installed && activePkg.id === pkg?.id : installed;
+  const packageInstalled = activePkg
+    ? installed && activePkg.id === pkg?.id
+    : installed;
 
-  const handleOpenDependency = (dependency: { path: string; version?: string | null }) => {
+  const handleOpenDependency = (dependency: {
+    path: string;
+    version?: string | null;
+  }) => {
     if (!activePkg) return;
-    const depName = dependency.path.split("/").slice(-2, -1)[0] || dependency.path.split("/").pop() || "package";
+    const depName =
+      dependency.path.split("/").slice(-2, -1)[0] ||
+      dependency.path.split("/").pop() ||
+      "package";
     const depKind = packageKindFromPath(dependency.path);
     setHistory((items) => [...items, activePkg]);
     setDetails(null);
@@ -1957,7 +2497,9 @@ function PackageDetailsModal({
     <Modal
       open={Boolean(activePkg)}
       onClose={onClose}
-      title={activePkg ? `${activePkg.display_name ?? activePkg.name}` : "Package"}
+      title={
+        activePkg ? `${activePkg.display_name ?? activePkg.name}` : "Package"
+      }
       className="!w-[96vw] !max-w-6xl"
     >
       {activePkg ? (
@@ -1972,9 +2514,19 @@ function PackageDetailsModal({
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge>{(details?.descriptor?.type ?? activePkg.kind).replace("_", " ")}</Badge>
+                  <Badge>
+                    {(details?.descriptor?.type ?? activePkg.kind).replace(
+                      "_",
+                      " ",
+                    )}
+                  </Badge>
                   <Badge>{packageInstalled ? "Installed" : "Available"}</Badge>
-                  {(details?.descriptor?.version ?? activePkg.latest_version) ? <Badge>{details?.descriptor?.version ?? activePkg.latest_version}</Badge> : null}
+                  {(details?.descriptor?.version ??
+                  activePkg.latest_version) ? (
+                    <Badge>
+                      {details?.descriptor?.version ?? activePkg.latest_version}
+                    </Badge>
+                  ) : null}
                 </div>
                 <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
                   {activePkg.description || "No description available."}
@@ -1984,16 +2536,38 @@ function PackageDetailsModal({
           </div>
 
           <dl className="grid gap-3 sm:grid-cols-2">
-            {activeKind === "knowledge" || activeKind === "knowledge_pack" || activeKind === "context_block" ? (
-              <PackageDetail label="Selector" value={packageSelector(activePkg)} mono />
+            {activeKind === "knowledge" ||
+            activeKind === "knowledge_pack" ||
+            activeKind === "context_block" ? (
+              <PackageDetail
+                label="Selector"
+                value={packageSelector(activePkg)}
+                mono
+              />
             ) : null}
             <PackageDetail label="Path" value={activePkg.source_path} mono />
-            <PackageDetail label="Source" value={source?.name ?? (sourceOwner && sourceRepo ? `${sourceOwner}/${sourceRepo}` : null)} />
-            <PackageDetail label="Adapter" value={source?.adapter?.replace("_", " ") ?? metadataText(activePkg.metadata, ["adapter"])} />
+            <PackageDetail
+              label="Source"
+              value={
+                source?.name ??
+                (sourceOwner && sourceRepo
+                  ? `${sourceOwner}/${sourceRepo}`
+                  : null)
+              }
+            />
+            <PackageDetail
+              label="Adapter"
+              value={
+                source?.adapter?.replace("_", " ") ??
+                metadataText(activePkg.metadata, ["adapter"])
+              }
+            />
             <PackageDetail label="Ref" value={refDetail} mono />
           </dl>
 
-          {!details && !detailsError && source?.adapter === "nenjo_packages" ? <EmptyState text="Loading package files..." /> : null}
+          {!details && !detailsError && source?.adapter === "nenjo_packages" ? (
+            <EmptyState text="Loading package files..." />
+          ) : null}
           {detailsError ? <Notice tone="error">{detailsError}</Notice> : null}
           {details ? (
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -2007,7 +2581,10 @@ function PackageDetailsModal({
                 />
                 <PackageFilePanel
                   title="Manifest"
-                  icon={packageKindIcon(details.descriptor?.type ?? activePkg.kind, "h-4 w-4")}
+                  icon={packageKindIcon(
+                    details.descriptor?.type ?? activePkg.kind,
+                    "h-4 w-4",
+                  )}
                   path={details.manifestPath}
                   value={details.manifest}
                   manifestType={details.descriptor?.type ?? activePkg.kind}
@@ -2017,10 +2594,14 @@ function PackageDetailsModal({
                   <section className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
                     <div className="mb-3 flex items-center gap-2">
                       <BookOpen className="h-4 w-4 text-gray-500" />
-                      <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">README</h3>
+                      <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
+                        README
+                      </h3>
                     </div>
                     <div className="prose prose-sm max-w-none dark:prose-invert">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{details.readme}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {details.readme}
+                      </ReactMarkdown>
                     </div>
                   </section>
                 ) : null}
@@ -2028,36 +2609,63 @@ function PackageDetailsModal({
               <aside className="space-y-3">
                 <div className="flex items-center gap-2">
                   <Network className="h-4 w-4 text-gray-500" />
-                  <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">Dependencies</h3>
-                  <span className="text-xs text-gray-400">{details.descriptor?.depends_on?.length ?? 0}</span>
+                  <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
+                    Dependencies
+                  </h3>
+                  <span className="text-xs text-gray-400">
+                    {details.descriptor?.depends_on?.length ?? 0}
+                  </span>
                 </div>
-                {details.descriptor?.depends_on?.length ? details.descriptor.depends_on.map((dependency) => (
-                  <button
-                    key={dependency.path}
-                    type="button"
-                    onClick={() => handleOpenDependency(dependency)}
-                    className="block w-full rounded-lg border border-gray-200 bg-white p-3 text-left transition-colors hover:border-deep-space-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-deep-space-blue-700"
-                  >
-                    <div className="flex items-start gap-2">
-                      <span className="mt-0.5 text-gray-500">{packageKindIcon(packageKindFromPath(dependency.path), "h-4 w-4")}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="break-words font-mono text-xs text-gray-900 dark:text-gray-100">{dependency.path}</div>
-                        <div className="mt-1 text-[10px] uppercase tracking-wide text-gray-400">
-                          {packageKindFromPath(dependency.path).replace("_", " ")}
+                {details.descriptor?.depends_on?.length ? (
+                  details.descriptor.depends_on.map((dependency) => (
+                    <button
+                      key={dependency.path}
+                      type="button"
+                      onClick={() => handleOpenDependency(dependency)}
+                      className="block w-full rounded-lg border border-gray-200 bg-white p-3 text-left transition-colors hover:border-deep-space-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-deep-space-blue-700"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="mt-0.5 text-gray-500">
+                          {packageKindIcon(
+                            packageKindFromPath(dependency.path),
+                            "h-4 w-4",
+                          )}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="break-words font-mono text-xs text-gray-900 dark:text-gray-100">
+                            {dependency.path}
+                          </div>
+                          <div className="mt-1 text-[10px] uppercase tracking-wide text-gray-400">
+                            {packageKindFromPath(dependency.path).replace(
+                              "_",
+                              " ",
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    {dependency.version ? <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">{dependency.version}</div> : null}
-                  </button>
-                )) : <EmptyState text="No dependencies." />}
+                      {dependency.version ? (
+                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                          {dependency.version}
+                        </div>
+                      ) : null}
+                    </button>
+                  ))
+                ) : (
+                  <EmptyState text="No dependencies." />
+                )}
               </aside>
             </div>
           ) : null}
 
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={onClose}>Close</Button>
+            <Button variant="secondary" onClick={onClose}>
+              Close
+            </Button>
             {!packageInstalled && activePkg.id === pkg?.id ? (
-              <Button onClick={onInstall} isLoading={busyKey === `install:${pkg.id}`}>
+              <Button
+                onClick={onInstall}
+                isLoading={busyKey === `install:${pkg.id}`}
+              >
                 <Download className="h-4 w-4" />
                 Install
               </Button>
@@ -2069,11 +2677,23 @@ function PackageDetailsModal({
   );
 }
 
-function PackageDetail({ label, value, mono = false }: { label: string; value: string | null | undefined; mono?: boolean }) {
+function PackageDetail({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string | null | undefined;
+  mono?: boolean;
+}) {
   return (
     <div className="min-w-0 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</dt>
-      <dd className={`mt-1 break-words text-sm text-gray-900 dark:text-gray-100 ${mono ? "font-mono text-xs" : ""}`}>
+      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+      </dt>
+      <dd
+        className={`mt-1 break-words text-sm text-gray-900 dark:text-gray-100 ${mono ? "font-mono text-xs" : ""}`}
+      >
         {value || "-"}
       </dd>
     </div>
@@ -2103,8 +2723,14 @@ function PackageFilePanel({
     <section className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="text-gray-500">{icon}</span>
-        <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">{title}</h3>
-        {path ? <span className="break-all font-mono text-xs text-gray-400">{path}</span> : null}
+        <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
+          {title}
+        </h3>
+        {path ? (
+          <span className="break-all font-mono text-xs text-gray-400">
+            {path}
+          </span>
+        ) : null}
         {allowRawToggle ? (
           <div className="ml-auto flex rounded-lg bg-gray-100 p-1 dark:bg-gray-800">
             {(["parsed", "raw"] as const).map((item) => (
@@ -2125,7 +2751,11 @@ function PackageFilePanel({
         ) : null}
       </div>
       {value && (!allowRawToggle || view === "parsed") ? (
-        manifestType ? <ManifestRichView type={manifestType} value={value} /> : <PackageRichSummary value={value} />
+        manifestType ? (
+          <ManifestRichView type={manifestType} value={value} />
+        ) : (
+          <PackageRichSummary value={value} />
+        )
       ) : null}
       {showRawView ? (
         <pre className="mt-4 max-h-80 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">
@@ -2138,9 +2768,12 @@ function PackageFilePanel({
 
 function PackageRichSummary({ value }: { value: Record<string, unknown> }) {
   const manifestValue = value.manifest;
-  const manifest = typeof manifestValue === "object" && manifestValue !== null && !Array.isArray(manifestValue)
-    ? manifestValue as Record<string, unknown>
-    : value;
+  const manifest =
+    typeof manifestValue === "object" &&
+    manifestValue !== null &&
+    !Array.isArray(manifestValue)
+      ? (manifestValue as Record<string, unknown>)
+      : value;
   const rows = [
     ["Schema", valueString(value, "schema")],
     ["Type", valueString(value, "type")],
@@ -2157,20 +2790,34 @@ function PackageRichSummary({ value }: { value: Record<string, unknown> }) {
     <dl className="grid gap-3 sm:grid-cols-2">
       {rows.map(([label, item]) => (
         <div key={label} className="min-w-0">
-          <dt className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</dt>
-          <dd className="mt-1 break-words text-sm text-gray-900 dark:text-gray-100">{item}</dd>
+          <dt className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            {label}
+          </dt>
+          <dd className="mt-1 break-words text-sm text-gray-900 dark:text-gray-100">
+            {item}
+          </dd>
         </div>
       ))}
     </dl>
   );
 }
 
-function ManifestRichView({ type, value }: { type: MarketplacePackageKind | string; value: Record<string, unknown> }) {
+function ManifestRichView({
+  type,
+  value,
+}: {
+  type: MarketplacePackageKind | string;
+  value: Record<string, unknown>;
+}) {
   const manifest = nestedRecord(value, "manifest") ?? value;
   const rows = manifestRows(type, value, manifest);
   return (
     <div className="space-y-4">
-      {rows.length ? <FieldGrid rows={rows} /> : <EmptyState text="No parsed manifest fields." />}
+      {rows.length ? (
+        <FieldGrid rows={rows} />
+      ) : (
+        <EmptyState text="No parsed manifest fields." />
+      )}
       {type === "knowledge" ? <KnowledgeManifestView value={value} /> : null}
       {type === "agent" ? (
         <>
@@ -2199,7 +2846,11 @@ function ManifestRichView({ type, value }: { type: MarketplacePackageKind | stri
   );
 }
 
-function manifestRows(type: string, root: Record<string, unknown>, manifest: Record<string, unknown>): Array<[string, string]> {
+function manifestRows(
+  type: string,
+  root: Record<string, unknown>,
+  manifest: Record<string, unknown>,
+): Array<[string, string]> {
   const base: Array<[string, string | null]> = [
     ["Schema", valueString(root, "schema")],
     ["Name", valueString(manifest, "name") ?? valueString(root, "name")],
@@ -2216,9 +2867,7 @@ function manifestRows(type: string, root: Record<string, unknown>, manifest: Rec
     );
   }
   if (type === "agent") {
-    base.push(
-      ["Color", valueString(manifest, "color")],
-    );
+    base.push(["Color", valueString(manifest, "color")]);
   }
   if (type === "ability") {
     base.push(
@@ -2227,14 +2876,17 @@ function manifestRows(type: string, root: Record<string, unknown>, manifest: Rec
     );
   }
   if (type === "domain") {
-    base.push(
-      ["Command", valueString(manifest, "command")],
-    );
+    base.push(["Command", valueString(manifest, "command")]);
   }
   if (type === "context_block") {
-    base.push(["Template", `${valueString(manifest, "template")?.length ?? 0} chars`]);
+    base.push([
+      "Template",
+      `${valueString(manifest, "template")?.length ?? 0} chars`,
+    ]);
   }
-  return base.filter(([, item]) => item && item !== "0") as Array<[string, string]>;
+  return base.filter(([, item]) => item && item !== "0") as Array<
+    [string, string]
+  >;
 }
 
 function FieldGrid({ rows }: { rows: Array<[string, string]> }) {
@@ -2242,8 +2894,12 @@ function FieldGrid({ rows }: { rows: Array<[string, string]> }) {
     <dl className="grid gap-3 sm:grid-cols-2">
       {rows.map(([label, item]) => (
         <div key={label} className="min-w-0">
-          <dt className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</dt>
-          <dd className="mt-1 break-words text-sm text-gray-900 dark:text-gray-100">{item}</dd>
+          <dt className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            {label}
+          </dt>
+          <dd className="mt-1 break-words text-sm text-gray-900 dark:text-gray-100">
+            {item}
+          </dd>
         </div>
       ))}
     </dl>
@@ -2256,13 +2912,28 @@ function KnowledgeManifestView({ value }: { value: Record<string, unknown> }) {
   if (!docs.length) return null;
   return (
     <section className="space-y-2">
-      <h4 className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Documents</h4>
+      <h4 className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        Documents
+      </h4>
       <div className="max-h-72 space-y-2 overflow-auto pr-1">
         {docs.map((doc, index) => (
-          <div key={valueString(doc, "id") ?? index} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-            <div className="text-sm font-medium text-gray-950 dark:text-gray-50">{valueString(doc, "title") ?? valueString(doc, "id") ?? "Document"}</div>
-            <div className="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{valueString(doc, "virtual_path") ?? valueString(doc, "source_path")}</div>
-            {valueString(doc, "summary") ? <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{valueString(doc, "summary")}</p> : null}
+          <div
+            key={valueString(doc, "id") ?? index}
+            className="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+          >
+            <div className="text-sm font-medium text-gray-950 dark:text-gray-50">
+              {valueString(doc, "title") ??
+                valueString(doc, "id") ??
+                "Document"}
+            </div>
+            <div className="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
+              {valueString(doc, "path")}
+            </div>
+            {valueString(doc, "summary") ? (
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                {valueString(doc, "summary")}
+              </p>
+            ) : null}
           </div>
         ))}
       </div>
@@ -2273,18 +2944,32 @@ function KnowledgeManifestView({ value }: { value: Record<string, unknown> }) {
 function AssignmentsView({ value }: { value: Record<string, unknown> }) {
   const assignments = nestedRecord(value, "assignments");
   if (!assignments) return null;
-  const groups = ["abilities", "domains", "mcp_servers"].map((key) => [key, arrayValue(assignments, key)] as const).filter(([, items]) => items.length);
+  const groups = ["abilities", "domains", "mcp_servers"]
+    .map((key) => [key, arrayValue(assignments, key)] as const)
+    .filter(([, items]) => items.length);
   if (!groups.length) return null;
   return (
     <section className="space-y-2">
-      <h4 className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Assignments</h4>
+      <h4 className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        Assignments
+      </h4>
       <div className="grid gap-2 sm:grid-cols-2">
         {groups.map(([key, items]) => (
-          <div key={key} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-            <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{key.replace("_", " ")}</div>
+          <div
+            key={key}
+            className="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+          >
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {key.replace("_", " ")}
+            </div>
             <div className="mt-2 space-y-1">
               {items.map((item, index) => (
-                <div key={`${key}-${index}`} className="break-all font-mono text-xs text-gray-800 dark:text-gray-200">{String(item)}</div>
+                <div
+                  key={`${key}-${index}`}
+                  className="break-all font-mono text-xs text-gray-800 dark:text-gray-200"
+                >
+                  {String(item)}
+                </div>
               ))}
             </div>
           </div>
@@ -2295,17 +2980,25 @@ function AssignmentsView({ value }: { value: Record<string, unknown> }) {
 }
 
 function ScopesView({ value }: { value: Record<string, unknown> }) {
-  const scopes = arrayValue(value, "platform_scopes").filter((scope): scope is string => typeof scope === "string" && scope.trim().length > 0);
+  const scopes = arrayValue(value, "platform_scopes").filter(
+    (scope): scope is string =>
+      typeof scope === "string" && scope.trim().length > 0,
+  );
   if (!scopes.length) return null;
   return (
     <section className="space-y-2">
       <div className="flex items-center gap-2">
-        <h4 className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Scopes</h4>
+        <h4 className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          Scopes
+        </h4>
         <span className="text-xs text-gray-400">{scopes.length}</span>
       </div>
       <div className="flex flex-wrap gap-2">
         {scopes.map((scope) => (
-          <span key={scope} className="rounded-md bg-gray-100 px-2 py-1 font-mono text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+          <span
+            key={scope}
+            className="rounded-md bg-gray-100 px-2 py-1 font-mono text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+          >
             {scope}
           </span>
         ))}
@@ -2315,26 +3008,49 @@ function ScopesView({ value }: { value: Record<string, unknown> }) {
 }
 
 function MemoryProfileView({ value }: { value: Record<string, unknown> }) {
-  const profile = nestedRecord(value, "memory_profile") ?? nestedRecord(nestedRecord(value, "prompt_config") ?? {}, "memory_profile");
+  const profile =
+    nestedRecord(value, "memory_profile") ??
+    nestedRecord(nestedRecord(value, "prompt_config") ?? {}, "memory_profile");
   if (!profile) return null;
   const groups = Object.entries(profile)
-    .map(([key, item]) => [key, Array.isArray(item) ? item.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0) : []] as const)
+    .map(
+      ([key, item]) =>
+        [
+          key,
+          Array.isArray(item)
+            ? item.filter(
+                (entry): entry is string =>
+                  typeof entry === "string" && entry.trim().length > 0,
+              )
+            : [],
+        ] as const,
+    )
     .filter(([, items]) => items.length);
   if (!groups.length) return null;
   const count = groups.reduce((total, [, items]) => total + items.length, 0);
   return (
     <section className="space-y-2">
       <div className="flex items-center gap-2">
-        <h4 className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Memory Profile</h4>
+        <h4 className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          Memory Profile
+        </h4>
         <span className="text-xs text-gray-400">{count}</span>
       </div>
       <div className="space-y-2">
         {groups.map(([key, items]) => (
-          <div key={key} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-            <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{key.replace("_", " ")}</div>
+          <div
+            key={key}
+            className="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+          >
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {key.replace("_", " ")}
+            </div>
             <div className="mt-2 flex flex-wrap gap-2">
               {items.map((item) => (
-                <span key={item} className="rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                <span
+                  key={item}
+                  className="rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                >
                   {item}
                 </span>
               ))}
@@ -2351,7 +3067,9 @@ function PromptPreview({ value }: { value: Record<string, unknown> }) {
   const template = valueString(value, "template");
   if (!prompt && !template) return null;
   const promptEntries = prompt
-    ? Object.entries(prompt).filter(([, item]) => typeof item === "string" && item.trim())
+    ? Object.entries(prompt).filter(
+        ([, item]) => typeof item === "string" && item.trim(),
+      )
     : [["template", template ?? ""]];
   const templateEntries = prompt
     ? Object.entries(nestedRecord(prompt, "templates") ?? {})
@@ -2362,23 +3080,38 @@ function PromptPreview({ value }: { value: Record<string, unknown> }) {
   if (!entries.length) return null;
   return (
     <section className="space-y-2">
-      <h4 className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Prompts</h4>
+      <h4 className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        Prompts
+      </h4>
       {entries.map(([key, item]) => (
-        <details key={key} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-          <summary className="cursor-pointer text-sm font-medium text-gray-900 dark:text-gray-100">{key.replace("_", " ")}</summary>
-          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs text-gray-800 dark:bg-gray-950 dark:text-gray-200">{String(item)}</pre>
+        <details
+          key={key}
+          className="rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+        >
+          <summary className="cursor-pointer text-sm font-medium text-gray-900 dark:text-gray-100">
+            {key.replace("_", " ")}
+          </summary>
+          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs text-gray-800 dark:bg-gray-950 dark:text-gray-200">
+            {String(item)}
+          </pre>
         </details>
       ))}
     </section>
   );
 }
 
-function valueString(value: Record<string, unknown>, key: string): string | null {
+function valueString(
+  value: Record<string, unknown>,
+  key: string,
+): string | null {
   const item = value[key];
   return typeof item === "string" && item.trim() ? item : null;
 }
 
-function nestedRecord(value: Record<string, unknown>, key: string): Record<string, unknown> | null {
+function nestedRecord(
+  value: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | null {
   const item = value[key];
   return isRecord(item) ? item : null;
 }
@@ -2407,13 +3140,26 @@ function SkillReviewModal({
   onSelectedSkillChange: (index: number) => void;
   onInstall: () => void;
 }) {
-  const skill = review?.plugin_request.skills[review.selectedSkillIndex] ?? review?.plugin_request.skills[0] ?? null;
+  const skill =
+    review?.plugin_request.skills[review.selectedSkillIndex] ??
+    review?.plugin_request.skills[0] ??
+    null;
   const renderedSkill = skill ? splitFrontmatter(skill.content) : null;
-  const metadataName = renderedSkill ? frontmatterValue(renderedSkill.frontmatter, "name") : null;
-  const metadataDescription = renderedSkill ? frontmatterValue(renderedSkill.frontmatter, "description") : null;
-  const metadataTools = renderedSkill ? frontmatterValue(renderedSkill.frontmatter, "allowed-tools") : null;
+  const metadataName = renderedSkill
+    ? frontmatterValue(renderedSkill.frontmatter, "name")
+    : null;
+  const metadataDescription = renderedSkill
+    ? frontmatterValue(renderedSkill.frontmatter, "description")
+    : null;
+  const metadataTools = renderedSkill
+    ? frontmatterValue(renderedSkill.frontmatter, "allowed-tools")
+    : null;
   const extraMetadata = renderedSkill
-    ? frontmatterEntriesWithout(renderedSkill.frontmatter, ["name", "description", "allowed-tools"])
+    ? frontmatterEntriesWithout(renderedSkill.frontmatter, [
+        "name",
+        "description",
+        "allowed-tools",
+      ])
     : [];
   return (
     <Modal
@@ -2426,8 +3172,12 @@ function SkillReviewModal({
         <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="space-y-2">
             <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-              <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Selector</div>
-              <div className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">{packageSelector(review.pkg) ?? review.pkg.source_path}</div>
+              <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Selector
+              </div>
+              <div className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">
+                {packageSelector(review.pkg) ?? review.pkg.source_path}
+              </div>
             </div>
             <div className="space-y-1">
               {review.plugin_request.skills.map((item, index) => (
@@ -2446,7 +3196,9 @@ function SkillReviewModal({
               ))}
             </div>
             <label className="block space-y-2">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Allowed env vars</span>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Allowed env vars
+              </span>
               <Textarea
                 value={review.envNamesText}
                 onChange={(event) => onEnvNamesChange(event.target.value)}
@@ -2457,14 +3209,20 @@ function SkillReviewModal({
           </aside>
           <main className="min-w-0 space-y-3">
             <div>
-              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{skill.display_name ?? skill.name}</div>
-              <div className="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{skill.skill_path}</div>
+              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                {skill.display_name ?? skill.name}
+              </div>
+              <div className="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
+                {skill.skill_path}
+              </div>
             </div>
             <div className="max-h-[68vh] overflow-auto rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
               {renderedSkill?.frontmatter.length ? (
                 <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/60">
                   <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Skill metadata</span>
+                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Skill metadata
+                    </span>
                     {metadataName ? (
                       <span className="rounded-md bg-white px-2 py-1 font-mono text-xs text-gray-700 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700">
                         {metadataName}
@@ -2472,17 +3230,28 @@ function SkillReviewModal({
                     ) : null}
                   </div>
                   {metadataDescription ? (
-                    <p className="max-w-4xl text-sm leading-6 text-gray-700 dark:text-gray-300">{metadataDescription}</p>
+                    <p className="max-w-4xl text-sm leading-6 text-gray-700 dark:text-gray-300">
+                      {metadataDescription}
+                    </p>
                   ) : null}
                   {metadataTools ? (
                     <div className="mt-4">
-                      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Allowed tools</div>
+                      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        Allowed tools
+                      </div>
                       <div className="flex flex-wrap gap-2">
-                        {metadataTools.split(",").map((tool) => tool.trim()).filter(Boolean).map((tool) => (
-                          <span key={tool} className="rounded-md bg-white px-2 py-1 font-mono text-xs text-gray-700 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700">
-                            {tool}
-                          </span>
-                        ))}
+                        {metadataTools
+                          .split(",")
+                          .map((tool) => tool.trim())
+                          .filter(Boolean)
+                          .map((tool) => (
+                            <span
+                              key={tool}
+                              className="rounded-md bg-white px-2 py-1 font-mono text-xs text-gray-700 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700"
+                            >
+                              {tool}
+                            </span>
+                          ))}
                       </div>
                     </div>
                   ) : null}
@@ -2490,8 +3259,12 @@ function SkillReviewModal({
                     <dl className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {extraMetadata.map(([key, value]) => (
                         <div key={key} className="min-w-0">
-                          <dt className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{humanizeFrontmatterKey(key)}</dt>
-                          <dd className="mt-1 break-words text-sm text-gray-900 dark:text-gray-100">{value || "-"}</dd>
+                          <dt className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                            {humanizeFrontmatterKey(key)}
+                          </dt>
+                          <dd className="mt-1 break-words text-sm text-gray-900 dark:text-gray-100">
+                            {value || "-"}
+                          </dd>
                         </div>
                       ))}
                     </dl>
@@ -2505,8 +3278,13 @@ function SkillReviewModal({
               </div>
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={onClose}>Cancel</Button>
-              <Button onClick={onInstall} isLoading={busyKey === `install:${review.pkg.id}`}>
+              <Button variant="secondary" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                onClick={onInstall}
+                isLoading={busyKey === `install:${review.pkg.id}`}
+              >
                 <Download className="h-4 w-4" />
                 Install
               </Button>
@@ -2535,19 +3313,24 @@ function SkillEnvModal({
     <Modal
       open={Boolean(editor)}
       onClose={onClose}
-      title={editor ? `Skill env: ${editor.ability.display_name ?? editor.ability.name}` : "Skill env"}
+      title={editor ? `Skill env: ${editor.ability.name}` : "Skill env"}
       className="!w-[min(92vw,560px)] !max-w-xl"
     >
       {editor ? (
         <div className="space-y-4">
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/60">
-            <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Selector</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Selector
+            </div>
             <div className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">
-              {metadataText(editor.ability.metadata, ["install", "selector"]) ?? editor.ability.tool_name}
+              {metadataText(editor.ability.metadata, ["install", "selector"]) ??
+                editor.ability.name}
             </div>
           </div>
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Allowed env vars</span>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Allowed env vars
+            </span>
             <Textarea
               value={editor.envNamesText}
               onChange={(event) => onChange(event.target.value)}
@@ -2556,8 +3339,13 @@ function SkillEnvModal({
             />
           </label>
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button onClick={onSave} isLoading={busyKey === `skill-env:${editor.ability.id}`}>
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              onClick={onSave}
+              isLoading={busyKey === `skill-env:${editor.ability.id}`}
+            >
               Save
             </Button>
           </div>
@@ -2588,32 +3376,72 @@ function SourcesTab(props: {
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
       <main className="space-y-3">
-        {props.isLoading ? <LoadingGrid /> : props.sources.length ? props.sources.map((source) => (
-          <SourceCard
-            key={source.id}
-            source={source}
-            busyKey={props.busyKey}
-            onRefresh={props.onRefresh}
-            onDelete={props.onDelete}
-          />
-        )) : <EmptyState text="No package sources configured." />}
+        {props.isLoading ? (
+          <LoadingGrid />
+        ) : props.sources.length ? (
+          props.sources.map((source) => (
+            <SourceCard
+              key={source.id}
+              source={source}
+              busyKey={props.busyKey}
+              onRefresh={props.onRefresh}
+              onDelete={props.onDelete}
+            />
+          ))
+        ) : (
+          <EmptyState text="No package sources configured." />
+        )}
       </main>
       <aside className="h-fit rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
         <div className="flex items-center gap-2">
           <GitBranch className="h-4 w-4 text-gray-500" />
-          <h2 className="text-sm font-semibold text-gray-950 dark:text-gray-50">Import Public Packages/Marketplaces</h2>
+          <h2 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
+            Import Public Packages/Marketplaces
+          </h2>
         </div>
         <div className="mt-4 space-y-3">
-          <Select value={props.sourceAdapter} onChange={(event) => props.onSourceAdapterChange(event.target.value as PackageSourceAdapter)}>
+          <Select
+            value={props.sourceAdapter}
+            onChange={(event) =>
+              props.onSourceAdapterChange(
+                event.target.value as PackageSourceAdapter,
+              )
+            }
+          >
             <option value="nenjo_packages">Nenjo packages</option>
             <option value="claude_marketplace">Claude marketplace</option>
             <option value="codex_plugin">Codex plugin</option>
           </Select>
-          <Input value={props.sourceName} onChange={(event) => props.onSourceNameChange(event.target.value)} placeholder="Display name" />
-          <Input value={props.sourceRepoUrl} onChange={(event) => props.onSourceRepoUrlChange(event.target.value)} placeholder="https://github.com/owner/repo" />
-          <Input value={props.sourceRef} onChange={(event) => props.onSourceRefChange(event.target.value)} placeholder="Branch, tag, or SHA" />
-          <Input value={props.sourceManifestPath} onChange={(event) => props.onSourceManifestPathChange(event.target.value)} placeholder="Package or marketplace manifest path" />
-          <Button size="sm" className="w-full" onClick={props.onCreateSource} isLoading={props.busyKey === "create-source"}>
+          <Input
+            value={props.sourceName}
+            onChange={(event) => props.onSourceNameChange(event.target.value)}
+            placeholder="Display name"
+          />
+          <Input
+            value={props.sourceRepoUrl}
+            onChange={(event) =>
+              props.onSourceRepoUrlChange(event.target.value)
+            }
+            placeholder="https://github.com/owner/repo"
+          />
+          <Input
+            value={props.sourceRef}
+            onChange={(event) => props.onSourceRefChange(event.target.value)}
+            placeholder="Branch, tag, or SHA"
+          />
+          <Input
+            value={props.sourceManifestPath}
+            onChange={(event) =>
+              props.onSourceManifestPathChange(event.target.value)
+            }
+            placeholder="Package or marketplace manifest path"
+          />
+          <Button
+            size="sm"
+            className="w-full"
+            onClick={props.onCreateSource}
+            isLoading={props.busyKey === "create-source"}
+          >
             <Plus className="h-4 w-4" />
             Add
           </Button>
@@ -2629,38 +3457,64 @@ function SourceCard(props: {
   onRefresh: (source: PackageSource) => void;
   onDelete: (source: PackageSource) => void;
 }) {
-  const licenseSpdx = metadataText(props.source.metadata, ["license", "spdx_id"]) ?? "Unknown";
-  const licensePolicy = metadataText(props.source.metadata, ["license", "policy"]);
-  const licenseReason = metadataText(props.source.metadata, ["license", "reason"]);
-  const requiresReview = metadataBool(props.source.metadata, ["license", "requires_confirmation"]) ?? false;
+  const licenseSpdx =
+    metadataText(props.source.metadata, ["license", "spdx_id"]) ?? "Unknown";
+  const licensePolicy = metadataText(props.source.metadata, [
+    "license",
+    "policy",
+  ]);
+  const licenseReason = metadataText(props.source.metadata, [
+    "license",
+    "reason",
+  ]);
+  const requiresReview =
+    metadataBool(props.source.metadata, ["license", "requires_confirmation"]) ??
+    false;
   const sourceInfo = sourceGitHubInfo(props.source);
   const sourceLabel = sourceInfo
     ? `${sourceInfo.owner}/${sourceInfo.repo}`
-    : metadataText(props.source.metadata, ["source", "url"]) ?? "Custom package source";
+    : (metadataText(props.source.metadata, ["source", "url"]) ??
+      "Custom package source");
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900 md:flex-row md:items-center md:justify-between">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-semibold text-gray-950 dark:text-gray-50">{props.source.name}</h3>
+          <h3 className="font-semibold text-gray-950 dark:text-gray-50">
+            {props.source.name}
+          </h3>
           <Badge>{props.source.source_type}</Badge>
           <Badge>{props.source.adapter.replace("_", " ")}</Badge>
-          <Badge>{licensePolicy ? `${licenseSpdx} ${licensePolicy}` : licenseSpdx}</Badge>
+          <Badge>
+            {licensePolicy ? `${licenseSpdx} ${licensePolicy}` : licenseSpdx}
+          </Badge>
           {requiresReview ? <Badge>review required</Badge> : null}
         </div>
         <p className="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">
           {sourceLabel}
         </p>
         {licenseReason ? (
-          <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{licenseReason}</p>
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+            {licenseReason}
+          </p>
         ) : null}
       </div>
       <div className="flex gap-2">
-        <Button size="sm" variant="secondary" onClick={() => props.onRefresh(props.source)} isLoading={props.busyKey === `sync:${props.source.id}`}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => props.onRefresh(props.source)}
+          isLoading={props.busyKey === `sync:${props.source.id}`}
+        >
           <RefreshCw className="h-4 w-4" />
           Refresh
         </Button>
-        <Button size="sm" variant="danger" onClick={() => props.onDelete(props.source)} isLoading={props.busyKey === `delete-source:${props.source.id}`}>
+        <Button
+          size="sm"
+          variant="danger"
+          onClick={() => props.onDelete(props.source)}
+          isLoading={props.busyKey === `delete-source:${props.source.id}`}
+        >
           <Trash2 className="h-4 w-4" />
           Delete
         </Button>
@@ -2689,21 +3543,52 @@ function ImportsTab(props: {
     <div className="max-w-3xl rounded-lg border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900">
       <div className="flex items-center gap-2">
         <Braces className="h-4 w-4 text-gray-500" />
-        <h2 className="text-sm font-semibold text-gray-950 dark:text-gray-50">Direct Worker Import</h2>
+        <h2 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
+          Direct Worker Import
+        </h2>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <Select value={props.mode} onChange={(event) => props.onModeChange(event.target.value as ImportMode)}>
+        <Select
+          value={props.mode}
+          onChange={(event) =>
+            props.onModeChange(event.target.value as ImportMode)
+          }
+        >
           <option value="knowledge_pack">Knowledge pack</option>
           <option value="skill">Skill</option>
           <option value="claude_plugin">Claude plugin</option>
         </Select>
-        <Input value={props.name} onChange={(event) => props.onNameChange(event.target.value)} placeholder="Package name" />
-        <Input value={props.owner} onChange={(event) => props.onOwnerChange(event.target.value)} placeholder="GitHub owner" />
-        <Input value={props.repo} onChange={(event) => props.onRepoChange(event.target.value)} placeholder="GitHub repo" />
-        <Input value={props.path} onChange={(event) => props.onPathChange(event.target.value)} placeholder="Path in repo" />
-        <Input value={props.refValue} onChange={(event) => props.onRefChange(event.target.value)} placeholder="Ref, tag, or SHA" />
+        <Input
+          value={props.name}
+          onChange={(event) => props.onNameChange(event.target.value)}
+          placeholder="Package name"
+        />
+        <Input
+          value={props.owner}
+          onChange={(event) => props.onOwnerChange(event.target.value)}
+          placeholder="GitHub owner"
+        />
+        <Input
+          value={props.repo}
+          onChange={(event) => props.onRepoChange(event.target.value)}
+          placeholder="GitHub repo"
+        />
+        <Input
+          value={props.path}
+          onChange={(event) => props.onPathChange(event.target.value)}
+          placeholder="Path in repo"
+        />
+        <Input
+          value={props.refValue}
+          onChange={(event) => props.onRefChange(event.target.value)}
+          placeholder="Ref, tag, or SHA"
+        />
       </div>
-      <Button className="mt-4" onClick={props.onImport} isLoading={props.importing}>
+      <Button
+        className="mt-4"
+        onClick={props.onImport}
+        isLoading={props.importing}
+      >
         <Download className="h-4 w-4" />
         Import
       </Button>
@@ -2711,7 +3596,17 @@ function ImportsTab(props: {
   );
 }
 
-function CollapsibleAssetSection({ title, count, icon, children }: { title: string; count: number; icon: React.ReactNode; children: React.ReactNode }) {
+function CollapsibleAssetSection({
+  title,
+  count,
+  icon,
+  children,
+}: {
+  title: string;
+  count: number;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
   const [open, setOpen] = useState(true);
   return (
     <section className="space-y-3">
@@ -2721,11 +3616,19 @@ function CollapsibleAssetSection({ title, count, icon, children }: { title: stri
         className="flex w-full items-center gap-2 text-left"
       >
         <span className="text-gray-400">{icon}</span>
-        <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200">{title}</h2>
+        <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+          {title}
+        </h2>
         <span className="text-xs text-gray-400">{count}</span>
-        <ChevronDown className={`ml-auto h-4 w-4 text-gray-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+        <ChevronDown
+          className={`ml-auto h-4 w-4 text-gray-400 transition-transform ${open ? "" : "-rotate-90"}`}
+        />
       </button>
-      {open ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{children}</div> : null}
+      {open ? (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {children}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -2767,12 +3670,20 @@ function AssetCard({
         </span>
       </div>
       <div className="mt-4 min-w-0">
-        <h3 className="truncate text-base font-semibold text-gray-950 dark:text-gray-50">{title}</h3>
-        <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{subtitle}</p>
-        <p className="mt-3 line-clamp-2 min-h-10 text-sm leading-5 text-gray-600 dark:text-gray-300">{description || "No description available."}</p>
+        <h3 className="truncate text-base font-semibold text-gray-950 dark:text-gray-50">
+          {title}
+        </h3>
+        <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
+          {subtitle}
+        </p>
+        <p className="mt-3 line-clamp-2 min-h-10 text-sm leading-5 text-gray-600 dark:text-gray-300">
+          {description || "No description available."}
+        </p>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        {badges.filter(Boolean).map((badge) => <Badge key={badge}>{badge}</Badge>)}
+        {badges.filter(Boolean).map((badge) => (
+          <Badge key={badge}>{badge}</Badge>
+        ))}
         <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-gray-400">
           <Clock3 className="h-3.5 w-3.5" />
           {isBusy ? "Loading..." : formatLibraryDate(updatedAt)}
@@ -2807,7 +3718,11 @@ function AssetCard({
       </div>
     );
   }
-  return <div className="h-full min-h-44 rounded-lg border border-gray-200 bg-white p-4 shadow-xs dark:border-gray-700 dark:bg-gray-900">{body}</div>;
+  return (
+    <div className="h-full min-h-44 rounded-lg border border-gray-200 bg-white p-4 shadow-xs dark:border-gray-700 dark:bg-gray-900">
+      {body}
+    </div>
+  );
 }
 
 function EmptyState({ text }: { text: string }) {
@@ -2822,7 +3737,10 @@ function LoadingGrid() {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {[1, 2, 3, 4, 5, 6].map((item) => (
-        <div key={item} className="h-44 animate-pulse rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800" />
+        <div
+          key={item}
+          className="h-44 animate-pulse rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800"
+        />
       ))}
     </div>
   );

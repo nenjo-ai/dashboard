@@ -168,7 +168,7 @@ export function MobileAgentDetail({
           {(abilities ?? []).map((ability) => (
             <section key={ability.id} className="rounded-[1.4rem] border border-black/10 bg-transparent p-4 dark:border-white/10">
               <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
-                {ability.display_name || ability.name}
+                {ability.name}
               </h3>
               {ability.description && (
                 <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-300">{ability.description}</p>

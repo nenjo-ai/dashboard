@@ -350,7 +350,7 @@ export function PromptPreviewModal({
               {selectedAbility && (
                 <div className="flex items-center border-b-2 border-[var(--app-border-strong)] px-4 py-3">
                   <span className="theme-text text-sm font-medium">
-                    Ability: {selectedAbility.display_name}
+                    Ability: {selectedAbility.name}
                   </span>
                   <button
                     onClick={() => setSelectedAbilityId(null)}
@@ -450,7 +450,7 @@ function AbilityItem({
           : "theme-text-muted hover:[background:var(--app-hover)]"
       }`}
     >
-      <span className="font-medium">{ability.display_name}</span>
+      <span className="font-medium">{ability.name}</span>
     </button>
   );
 }
@@ -634,7 +634,7 @@ export function PromptPreviewContent({ roleId }: { roleId: string }) {
             {selectedAbility && (
               <div className="flex items-center border-b-2 border-[var(--app-border-strong)] px-4 py-3">
                 <span className="theme-text text-sm font-medium">
-                  Ability: {selectedAbility.display_name}
+                  Ability: {selectedAbility.name}
                 </span>
                 <button onClick={() => setSelectedAbilityId(null)} className="theme-text-muted ml-2 rounded p-0.5 hover:[background:var(--app-hover)] hover:[color:var(--app-text)]">
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">

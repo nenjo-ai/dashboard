@@ -9,6 +9,13 @@ import { Label } from "@/components/ui/Label";
 import { createAbility, updateAbility } from "@/lib/api";
 import type { Ability } from "@/lib/types";
 
+function abilitySlug(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 interface AbilityFormModalProps {
   open: boolean;
   onClose: () => void;
@@ -20,7 +27,6 @@ export function AbilityFormModal({ open, onClose, onSaved, ability }: AbilityFor
   const isEditing = !!ability;
 
   const [name, setName] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [activationCondition, setActivationCondition] = useState("");
   const [saving, setSaving] = useState(false);
@@ -29,12 +35,10 @@ export function AbilityFormModal({ open, onClose, onSaved, ability }: AbilityFor
     if (open) {
       if (ability) {
         setName(ability.name);
-        setDisplayName(ability.display_name ?? "");
         setDescription(ability.description ?? "");
         setActivationCondition(ability.activation_condition);
       } else {
         setName("");
-        setDisplayName("");
         setDescription("");
         setActivationCondition("");
       }
@@ -43,19 +47,19 @@ export function AbilityFormModal({ open, onClose, onSaved, ability }: AbilityFor
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    const slug = abilitySlug(name);
+    if (!slug) return;
     setSaving(true);
     try {
       if (isEditing) {
         await updateAbility(ability.id, {
-          display_name: displayName || undefined,
+          name: slug,
           description: description || undefined,
           activation_condition: activationCondition,
         });
       } else {
         await createAbility({
-          name: name.trim(),
-          display_name: displayName || undefined,
+          name: slug,
           description: description || undefined,
           activation_condition: activationCondition,
         });
@@ -71,31 +75,16 @@ export function AbilityFormModal({ open, onClose, onSaved, ability }: AbilityFor
   return (
     <Modal open={open} onClose={onClose} title={isEditing ? "Edit Ability" : "Create Ability"}>
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Name (only on create) */}
-        {!isEditing && (
-          <div>
-            <Label htmlFor="ability-name">Name</Label>
-            <Input
-              id="ability-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="code-review"
-              required
-            />
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              System identifier. Becomes the tool name: ability_name
-            </p>
-          </div>
-        )}
-
         <div>
-          <Label htmlFor="ability-display-name">Display Name</Label>
+          <Label htmlFor="ability-name">Name</Label>
           <Input
-            id="ability-display-name"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="Code Review"
+            id="ability-name"
+            value={name}
+            onChange={(e) => setName(abilitySlug(e.target.value))}
+            placeholder="code_review"
+            required
           />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Stable ability slug.</p>
         </div>
 
         <div>
@@ -127,7 +116,7 @@ export function AbilityFormModal({ open, onClose, onSaved, ability }: AbilityFor
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={saving || !name.trim()}>
+          <Button type="submit" disabled={saving || !abilitySlug(name)}>
             {saving ? "Saving..." : isEditing ? "Save Changes" : "Create Ability"}
           </Button>
         </div>

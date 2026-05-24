@@ -157,7 +157,12 @@ export interface ExecutionDetails extends ExecutionRun {
 // Execution Tasks & Step Progress
 // ---------------------------------------------------------------------------
 
-export type StepStatus = "pending" | "running" | "passed" | "failed" | "skipped";
+export type StepStatus =
+  | "pending"
+  | "running"
+  | "passed"
+  | "failed"
+  | "skipped";
 
 export interface StepAgent {
   agent_id: string;
@@ -288,7 +293,12 @@ export interface RoutineEvent {
 
 export type ChatRole = "user" | "assistant";
 
-export type MessageStatus = "sending" | "sent" | "delivered" | "failed" | "cancelled";
+export type MessageStatus =
+  | "sending"
+  | "sent"
+  | "delivered"
+  | "failed"
+  | "cancelled";
 
 export interface ChatMessage {
   id: string;
@@ -303,14 +313,14 @@ export interface ChatMessage {
 // Outbound: frontend → worker
 export interface ChatMessageOutbound {
   type: "chat.message";
-  id: string;           // client-generated message ID
+  id: string; // client-generated message ID
   project_id: string;
   content: string;
   hidden?: boolean;
   routine_id?: string; // selected chat routine
-  agent_id?: string;     // target agent
+  agent_id?: string; // target agent
   domain_session_id?: string; // active domain session
-  session_id: string;   // chat session
+  session_id: string; // chat session
   timestamp: string;
 }
 
@@ -744,7 +754,14 @@ export const MODEL_PROVIDERS: {
   {
     id: "openai",
     label: "OpenAI",
-    models: ["gpt-5.4", "gpt-5.4-mini", "gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
+    models: [
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-4o",
+      "gpt-4o-mini",
+      "o3",
+      "o4-mini",
+    ],
   },
   {
     id: "anthropic",
@@ -817,7 +834,14 @@ export const MODEL_PROVIDERS: {
   {
     id: "ollama",
     label: "Ollama (Local)",
-    models: ["llama3.1", "codellama", "mistral", "mixtral", "phi3", "qwen2.5-coder"],
+    models: [
+      "llama3.1",
+      "codellama",
+      "mistral",
+      "mixtral",
+      "phi3",
+      "qwen2.5-coder",
+    ],
   },
   {
     id: "groq",
@@ -905,7 +929,7 @@ export interface KnowledgePack {
   name: string;
   description: string | null;
   status: "active" | "archived";
-  source_type: "uploaded" | "github";
+  source_type: "uploaded" | "github" | "package";
   read_only: boolean;
   is_system: boolean;
   metadata: Record<string, unknown>;
@@ -932,33 +956,13 @@ export interface KnowledgeItem {
   filename: string;
   path: string | null;
   title: string | null;
-  kind: KnowledgeItemKind | null;
-  authority: KnowledgeItemAuthority;
+  kind: string | null;
   summary: string | null;
-  status: string | null;
   tags: string[];
-  aliases: string[];
-  keywords: string[];
   content_type: string;
-  size_bytes: number;
   created_at: string;
   updated_at: string;
 }
-
-export type KnowledgeItemKind =
-  | "guide"
-  | "reference"
-  | "taxonomy"
-  | "domain"
-  | "entity"
-  | "policy";
-
-export type KnowledgeItemAuthority =
-  | "canonical"
-  | "supporting"
-  | "reference"
-  | "draft"
-  | "deprecated";
 
 export interface KnowledgeItemEdge {
   id: string;
@@ -1000,7 +1004,13 @@ export interface ApiKey {
 }
 
 /** All valid worker capabilities. */
-export const WORKER_CAPABILITIES = ["chat", "task", "cron", "manifest", "repo"] as const;
+export const WORKER_CAPABILITIES = [
+  "chat",
+  "task",
+  "cron",
+  "manifest",
+  "repo",
+] as const;
 /** Capabilities that can only be held by one key per user. */
 export const EXCLUSIVE_CAPABILITIES = ["chat", "cron"] as const;
 
@@ -1009,19 +1019,29 @@ export const EXCLUSIVE_CAPABILITIES = ["chat", "cron"] as const;
 // ---------------------------------------------------------------------------
 
 export const MCP_RESOURCE_SCOPES = [
-  "agents:read", "agents:write",
-  "abilities:read", "abilities:write",
-  "domains:read", "domains:write",
-  "projects:read", "projects:write",
-  "routines:read", "routines:write",
-  "councils:read", "councils:write",
-  "context_blocks:read", "context_blocks:write",
-  "mcp_servers:read", "mcp_servers:write",
-  "chat:read", "chat:write",
-  "models:read", "models:write",
+  "agents:read",
+  "agents:write",
+  "abilities:read",
+  "abilities:write",
+  "domains:read",
+  "domains:write",
+  "projects:read",
+  "projects:write",
+  "routines:read",
+  "routines:write",
+  "councils:read",
+  "councils:write",
+  "context_blocks:read",
+  "context_blocks:write",
+  "mcp_servers:read",
+  "mcp_servers:write",
+  "chat:read",
+  "chat:write",
+  "models:read",
+  "models:write",
 ] as const;
 
-export type McpScope = typeof MCP_RESOURCE_SCOPES[number];
+export type McpScope = (typeof MCP_RESOURCE_SCOPES)[number];
 
 // ---------------------------------------------------------------------------
 // MCP Servers
@@ -1041,7 +1061,7 @@ export interface McpServer {
   category: string | null;
   tags: string[] | null;
   is_system: boolean;
-  source_type: "native" | "plugin";
+  source_type: "native" | "plugin" | "package";
   read_only: boolean;
   metadata: Record<string, unknown>;
   created_by: string | null;
@@ -1076,7 +1096,7 @@ export interface ContextBlock {
   template?: string;
   is_system: boolean;
   source_block_id: string | null;
-  source_type?: "native";
+  source_type?: "native" | "package";
   read_only?: boolean;
   metadata?: Record<string, unknown>;
   created_by: string | null;
@@ -1105,16 +1125,14 @@ export interface UpdateContextBlockRequest {
 export interface Ability {
   id: string;
   name: string;
-  tool_name: string;
   path: string;
-  display_name: string | null;
   description: string | null;
   activation_condition: string;
   prompt?: string;
   platform_scopes: string[];
   mcp_server_ids: string[];
   is_system: boolean;
-  source_type: "native" | "skill";
+  source_type: "native" | "skill" | "package";
   read_only: boolean;
   metadata: Record<string, unknown>;
   created_by: string | null;
@@ -1127,22 +1145,19 @@ export interface Ability {
 export interface CreateAbilityRequest {
   name: string;
   path?: string;
-  display_name?: string;
   description?: string;
   activation_condition?: string;
   prompt?: string;
   platform_scopes?: string[];
   mcp_server_ids?: string[];
-  source_type?: "native" | "skill";
+  source_type?: "native" | "skill" | "package";
   read_only?: boolean;
   metadata?: Record<string, unknown>;
 }
 
 export interface InstallSkillRequest {
   name: string;
-  tool_name: string;
   path?: string;
-  display_name?: string;
   description?: string;
   activation_condition?: string;
   selector: string;
@@ -1241,7 +1256,10 @@ export interface InstallClaudePluginResponse {
 // Packages
 // ---------------------------------------------------------------------------
 
-export type PackageSourceAdapter = "nenjo_packages" | "claude_marketplace" | "codex_plugin";
+export type PackageSourceAdapter =
+  | "nenjo_packages"
+  | "claude_marketplace"
+  | "codex_plugin";
 
 export interface PackageSource {
   id: string;
@@ -1316,7 +1334,7 @@ export interface InstallPackageRequest {
 }
 
 export interface UpdateAbilityRequest {
-  display_name?: string;
+  name?: string;
   description?: string;
   activation_condition?: string;
   platform_scopes?: string[];
@@ -1355,16 +1373,20 @@ export interface CreateApiKeyResponse {
 // Routines
 // ---------------------------------------------------------------------------
 
-export type RoutineTrigger =
-  | "task"
-  | "cron";
+export type RoutineTrigger = "task" | "cron";
 
 export const ROUTINE_TRIGGERS: { id: RoutineTrigger; label: string }[] = [
   { id: "task", label: "Task" },
   { id: "cron", label: "Cron / Scheduled" },
 ];
 
-export type RoutineStepType = "agent" | "gate" | "terminal" | "terminal_fail" | "council" | "cron";
+export type RoutineStepType =
+  | "agent"
+  | "gate"
+  | "terminal"
+  | "terminal_fail"
+  | "council"
+  | "cron";
 
 export const ROUTINE_STEP_TYPES: { id: RoutineStepType; label: string }[] = [
   { id: "agent", label: "Agent" },
@@ -1375,12 +1397,12 @@ export const ROUTINE_STEP_TYPES: { id: RoutineStepType; label: string }[] = [
   { id: "terminal_fail", label: "Terminal (Fail)" },
 ];
 
-export type RoutineEdgeCondition =
-  | "always"
-  | "on_pass"
-  | "on_fail";
+export type RoutineEdgeCondition = "always" | "on_pass" | "on_fail";
 
-export const ROUTINE_EDGE_CONDITIONS: { id: RoutineEdgeCondition; label: string }[] = [
+export const ROUTINE_EDGE_CONDITIONS: {
+  id: RoutineEdgeCondition;
+  label: string;
+}[] = [
   { id: "always", label: "Always" },
   { id: "on_pass", label: "On Pass" },
   { id: "on_fail", label: "On Fail" },
@@ -1530,7 +1552,12 @@ export interface SaveRoutineGraphRequest extends UpdateRoutineRequest {
   edges: SaveRoutineGraphEdgeRequest[];
 }
 
-export type DelegationStrategy = "dynamic" | "broadcast" | "decompose" | "round_robin" | "vote";
+export type DelegationStrategy =
+  | "dynamic"
+  | "broadcast"
+  | "decompose"
+  | "round_robin"
+  | "vote";
 
 export const DELEGATION_STRATEGIES: {
   id: DelegationStrategy;
@@ -1540,7 +1567,8 @@ export const DELEGATION_STRATEGIES: {
   {
     id: "dynamic",
     label: "Dynamic",
-    description: "Leader freely decides which agents to delegate to at runtime using the delegate_to tool",
+    description:
+      "Leader freely decides which agents to delegate to at runtime using the delegate_to tool",
   },
   {
     id: "broadcast",
@@ -1555,7 +1583,8 @@ export const DELEGATION_STRATEGIES: {
   {
     id: "round_robin",
     label: "Round Robin",
-    description: "Members process sequentially, each building on previous output",
+    description:
+      "Members process sequentially, each building on previous output",
   },
   {
     id: "vote",
@@ -1589,12 +1618,12 @@ export interface AgentDefinition {
   /** The model assigned directly to this agent. */
   model_id: string | null;
   model_name?: string | null;
-  source_type: "native";
+  source_type: "native" | "package";
   read_only: boolean;
   metadata: Record<string, unknown>;
   domain_ids?: string[];
   mcp_server_ids?: string[];
-  ability_ids?: string[];
+  abilities?: string[];
   heartbeat?: AgentHeartbeat | null;
 }
 
@@ -1827,7 +1856,7 @@ export interface Domain {
 export interface DomainManifest {
   prompt: DomainPromptConfig;
   platform_scopes?: string[];
-  ability_ids?: string[];
+  abilities?: string[];
   mcp_server_ids?: string[];
   session?: DomainSessionConfig;
 }
@@ -1884,6 +1913,6 @@ export interface UpdateDomainRequest {
   category?: string;
   tags?: string[];
   platform_scopes?: string[];
-  ability_ids?: string[];
+  abilities?: string[];
   mcp_server_ids?: string[];
 }
