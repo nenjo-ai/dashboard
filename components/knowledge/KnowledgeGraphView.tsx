@@ -289,7 +289,6 @@ function NodeDetails({ node, incoming, outgoing }: { node: GraphNode; incoming: 
         <p className="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{node.id}</p>
       </div>
       <Detail label="Kind" value={node.doc.kind ?? "None" } />
-      <Detail label="Authority" value={node.doc.authority ?? "None" } />
       {node.doc.summary ? <Detail label="Summary" value={node.doc.summary} /> : null}
       <TokenList label="Tags" values={node.doc.tags ?? []} />
       <ConnectionList title={`Outgoing (${outgoing.length})`} edges={outgoing} direction="outgoing" />
@@ -391,7 +390,7 @@ function buildGraph(manifest: KnowledgeManifestGraph): { nodes: GraphNode[]; edg
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const byPath = new Map<string, GraphNode>();
   for (const node of nodes) {
-    for (const value of [node.doc.id, node.doc.virtual_path, node.doc.source_path, node.doc.title]) {
+    for (const value of [node.doc.id, node.doc.path, node.doc.title]) {
       if (value) byPath.set(value, node);
     }
   }

@@ -36,6 +36,13 @@ function metadataString(metadata: Record<string, unknown>, path: string[]): stri
   return typeof current === "string" && current.trim() ? current : null;
 }
 
+function abilitySlug(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 // ---------------------------------------------------------------------------
 // Main inline editor
 // ---------------------------------------------------------------------------
@@ -49,7 +56,6 @@ interface AbilityEditorInlineProps {
 export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEditorInlineProps) {
   const isManaged = isManagedSkillAbility(ability);
   const [activeTab, setActiveTab] = useState<TabId>("prompt");
-  const [displayName, setDisplayName] = useState(ability.display_name ?? "");
   const [name, setName] = useState(ability.name);
   const [prompt, setPrompt] = useState(ability.prompt ?? "");
   const [activationCondition, setActivationCondition] = useState(ability.activation_condition);
@@ -63,14 +69,13 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
 
   // Reset when ability changes
   useEffect(() => {
-    setDisplayName(ability.display_name ?? "");
     setName(ability.name);
     setPrompt(ability.prompt ?? "");
     setActivationCondition(ability.activation_condition);
     setActiveTab("prompt");
     setError(null);
     setSaved(false);
-  }, [ability.id]);
+  }, [ability.id, ability.name, ability.prompt, ability.activation_condition]);
 
   useEffect(() => {
     if (isManaged) return;
@@ -92,7 +97,7 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
     setSaved(false);
     try {
       await updateAbility(ability.id, {
-        display_name: displayName || undefined,
+        name: abilitySlug(name),
         activation_condition: activationCondition,
       });
       await updateAbilityPrompt(ability.id, prompt);
@@ -104,7 +109,7 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
     } finally {
       setSaving(false);
     }
-  }, [ability.id, displayName, activationCondition, prompt, onSaved, isManaged]);
+  }, [ability.id, name, activationCondition, prompt, onSaved, isManaged]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (isManaged) return;
@@ -129,16 +134,10 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <input
             type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder={ability.name}
-            className="theme-text min-w-0 flex-1 truncate border-0 bg-transparent text-sm font-semibold outline-none placeholder:text-[var(--app-text-muted)] focus:ring-0"
-          />
-          <input
-            type="text"
             value={name}
-            readOnly
-            className="theme-surface-muted theme-text-muted w-36 shrink-0 rounded px-1.5 py-0.5 text-xs font-mono outline-none"
+            onChange={(e) => setName(abilitySlug(e.target.value))}
+            placeholder="ability_slug"
+            className="theme-text min-w-0 flex-1 truncate border-0 bg-transparent font-mono text-sm font-semibold outline-none placeholder:text-[var(--app-text-muted)] focus:ring-0"
           />
           <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
             ability.is_system
@@ -261,11 +260,10 @@ function ManagedAbilityDetails({ ability }: { ability: Ability }) {
     return (
       <SourceManagedResourcePanel
         resource={ability}
-        title={ability.display_name || ability.name}
+        title={ability.name}
         description={ability.description}
         fallbackContent={JSON.stringify({
           name: ability.name,
-          display_name: ability.display_name,
           description: ability.description,
           activation_condition: ability.activation_condition,
           platform_scopes: ability.platform_scopes,
@@ -296,7 +294,7 @@ function ManagedAbilityDetails({ ability }: { ability: Ability }) {
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="theme-text truncate text-sm font-semibold">
-              {ability.display_name || ability.name}
+              {ability.name}
             </h2>
             <span className="theme-surface-muted-strong theme-text shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium">
               {ability.source_type === "skill" ? "Skill" : "Read-only"}

@@ -2,15 +2,11 @@ import type { KnowledgeItem, KnowledgeItemEdge } from "@/lib/types";
 
 export interface KnowledgeManifestDoc {
   id?: string;
-  virtual_path?: string;
-  source_path?: string;
+  path?: string;
   title?: string;
   summary?: string | null;
   kind?: string | null;
-  authority?: string | null;
   tags?: string[];
-  aliases?: string[];
-  keywords?: string[];
   related?: Array<{ type?: string; target?: string; note?: string | null }>;
 }
 
@@ -28,11 +24,11 @@ export interface KnowledgeManifestGraph {
 }
 
 export function docGraphId(doc: KnowledgeManifestDoc): string {
-  return doc.id || doc.virtual_path || doc.source_path || doc.title || "untitled";
+  return doc.id || doc.path || doc.title || "untitled";
 }
 
 export function docGraphLabel(doc: KnowledgeManifestDoc): string {
-  return doc.title || doc.virtual_path || doc.source_path || doc.id || "Untitled";
+  return doc.title || doc.path || doc.id || "Untitled";
 }
 
 export function knowledgeItemsToManifest(
@@ -42,15 +38,11 @@ export function knowledgeItemsToManifest(
 ): KnowledgeManifestGraph {
   const docs = items.map((item) => ({
     id: item.id,
-    virtual_path: item.path ? `${item.path}/${item.filename}` : item.filename,
-    source_path: item.path ? `${item.path}/${item.filename}` : item.filename,
+    path: item.path ? `${item.path}/${item.filename}` : item.filename,
     title: item.title || item.filename,
     summary: item.summary,
     kind: item.kind,
-    authority: item.authority,
     tags: item.tags,
-    aliases: item.aliases,
-    keywords: item.keywords,
   }));
 
   return {

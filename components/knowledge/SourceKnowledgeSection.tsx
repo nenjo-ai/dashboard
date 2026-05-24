@@ -13,15 +13,12 @@ import type { KnowledgePack } from "@/lib/types";
 
 interface SourceKnowledgeDoc {
   id?: string;
-  virtual_path?: string;
+  path?: string;
   source_path: string;
   title?: string;
   summary?: string;
   kind?: string;
-  authority?: string;
   tags?: string[];
-  aliases?: string[];
-  keywords?: string[];
   related?: Array<{ type?: string; target?: string }>;
 }
 
@@ -234,14 +231,10 @@ export function SourceKnowledgeSection({ pack }: { pack: KnowledgePack }) {
           {selectedDoc ? (
             <div className="space-y-4">
               <MetadataBlock label="Title" value={selectedDoc.title ?? selectedDoc.source_path} />
-              <MetadataBlock label="Path" value={selectedDoc.source_path} mono />
-              <MetadataBlock label="Virtual Path" value={selectedDoc.virtual_path ?? "None"} mono />
+              <MetadataBlock label="Path" value={selectedDoc.path ?? selectedDoc.source_path} mono />
               <MetadataBlock label="Kind" value={selectedDoc.kind ?? "None"} />
-              <MetadataBlock label="Authority" value={selectedDoc.authority ?? "None"} />
               {selectedDoc.summary ? <MetadataBlock label="Summary" value={selectedDoc.summary} /> : null}
               <TokenList label="Tags" values={selectedDoc.tags ?? []} />
-              <TokenList label="Aliases" values={selectedDoc.aliases ?? []} />
-              <TokenList label="Keywords" values={selectedDoc.keywords ?? []} />
               <div>
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Related</h3>
                 {selectedDoc.related?.length ? (

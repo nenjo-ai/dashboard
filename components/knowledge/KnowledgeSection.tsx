@@ -47,10 +47,8 @@ import { ResizeHandle, useResizablePanel } from "@/components/agents/useResizabl
 import { cn } from "@/lib/cn";
 import type {
   KnowledgeItem,
-  KnowledgeItemAuthority,
   KnowledgeItemEdge,
   KnowledgeItemEdgeType,
-  KnowledgeItemKind,
 } from "@/lib/types";
 
 interface KnowledgeSectionProps {
@@ -64,23 +62,6 @@ interface TreeNode {
   children: TreeNode[];
   item?: KnowledgeItem;
 }
-
-const ITEM_KINDS: Array<{ value: KnowledgeItemKind; label: string }> = [
-  { value: "guide", label: "Guide" },
-  { value: "reference", label: "Reference" },
-  { value: "taxonomy", label: "Taxonomy" },
-  { value: "domain", label: "Domain" },
-  { value: "entity", label: "Entity" },
-  { value: "policy", label: "Policy" },
-];
-
-const ITEM_AUTHORITIES: Array<{ value: KnowledgeItemAuthority; label: string }> = [
-  { value: "canonical", label: "Canonical" },
-  { value: "supporting", label: "Supporting" },
-  { value: "reference", label: "Reference" },
-  { value: "draft", label: "Draft" },
-  { value: "deprecated", label: "Deprecated" },
-];
 
 const ITEM_EDGE_TYPES: Array<{ value: KnowledgeItemEdgeType; label: string }> = [
   { value: "part_of", label: "Part Of" },
@@ -245,20 +226,9 @@ function ItemTreeNode({
         ) : null}
         <FileText className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" />
         <div className="min-w-0 flex-1 truncate text-sm">{node.name}</div>
-        {item.authority === "canonical" ? (
-          <span className="ml-auto shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-            Canonical
-          </span>
-        ) : null}
       </button>
     </div>
   );
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatDate(iso: string): string {
@@ -292,13 +262,9 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
   const [itemFilename, setItemFilename] = useState("");
   const [itemPath, setItemPath] = useState("");
   const [itemTitle, setItemTitle] = useState("");
-  const [itemKind, setItemKind] = useState<KnowledgeItemKind | "">("");
-  const [itemAuthority, setItemAuthority] = useState<KnowledgeItemAuthority>("reference");
+  const [itemKind, setItemKind] = useState("");
   const [itemSummary, setItemSummary] = useState("");
-  const [itemStatus, setItemStatus] = useState("");
   const [itemTags, setItemTags] = useState<string[]>([]);
-  const [itemAliases, setItemAliases] = useState<string[]>([]);
-  const [itemKeywords, setItemKeywords] = useState<string[]>([]);
 
   const [itemEdges, setItemEdges] = useState<KnowledgeItemEdge[]>([]);
   const [graphEdges, setGraphEdges] = useState<KnowledgeItemEdge[]>([]);
@@ -400,12 +366,8 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
       setItemPath("");
       setItemTitle("");
       setItemKind("");
-      setItemAuthority("reference");
       setItemSummary("");
-      setItemStatus("");
       setItemTags([]);
-      setItemAliases([]);
-      setItemKeywords([]);
       return;
     }
 
@@ -413,12 +375,8 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
     setItemPath(selectedItem.path ?? "");
     setItemTitle(selectedItem.title ?? "");
     setItemKind(selectedItem.kind ?? "");
-    setItemAuthority(selectedItem.authority);
     setItemSummary(selectedItem.summary ?? "");
-    setItemStatus(selectedItem.status ?? "");
     setItemTags(selectedItem.tags ?? []);
-    setItemAliases(selectedItem.aliases ?? []);
-    setItemKeywords(selectedItem.keywords ?? []);
     setMetadataError(null);
   }, [selectedItem]);
 
@@ -547,12 +505,8 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
         path: itemPath.trim() || null,
         title: itemTitle.trim() || null,
         kind: itemKind || null,
-        authority: itemAuthority,
         summary: itemSummary.trim() || null,
-        status: itemStatus.trim() || null,
         tags: itemTags,
-        aliases: itemAliases,
-        keywords: itemKeywords,
       });
       await mutateItems();
     } catch (err) {
@@ -896,7 +850,6 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
             <div className="theme-border flex shrink-0 items-center justify-between border-t px-4 py-1.5 text-xs text-gray-400 dark:text-gray-500">
               <div className="flex items-center gap-4">
                 <span>{editContent.length.toLocaleString()} chars</span>
-                {selectedItem ? <span>{formatFileSize(selectedItem.size_bytes)}</span> : null}
                 {selectedItem ? <span>Updated {formatDate(selectedItem.updated_at)}</span> : null}
               </div>
               <div className="flex items-center gap-2">
@@ -938,34 +891,9 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
                       <Input value={itemTitle} onChange={(e) => setItemTitle(e.target.value)} placeholder="Billing Domain" />
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Kind</label>
-                        <Select value={itemKind} onChange={(e) => setItemKind(e.target.value as KnowledgeItemKind | "")}>
-                          <option value="">None</option>
-                          {ITEM_KINDS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </Select>
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Authority</label>
-                        <Select value={itemAuthority} onChange={(e) => setItemAuthority(e.target.value as KnowledgeItemAuthority)}>
-                          {ITEM_AUTHORITIES.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </Select>
-                      </div>
-                    </div>
-
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Status</label>
-                      <Input value={itemStatus} onChange={(e) => setItemStatus(e.target.value)} placeholder="active, review, archived" />
+                      <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Kind</label>
+                      <Input value={itemKind} onChange={(e) => setItemKind(e.target.value)} placeholder="guide, playbook, evidence" />
                     </div>
 
                     <div>
@@ -984,26 +912,6 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
                         value={itemTags}
                         onChange={setItemTags}
                         suggestions={["canonical", "policy", "entity", "taxonomy", "guide", "reference", "project"]}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Aliases</label>
-                      <TagInput
-                        value={itemAliases}
-                        onChange={setItemAliases}
-                        placeholder="Add an alias..."
-                        preserveValue
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Keywords</label>
-                      <TagInput
-                        value={itemKeywords}
-                        onChange={setItemKeywords}
-                        placeholder="Add a keyword..."
-                        preserveValue
                       />
                     </div>
 

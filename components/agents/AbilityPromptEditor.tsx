@@ -146,7 +146,7 @@ export function AbilityPromptEditor({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="truncate text-base font-semibold text-gray-900 dark:text-gray-100">
-                  {initialAbility.display_name || initialAbility.name}
+                  {initialAbility.name}
                 </h2>
                 <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
                   Ability

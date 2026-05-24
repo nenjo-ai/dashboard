@@ -425,7 +425,7 @@ export function TaskDetailModal({
                 <option value="">None</option>
                 {agents?.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.display_name || a.name}
+                    {a.name}
                   </option>
                 ))}
               </select>
