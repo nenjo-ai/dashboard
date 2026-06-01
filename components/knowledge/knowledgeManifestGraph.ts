@@ -2,6 +2,7 @@ import type { KnowledgeItem, KnowledgeItemEdge } from "@/lib/types";
 
 export interface KnowledgeManifestDoc {
   id?: string;
+  selector?: string;
   path?: string;
   title?: string;
   summary?: string | null;
@@ -24,11 +25,11 @@ export interface KnowledgeManifestGraph {
 }
 
 export function docGraphId(doc: KnowledgeManifestDoc): string {
-  return doc.id || doc.path || doc.title || "untitled";
+  return doc.id || doc.selector || doc.path || doc.title || "untitled";
 }
 
 export function docGraphLabel(doc: KnowledgeManifestDoc): string {
-  return doc.title || doc.path || doc.id || "Untitled";
+  return doc.title || doc.selector || doc.path || doc.id || "Untitled";
 }
 
 export function knowledgeItemsToManifest(

@@ -26,9 +26,9 @@ The save operation is transactional. Nenjo replaces the routine's stored steps a
 
 ## Entry steps
 
-The editor stores trigger-to-step connections as `entry_step_ids` in routine metadata.
+The editor stores trigger-to-step connections as `entry_steps` in routine metadata. Each entry is a stable step slug, not a database ID.
 
-At runtime, Nenjo prefers those entry step IDs. If none are stored, the worker falls back to the first step with no incoming edge. If it still cannot determine one, it uses the lowest ordered step.
+At runtime, Nenjo prefers those entry step slugs. If none are stored, the worker falls back to the first step with no incoming edge. If it still cannot determine one, it uses the lowest ordered step.
 
 ## Runtime guardrails
 

@@ -27,18 +27,21 @@ interface GraphEdge extends d3.SimulationLinkDatum<GraphNode> {
   curve: number;
 }
 
-const KIND_COLORS: Record<string, { fill: string; stroke: string; text: string }> = {
-  guide: { fill: "#eef2ff", stroke: "#6366f1", text: "#3730a3" },
-  reference: { fill: "#ecfeff", stroke: "#0891b2", text: "#155e75" },
-  taxonomy: { fill: "#f0fdf4", stroke: "#16a34a", text: "#166534" },
-  domain: { fill: "#fef3c7", stroke: "#d97706", text: "#92400e" },
-  entity: { fill: "#f5f3ff", stroke: "#7c3aed", text: "#5b21b6" },
-  policy: { fill: "#fff1f2", stroke: "#e11d48", text: "#9f1239" },
-};
-
 const DEFAULT_COLOR = { fill: "#f8fafc", stroke: "#64748b", text: "#334155" };
-const GRAPH_WIDTH = 2200;
-const GRAPH_HEIGHT = 1400;
+const KIND_COLOR_PALETTE = [
+  { fill: "#eef2ff", stroke: "#6366f1", text: "#3730a3" },
+  { fill: "#ecfeff", stroke: "#0891b2", text: "#155e75" },
+  { fill: "#f0fdf4", stroke: "#16a34a", text: "#166534" },
+  { fill: "#fef3c7", stroke: "#d97706", text: "#92400e" },
+  { fill: "#f5f3ff", stroke: "#7c3aed", text: "#5b21b6" },
+  { fill: "#fff1f2", stroke: "#e11d48", text: "#9f1239" },
+  { fill: "#f0f9ff", stroke: "#0284c7", text: "#075985" },
+  { fill: "#f7fee7", stroke: "#65a30d", text: "#3f6212" },
+  { fill: "#fff7ed", stroke: "#ea580c", text: "#9a3412" },
+  { fill: "#fdf2f8", stroke: "#db2777", text: "#9d174d" },
+];
+const GRAPH_WIDTH = 3000;
+const GRAPH_HEIGHT = 2000;
 const GRAPH_CENTER_X = GRAPH_WIDTH / 2;
 const GRAPH_CENTER_Y = GRAPH_HEIGHT / 2;
 const EDGE_COLORS: Record<string, string> = {
@@ -77,15 +80,13 @@ export function KnowledgeGraphView({ manifest }: { manifest: KnowledgeManifestGr
     const ids = new Set<string>([selectedNode.id]);
     for (const edge of graph.edges) {
       if (edge.source.id === selectedNode.id) ids.add(edge.target.id);
-      if (edge.target.id === selectedNode.id) ids.add(edge.source.id);
     }
     return ids;
   }, [graph.edges, selectedNode]);
   const connectedEdges = selectedNode
-    ? graph.edges.filter((edge) => edge.source.id === selectedNode.id || edge.target.id === selectedNode.id)
+    ? graph.edges.filter((edge) => edge.source.id === selectedNode.id)
     : [];
-  const incoming = selectedNode ? connectedEdges.filter((edge) => edge.target.id === selectedNode.id) : [];
-  const outgoing = selectedNode ? connectedEdges.filter((edge) => edge.source.id === selectedNode.id) : [];
+  const outgoing = connectedEdges;
 
   useEffect(() => {
     if (!svgRef.current || !viewportRef.current) return;
@@ -171,7 +172,7 @@ export function KnowledgeGraphView({ manifest }: { manifest: KnowledgeManifestGr
           <g ref={viewportRef}>
             {graph.edges.map((edge) => {
               const active = selectedNode
-                ? edge.source.id === selectedNode.id || edge.target.id === selectedNode.id
+                ? edge.source.id === selectedNode.id
                 : selectedEdgeId === edge.id;
               const dimmed = selectedNode ? !active : false;
               const label = edgeLabelPoint(edge);
@@ -270,7 +271,7 @@ export function KnowledgeGraphView({ manifest }: { manifest: KnowledgeManifestGr
       </div>
       <aside className="min-h-0 overflow-y-auto border-l border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
         {selectedNode ? (
-          <NodeDetails node={selectedNode} incoming={incoming} outgoing={outgoing} />
+          <NodeDetails node={selectedNode} outgoing={outgoing} />
         ) : selectedEdge ? (
           <EdgeDetails edge={selectedEdge} />
         ) : (
@@ -281,7 +282,7 @@ export function KnowledgeGraphView({ manifest }: { manifest: KnowledgeManifestGr
   );
 }
 
-function NodeDetails({ node, incoming, outgoing }: { node: GraphNode; incoming: GraphEdge[]; outgoing: GraphEdge[] }) {
+function NodeDetails({ node, outgoing }: { node: GraphNode; outgoing: GraphEdge[] }) {
   return (
     <div className="space-y-5">
       <div>
@@ -291,8 +292,7 @@ function NodeDetails({ node, incoming, outgoing }: { node: GraphNode; incoming: 
       <Detail label="Kind" value={node.doc.kind ?? "None" } />
       {node.doc.summary ? <Detail label="Summary" value={node.doc.summary} /> : null}
       <TokenList label="Tags" values={node.doc.tags ?? []} />
-      <ConnectionList title={`Outgoing (${outgoing.length})`} edges={outgoing} direction="outgoing" />
-      <ConnectionList title={`Incoming (${incoming.length})`} edges={incoming} direction="incoming" />
+      <ConnectionList title={`Outgoing (${outgoing.length})`} edges={outgoing} />
     </div>
   );
 }
@@ -329,18 +329,17 @@ function EdgeDetails({ edge }: { edge: GraphEdge }) {
   );
 }
 
-function ConnectionList({ title, edges, direction }: { title: string; edges: GraphEdge[]; direction: "incoming" | "outgoing" }) {
+function ConnectionList({ title, edges }: { title: string; edges: GraphEdge[] }) {
   return (
     <div>
       <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{title}</h4>
       {edges.length ? (
         <div className="space-y-2">
           {edges.map((edge) => {
-            const other = direction === "outgoing" ? edge.target : edge.source;
             return (
               <div key={edge.id} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-950/30">
                 <div className="text-xs font-medium text-gray-500 dark:text-gray-400">{edge.type.replace(/_/g, " ")}</div>
-                <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">{other.label}</div>
+                <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">{edge.target.label}</div>
                 {edge.note ? <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{edge.note}</div> : null}
               </div>
             );
@@ -390,7 +389,12 @@ function buildGraph(manifest: KnowledgeManifestGraph): { nodes: GraphNode[]; edg
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const byPath = new Map<string, GraphNode>();
   for (const node of nodes) {
-    for (const value of [node.doc.id, node.doc.path, node.doc.title]) {
+    for (const value of [
+      node.doc.id,
+      node.doc.selector,
+      node.doc.path,
+      node.doc.title,
+    ]) {
       if (value) byPath.set(value, node);
     }
   }
@@ -422,13 +426,13 @@ function buildGraph(manifest: KnowledgeManifestGraph): { nodes: GraphNode[]; edg
   seedNodePositions(nodes, edges);
 
   const simulation = d3.forceSimulation(nodes)
-    .force("link", d3.forceLink<GraphNode, GraphEdge>(edges).id((node) => node.id).distance(330).strength(0.28))
-    .force("charge", d3.forceManyBody().strength(-1550))
+    .force("link", d3.forceLink<GraphNode, GraphEdge>(edges).id((node) => node.id).distance(430).strength(0.22))
+    .force("charge", d3.forceManyBody().strength(-2600))
     .force("center", d3.forceCenter(GRAPH_CENTER_X, GRAPH_CENTER_Y))
     .force("x", d3.forceX<GraphNode>(GRAPH_CENTER_X).strength(0.028))
     .force("y", d3.forceY<GraphNode>(GRAPH_CENTER_Y).strength(0.03))
     .force("radial", d3.forceRadial<GraphNode>((node) => radialDistance(node, edges), GRAPH_CENTER_X, GRAPH_CENTER_Y).strength(0.08))
-    .force("collision", d3.forceCollide<GraphNode>().radius(138).strength(1))
+    .force("collision", d3.forceCollide<GraphNode>().radius(190).strength(1))
     .stop();
 
   for (let index = 0; index < 720; index += 1) simulation.tick();
@@ -442,7 +446,8 @@ function buildGraph(manifest: KnowledgeManifestGraph): { nodes: GraphNode[]; edg
 }
 
 function nodeColor(doc: KnowledgeManifestDoc) {
-  return doc.kind ? KIND_COLORS[doc.kind] ?? DEFAULT_COLOR : DEFAULT_COLOR;
+  if (!doc.kind) return DEFAULT_COLOR;
+  return KIND_COLOR_PALETTE[hashString(doc.kind) % KIND_COLOR_PALETTE.length];
 }
 
 function edgeLabel(edge: GraphEdge): string {
@@ -455,6 +460,14 @@ function edgeColor(type: string): string {
 
 function edgeMarkerId(type: string): string {
   return `knowledge-arrow-${type.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
 }
 
 function edgePath(edge: GraphEdge): string {

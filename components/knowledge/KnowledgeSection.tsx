@@ -40,11 +40,13 @@ import {
 } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { TagInput } from "@/components/ui/TagInput";
 import { Textarea } from "@/components/ui/Textarea";
 import { ResizeHandle, useResizablePanel } from "@/components/agents/useResizablePanel";
 import { cn } from "@/lib/cn";
+import type { CreateKnowledgeItemMetadata } from "@/lib/api";
 import type {
   KnowledgeItem,
   KnowledgeItemEdge,
@@ -52,8 +54,17 @@ import type {
 } from "@/lib/types";
 
 interface KnowledgeSectionProps {
-  packId: string;
+  packRef: string;
   readOnly?: boolean;
+}
+
+interface NewKnowledgeItemForm {
+  filename: string;
+  path: string;
+  title: string;
+  kind: string;
+  summary: string;
+  tags: string[];
 }
 
 interface TreeNode {
@@ -73,6 +84,17 @@ const ITEM_EDGE_TYPES: Array<{ value: KnowledgeItemEdgeType; label: string }> = 
   { value: "extends", label: "Extends" },
   { value: "related_to", label: "Related To" },
 ];
+
+function initialNewKnowledgeItemForm(): NewKnowledgeItemForm {
+  return {
+    filename: "",
+    path: "",
+    title: "",
+    kind: "guide",
+    summary: "",
+    tags: [],
+  };
+}
 
 function buildItemTree(items: KnowledgeItem[]): TreeNode[] {
   const root: TreeNode[] = [];
@@ -239,7 +261,7 @@ function formatDate(iso: string): string {
   });
 }
 
-export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionProps) {
+export function KnowledgeSection({ packRef, readOnly = false }: KnowledgeSectionProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const rightPanel = useResizablePanel(360, 300, 560);
 
@@ -247,6 +269,11 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
   const [isUploading, setIsUploading] = useState(false);
   const [isCreatingItem, setIsCreatingItem] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [createItemOpen, setCreateItemOpen] = useState(false);
+  const [newItemForm, setNewItemForm] = useState<NewKnowledgeItemForm>(() =>
+    initialNewKnowledgeItemForm(),
+  );
+  const [createItemError, setCreateItemError] = useState<string | null>(null);
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [itemContent, setItemContent] = useState<string | null>(null);
@@ -282,9 +309,10 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
     items,
     isLoading,
     mutate: mutateItems,
-  } = useKnowledgeItems(packId);
+  } = useKnowledgeItems(packRef);
 
   const selectedItem = items?.find((item) => item.id === selectedItemId) ?? null;
+  const selectedItemRef = selectedItem?.slug ?? null;
 
   useEffect(() => {
     if (!items?.length) {
@@ -293,7 +321,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
     }
     let cancelled = false;
     setIsLoadingGraphEdges(true);
-    Promise.all(items.map((item) => fetchKnowledgeItemEdges(packId, item.id).catch(() => [])))
+    Promise.all(items.map((item) => fetchKnowledgeItemEdges(packRef, item.slug).catch(() => [])))
       .then((edgeSets) => {
         if (cancelled) return;
         const seen = new Set<string>();
@@ -311,7 +339,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
     return () => {
       cancelled = true;
     };
-  }, [items, packId]);
+  }, [items, packRef]);
 
   useEffect(() => {
     if (!items || items.length === 0) {
@@ -324,7 +352,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
   }, [items, selectedItemId]);
 
   useEffect(() => {
-    if (!selectedItemId) {
+    if (!selectedItemRef) {
       setItemContent(null);
       setEditContent("");
       setContentError(null);
@@ -335,7 +363,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
     setIsLoadingContent(true);
     setContentError(null);
 
-    fetchKnowledgeItemContent(packId, selectedItemId)
+    fetchKnowledgeItemContent(packRef, selectedItemRef)
       .then((res) => {
         if (!cancelled) {
           setItemContent(res.content);
@@ -358,7 +386,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
     return () => {
       cancelled = true;
     };
-  }, [packId, selectedItemId]);
+  }, [packRef, selectedItemRef]);
 
   useEffect(() => {
     if (!selectedItem) {
@@ -381,7 +409,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
   }, [selectedItem]);
 
   useEffect(() => {
-    if (!selectedItemId) {
+    if (!selectedItemRef) {
       setItemEdges([]);
       setSelectedTargetItemId("");
       setEdgeNote("");
@@ -393,7 +421,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
     setIsLoadingEdges(true);
     setEdgeError(null);
 
-    fetchKnowledgeItemEdges(packId, selectedItemId)
+    fetchKnowledgeItemEdges(packRef, selectedItemRef)
       .then((edges) => {
         if (!cancelled) setItemEdges(edges);
       })
@@ -411,7 +439,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
     return () => {
       cancelled = true;
     };
-  }, [packId, selectedItemId]);
+  }, [packRef, selectedItemRef]);
 
   const handleUpload = useCallback(
     async (file: File) => {
@@ -423,7 +451,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
       setIsUploading(true);
       setUploadError(null);
       try {
-        const created = await uploadKnowledgeItem(packId, file);
+        const created = await uploadKnowledgeItem(packRef, file);
         await mutateItems();
         setSelectedItemId(created.id);
       } catch (err: unknown) {
@@ -432,32 +460,55 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
         setIsUploading(false);
       }
     },
-    [packId, mutateItems, readOnly],
+    [packRef, mutateItems, readOnly],
   );
+
+  const openCreateItemModal = useCallback(() => {
+    if (readOnly) return;
+    setNewItemForm(initialNewKnowledgeItemForm());
+    setCreateItemError(null);
+    setUploadError(null);
+    setCreateItemOpen(true);
+  }, [readOnly]);
 
   const handleCreateItem = useCallback(async () => {
     if (readOnly) return;
+    const filename = newItemForm.filename.trim();
+    if (!filename) {
+      setCreateItemError("Filename is required.");
+      return;
+    }
+    const metadata: CreateKnowledgeItemMetadata = {
+      filename,
+      path: newItemForm.path.trim() || null,
+      title: newItemForm.title.trim() || null,
+      kind: newItemForm.kind.trim() || null,
+      summary: newItemForm.summary.trim() || null,
+      tags: newItemForm.tags,
+    };
     setIsCreatingItem(true);
-    setUploadError(null);
+    setCreateItemError(null);
     try {
-      const created = await createKnowledgeItem(packId);
+      const created = await createKnowledgeItem(packRef, metadata);
       await mutateItems();
       setSelectedItemId(created.id);
       setContentMode("edit");
+      setCreateItemOpen(false);
+      setNewItemForm(initialNewKnowledgeItemForm());
     } catch (err: unknown) {
-      setUploadError(
+      setCreateItemError(
         err instanceof Error ? err.message : "Failed to create item",
       );
     } finally {
       setIsCreatingItem(false);
     }
-  }, [packId, mutateItems, readOnly]);
+  }, [packRef, mutateItems, newItemForm, readOnly]);
 
   const handleDelete = useCallback(
     async (item: KnowledgeItem) => {
       if (readOnly) return;
       try {
-        await deleteKnowledgeItem(packId, item.id);
+        await deleteKnowledgeItem(packRef, item.slug);
         await mutateItems();
         setConfirmDeleteId(null);
         if (selectedItemId === item.id) {
@@ -468,16 +519,21 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
         setConfirmDeleteId(null);
       }
     },
-    [packId, mutateItems, selectedItemId, items, readOnly],
+    [packRef, mutateItems, selectedItemId, items, readOnly],
   );
 
   const handleSaveContent = async () => {
     if (readOnly) return;
-    if (!selectedItemId) return;
+    if (!selectedItemRef || !selectedItem) return;
     setIsSavingContent(true);
     setContentError(null);
     try {
-      await updateKnowledgeItemContent(packId, selectedItemId, editContent);
+      await updateKnowledgeItemContent(
+        packRef,
+        selectedItemRef,
+        selectedItem.id,
+        editContent,
+      );
       setItemContent(editContent);
       await mutateItems();
     } catch (err) {
@@ -491,7 +547,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
 
   const handleSaveMetadata = async () => {
     if (readOnly) return;
-    if (!selectedItemId) return;
+    if (!selectedItemRef) return;
     const filename = itemFilename.trim();
     if (!filename) {
       setMetadataError("Filename cannot be empty");
@@ -500,7 +556,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
     setIsSavingMetadata(true);
     setMetadataError(null);
     try {
-      await updateKnowledgeItemMetadata(packId, selectedItemId, {
+      await updateKnowledgeItemMetadata(packRef, selectedItemRef, {
         filename,
         path: itemPath.trim() || null,
         title: itemTitle.trim() || null,
@@ -520,12 +576,14 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
 
   const handleCreateEdge = async () => {
     if (readOnly) return;
-    if (!selectedItemId || !selectedTargetItemId) return;
+    if (!selectedItemRef || !selectedTargetItemId) return;
+    const targetItem = items?.find((item) => item.id === selectedTargetItemId);
+    if (!targetItem) return;
     setIsSavingEdge(true);
     setEdgeError(null);
     try {
-      const edge = await createKnowledgeItemEdge(packId, selectedItemId, {
-        target_item_id: selectedTargetItemId,
+      const edge = await createKnowledgeItemEdge(packRef, selectedItemRef, {
+        target_doc: targetItem.slug,
         edge_type: selectedEdgeType,
         note: edgeNote.trim() || null,
       });
@@ -544,10 +602,10 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
 
   const handleDeleteEdge = async (edgeId: string) => {
     if (readOnly) return;
-    if (!selectedItemId) return;
+    if (!selectedItemRef) return;
     setEdgeError(null);
     try {
-      await deleteKnowledgeItemEdge(packId, selectedItemId, edgeId);
+      await deleteKnowledgeItemEdge(packRef, selectedItemRef, edgeId);
       setItemEdges((current) => current.filter((edge) => edge.id !== edgeId));
     } catch (err) {
       setEdgeError(
@@ -591,6 +649,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
   );
 
   return (
+    <>
     <Card static className="overflow-hidden rounded-lg bg-white dark:bg-gray-900">
       <CardHeader className="border-b border-gray-200 bg-gray-50/70 px-4 py-3 dark:border-gray-700 dark:bg-gray-950/20">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -609,9 +668,9 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
               {(items?.length ?? 0).toLocaleString()} items
             </div>
             {!readOnly ? (
-              <Button size="sm" onClick={handleCreateItem} disabled={isCreatingItem || isUploading}>
-                {isCreatingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                New Item
+              <Button size="sm" onClick={openCreateItemModal} disabled={isUploading}>
+                <Plus className="h-4 w-4" />
+                New Document
               </Button>
             ) : null}
           </div>
@@ -752,7 +811,7 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
                     </button>
                   </div>
                   <a
-                    href={downloadKnowledgeItemUrl(packId, selectedItem.id)}
+                    href={downloadKnowledgeItemUrl(packRef, selectedItem.slug)}
                     download
                     className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
                     title="Download item"
@@ -1031,6 +1090,144 @@ export function KnowledgeSection({ packId, readOnly = false }: KnowledgeSectionP
         )}
       </CardContent>
     </Card>
+    <Modal
+      open={createItemOpen}
+      onClose={() => {
+        if (!isCreatingItem) setCreateItemOpen(false);
+      }}
+      title="New Document"
+      className="max-w-2xl"
+    >
+      <form
+        className="space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void handleCreateItem();
+        }}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">
+              Filename
+            </label>
+            <Input
+              value={newItemForm.filename}
+              onChange={(event) =>
+                setNewItemForm((current) => ({
+                  ...current,
+                  filename: event.target.value,
+                }))
+              }
+              placeholder="billing-domain.md"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">
+              Path
+            </label>
+            <Input
+              value={newItemForm.path}
+              onChange={(event) =>
+                setNewItemForm((current) => ({
+                  ...current,
+                  path: event.target.value,
+                }))
+              }
+              placeholder="domains/billing"
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">
+              Title
+            </label>
+            <Input
+              value={newItemForm.title}
+              onChange={(event) =>
+                setNewItemForm((current) => ({
+                  ...current,
+                  title: event.target.value,
+                }))
+              }
+              placeholder="Billing Domain"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">
+              Kind
+            </label>
+            <Input
+              value={newItemForm.kind}
+              onChange={(event) =>
+                setNewItemForm((current) => ({
+                  ...current,
+                  kind: event.target.value,
+                }))
+              }
+              placeholder="guide, playbook, evidence"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">
+            Summary
+          </label>
+          <Textarea
+            value={newItemForm.summary}
+            onChange={(event) =>
+              setNewItemForm((current) => ({
+                ...current,
+                summary: event.target.value,
+              }))
+            }
+            placeholder="Compact knowledge summary used by prompts and agents."
+            className="min-h-[110px]"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">
+            Tags
+          </label>
+          <TagInput
+            value={newItemForm.tags}
+            onChange={(tags) =>
+              setNewItemForm((current) => ({
+                ...current,
+                tags,
+              }))
+            }
+            suggestions={["canonical", "policy", "entity", "taxonomy", "guide", "reference", "project"]}
+          />
+        </div>
+
+        {createItemError ? (
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+            {createItemError}
+          </div>
+        ) : null}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setCreateItemOpen(false)}
+            disabled={isCreatingItem}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isCreatingItem || !newItemForm.filename.trim()}>
+            {isCreatingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            {isCreatingItem ? "Creating..." : "Create Document"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+    </>
   );
 }
 

@@ -663,6 +663,7 @@ export interface ProjectRepoSettings {
 
 export interface CreateProjectRequest {
   name: string;
+  slug: string;
   description?: string;
   repo_url?: string;
 }
@@ -968,7 +969,9 @@ export interface KnowledgeItemEdge {
   id: string;
   org_id: string;
   source_item_id: string;
+  source_doc: string;
   target_item_id: string;
+  target_doc: string;
   edge_type: KnowledgeItemEdgeType;
   note: string | null;
   created_at: string;
@@ -1130,7 +1133,7 @@ export interface Ability {
   activation_condition: string;
   prompt?: string;
   platform_scopes: string[];
-  mcp_server_ids: string[];
+  mcp_servers: string[];
   is_system: boolean;
   source_type: "native" | "skill" | "package";
   read_only: boolean;
@@ -1149,7 +1152,7 @@ export interface CreateAbilityRequest {
   activation_condition?: string;
   prompt?: string;
   platform_scopes?: string[];
-  mcp_server_ids?: string[];
+  mcp_servers?: string[];
   source_type?: "native" | "skill" | "package";
   read_only?: boolean;
   metadata?: Record<string, unknown>;
@@ -1162,94 +1165,6 @@ export interface InstallSkillRequest {
   activation_condition?: string;
   selector: string;
   metadata?: Record<string, unknown>;
-}
-
-// ---------------------------------------------------------------------------
-// Marketplaces
-// ---------------------------------------------------------------------------
-
-export type MarketplaceSourceType = "github" | "url" | "local_system";
-export type MarketplacePackageKind = "knowledge_pack" | "skill" | "plugin";
-
-export interface MarketplaceSource {
-  id: string;
-  org_id: string | null;
-  name: string;
-  source_type: MarketplaceSourceType;
-  metadata: Record<string, unknown>;
-  status: "active" | "archived";
-  is_system: boolean;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface MarketplacePackage {
-  id: string;
-  marketplace_source_id: string;
-  package_id: string;
-  kind: MarketplacePackageKind;
-  name: string;
-  display_name: string | null;
-  description: string | null;
-  latest_version: string | null;
-  metadata: Record<string, unknown>;
-  synced_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateMarketplaceSourceRequest {
-  name: string;
-  source_type: MarketplaceSourceType;
-  metadata?: Record<string, unknown>;
-}
-
-export interface UpdateMarketplaceSourceRequest {
-  name?: string;
-  metadata?: Record<string, unknown>;
-  status?: "active" | "archived";
-}
-
-export interface ClaudeMcpServerConfig {
-  command?: string | null;
-  args?: string[] | null;
-  url?: string | null;
-  transport?: "stdio" | "http" | string | null;
-  env?: Record<string, unknown>;
-  cwd?: string | null;
-}
-
-export interface InstallClaudeSkillRequest {
-  name: string;
-  display_name?: string | null;
-  description?: string | null;
-  entrypoint: string;
-  runtime?: {
-    env_names?: string[];
-  };
-}
-
-export interface InstallClaudePluginRequest {
-  name: string;
-  display_name?: string | null;
-  description?: string | null;
-  source: {
-    path: string;
-  };
-  version?: {
-    ref_?: string | null;
-    resolved_commit_sha?: string | null;
-    package_version?: string | null;
-  };
-  skills?: InstallClaudeSkillRequest[];
-  mcp_servers?: Record<string, ClaudeMcpServerConfig>;
-}
-
-export interface InstallClaudePluginResponse {
-  source: MarketplaceSource;
-  abilities: Ability[];
-  mcp_servers: McpServer[];
 }
 
 // ---------------------------------------------------------------------------
@@ -1338,7 +1253,7 @@ export interface UpdateAbilityRequest {
   description?: string;
   activation_condition?: string;
   platform_scopes?: string[];
-  mcp_server_ids?: string[];
+  mcp_servers?: string[];
 }
 
 export interface AgentAbilityAssignment {
@@ -1429,6 +1344,7 @@ export interface Routine {
 export interface RoutineStep {
   id: string;
   routine_id: string;
+  slug: string;
   name: string;
   step_type: RoutineStepType;
   council_id: string | null;
@@ -1446,7 +1362,9 @@ export interface RoutineEdge {
   id: string;
   routine_id: string;
   source_step_id: string;
+  source_step: string;
   target_step_id: string;
+  target_step: string;
   condition: RoutineEdgeCondition;
   metadata: Record<string, unknown>;
   created_at: string;
@@ -1496,10 +1414,11 @@ export interface UpdateRoutineRequest {
 
 export interface CreateStepRequest {
   id?: string;
+  slug?: string;
   name: string;
   step_type?: RoutineStepType;
-  council_id?: string;
-  agent_id?: string;
+  council?: string;
+  agent?: string;
   config?: Record<string, unknown>;
   encrypted_payload?: EncryptedPayload | null;
   position_x?: number;
@@ -1508,10 +1427,11 @@ export interface CreateStepRequest {
 }
 
 export interface UpdateStepRequest {
+  slug?: string;
   name?: string;
   step_type?: RoutineStepType;
-  council_id?: string;
-  agent_id?: string | null;
+  council?: string;
+  agent?: string | null;
   config?: Record<string, unknown>;
   encrypted_payload?: EncryptedPayload | null;
   position_x?: number;
@@ -1520,18 +1440,17 @@ export interface UpdateStepRequest {
 }
 
 export interface CreateEdgeRequest {
-  source_step_id: string;
-  target_step_id: string;
+  source_step: string;
+  target_step: string;
   condition?: RoutineEdgeCondition;
 }
 
 export interface SaveRoutineGraphStepRequest {
-  client_ref: string;
-  id?: string;
+  slug: string;
   name: string;
   step_type: RoutineStepType;
-  council_id?: string;
-  agent_id?: string | null;
+  council?: string;
+  agent?: string | null;
   config?: Record<string, unknown>;
   encrypted_payload?: EncryptedPayload | null;
   position_x: number;
@@ -1540,14 +1459,14 @@ export interface SaveRoutineGraphStepRequest {
 }
 
 export interface SaveRoutineGraphEdgeRequest {
-  source_ref: string;
-  target_ref: string;
+  source_step: string;
+  target_step: string;
   condition?: RoutineEdgeCondition;
   metadata?: Record<string, unknown>;
 }
 
 export interface SaveRoutineGraphRequest extends UpdateRoutineRequest {
-  entry_step_refs: string[];
+  entry_steps: string[];
   steps: SaveRoutineGraphStepRequest[];
   edges: SaveRoutineGraphEdgeRequest[];
 }
@@ -1599,6 +1518,7 @@ export const DELEGATION_STRATEGIES: {
 
 export interface AgentDefinition {
   id: string;
+  slug?: string;
   name: string;
   display_name: string | null;
   description: string | null;
@@ -1622,7 +1542,7 @@ export interface AgentDefinition {
   read_only: boolean;
   metadata: Record<string, unknown>;
   domain_ids?: string[];
-  mcp_server_ids?: string[];
+  mcp_servers?: string[];
   abilities?: string[];
   heartbeat?: AgentHeartbeat | null;
 }
@@ -1857,12 +1777,12 @@ export interface DomainManifest {
   prompt: DomainPromptConfig;
   platform_scopes?: string[];
   abilities?: string[];
-  mcp_server_ids?: string[];
+  mcp_servers?: string[];
   session?: DomainSessionConfig;
 }
 
 export interface DomainPromptConfig {
-  system_addon?: string;
+  developer_prompt_addon?: string;
 }
 
 export interface DomainSessionConfig {
@@ -1914,5 +1834,5 @@ export interface UpdateDomainRequest {
   tags?: string[];
   platform_scopes?: string[];
   abilities?: string[];
-  mcp_server_ids?: string[];
+  mcp_servers?: string[];
 }

@@ -76,7 +76,7 @@ An agent manifest contains the fields the runtime needs to build an `AgentRunner
 | `platform_scopes` | Controls which platform tools are added to the agent |
 | `domain_ids` | Domains available to the agent |
 | `ability_ids` | Abilities exposed as sub-execution tools |
-| `mcp_server_ids` | External MCP servers assigned to the agent |
+| `mcp_servers` | External MCP server names assigned to the agent |
 | `prompt_locked` | Indicates whether prompt updates should be blocked by platform tooling |
 | `heartbeat` | Optional recurring agent heartbeat schedule metadata |
 
@@ -88,7 +88,7 @@ A routine manifest is a graph:
 |------|-----------------|
 | `trigger` | `task` or `cron` |
 | `metadata.schedule` | Schedule expression for cron-triggered routines |
-| `metadata.entry_step_ids` | Explicit entry points when present |
+| `metadata.entry_steps` | Explicit entry step slugs when present |
 | `steps` | Agent, council, cron, gate, terminal, and terminal-fail nodes |
 | `edges` | Directed connections between steps |
 | `edge.condition` | `always`, `on_pass`, or `on_fail` |

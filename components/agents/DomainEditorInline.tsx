@@ -9,6 +9,7 @@ import {
 import { useAbilities, useMcpServers, useContextBlocks } from "@/lib/hooks";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference } from "./TemplateVariableReference";
+import { LibraryReferenceList } from "./LibraryReferenceList";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
 import { Button } from "@/components/ui/Button";
 import { SourceManagedResourcePanel } from "@/components/resources/SourceManagedResourcePanel";
@@ -32,7 +33,7 @@ const TABS: { id: TabId; label: string }[] = [
 // Prompt sub-sections
 // ---------------------------------------------------------------------------
 
-// Prompt section is just system_addon (guidance) — no entry/exit messages.
+// Prompt section is just developer_prompt_addon (guidance) — no entry/exit messages.
 
 // ---------------------------------------------------------------------------
 // Main inline editor
@@ -90,14 +91,14 @@ function EditableDomainEditorInline({
 
   // Local editable prompt state
   const [systemAddon, setSystemAddon] = useState(
-    domain.manifest?.prompt?.system_addon ?? "",
+    domain.manifest?.prompt?.developer_prompt_addon ?? "",
   );
 
   // Reset when domain changes
   useEffect(() => {
     setDisplayName(domain.display_name ?? "");
     setManifest(domain.manifest ?? null);
-    setSystemAddon(domain.manifest?.prompt?.system_addon ?? "");
+    setSystemAddon(domain.manifest?.prompt?.developer_prompt_addon ?? "");
     setActiveTab("prompt");
     setError(null);
     setSaved(false);
@@ -110,7 +111,7 @@ function EditableDomainEditorInline({
         const nextManifest = await fetchDomainManifest(domain.id);
         if (cancelled) return;
         setManifest(nextManifest);
-        setSystemAddon(nextManifest.prompt?.system_addon ?? "");
+        setSystemAddon(nextManifest.prompt?.developer_prompt_addon ?? "");
       } catch (e) {
         if (!cancelled) {
           setError(
@@ -147,7 +148,7 @@ function EditableDomainEditorInline({
       const nextManifest: DomainManifest = { ...currentManifest };
       nextManifest.prompt = {
         ...nextManifest.prompt,
-        system_addon: systemAddon,
+        developer_prompt_addon: systemAddon,
       };
       const savedManifest = await updateDomainManifest(domain.id, nextManifest);
       setManifest(savedManifest);
@@ -253,7 +254,7 @@ function EditableDomainEditorInline({
         {TABS.map((tab) => {
           const scopeCount = manifest?.platform_scopes?.length ?? 0;
           const abilityCount = manifest?.abilities?.length ?? 0;
-          const mcpCount = manifest?.mcp_server_ids?.length ?? 0;
+          const mcpCount = manifest?.mcp_servers?.length ?? 0;
           return (
             <button
               key={tab.id}
@@ -514,7 +515,7 @@ function TabbedReferencePanel({
 }: {
   onInsertVariable: (text: string) => void;
 }) {
-  const [tab, setTab] = useState<"blocks" | "variables">("blocks");
+  const [tab, setTab] = useState<"variables" | "blocks" | "library">("variables");
   const panel = useResizablePanel(320, 240, 560);
   const { contextBlocks } = useContextBlocks();
 
@@ -534,17 +535,6 @@ function TabbedReferencePanel({
         <div className="theme-border flex shrink-0 border-b">
           <button
             type="button"
-            onClick={() => setTab("blocks")}
-            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-              tab === "blocks"
-                ? "theme-text border-b-2 border-[var(--app-border-strong)]"
-                : "theme-text-muted hover:[color:var(--app-text)]"
-            }`}
-          >
-            Blocks
-          </button>
-          <button
-            type="button"
             onClick={() => setTab("variables")}
             className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
               tab === "variables"
@@ -552,13 +542,42 @@ function TabbedReferencePanel({
                 : "theme-text-muted hover:[color:var(--app-text)]"
             }`}
           >
-            Variables
+            Vars
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("blocks")}
+            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+              tab === "blocks"
+                ? "theme-text border-b-2 border-[var(--app-border-strong)]"
+                : "theme-text-muted hover:[color:var(--app-text)]"
+            }`}
+          >
+            Context Blocks
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("library")}
+            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+              tab === "library"
+                ? "theme-text border-b-2 border-[var(--app-border-strong)]"
+                : "theme-text-muted hover:[color:var(--app-text)]"
+            }`}
+          >
+            Library
           </button>
         </div>
 
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto p-2">
-          {tab === "blocks" ? (
+          {tab === "variables" ? (
+            <div className="p-2">
+              <TemplateVariableReference
+                onInsertVariable={onInsertVariable}
+                flatVarsOnly
+              />
+            </div>
+          ) : tab === "blocks" ? (
             <>
               <p className="theme-text-muted mb-2 px-1 text-[10px]">
                 Click a block to insert at cursor.
@@ -579,12 +598,7 @@ function TabbedReferencePanel({
               )}
             </>
           ) : (
-            <div className="p-2">
-              <TemplateVariableReference
-                onInsertVariable={onInsertVariable}
-                flatVarsOnly
-              />
-            </div>
+            <LibraryReferenceList onInsertVariable={onInsertVariable} />
           )}
         </div>
       </div>
@@ -600,7 +614,7 @@ async function updateDomainAssignments(
   domainId: string,
   manifest: DomainManifest | null,
   manifestUpdate: Partial<
-    Pick<DomainManifest, "platform_scopes" | "abilities" | "mcp_server_ids">
+    Pick<DomainManifest, "platform_scopes" | "abilities" | "mcp_servers">
   >,
   onManifestChange: (manifest: DomainManifest) => void,
   onSaved: () => void,
@@ -617,10 +631,10 @@ async function updateDomainAssignments(
       savedDomain.manifest?.abilities ??
       manifestUpdate.abilities ??
       manifest.abilities,
-    mcp_server_ids:
-      savedDomain.manifest?.mcp_server_ids ??
-      manifestUpdate.mcp_server_ids ??
-      manifest.mcp_server_ids,
+    mcp_servers:
+      savedDomain.manifest?.mcp_servers ??
+      manifestUpdate.mcp_servers ??
+      manifest.mcp_servers,
   };
   onManifestChange(nextManifest);
   onSaved();
@@ -760,7 +774,7 @@ function McpTab({
 }) {
   const { mcpServers, isLoading } = useMcpServers();
   const [saving, setSaving] = useState(false);
-  const activeMcp = new Set(manifest?.mcp_server_ids ?? []);
+  const activeMcp = new Set(manifest?.mcp_servers ?? []);
 
   const externalServers =
     mcpServers?.filter((s: McpServer) => !s.is_system) ?? [];
@@ -769,14 +783,14 @@ function McpTab({
     if (saving) return;
     setSaving(true);
     try {
-      const current = manifest?.mcp_server_ids ?? [];
-      const next = activeMcp.has(server.id)
-        ? current.filter((id) => id !== server.id)
-        : [...current, server.id];
+      const current = manifest?.mcp_servers ?? [];
+      const next = activeMcp.has(server.name)
+        ? current.filter((slug) => slug !== server.name)
+        : [...current, server.name];
       await updateDomainAssignments(
         domainId,
         manifest,
-        { mcp_server_ids: next },
+        { mcp_servers: next },
         onManifestChange,
         onSaved,
       );
@@ -799,7 +813,7 @@ function McpTab({
           label={server.display_name}
           sublabel={server.description ?? undefined}
           badge={server.transport}
-          isOn={activeMcp.has(server.id)}
+          isOn={activeMcp.has(server.name)}
           isProcessing={saving}
           onToggle={() => handleToggle(server)}
         />

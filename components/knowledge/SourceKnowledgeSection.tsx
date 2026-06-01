@@ -13,6 +13,7 @@ import type { KnowledgePack } from "@/lib/types";
 
 interface SourceKnowledgeDoc {
   id?: string;
+  selector?: string;
   path?: string;
   source_path: string;
   title?: string;
@@ -58,22 +59,22 @@ export function SourceKnowledgeSection({ pack }: { pack: KnowledgePack }) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [contentLoad, setContentLoad] = useState<{ url: string; content: string | null; error: string | null } | null>(null);
   const [activeView, setActiveView] = useState<"documents" | "graph">("documents");
+  const expectedManifestUrl = source
+    ? repoRawUrl(source, source.manifestPath)
+    : null;
 
   useEffect(() => {
     if (!source) return;
     let cancelled = false;
-    const packageUrl = rawUrl(source, "package.yaml");
-    setManifestLoad({ url: packageUrl, manifest: null, error: null });
+    const manifestUrl = repoRawUrl(source, source.manifestPath);
 
-    fetchText(packageUrl)
-      .then((text) => parseStructuredText<SourceKnowledgePackage>(text))
-      .catch(() => ({ entry: source.manifestPath }) satisfies SourceKnowledgePackage)
-      .then(async (pkg) => {
-        const entry = pkg.entry?.trim() || source.manifestPath;
-        const url = rawUrl(source, entry);
-        const text = await fetchText(url);
+    fetchText(manifestUrl)
+      .then((text) => {
         const rawManifest = parseStructuredText<SourceKnowledgeManifest>(text);
-        return { url, manifest: normalizeSourceKnowledgeManifest(rawManifest, pkg) };
+        return {
+          url: manifestUrl,
+          manifest: normalizeSourceKnowledgeManifest(rawManifest, {}),
+        };
       })
       .then(({ url, manifest: nextManifest }) => {
         if (cancelled) return;
@@ -87,7 +88,7 @@ export function SourceKnowledgeSection({ pack }: { pack: KnowledgePack }) {
       .catch((err) => {
         if (!cancelled) {
           setManifestLoad({
-            url: packageUrl,
+            url: manifestUrl,
             manifest: null,
             error: err instanceof Error ? err.message : "Failed to load source manifest",
           });
@@ -98,8 +99,10 @@ export function SourceKnowledgeSection({ pack }: { pack: KnowledgePack }) {
     };
   }, [source]);
 
-  const manifest = manifestLoad?.manifest ?? null;
-  const manifestError = manifestLoad?.error ?? null;
+  const manifestForSource =
+    manifestLoad?.url === expectedManifestUrl ? manifestLoad : null;
+  const manifest = manifestForSource?.manifest ?? null;
+  const manifestError = manifestForSource?.error ?? null;
   const docs = manifest?.docs ?? [];
   const selectedDoc = docs.find((doc) => doc.source_path === selectedPath) ?? null;
 
@@ -281,22 +284,91 @@ function ViewToggle({ activeView, onChange }: { activeView: "documents" | "graph
 }
 
 function sourceInfo(pack: KnowledgePack): SourceKnowledgeInfo | null {
-  const owner = metadataText(pack.metadata, ["source", "owner"]);
-  const repo = metadataText(pack.metadata, ["source", "repo"]);
-  const basePath = metadataText(pack.metadata, ["source", "path"]);
-  const manifestPath = metadataText(pack.metadata, ["distribution", "manifest_path"]) ?? "manifest.yaml";
+  const parsedSourceUrl = parseGitHubRepoUrl(
+    metadataText(pack.metadata, ["source", "url"]),
+  );
+  const owner =
+    metadataText(pack.metadata, ["source", "owner"]) ?? parsedSourceUrl?.owner;
+  const repo =
+    metadataText(pack.metadata, ["source", "repo"]) ?? parsedSourceUrl?.repo;
+  const installedManifestPath = metadataText(pack.metadata, [
+    "install",
+    "source_path",
+  ]);
+  const sourcePath = metadataText(pack.metadata, ["source", "path"]);
+  const distributionManifestPath =
+    metadataText(pack.metadata, ["distribution", "manifest_path"]) ??
+    metadataText(pack.metadata, ["package", "manifest_path"]);
+  const manifestPath =
+    installedManifestPath ??
+    joinPath(sourcePath, distributionManifestPath) ??
+    sourcePath;
   const ref =
     metadataText(pack.metadata, ["version", "resolved_commit_sha"]) ??
     metadataText(pack.metadata, ["version", "requested_ref"]) ??
     metadataText(pack.metadata, ["version", "ref"]) ??
     "main";
-  if (!owner || !repo || !basePath) return null;
-  return { owner, repo, ref, basePath: basePath.replace(/^\/+|\/+$/g, ""), manifestPath };
+  if (!owner || !repo || !manifestPath) return null;
+  return {
+    owner,
+    repo,
+    ref,
+    basePath: dirname(manifestPath),
+    manifestPath: cleanPath(manifestPath),
+  };
 }
 
 function rawUrl(source: SourceKnowledgeInfo, relativePath: string): string {
-  const path = `${source.basePath}/${relativePath.replace(/^\/+/, "")}`;
+  const path = joinPath(source.basePath, relativePath) ?? cleanPath(relativePath);
+  return repoRawUrl(source, path);
+}
+
+function repoRawUrl(source: SourceKnowledgeInfo, path: string): string {
   return `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.ref}/${path}`;
+}
+
+function parseGitHubRepoUrl(
+  value: string | null,
+): { owner: string; repo: string } | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.replace(/\.git$/, "").replace(/\/+$/, "");
+  const ssh = normalized.match(/^git@github\.com:([^/]+)\/(.+)$/);
+  if (ssh) return { owner: ssh[1], repo: ssh[2] };
+  try {
+    const url = new URL(normalized);
+    if (url.hostname !== "github.com" && url.hostname !== "www.github.com")
+      return null;
+    const [owner, repo] = url.pathname.split("/").filter(Boolean);
+    return owner && repo ? { owner, repo } : null;
+  } catch {
+    const shorthand = normalized.match(/^([^/\s]+)\/([^/\s]+)$/);
+    return shorthand ? { owner: shorthand[1], repo: shorthand[2] } : null;
+  }
+}
+
+function cleanPath(path: string): string {
+  return path.replace(/^\/+|\/+$/g, "");
+}
+
+function joinPath(
+  base: string | null | undefined,
+  path: string | null | undefined,
+): string | null {
+  const cleanBase = base ? cleanPath(base) : "";
+  const cleanChild = path ? cleanPath(path) : "";
+  if (!cleanBase && !cleanChild) return null;
+  if (!cleanBase) return cleanChild;
+  if (!cleanChild) return cleanBase;
+  if (cleanChild === cleanBase || cleanChild.startsWith(`${cleanBase}/`))
+    return cleanChild;
+  return `${cleanBase}/${cleanChild}`;
+}
+
+function dirname(path: string): string {
+  const clean = cleanPath(path);
+  const index = clean.lastIndexOf("/");
+  return index === -1 ? "" : clean.slice(0, index);
 }
 
 async function fetchText(url: string): Promise<string> {

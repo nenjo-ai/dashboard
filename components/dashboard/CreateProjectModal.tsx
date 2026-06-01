@@ -13,6 +13,15 @@ interface CreateProjectModalProps {
   onCreated: () => void;
 }
 
+function projectSlug(value: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return slug || "project";
+}
+
 export function CreateProjectModal({
   open,
   onClose,
@@ -52,6 +61,7 @@ export function CreateProjectModal({
     try {
       const data: CreateProjectRequest = {
         name: name.trim(),
+        slug: projectSlug(name),
         description: description.trim() || undefined,
       };
       const project = await createProject(data);

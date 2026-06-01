@@ -18,7 +18,7 @@ interface DomainFormModalProps {
 
 const DEFAULT_MANIFEST: DomainManifest = {
   prompt: {
-    system_addon: "",
+    developer_prompt_addon: "",
   },
 };
 

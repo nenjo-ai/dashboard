@@ -5,6 +5,7 @@ import { fetchAbilityPrompt, updateAbility, updateAbilityPrompt } from "@/lib/ap
 import { useMcpServers, useContextBlocks } from "@/lib/hooks";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference } from "./TemplateVariableReference";
+import { LibraryReferenceList } from "./LibraryReferenceList";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
 import { Button } from "@/components/ui/Button";
 import { SourceManagedResourcePanel } from "@/components/resources/SourceManagedResourcePanel";
@@ -192,8 +193,8 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
             }`}
           >
             {tab.label}
-            {tab.id === "mcp" && ability.mcp_server_ids.length > 0 && (
-              <span className="theme-surface-muted ml-1 rounded-full px-1 text-[9px]">{ability.mcp_server_ids.length}</span>
+            {tab.id === "mcp" && ability.mcp_servers.length > 0 && (
+              <span className="theme-surface-muted ml-1 rounded-full px-1 text-[9px]">{ability.mcp_servers.length}</span>
             )}
             {tab.id === "scopes" && ability.platform_scopes.length > 0 && (
               <span className="theme-surface-muted ml-1 rounded-full px-1 text-[9px]">{ability.platform_scopes.length}</span>
@@ -252,9 +253,9 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
 function ManagedAbilityDetails({ ability }: { ability: Ability }) {
   const { mcpServers, isLoading } = useMcpServers();
   const attachedServers = useMemo(() => {
-    const assigned = new Set(ability.mcp_server_ids);
-    return (mcpServers ?? []).filter((server) => assigned.has(server.id));
-  }, [ability.mcp_server_ids, mcpServers]);
+    const assigned = new Set(ability.mcp_servers);
+    return (mcpServers ?? []).filter((server) => assigned.has(server.name));
+  }, [ability.mcp_servers, mcpServers]);
 
   if (ability.read_only && ability.source_type !== "skill") {
     return (
@@ -267,7 +268,7 @@ function ManagedAbilityDetails({ ability }: { ability: Ability }) {
           description: ability.description,
           activation_condition: ability.activation_condition,
           platform_scopes: ability.platform_scopes,
-          mcp_server_ids: ability.mcp_server_ids,
+          mcp_servers: ability.mcp_servers,
         }, null, 2)}
         fallbackLanguage="yaml"
       />
@@ -476,7 +477,7 @@ function BlockTreeNodeView({ node, depth, onInsert }: { node: BlockTreeNode; dep
 }
 
 function TabbedReferencePanel({ onInsertVariable }: { onInsertVariable: (text: string) => void }) {
-  const [tab, setTab] = useState<"blocks" | "variables">("blocks");
+  const [tab, setTab] = useState<"variables" | "blocks" | "library">("variables");
   const panel = useResizablePanel(320, 240, 560);
   const { contextBlocks } = useContextBlocks();
 
@@ -490,17 +491,6 @@ function TabbedReferencePanel({ onInsertVariable }: { onInsertVariable: (text: s
         <div className="theme-border flex shrink-0 border-b">
           <button
             type="button"
-            onClick={() => setTab("blocks")}
-            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-              tab === "blocks"
-                ? "theme-text border-b-2 border-[var(--app-border-strong)]"
-                : "theme-text-muted hover:[color:var(--app-text)]"
-            }`}
-          >
-            Blocks
-          </button>
-          <button
-            type="button"
             onClick={() => setTab("variables")}
             className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
               tab === "variables"
@@ -508,13 +498,39 @@ function TabbedReferencePanel({ onInsertVariable }: { onInsertVariable: (text: s
                 : "theme-text-muted hover:[color:var(--app-text)]"
             }`}
           >
-            Variables
+            Vars
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("blocks")}
+            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+              tab === "blocks"
+                ? "theme-text border-b-2 border-[var(--app-border-strong)]"
+                : "theme-text-muted hover:[color:var(--app-text)]"
+            }`}
+          >
+            Context Blocks
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("library")}
+            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+              tab === "library"
+                ? "theme-text border-b-2 border-[var(--app-border-strong)]"
+                : "theme-text-muted hover:[color:var(--app-text)]"
+            }`}
+          >
+            Library
           </button>
         </div>
 
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto p-2">
-          {tab === "blocks" ? (
+          {tab === "variables" ? (
+            <div className="p-2">
+              <TemplateVariableReference onInsertVariable={onInsertVariable} flatVarsOnly />
+            </div>
+          ) : tab === "blocks" ? (
             <>
               <p className="theme-text-muted mb-2 px-1 text-[10px]">
                 Click a block to insert at cursor.
@@ -528,9 +544,7 @@ function TabbedReferencePanel({ onInsertVariable }: { onInsertVariable: (text: s
               )}
             </>
           ) : (
-            <div className="p-2">
-              <TemplateVariableReference onInsertVariable={onInsertVariable} flatVarsOnly />
-            </div>
+            <LibraryReferenceList onInsertVariable={onInsertVariable} />
           )}
         </div>
       </div>
@@ -545,17 +559,17 @@ function TabbedReferencePanel({ onInsertVariable }: { onInsertVariable: (text: s
 function McpTab({ ability, onSaved }: { ability: Ability; onSaved: () => void }) {
   const { mcpServers, isLoading } = useMcpServers();
   const [toggling, setToggling] = useState<string | null>(null);
-  const assignedIds = new Set(ability.mcp_server_ids);
+  const assignedIds = new Set(ability.mcp_servers);
 
   const handleToggle = async (server: McpServer) => {
     if (toggling) return;
-    setToggling(server.id);
+    setToggling(server.name);
     try {
-      const newIds = assignedIds.has(server.id)
-        ? ability.mcp_server_ids.filter((id) => id !== server.id)
-        : [...ability.mcp_server_ids, server.id];
-      await updateAbility(ability.id, { mcp_server_ids: newIds });
-      ability.mcp_server_ids = newIds;
+      const newSlugs = assignedIds.has(server.name)
+        ? ability.mcp_servers.filter((slug) => slug !== server.name)
+        : [...ability.mcp_servers, server.name];
+      await updateAbility(ability.id, { mcp_servers: newSlugs });
+      ability.mcp_servers = newSlugs;
       onSaved();
     } catch { /* */ } finally { setToggling(null); }
   };
@@ -574,8 +588,8 @@ function McpTab({ ability, onSaved }: { ability: Ability; onSaved: () => void })
           label={server.display_name}
           sublabel={server.description ?? undefined}
           badge={server.transport}
-          isOn={assignedIds.has(server.id)}
-          isProcessing={toggling === server.id}
+          isOn={assignedIds.has(server.name)}
+          isProcessing={toggling === server.name}
           onToggle={() => handleToggle(server)}
         />
       ))}

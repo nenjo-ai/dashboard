@@ -45,7 +45,7 @@ Use the developer prompt for guidance that is important but more likely to evolv
 - Team conventions
 - Tool-use preferences
 - Review or implementation methodology
-- How to interpret project documents
+- How to interpret available knowledge and artifacts
 - When to delegate or use abilities
 
 This is usually where most day-to-day behavior tuning belongs.
@@ -57,7 +57,7 @@ Templates are the runtime wrappers around the current situation.
 | Template | Typical contents |
 |----------|------------------|
 | Chat | `{{ chat.message }}`, relevant context blocks, and conversational instructions |
-| Task | `{{ task }}`, `{{ project }}`, `{{ project.documents }}`, git context, and acceptance criteria |
+| Task | `{{ task }}`, `{{ project }}`, `{{ project.context }}`, git context, and acceptance criteria |
 | Gate | `{{ gate.criteria }}` and `{{ gate.previous_output }}` |
 | Cron | Routine metadata and instructions for scheduled work |
 | Heartbeat | Previous output, last run time, and next run time |
@@ -110,6 +110,6 @@ Task:
 Project:
 {{ project }}
 
-Project documents:
-{{ project.documents }}
+Project context:
+{{ project.context }}
 ```
