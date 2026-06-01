@@ -18,6 +18,15 @@ import { DomainIndicator } from "@/components/project/DomainIndicator";
 import { PendingDomainPill } from "@/components/project/PendingDomainPill";
 import ChatSessionList from "@/components/project/ChatSessionList";
 
+const NENJI_AGENT_SLUG = "nenji";
+
+function isNenjiAgent(agent: AgentDefinition): boolean {
+  return (
+    agent.slug === NENJI_AGENT_SLUG ||
+    agent.name === NENJI_AGENT_SLUG ||
+    agent.display_name?.toLowerCase() === NENJI_AGENT_SLUG
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -168,11 +177,11 @@ export function SystemChat() {
   const { agents: allAgentDefs } = useAgents();
   const { domains: allDomains } = useDomains();
 
-  // Find the system agent (the one with name === 'system' that has a model assigned)
+  // Find Nenji, the default platform assistant, once a model is assigned.
   const systemAgent = useMemo(
     () =>
       allAgentDefs?.find(
-        (a: AgentDefinition) => a.name === "system" && a.model_id,
+        (agent: AgentDefinition) => isNenjiAgent(agent) && agent.model_id,
       ),
     [allAgentDefs],
   );
@@ -180,13 +189,13 @@ export function SystemChat() {
   const systemAgentId = systemAgent?.id;
   const { agentDomains } = useAgentDomains(systemAgentId);
 
-  // Available domains for the system agent
+  // Available domains for the platform assistant.
   const availableDomains = useMemo(() => {
-    if (!agentDomains || !allDomains) return [];
+    if (!agentDomains) return [];
     return agentDomains
       .filter((rm) => rm.enabled)
-      .map((rm) => allDomains.find((m) => m.id === rm.domain_id))
-      .filter(Boolean) as NonNullable<(typeof allDomains)[number]>[];
+      .map((rm) => rm.domain ?? allDomains?.find((m) => m.id === rm.domain_id))
+      .filter((domain): domain is Domain => Boolean(domain));
   }, [agentDomains, allDomains]);
 
   // General chat is projectless and uses the worker's root workspace.
@@ -357,10 +366,10 @@ export function SystemChat() {
           </svg>
         </div>
         <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-          System Assistant
+          Nenji
         </h3>
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          Assign a model to the <strong>system</strong> agent to enable the platform assistant.
+          Assign a model to <strong>Nenji</strong> to enable the platform assistant.
         </p>
       </div>
     );
@@ -376,7 +385,7 @@ export function SystemChat() {
         )}
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-            System Assistant
+            Nenji
           </h3>
         </div>
         {chat.isTyping && (
@@ -412,7 +421,7 @@ export function SystemChat() {
             <p className="text-xs text-gray-400 dark:text-gray-500">
               Ask me about your platform setup, routine design, prompt engineering, or type{" "}
               <code className="rounded-sm bg-gray-100 px-1 py-0.5 font-mono text-violet-600 dark:bg-gray-700 dark:text-violet-400">
-                /the-creator
+                #creator
               </code>{" "}
               to modify resources.
             </p>

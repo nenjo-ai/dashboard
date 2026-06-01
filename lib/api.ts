@@ -327,7 +327,6 @@ function isCatalogUrl(url: string): boolean {
   if (/\/api\/v1\/knowledge\/[^/]+\/items$/.test(url)) return true;
   if (/\/api\/v1\/knowledge\/[^/]+\/items\/[^/]+\/edges$/.test(url))
     return true;
-  if (/\/api\/v1\/marketplaces$/.test(url)) return true;
   return [
     agentsUrl(),
     domainsUrl(),
@@ -520,11 +519,6 @@ function invalidateMcpServersCatalogCache(): void {
   clearCatalogCache(mcpServersUrl());
 }
 
-function invalidateMarketplacesCatalogCache(sourceId?: string): void {
-  clearCatalogCache(marketplaceSourcesUrl());
-  void sourceId;
-}
-
 function invalidatePackageCatalogCache(sourceId?: string): void {
   clearCatalogCacheMatching((url) => {
     if (url === packageSourcesUrl() || url === packageInstallsUrl())
@@ -586,8 +580,21 @@ async function decryptProjectSettings(project: Project): Promise<Project> {
   };
 }
 
+type EncryptedResourceSelector = {
+  resourceRef: string;
+  objectId: string;
+};
+
+function normalizeEncryptedResourceSelector(
+  selector: string | EncryptedResourceSelector,
+): EncryptedResourceSelector {
+  return typeof selector === "string"
+    ? { resourceRef: selector, objectId: selector }
+    : selector;
+}
+
 async function encryptProjectSettingsForWrite(
-  projectId: string,
+  objectId: string,
   settings: ProjectSettingsPayload,
 ): Promise<{
   settings: ProjectSettingsPayload;
@@ -610,7 +617,7 @@ async function encryptProjectSettingsForWrite(
     settings: next,
     encrypted_payload: Object.keys(sensitiveSettings).length
       ? await encryptOrgJsonPayload({
-          objectId: projectId,
+          objectId,
           objectType: "project.settings",
           value: sensitiveSettings,
           label: "Project settings",
@@ -658,12 +665,13 @@ export async function deleteProject(id: string): Promise<void> {
 }
 
 export async function updateProject(
-  id: string,
+  selector: string | EncryptedResourceSelector,
   data: Partial<Pick<Project, "name" | "description" | "settings">>,
 ): Promise<Project> {
+  const { resourceRef, objectId } = normalizeEncryptedResourceSelector(selector);
   const encryptedSettings = data.settings
     ? await encryptProjectSettingsForWrite(
-        id,
+        objectId,
         data.settings as ProjectSettingsPayload,
       )
     : undefined;
@@ -672,7 +680,7 @@ export async function updateProject(
     settings: encryptedSettings?.settings,
     encrypted_payload: encryptedSettings?.encrypted_payload,
   };
-  const res = await authFetch(projectUrl(id), {
+  const res = await authFetch(projectUrl(resourceRef), {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
@@ -1192,87 +1200,6 @@ export async function installKnowledgePack(
 }
 
 // ---------------------------------------------------------------------------
-// Marketplaces
-// ---------------------------------------------------------------------------
-
-export function marketplaceSourcesUrl(): string {
-  return `${API_V1}/marketplaces`;
-}
-
-export function marketplaceSourceUrl(sourceId: string): string {
-  return `${marketplaceSourcesUrl()}/${sourceId}`;
-}
-
-export function marketplaceClaudePluginInstallUrl(sourceId: string): string {
-  return `${marketplaceSourcesUrl()}/${sourceId}/install/claude-plugin`;
-}
-
-export async function fetchMarketplaceSources(): Promise<
-  import("./types").MarketplaceSource[]
-> {
-  return catalogFetcher(marketplaceSourcesUrl());
-}
-
-export async function createMarketplaceSource(
-  data: import("./types").CreateMarketplaceSourceRequest,
-): Promise<import("./types").MarketplaceSource> {
-  const res = await authFetch(marketplaceSourcesUrl(), {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-  const source = (await res.json()) as import("./types").MarketplaceSource;
-  invalidateMarketplacesCatalogCache();
-  return source;
-}
-
-export async function updateMarketplaceSource(
-  sourceId: string,
-  data: import("./types").UpdateMarketplaceSourceRequest,
-): Promise<import("./types").MarketplaceSource> {
-  const res = await authFetch(marketplaceSourceUrl(sourceId), {
-    method: "PATCH",
-    body: JSON.stringify(data),
-  });
-  const source = (await res.json()) as import("./types").MarketplaceSource;
-  invalidateMarketplacesCatalogCache(sourceId);
-  return source;
-}
-
-export async function deleteMarketplaceSource(sourceId: string): Promise<void> {
-  await authFetch(marketplaceSourceUrl(sourceId), { method: "DELETE" });
-  invalidateMarketplacesCatalogCache(sourceId);
-}
-
-export function marketplacePluginInstallUrl(mcpServerId: string): string {
-  return `${marketplaceSourcesUrl()}/plugin-installs/${mcpServerId}`;
-}
-
-export async function uninstallPluginInstall(
-  mcpServerId: string,
-): Promise<void> {
-  await authFetch(marketplacePluginInstallUrl(mcpServerId), {
-    method: "DELETE",
-  });
-  invalidateAbilitiesCatalogCache();
-  invalidateMcpServersCatalogCache();
-}
-
-export async function installClaudePlugin(
-  sourceId: string,
-  data: import("./types").InstallClaudePluginRequest,
-): Promise<import("./types").InstallClaudePluginResponse> {
-  const res = await authFetch(marketplaceClaudePluginInstallUrl(sourceId), {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-  const install =
-    (await res.json()) as import("./types").InstallClaudePluginResponse;
-  invalidateAbilitiesCatalogCache();
-  invalidateMcpServersCatalogCache();
-  return install;
-}
-
-// ---------------------------------------------------------------------------
 // Packages
 // ---------------------------------------------------------------------------
 
@@ -1294,6 +1221,12 @@ export function packageInstallsUrl(): string {
 
 export function packageInstallUrl(installId: string): string {
   return `${packageInstallsUrl()}/${installId}`;
+}
+
+export async function fetchPackageInstallDetail(
+  installId: string,
+): Promise<import("./types").PackageInstallDetail> {
+  return catalogFetcher(packageInstallUrl(installId));
 }
 
 export async function fetchPackageSources(): Promise<
@@ -1322,11 +1255,27 @@ const OFFICIAL_NENJO_PACKAGE_SOURCE = {
     source: {
       kind: "git",
       url: "https://github.com/nenjo-ai/packages.git",
-      reference: "feature/platform-knowledge",
+      reference: "feat/v2",
       manifest_path: "packages.yaml",
     },
   },
 };
+
+function officialNenjoPackageSourceNeedsUpdate(
+  source: import("./types").PackageSource,
+): boolean {
+  const metadata = source.metadata ?? {};
+  const packageSource = metadata.source as Record<string, unknown> | undefined;
+  return (
+    source.status !== "active" ||
+    packageSource?.kind !== OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.source.kind ||
+    packageSource?.url !== OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.source.url ||
+    packageSource?.reference !==
+      OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.source.reference ||
+    (packageSource?.manifest_path ?? "packages.yaml") !==
+      OFFICIAL_NENJO_PACKAGE_SOURCE.metadata.source.manifest_path
+  );
+}
 
 function isOfficialNenjoPackageSource(
   source: import("./types").PackageSource,
@@ -1351,7 +1300,7 @@ export async function ensureOfficialNenjoPackageSource(): Promise<
     isOfficialNenjoPackageSource,
   );
   if (existing) {
-    if (existing.status !== "active") {
+    if (officialNenjoPackageSourceNeedsUpdate(existing)) {
       return updatePackageSource(existing.id, {
         status: "active",
         metadata: {
@@ -1408,15 +1357,32 @@ export async function installPackage(
   return install;
 }
 
+export async function updatePackageInstall(
+  installId: string,
+): Promise<import("./types").PackageInstallDetail> {
+  const res = await authFetch(`${packageInstallUrl(installId)}/update`, {
+    method: "POST",
+  });
+  const install = (await res.json()) as import("./types").PackageInstallDetail;
+  invalidateKnowledgeCatalogCache();
+  invalidateAbilitiesCatalogCache();
+  invalidateAgentsCatalogCache();
+  return install;
+}
+
+export async function uninstallPackageInstall(installId: string): Promise<void> {
+  await authFetch(packageInstallUrl(installId), { method: "DELETE" });
+  invalidatePackageCatalogCache();
+  invalidateKnowledgeCatalogCache();
+  invalidateAbilitiesCatalogCache();
+  invalidateAgentsCatalogCache();
+}
+
 export async function installOfficialNenjoPackages(): Promise<void> {
   const source = await ensureOfficialNenjoPackageSource();
   await installPackage({
     source_id: source.id,
-    path: "nenjo/core.package.yaml",
-  });
-  await installPackage({
-    source_id: source.id,
-    path: "nenjo/nenji.package.yaml",
+    path: "nenjo/nenji/package.yaml",
   });
 }
 
@@ -1480,9 +1446,10 @@ export async function uploadKnowledgeItem(
       400,
     );
   }
+  const itemId = crypto.randomUUID();
   const encryptedPayload = await encryptOrgContentPayload({
     orgId: currentUser.org_id,
-    objectId: crypto.randomUUID(),
+    objectId: itemId,
     objectType: "manifest.document.content",
     plaintext: JSON.stringify(await file.text()),
   });
@@ -1498,6 +1465,7 @@ export async function uploadKnowledgeItem(
 
   const form = new FormData();
   form.append("file", uploadFile, file.name);
+  form.append("item_id", itemId);
   form.append("encrypted_payload", JSON.stringify(encryptedPayload));
 
   const appendOptional = (key: string, value: string | undefined | null) => {
@@ -1524,22 +1492,39 @@ export async function uploadKnowledgeItem(
   return item;
 }
 
+export interface CreateKnowledgeItemMetadata {
+  filename: string;
+  path?: string | null;
+  title?: string | null;
+  kind?: string | null;
+  summary?: string | null;
+  tags?: string[];
+}
+
 export async function createKnowledgeItem(
   packId: string,
+  metadata: CreateKnowledgeItemMetadata,
 ): Promise<import("./types").KnowledgeItem> {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const suffix = crypto.randomUUID().slice(0, 8);
-  const title = "Untitled knowledge";
-  const slug = `untitled-${timestamp}-${suffix}`.toLowerCase();
-  const filename = `${slug}.md`;
-  const file = new File([`# ${title}\n\n`], filename, {
-    type: "text/markdown",
-  });
+  const filename = metadata.filename.trim();
+  if (!filename) {
+    throw new ApiError("Filename cannot be empty.", 400);
+  }
+  const title = metadata.title?.trim() || filename.replace(/\.[^/.]+$/, "");
+  const summary = metadata.summary?.trim();
+  const file = new File(
+    [`# ${title}\n${summary ? `\n${summary}\n` : "\n"}`],
+    filename,
+    {
+      type: "text/markdown",
+    },
+  );
 
   return uploadKnowledgeItem(packId, file, {
-    slug,
     title,
-    kind: "guide",
+    path: metadata.path,
+    kind: metadata.kind,
+    summary: metadata.summary,
+    tags: metadata.tags,
   });
 }
 
@@ -1626,7 +1611,8 @@ export async function fetchKnowledgeItemContent(
 
 export async function updateKnowledgeItemContent(
   packId: string,
-  itemId: string,
+  itemRef: string,
+  objectId: string,
   content: string,
 ): Promise<import("./types").KnowledgeItem> {
   const currentUser = await fetchCurrentUser();
@@ -1638,7 +1624,7 @@ export async function updateKnowledgeItemContent(
   }
   const encryptedPayload = await encryptOrgContentPayload({
     orgId: currentUser.org_id,
-    objectId: itemId,
+    objectId,
     objectType: "manifest.document.content",
     plaintext: JSON.stringify(content),
   });
@@ -1648,13 +1634,13 @@ export async function updateKnowledgeItemContent(
       409,
     );
   }
-  const res = await authFetch(knowledgeItemContentUrl(packId, itemId), {
+  const res = await authFetch(knowledgeItemContentUrl(packId, itemRef), {
     method: "PUT",
     body: JSON.stringify({ encrypted_payload: encryptedPayload }),
   });
 
   const item = (await res.json()) as import("./types").KnowledgeItem;
-  invalidateKnowledgeItemCache(packId, itemId);
+  invalidateKnowledgeItemCache(packId, itemRef);
   return item;
 }
 
@@ -1725,7 +1711,7 @@ export async function createKnowledgeItemEdge(
   packId: string,
   itemId: string,
   data: Pick<import("./types").KnowledgeItemEdge, "edge_type"> & {
-    target_item_id: string;
+    target_doc: string;
     note?: string | null;
   },
 ): Promise<import("./types").KnowledgeItemEdge> {
@@ -1737,7 +1723,7 @@ export async function createKnowledgeItemEdge(
   const edge = (await res.json()) as import("./types").KnowledgeItemEdge;
   invalidateKnowledgeCatalogCache(packId);
   clearCatalogCache(knowledgeItemEdgesUrl(packId, itemId));
-  clearCatalogCache(knowledgeItemEdgesUrl(packId, edge.target_item_id));
+  clearCatalogCache(knowledgeItemEdgesUrl(packId, edge.target_doc));
   return edge;
 }
 
@@ -2529,7 +2515,7 @@ export function agentUrl(agentId: string): string {
 }
 
 async function encryptAgentPromptConfig(
-  agentId: string,
+  objectId: string,
   promptConfig: PromptConfig,
 ): Promise<EncryptedPayload | null> {
   const currentUser = await fetchCurrentUser();
@@ -2537,14 +2523,14 @@ async function encryptAgentPromptConfig(
 
   return encryptOrgContentPayload({
     orgId: currentUser.org_id,
-    objectId: agentId,
+    objectId,
     objectType: "manifest.agent.prompt",
     plaintext: JSON.stringify(promptConfig),
   });
 }
 
 async function encryptAbilityPromptConfig(
-  abilityId: string,
+  objectId: string,
   prompt: string,
 ): Promise<EncryptedPayload | null> {
   const currentUser = await fetchCurrentUser();
@@ -2552,14 +2538,14 @@ async function encryptAbilityPromptConfig(
 
   return encryptOrgContentPayload({
     orgId: currentUser.org_id,
-    objectId: abilityId,
+    objectId,
     objectType: "manifest.ability.prompt",
     plaintext: JSON.stringify({ developer_prompt: prompt }),
   });
 }
 
 async function encryptDomainPromptConfig(
-  domainId: string,
+  objectId: string,
   promptConfig: DomainManifest["prompt"],
 ): Promise<EncryptedPayload | null> {
   const currentUser = await fetchCurrentUser();
@@ -2567,7 +2553,7 @@ async function encryptDomainPromptConfig(
 
   return encryptOrgContentPayload({
     orgId: currentUser.org_id,
-    objectId: domainId,
+    objectId,
     objectType: "manifest.domain.prompt",
     plaintext: JSON.stringify(promptConfig),
   });
@@ -2638,7 +2624,7 @@ async function decryptJsonPayload<T>(
 }
 
 async function encryptContextBlockTemplate(
-  contextBlockId: string,
+  objectId: string,
   template: string,
 ): Promise<EncryptedPayload | null> {
   const currentUser = await fetchCurrentUser();
@@ -2646,7 +2632,7 @@ async function encryptContextBlockTemplate(
 
   return encryptOrgContentPayload({
     orgId: currentUser.org_id,
-    objectId: contextBlockId,
+    objectId,
     objectType: "manifest.context_block.content",
     plaintext: JSON.stringify(template),
   });
@@ -2780,14 +2766,15 @@ export async function fetchAgentPrompt(
 }
 
 export async function updateAgentPrompt(
-  agentId: string,
+  selector: string | EncryptedResourceSelector,
   promptConfig: import("./types").PromptConfig,
 ): Promise<import("./types").PromptConfig> {
+  const { resourceRef, objectId } = normalizeEncryptedResourceSelector(selector);
   const encryptedPayload = requireEncryptedPayload(
-    await encryptAgentPromptConfig(agentId, promptConfig),
+    await encryptAgentPromptConfig(objectId, promptConfig),
     "Agent prompt",
   );
-  const res = await authFetch(agentPromptUrl(agentId), {
+  const res = await authFetch(agentPromptUrl(resourceRef), {
     method: "PATCH",
     body: JSON.stringify({
       encrypted_payload: encryptedPayload,
@@ -3256,7 +3243,7 @@ export async function fetchDomainManifest(id: string): Promise<DomainManifest> {
   const domain = (await domainRes.json()) as {
     platform_scopes?: string[];
     abilities?: string[];
-    mcp_server_ids?: string[];
+    mcp_servers?: string[];
   };
   const promptData = (await promptRes.json()) as {
     prompt_config?: DomainManifest["prompt"];
@@ -3274,7 +3261,7 @@ export async function fetchDomainManifest(id: string): Promise<DomainManifest> {
     prompt,
     platform_scopes: domain.platform_scopes ?? [],
     abilities: domain.abilities ?? [],
-    mcp_server_ids: domain.mcp_server_ids ?? [],
+    mcp_servers: domain.mcp_servers ?? [],
   };
 }
 
@@ -3291,7 +3278,7 @@ export async function createDomain(data: CreateDomainRequest): Promise<Domain> {
       command: data.command,
       platform_scopes: manifest?.platform_scopes,
       abilities: manifest?.abilities,
-      mcp_server_ids: manifest?.mcp_server_ids,
+      mcp_servers: manifest?.mcp_servers,
     }),
   });
   const domain = (await res.json()) as Domain;
@@ -3326,14 +3313,15 @@ export async function updateDomain(
 }
 
 export async function updateDomainManifest(
-  id: string,
+  selector: string | EncryptedResourceSelector,
   manifest: DomainManifest,
 ): Promise<DomainManifest> {
+  const { resourceRef, objectId } = normalizeEncryptedResourceSelector(selector);
   const encryptedPayload = requireEncryptedPayload(
-    await encryptDomainPromptConfig(id, manifest.prompt),
+    await encryptDomainPromptConfig(objectId, manifest.prompt),
     "Domain prompt",
   );
-  const res = await authFetch(domainPromptUrl(id), {
+  const res = await authFetch(domainPromptUrl(resourceRef), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -3764,14 +3752,15 @@ export async function fetchContextBlockContent(
 }
 
 export async function updateContextBlockContent(
-  id: string,
+  selector: string | EncryptedResourceSelector,
   template: string,
 ): Promise<{ template?: string }> {
+  const { resourceRef, objectId } = normalizeEncryptedResourceSelector(selector);
   const encryptedPayload = requireEncryptedPayload(
-    await encryptContextBlockTemplate(id, template),
+    await encryptContextBlockTemplate(objectId, template),
     "Context block content",
   );
-  const res = await authFetch(contextBlockContentUrl(id), {
+  const res = await authFetch(contextBlockContentUrl(resourceRef), {
     method: "PATCH",
     body: JSON.stringify({ encrypted_payload: encryptedPayload }),
   });
@@ -3942,14 +3931,15 @@ export async function fetchAbilityPrompt(id: string): Promise<string> {
 }
 
 export async function updateAbilityPrompt(
-  id: string,
+  selector: string | EncryptedResourceSelector,
   prompt: string,
 ): Promise<string> {
+  const { resourceRef, objectId } = normalizeEncryptedResourceSelector(selector);
   const encryptedPayload = requireEncryptedPayload(
-    await encryptAbilityPromptConfig(id, prompt),
+    await encryptAbilityPromptConfig(objectId, prompt),
     "Ability prompt",
   );
-  const res = await authFetch(abilityPromptUrl(id), {
+  const res = await authFetch(abilityPromptUrl(resourceRef), {
     method: "PATCH",
     body: JSON.stringify({
       encrypted_payload: encryptedPayload,

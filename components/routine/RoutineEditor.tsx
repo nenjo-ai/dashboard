@@ -52,6 +52,15 @@ import {
 const TRIGGER_NODE_ID = "__trigger__";
 const TEMP_PREFIX = "__temp_";
 
+function slugify(value: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return slug || "step";
+}
+
 // ---------------------------------------------------------------------------
 // Edge styling helpers
 // ---------------------------------------------------------------------------
@@ -102,7 +111,7 @@ function stepsToNodes(
     const roleName = role?.name ?? null;
 
     return {
-      id: step.id,
+      id: step.slug,
       type: "routineStep",
       position: { x: step.position_x, y: step.position_y },
       data: {
@@ -137,12 +146,12 @@ function makeTriggerNode(trigger: RoutineTrigger): Node {
   };
 }
 
-/** Build visual-only trigger edges from routine metadata entry_step_ids */
+/** Build visual-only trigger edges from routine metadata entry_steps */
 function triggerEdgesFromMetadata(metadata: Record<string, unknown>): Edge[] {
-  const entryStepIds = Array.isArray(metadata?.entry_step_ids)
-    ? (metadata.entry_step_ids as string[])
+  const entrySteps = Array.isArray(metadata?.entry_steps)
+    ? (metadata.entry_steps as string[])
     : [];
-  return entryStepIds.map((targetId) => ({
+  return entrySteps.map((targetId) => ({
     id: `trigger-edge-${targetId}`,
     source: TRIGGER_NODE_ID,
     target: targetId,
@@ -156,7 +165,7 @@ function triggerEdgesFromMetadata(metadata: Record<string, unknown>): Edge[] {
 
 function routineEdgesToFlowEdges(edges: RoutineEdgeType[], steps: RoutineStep[]): Edge[] {
   return edges.map((edge) => {
-    const sourceStep = steps.find((s) => s.id === edge.source_step_id);
+    const sourceStep = steps.find((s) => s.slug === edge.source_step);
     const isFromGateOrCron = sourceStep?.step_type === "gate" || sourceStep?.step_type === "cron";
     const style = conditionEdgeStyle(edge.condition, isFromGateOrCron);
 
@@ -172,8 +181,8 @@ function routineEdgesToFlowEdges(edges: RoutineEdgeType[], steps: RoutineStep[])
 
     return {
       id: edge.id,
-      source: edge.source_step_id,
-      target: edge.target_step_id,
+      source: edge.source_step,
+      target: edge.target_step,
       sourceHandle,
       label: style.label,
       type: "smoothstep",
@@ -231,6 +240,11 @@ function RoutineEditorInner({
   // Load roles for displaying role names in nodes
   const [roles, setRoles] = useState<AgentDefinition[]>([]);
   const [loadingRoles, setLoadingRoles] = useState(true);
+  const [nodes, setNodes, onNodesChange] = useNodesState([makeTriggerNode(initialTrigger)]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([
+    ...triggerEdgesFromMetadata(routine.metadata),
+    ...routineEdgesToFlowEdges(routine.edges, routine.steps),
+  ]);
 
   useEffect(() => {
     async function loadRoles() {
@@ -254,13 +268,7 @@ function RoutineEditorInner({
         ...stepsToNodes(routine.steps, agents, councils, roles),
       ]);
     }
-  }, [loadingRoles, roles, routine.steps, agents, councils]);
-
-  const [nodes, setNodes, onNodesChange] = useNodesState([makeTriggerNode(initialTrigger)]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([
-    ...triggerEdgesFromMetadata(routine.metadata),
-    ...routineEdgesToFlowEdges(routine.edges, routine.steps),
-  ]);
+  }, [loadingRoles, roles, routine.steps, agents, councils, setNodes]);
 
   const [trigger, setTrigger] = useState<RoutineTrigger>(initialTrigger);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -512,7 +520,9 @@ function RoutineEditorInner({
 
       const config: Record<string, unknown> = {};
       if (roleId) config.agent_id = roleId;
-      const tempId = nextTempId("step");
+      const baseSlug = slugify(name);
+      const tempId = `${baseSlug}_${tempIdCounter.current + 1}`;
+      tempIdCounter.current += 1;
 
       const newNode: Node = {
         id: tempId,
@@ -549,7 +559,7 @@ function RoutineEditorInner({
       setAddStepOpen(false);
       setIsDirty(true);
     },
-    [councils, nodes, roles, setNodes, nextTempId],
+    [councils, nodes, roles, setNodes],
   );
 
   // ── Update Step (local only — from config panel "Apply") ──────────────
@@ -632,16 +642,27 @@ function RoutineEditorInner({
       const currentRegularEdges = edges.filter(
         (e) => !(e.data as Record<string, unknown>)?.isTriggerEdge,
       );
+      const agentRef = (agentId: string | null | undefined) => {
+        if (!agentId) return undefined;
+        const agent = agents.find((item) => item.id === agentId);
+        return agent?.slug ?? agent?.name ?? agentId;
+      };
+      const councilRef = (councilId: string | null | undefined) => {
+        if (!councilId) return undefined;
+        const council = councils?.find((item) => item.id === councilId);
+        return council?.name ?? councilId;
+      };
       const stepPayload = currentStepNodes.map((node, index) => {
         const data = node.data as StepNodeData;
         const pendingUpdate = pendingStepUpdates.get(node.id);
+        const agentId = pendingUpdate?.agent_id ?? (data.config?.agent_id as string) ?? data.agentId ?? undefined;
+        const councilId = pendingUpdate?.council_id ?? data.councilId ?? undefined;
         return {
-          client_ref: node.id,
-          id: node.id.startsWith(TEMP_PREFIX) ? undefined : node.id,
+          slug: node.id,
           name: pendingUpdate?.name ?? data.label,
           step_type: (pendingUpdate?.step_type ?? data.stepType) as RoutineStepType,
-          agent_id: pendingUpdate?.agent_id ?? (data.config?.agent_id as string) ?? data.agentId ?? undefined,
-          council_id: pendingUpdate?.council_id ?? data.councilId ?? undefined,
+          agent: agentRef(agentId),
+          council: councilRef(councilId),
           config: pendingUpdate?.config ?? data.config ?? {},
           position_x: Math.round(node.position.x),
           position_y: Math.round(node.position.y),
@@ -650,20 +671,20 @@ function RoutineEditorInner({
       });
 
       const edgePayload = currentRegularEdges.map((edge) => ({
-        source_ref: edge.source,
-        target_ref: edge.target,
+        source_step: edge.source,
+        target_step: edge.target,
         condition: ((edge.data as Record<string, unknown>)?.condition as RoutineEdgeCondition | undefined) ?? "always",
         metadata: edgeMetadata(edge),
       }));
 
-      const entryStepRefs = edges
+      const entrySteps = edges
         .filter((e) => (e.data as Record<string, unknown>)?.isTriggerEdge)
         .map((e) => e.target);
 
       await saveRoutineGraph(routine.id, {
         trigger,
         metadata: routine.metadata,
-        entry_step_refs: entryStepRefs,
+        entry_steps: entrySteps,
         steps: stepPayload,
         edges: edgePayload,
       });
@@ -678,7 +699,7 @@ function RoutineEditorInner({
     } finally {
       setSaving(false);
     }
-  }, [nodes, edges, trigger, routine, pendingStepUpdates, onSaved]);
+  }, [nodes, edges, trigger, routine, pendingStepUpdates, onSaved, agents, councils]);
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -827,6 +848,7 @@ function RoutineEditorInner({
 
         {selectedEdge && (
           <EdgeConfigPanel
+            key={selectedEdge.id}
             edge={selectedEdge}
             steps={nodes.filter((node) => node.id !== TRIGGER_NODE_ID)}
             onUpdate={handleUpdateEdge}
@@ -864,12 +886,6 @@ function EdgeConfigPanel({
     metadata.max_attempts != null ? String(metadata.max_attempts) : "",
   );
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const nextMetadata = edgeMetadata(edge);
-    setMaxAttempts(nextMetadata.max_attempts != null ? String(nextMetadata.max_attempts) : "");
-    setError(null);
-  }, [edge]);
 
   const sourceStep = steps.find((step) => step.id === edge.source);
   const sourceData = sourceStep?.data as StepNodeData | undefined;

@@ -6,6 +6,7 @@ import { updateAgentPrompt, resetAgentToDefault, applyAllSystemUpdates, updateDo
 import { useAgentDomains, useContextBlocks } from "@/lib/hooks";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference, JinjaGuide } from "./TemplateVariableReference";
+import { LibraryReferenceList } from "./LibraryReferenceList";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
 import { SourceManagedResourcePanel } from "@/components/resources/SourceManagedResourcePanel";
 
@@ -119,7 +120,7 @@ function BlockTreeNode({ node, depth, onInsert }: { node: TreeNode; depth: numbe
 }
 
 function TabbedVariablePanel({ onInsertVariable }: { onInsertVariable: (text: string) => void }) {
-  const [tab, setTab] = useState<"blocks" | "variables">("blocks");
+  const [tab, setTab] = useState<"variables" | "blocks" | "library">("variables");
   const panel = useResizablePanel(320, 240, 560);
   const { contextBlocks } = useContextBlocks();
 
@@ -133,17 +134,6 @@ function TabbedVariablePanel({ onInsertVariable }: { onInsertVariable: (text: st
         <div className="theme-border flex shrink-0 border-b">
           <button
             type="button"
-            onClick={() => setTab("blocks")}
-            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-              tab === "blocks"
-                ? "border-b-2 border-deep-space-blue-500 text-deep-space-blue-600 dark:text-deep-space-blue-400"
-                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-            }`}
-          >
-            Blocks
-          </button>
-          <button
-            type="button"
             onClick={() => setTab("variables")}
             className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
               tab === "variables"
@@ -151,13 +141,42 @@ function TabbedVariablePanel({ onInsertVariable }: { onInsertVariable: (text: st
                 : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
             }`}
           >
-            Variables
+            Vars
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("blocks")}
+            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+              tab === "blocks"
+                ? "border-b-2 border-deep-space-blue-500 text-deep-space-blue-600 dark:text-deep-space-blue-400"
+                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+            }`}
+          >
+            Context Blocks
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("library")}
+            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+              tab === "library"
+                ? "border-b-2 border-deep-space-blue-500 text-deep-space-blue-600 dark:text-deep-space-blue-400"
+                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+            }`}
+          >
+            Library
           </button>
         </div>
 
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto p-2">
-          {tab === "blocks" ? (
+          {tab === "variables" ? (
+            <div className="p-2">
+              <TemplateVariableReference
+                onInsertVariable={onInsertVariable}
+                flatVarsOnly
+              />
+            </div>
+          ) : tab === "blocks" ? (
             <>
               <p className="mb-2 px-1 text-[10px] text-gray-500 dark:text-gray-400">
                 Click a block to insert at cursor.
@@ -171,12 +190,7 @@ function TabbedVariablePanel({ onInsertVariable }: { onInsertVariable: (text: st
               )}
             </>
           ) : (
-            <div className="p-2">
-              <TemplateVariableReference
-                onInsertVariable={onInsertVariable}
-                flatVarsOnly
-              />
-            </div>
+            <LibraryReferenceList onInsertVariable={onInsertVariable} />
           )}
         </div>
       </div>
@@ -269,9 +283,9 @@ function setSectionValue(
 }
 
 /** Get current value for a domain section. */
-function getDomainSectionValue(rm: AgentDomainAssignment, field: "system_addon"): string {
+function getDomainSectionValue(rm: AgentDomainAssignment, field: "developer_prompt_addon"): string {
   if (!rm.domain?.manifest?.prompt) return "";
-  if (field === "system_addon") return rm.domain.manifest.prompt.system_addon ?? "";
+  if (field === "developer_prompt_addon") return rm.domain.manifest.prompt.developer_prompt_addon ?? "";
   return "";
 }
 
@@ -369,8 +383,8 @@ export function AgentPromptEditor({
           if (!rm?.domain?.manifest) continue;
           const manifest = { ...rm.domain.manifest };
           const prompt = { ...manifest.prompt };
-          if ("system_addon" in fields) {
-            prompt.system_addon = fields.system_addon;
+          if ("developer_prompt_addon" in fields) {
+            prompt.developer_prompt_addon = fields.developer_prompt_addon;
           }
           manifest.prompt = prompt;
           await updateDomainManifest(domainId, manifest);
@@ -487,7 +501,7 @@ export function AgentPromptEditor({
       if (domainEdits[activeSection] !== undefined) return domainEdits[activeSection];
       const parts = activeSection.split(":");
       const domainId = parts[1];
-      const field = parts[2] as "system_addon";
+      const field = parts[2] as "developer_prompt_addon";
       const rm = enabledDomains.find((m) => m.domain!.id === domainId);
       return rm ? getDomainSectionValue(rm, field) : "";
     }
@@ -901,7 +915,7 @@ export function AgentPromptEditor({
                         ? "You are a senior software engineer specializing in..."
                         : activeSection === "developer_prompt"
                           ? "Detailed methodology and instructions for the agent..."
-                          : isDomainSectionActive && activeSection.endsWith(":system_addon")
+                          : isDomainSectionActive && activeSection.endsWith(":developer_prompt_addon")
                               ? "Domain-specific instructions. Appended to the core Guidance prompt when active."
                               : "<instructions>Task instructions here...</instructions>"
                     }
@@ -1106,7 +1120,7 @@ function EditableAgentPromptEditorContent({
           if (!rm?.domain?.manifest) continue;
           const manifest = { ...rm.domain.manifest };
           const prompt = { ...manifest.prompt };
-          if ("system_addon" in fields) prompt.system_addon = fields.system_addon;
+          if ("developer_prompt_addon" in fields) prompt.developer_prompt_addon = fields.developer_prompt_addon;
           manifest.prompt = prompt;
           await updateDomainManifest(domainId, manifest);
         }
@@ -1213,7 +1227,7 @@ function EditableAgentPromptEditorContent({
       if (domainEdits[activeSection] !== undefined) return domainEdits[activeSection];
       const parts = activeSection.split(":");
       const domainId = parts[1];
-      const field = parts[2] as "system_addon";
+      const field = parts[2] as "developer_prompt_addon";
       const rm = enabledDomains.find((m) => m.domain!.id === domainId);
       return rm ? getDomainSectionValue(rm, field) : "";
     }
@@ -1377,7 +1391,7 @@ function EditableAgentPromptEditorContent({
                 placeholder={
                   activeSection === "system_prompt" ? "You are a senior software engineer specializing in..."
                     : activeSection === "developer_prompt" ? "Detailed methodology and instructions for the agent..."
-                    : isDomainSectionActive && activeSection.endsWith(":system_addon") ? "Domain-specific instructions."
+                    : isDomainSectionActive && activeSection.endsWith(":developer_prompt_addon") ? "Domain-specific instructions."
                     : "<instructions>Task instructions here...</instructions>"
                 }
                 onCursorChange={(line, col) => { setCursorLine(line); setCursorCol(col); }}

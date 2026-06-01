@@ -2,17 +2,18 @@
 
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { BookOpen, Plus } from "lucide-react";
+import { BookOpen, Plus, Trash2 } from "lucide-react";
 import { TopBar } from "@/components/layout/TopBar";
 import { PageContent } from "@/components/ui/PageContent";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { KnowledgeSection } from "@/components/knowledge/KnowledgeSection";
 import { SourceKnowledgeSection } from "@/components/knowledge/SourceKnowledgeSection";
 import { useKnowledgePacks } from "@/lib/hooks";
-import { createKnowledgePack } from "@/lib/api";
+import { createKnowledgePack, deleteKnowledgePack } from "@/lib/api";
 import type { KnowledgePack } from "@/lib/types";
 
 function knowledgeSelector(pack: KnowledgePack): string {
@@ -31,6 +32,8 @@ export default function KnowledgePage() {
   const [packDescription, setPackDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDeletePack, setConfirmDeletePack] = useState<KnowledgePack | null>(null);
+  const [deletingPack, setDeletingPack] = useState(false);
 
   const platformPacks = useMemo(
     () => (packs ?? []).filter((pack) => pack.status !== "archived" && pack.source_type !== "package"),
@@ -62,6 +65,24 @@ export default function KnowledgePage() {
     }
   };
 
+  const handleDeletePack = async () => {
+    if (!confirmDeletePack) return;
+    setDeletingPack(true);
+    setError(null);
+    try {
+      await deleteKnowledgePack(confirmDeletePack.slug);
+      await mutate();
+      if (selectedPackId === confirmDeletePack.id) {
+        setSelectedPackId(null);
+      }
+      setConfirmDeletePack(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete knowledge pack");
+    } finally {
+      setDeletingPack(false);
+    }
+  };
+
   if (selectedPack) {
     return (
       <>
@@ -74,21 +95,49 @@ export default function KnowledgePage() {
               { label: selectedPack.name },
             ]}
           />
+          {error ? <Notice tone="error">{error}</Notice> : null}
+
           <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <h1 className="truncate text-xl font-semibold text-gray-950 dark:text-gray-50">{selectedPack.name}</h1>
               <p className="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">{knowledgeSelector(selectedPack)}</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge>Platform</Badge>
-              {selectedPack.version ? <Badge>{selectedPack.version}</Badge> : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap gap-2">
+                <Badge>Platform</Badge>
+                {selectedPack.version ? <Badge>{selectedPack.version}</Badge> : null}
+              </div>
+              {!selectedPack.read_only ? (
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  onClick={() => setConfirmDeletePack(selectedPack)}
+                  disabled={deletingPack}
+                  title="Delete knowledge pack"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </Button>
+              ) : null}
             </div>
           </div>
           {selectedPack.source_type === "package" && selectedPack.read_only ? (
             <SourceKnowledgeSection pack={selectedPack} />
           ) : (
-            <KnowledgeSection packId={selectedPack.id} readOnly={selectedPack.read_only} />
+            <KnowledgeSection packRef={selectedPack.slug} readOnly={selectedPack.read_only} />
           )}
+          <ConfirmDialog
+            open={!!confirmDeletePack}
+            onClose={() => {
+              if (!deletingPack) setConfirmDeletePack(null);
+            }}
+            onConfirm={handleDeletePack}
+            title="Delete Knowledge Pack"
+            message={`Delete "${confirmDeletePack?.name ?? "this knowledge pack"}" and all of its documents? This cannot be undone.`}
+            confirmLabel="Delete"
+            loading={deletingPack}
+          />
         </PageContent>
       </>
     );

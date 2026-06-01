@@ -7,7 +7,7 @@ import {
   updateContextBlockContent,
 } from "@/lib/api";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
-import { TemplateVariableReference } from "./TemplateVariableReference";
+import { PromptReferenceTabs } from "./PromptReferenceTabs";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
 import { Button } from "@/components/ui/Button";
 import { SourceManagedResourcePanel } from "@/components/resources/SourceManagedResourcePanel";
@@ -236,9 +236,9 @@ export function ContextBlockEditor({ block, onClose, onSaved }: ContextBlockEdit
           <ResizeHandle onMouseDown={panel.onMouseDown} />
           <div
             style={{ width: panel.width }}
-            className="theme-surface-muted shrink-0 overflow-y-auto p-4"
+            className="theme-surface-muted shrink-0 overflow-hidden"
           >
-            <TemplateVariableReference onInsertVariable={editor.handleInsertVariable} flatVarsOnly />
+            <PromptReferenceTabs onInsertVariable={editor.handleInsertVariable} />
           </div>
         </div>
 
@@ -393,9 +393,9 @@ function EditableContextBlockEditorInline({ block, onSaved, onDelete }: ContextB
         <ResizeHandle onMouseDown={panel.onMouseDown} />
         <div
           style={{ width: panel.width }}
-          className="theme-surface-muted shrink-0 overflow-y-auto p-3"
+          className="theme-surface-muted shrink-0 overflow-hidden"
         >
-          <TemplateVariableReference onInsertVariable={editor.handleInsertVariable} flatVarsOnly />
+          <PromptReferenceTabs onInsertVariable={editor.handleInsertVariable} />
         </div>
       </div>
 

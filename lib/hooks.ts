@@ -21,7 +21,6 @@ import {
   knowledgePacksUrl,
   packageSourcesUrl,
   packageInstallsUrl,
-  marketplaceSourcesUrl,
   apiKeysUrl,
   authMeUrl,
   currentOrgUrl,
@@ -61,7 +60,6 @@ import type {
   KnowledgePack,
   PackageInstall,
   PackageSource,
-  MarketplaceSource,
   ApiKey,
   RoutineSummary,
   RoutineDetail,
@@ -457,26 +455,6 @@ export function useKnowledgeItems(packId: string | undefined) {
 
   return {
     items: data,
-    isLoading,
-    isError: !!error,
-    error,
-    mutate,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Marketplaces
-// ---------------------------------------------------------------------------
-
-export function useMarketplaceSources() {
-  const { data, error, isLoading, mutate } = useSWR<MarketplaceSource[]>(
-    marketplaceSourcesUrl(),
-    catalogFetcher,
-    catalogSWROptions,
-  );
-
-  return {
-    sources: data,
     isLoading,
     isError: !!error,
     error,

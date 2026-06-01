@@ -20,8 +20,8 @@ The template variable list in the dashboard comes from the Nenjo SDK. These are 
 | Agent | `{{ self }}`, `{{ agent.name }}`, `{{ agent.description }}` | Role and identity |
 | Chat | `{{ chat.message }}` | User chat turns |
 | Task | `{{ task }}`, `{{ task.title }}`, `{{ task.acceptance_criteria }}` | Project task execution |
-| Project | `{{ project }}`, `{{ project.documents }}`, `{{ project.working_dir }}` | Project-aware work |
-| Repository knowledge | `{{ repo.nenjo_ai.packages.platform }}` | Discovering installed repository knowledge material |
+| Project | `{{ project }}`, `{{ project.context }}`, `{{ project.working_dir }}` | Project-aware work |
+| Package knowledge | `{{ pkg.nenjo.knowledge }}` | Discovering installed package knowledge material |
 | Routine | `{{ routine }}`, `{{ routine.step.name }}`, `{{ routine.execution_id }}` | Routine steps |
 | Gate | `{{ gate.criteria }}`, `{{ gate.previous_output }}` | Evaluation steps |
 | Heartbeat | `{{ heartbeat.previous_output }}`, `{{ heartbeat.last_run_at }}` | Periodic checks |
@@ -71,8 +71,8 @@ Task:
 Project:
 {{ project }}
 
-Project documents:
-{{ project.documents }}
+Knowledge index:
+{{ pkg.nenjo.knowledge }}
 
 Repository rules:
 {{ coding.git_worktree }}
@@ -105,7 +105,7 @@ Delegate or call an ability only when it is a better fit than doing the work dir
 ## What to avoid
 
 - Putting every variable into every template
-- Using project documents in simple chat turns when they are not relevant
-- Treating memory as the source of truth when project documents already contain the facts
+- Injecting package knowledge indexes into simple chat turns when they are not relevant
+- Treating memory as the source of truth when knowledge docs already contain the facts
 - Referencing an ability or domain that is not assigned to the agent
 - Hard-coding project-specific details in the system prompt

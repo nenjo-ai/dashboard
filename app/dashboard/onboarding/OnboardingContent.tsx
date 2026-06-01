@@ -33,7 +33,6 @@ import {
   fetcher,
   fetchCurrentUser,
   authMeUrl,
-  ensureOfficialNenjoPackageSource,
   listTrustedDevices,
   installOfficialNenjoPackages,
   updateCurrentOrg,
@@ -106,6 +105,16 @@ const DEFAULT_NENJI_IDENTITY = {
   roleId: "nenji",
   color: NENJI_SEED_COLOR,
 };
+const NENJI_AGENT_SLUG = "nenji";
+
+function findNenjiAgent(agents: AgentDefinition[]): AgentDefinition | undefined {
+  return agents.find(
+    (agent) =>
+      agent.slug === NENJI_AGENT_SLUG ||
+      agent.name === NENJI_AGENT_SLUG ||
+      agent.display_name?.toLowerCase() === NENJI_AGENT_SLUG,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Step Indicator
@@ -425,7 +434,6 @@ function StepCreateOrganization({
     try {
       const trimmed = orgName.trim();
       await updateCurrentOrg({ name: trimmed });
-      await ensureOfficialNenjoPackageSource();
       await onContinue(trimmed);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update organization");
@@ -508,9 +516,9 @@ function StepCreateAgent({
     queueMicrotask(() => setLoading(true));
     try {
       const roles = await fetchAgents();
-      const systemRole = roles.find((r) => r.name === "system");
-      if (!systemRole) {
-        setError("Could not find system role. Please contact support.");
+      const nenjiAgent = findNenjiAgent(roles);
+      if (!nenjiAgent) {
+        setError("Could not find Nenji. Please contact support.");
         setLoading(false);
         return;
       }
@@ -520,10 +528,10 @@ function StepCreateAgent({
         model,
         model_provider: provider,
         temperature,
-        tags: ["system"],
+        tags: ["nenji"],
       });
 
-      await updateAgent(systemRole.id, {
+      await updateAgent(nenjiAgent.id, {
         model_id: agent.id,
       });
 
@@ -926,20 +934,20 @@ nenjo run`;
     (async () => {
       try {
         const agents = await fetchAgents();
-        const systemAgent = agents.find((a) => a.name === "system");
+        const nenjiAgent = findNenjiAgent(agents);
 
-        if (!systemAgent) {
+        if (!nenjiAgent) {
           router.push("/dashboard/chat");
           return;
         }
 
         setNenjiIdentity({
-          roleId: systemAgent.id,
-          color: NENJI_SEED_COLOR,
+          roleId: nenjiAgent.id,
+          color: nenjiAgent.color ?? NENJI_SEED_COLOR,
         });
 
         const session = await createChatSession({
-          agent_id: systemAgent.id,
+          agent_id: nenjiAgent.id,
           title: "Welcome",
         });
 
@@ -992,15 +1000,15 @@ nenjo run`;
 
     try {
       const agents = await fetchAgents();
-      const systemAgent = agents.find((a) => a.name === "system");
+      const nenjiAgent = findNenjiAgent(agents);
 
-      if (!systemAgent) {
+      if (!nenjiAgent) {
         router.push("/dashboard/chat");
         return;
       }
 
       const session = await createChatSession({
-        agent_id: systemAgent.id,
+        agent_id: nenjiAgent.id,
         title: "Welcome",
       });
 
@@ -1053,7 +1061,7 @@ nenjo run`;
           className="h-4 w-4 rounded border-gray-300 text-deep-space-blue-600 focus:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-800"
         />
         <span className="text-sm text-gray-600 dark:text-gray-400">
-          Have the system agent greet me after connecting
+          Have Nenji greet me after connecting
         </span>
       </label>
 
@@ -1331,7 +1339,6 @@ function StepRestoreDevice({
         // Ignore storage failures.
       }
       setActiveOrgIdGetter(() => created.org_id);
-      await ensureOfficialNenjoPackageSource();
       onStartFresh(created.org_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create a new organization.");
@@ -1560,7 +1567,6 @@ export default function OnboardingContent() {
   const { user, isLoaded } = useUser();
   const router = useRouter();
   const redirected = useRef(false);
-  const officialSourceEnsuredForOrg = useRef<string | null>(null);
   const officialPackagesInstalledForOrg = useRef<string | null>(null);
   const { data: currentUser } = useSWR(user ? authMeUrl() : null, fetcher, {
     revalidateOnFocus: false,
@@ -1620,11 +1626,6 @@ export default function OnboardingContent() {
         if (cancelled || redirected.current) return;
 
         const hasOrg = Boolean(me.org_id);
-        if (me.org_id && officialSourceEnsuredForOrg.current !== me.org_id) {
-          officialSourceEnsuredForOrg.current = me.org_id;
-          await ensureOfficialNenjoPackageSource();
-          if (cancelled || redirected.current) return;
-        }
         const hasExistingWorkspace =
           Boolean(me.onboarded) ||
           Boolean(bootstrap?.has_recovery_bundle) ||

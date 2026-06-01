@@ -52,7 +52,7 @@ type NormalizedStreamEvent = {
 };
 
 function isAbilityTool(name: string): boolean {
-  return name.startsWith("ability/");
+  return name === "use_ability" || name.startsWith("ability/");
 }
 
 function appendPreview(
@@ -1320,9 +1320,10 @@ export function usePlannerChat(
           }
 
           case "AbilityActivated": {
-            const { ability_tool_name, payload, encrypted_payload } =
+            const { ability_tool_name, ability, payload, encrypted_payload } =
               streamEvent.data as {
                 ability_tool_name: string;
+                ability?: string;
                 payload?: { task_preview?: string };
                 encrypted_payload?: EncryptedPayload;
               };
@@ -1343,11 +1344,19 @@ export function usePlannerChat(
                 const existing = prev.find(
                   (tool) => tool.name === ability_tool_name,
                 );
+                const abilityArgs = normalizeToolCallArgs(
+                  resolvedTaskPreview
+                    ? {
+                        name: ability,
+                        input: resolvedTaskPreview,
+                      }
+                    : undefined,
+                );
                 if (existing) {
                   return [
                     {
                       ...existing,
-                      args: "",
+                      args: existing.args || abilityArgs,
                       status: "running",
                       textPreview: appendPreview(
                         existing.textPreview,
@@ -1361,7 +1370,7 @@ export function usePlannerChat(
                 return [
                   {
                     name: ability_tool_name,
-                    args: "",
+                    args: abilityArgs,
                     textPreview: resolvedTaskPreview,
                     status: "running",
                     children: [],
@@ -1598,6 +1607,23 @@ export function usePlannerChat(
                       ]
                     : prev.map((tool) => {
                         if (tool.name !== parent_tool_name) return tool;
+                        const children = [...(tool.children ?? [])];
+                        for (const child of newChildren) {
+                          const existingChildIndex = children.findIndex(
+                            (existingChild) =>
+                              existingChild.name === child.name &&
+                              (!existingChild.status ||
+                                existingChild.status === "running"),
+                          );
+                          if (existingChildIndex === -1) {
+                            children.push(child);
+                          } else {
+                            children[existingChildIndex] = {
+                              ...children[existingChildIndex],
+                              ...child,
+                            };
+                          }
+                        }
                         return {
                           ...tool,
                           args: parentArgs || tool.args,
@@ -1605,7 +1631,7 @@ export function usePlannerChat(
                             tool.textPreview,
                             resolvedTextPreview,
                           ),
-                          children: newChildren,
+                          children,
                         };
                       });
                   return nextTools;

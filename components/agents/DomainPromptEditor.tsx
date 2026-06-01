@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { fetchDomainManifest, updateDomainManifest } from "@/lib/api";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
-import { TemplateVariableReference } from "./TemplateVariableReference";
+import { PromptReferenceTabs } from "./PromptReferenceTabs";
 import { Button } from "@/components/ui/Button";
 import { Globe } from "lucide-react";
 import type { Domain, DomainManifest } from "@/lib/types";
@@ -29,7 +29,7 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
-  { id: "system_addon", label: "Guidance", group: "Core" },
+  { id: "developer_prompt_addon", label: "Guidance", group: "Core" },
 ];
 
 const GROUPS = ["Core"];
@@ -43,7 +43,7 @@ export function DomainPromptEditor({
   onClose,
   onSaved,
 }: DomainPromptEditorProps) {
-  const [activeSection, setActiveSection] = useState("system_addon");
+  const [activeSection, setActiveSection] = useState("developer_prompt_addon");
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorCol, setCursorCol] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -53,12 +53,12 @@ export function DomainPromptEditor({
   const [manifest, setManifest] = useState<DomainManifest | null>(domain.manifest ?? null);
 
   // Local editable state
-  const [systemAddon, setSystemAddon] = useState(domain.manifest?.prompt?.system_addon ?? "");
+  const [systemAddon, setSystemAddon] = useState(domain.manifest?.prompt?.developer_prompt_addon ?? "");
 
   // Reset when domain changes
   useEffect(() => {
     setManifest(domain.manifest ?? null);
-    setSystemAddon(domain.manifest?.prompt?.system_addon ?? "");
+    setSystemAddon(domain.manifest?.prompt?.developer_prompt_addon ?? "");
   }, [domain]);
 
   useEffect(() => {
@@ -68,7 +68,7 @@ export function DomainPromptEditor({
         const nextManifest = await fetchDomainManifest(domain.id);
         if (cancelled) return;
         setManifest(nextManifest);
-        setSystemAddon(nextManifest.prompt?.system_addon ?? "");
+        setSystemAddon(nextManifest.prompt?.developer_prompt_addon ?? "");
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Failed to load domain manifest");
@@ -94,7 +94,7 @@ export function DomainPromptEditor({
       const nextManifest: DomainManifest = { ...currentManifest };
       nextManifest.prompt = {
         ...nextManifest.prompt,
-        system_addon: systemAddon,
+        developer_prompt_addon: systemAddon,
       };
       const savedManifest = await updateDomainManifest(domain.id, nextManifest);
       setManifest(savedManifest);
@@ -282,10 +282,8 @@ export function DomainPromptEditor({
           </div>
 
           {/* -- Right sidebar -- */}
-          <div className="theme-border theme-surface-muted w-80 shrink-0 overflow-y-auto border-l p-4">
-            <TemplateVariableReference
-              onInsertVariable={handleInsertVariable}
-            />
+          <div className="theme-border theme-surface-muted w-80 shrink-0 overflow-hidden border-l">
+            <PromptReferenceTabs onInsertVariable={handleInsertVariable} />
           </div>
         </div>
 

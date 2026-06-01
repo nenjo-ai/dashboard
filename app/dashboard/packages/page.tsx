@@ -5,6 +5,7 @@ import matter from "gray-matter";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useSWRConfig } from "swr";
 import {
   ArrowLeft,
   BookOpen,
@@ -45,34 +46,34 @@ import {
   useTabParam,
 } from "@/lib/hooks";
 import {
-  createMarketplaceSource,
   createPackageSource,
   ensureOfficialNenjoPackageSource,
-  installClaudePlugin,
+  fetchPackageInstallDetail,
   installKnowledgePack,
   installPackage,
   installSkill,
   deletePackageSource,
-  uninstallPluginInstall,
+  domainsUrl,
   uninstallSkillAbility,
+  uninstallPackageInstall,
   updateSkillRuntimeEnvNames,
+  updatePackageInstall,
   updatePackageSource,
 } from "@/lib/api";
 import type {
   Ability,
   AgentDefinition,
-  ClaudeMcpServerConfig,
-  InstallClaudePluginRequest,
   KnowledgePack,
-  MarketplaceSource,
-  McpServer,
+  PackageInstall,
+  PackageInstallDetail,
   PackageSource,
   PackageSourceAdapter,
 } from "@/lib/types";
 
 type LibraryTab = "installed" | "packages" | "sources" | "imports";
-type ImportMode = "knowledge_pack" | "skill" | "claude_plugin";
+type ImportMode = "knowledge_pack" | "skill";
 type MarketplacePackageKind =
+  | "package"
   | "knowledge"
   | "agent"
   | "ability"
@@ -135,23 +136,12 @@ interface NenjoModulePackageManifest {
   name?: string;
   version?: string | null;
   description?: string | null;
+  dependencies?: Record<string, string>;
   modules?: Array<string | { path?: string | null }>;
-}
-
-interface GithubTreeResponse {
-  tree?: Array<{ path: string; type: string }>;
 }
 
 interface GithubCommitResponse {
   sha: string;
-}
-
-interface ClaudePluginManifest {
-  name?: string | null;
-  version?: string | null;
-  description?: string | null;
-  mcpServers?: Record<string, ClaudeMcpServerConfig>;
-  mcp_servers?: Record<string, ClaudeMcpServerConfig>;
 }
 
 interface SkillReview {
@@ -166,7 +156,16 @@ interface SkillReview {
 interface PackageReview {
   pkg: MarketplacePackage;
   source: PackageSource | null;
-  plugin_request: Omit<InstallClaudePluginRequest, "skills"> & {
+  plugin_request: {
+    name: string;
+    display_name: string | null;
+    description: string | null;
+    source: { path: string };
+    version?: {
+      ref_?: string | null;
+      resolved_commit_sha?: string | null;
+      package_version?: string | null;
+    };
     skills: SkillReview[];
   };
   envNamesText: string;
@@ -180,19 +179,40 @@ interface NenjoPackageDescriptor {
   name?: string;
   version?: string;
   entry?: string;
+  modules?: Array<string | { path?: string | null }>;
+  dependencies?: Record<string, string>;
   depends_on?: Array<{
+    name?: string | null;
     path: string;
     version?: string | null;
   }>;
   metadata?: Record<string, unknown> | null;
 }
 
+interface PackageDependency {
+  name: string;
+  path: string;
+  version?: string | null;
+}
+
+interface LoadedPackageModule {
+  title: string;
+  path: string;
+  value: Record<string, unknown> | null;
+  kind: MarketplacePackageKind;
+}
+
+interface LoadedPackageModuleGroup {
+  label: string;
+  modules: LoadedPackageModule[];
+}
+
 interface LoadedPackageDetails {
   descriptor: NenjoPackageDescriptor | null;
-  manifest: Record<string, unknown> | null;
+  moduleGroups: LoadedPackageModuleGroup[];
+  dependencies: PackageDependency[];
   readme: string | null;
   descriptorPath: string;
-  manifestPath: string | null;
 }
 
 function formatLibraryDate(iso: string | null | undefined): string {
@@ -281,7 +301,32 @@ function packageKindFromPath(path: string): MarketplacePackageKind {
   if (path.includes("/knowledge/")) return "knowledge";
   if (path.includes("/mcp/")) return "mcp";
   if (path.includes("/routines/")) return "routine";
-  return "knowledge";
+  return "package";
+}
+
+function packageKindFromSchema(schema: string | null | undefined): MarketplacePackageKind {
+  if (!schema) return "package";
+  if (schema.startsWith("nenjo.agent.")) return "agent";
+  if (schema.startsWith("nenjo.ability.")) return "ability";
+  if (schema.startsWith("nenjo.domain.")) return "domain";
+  if (schema.startsWith("nenjo.context_block.")) return "context_block";
+  if (schema.startsWith("nenjo.knowledge.") || schema.startsWith("nenjo.knowledge_pack."))
+    return "knowledge";
+  if (schema.startsWith("nenjo.mcp.")) return "mcp";
+  if (schema.startsWith("nenjo.routine.")) return "routine";
+  return "package";
+}
+
+function combinedPackageKind(kinds: MarketplacePackageKind[]): MarketplacePackageKind {
+  const resourceKinds = kinds.filter((kind) => kind !== "package");
+  if (!resourceKinds.length) return "package";
+  if (resourceKinds.includes("agent")) return "agent";
+  const first = resourceKinds[0];
+  return resourceKinds.every((kind) => kind === first) ? first : "package";
+}
+
+function normalizedPackageResourceType(resourceType: string): string {
+  return resourceType === "knowledge_pack" ? "knowledge" : resourceType;
 }
 
 function packageKindIcon(
@@ -317,7 +362,7 @@ function packageInstallKey(sourceId: string, path: string): string {
   return `${sourceId}:${path}`;
 }
 
-function sourceGitHubInfo(source: PackageSource | MarketplaceSource): {
+function sourceGitHubInfo(source: PackageSource): {
   owner: string;
   repo: string;
   ref: string;
@@ -431,13 +476,17 @@ async function fetchMarketplacePackages(
             packageManifest?.modules?.map((module) =>
               typeof module === "string" ? module : (module.path ?? ""),
             ) ?? [];
-          const kind = modules.some((module) => module.includes("/agents/"))
-            ? "agent"
-            : modules.some((module) => module.includes("/knowledge/"))
-              ? "knowledge"
-              : modules.some((module) => module.includes("/context_blocks/"))
-                ? "context_block"
-                : "ability";
+          let kind: MarketplacePackageKind = "package";
+          try {
+            const groups = packageManifest
+              ? await resolvePackageModuleGroups(info, path, packageManifest)
+              : [];
+            kind = combinedPackageKind(
+              groups.flatMap((group) => group.modules.map((module) => module.kind)),
+            );
+          } catch {
+            kind = combinedPackageKind(modules.map(packageKindFromPath));
+          }
           return {
             id: `${source.id}:${path || packageName}`,
             kind,
@@ -471,13 +520,27 @@ async function fetchMarketplacePackages(
     );
   }
   if (Array.isArray(manifest.packages)) {
-    return manifest.packages.map((pkg) => {
-      const kind = pkg.kind ?? pkg.type ?? "knowledge";
+    return Promise.all(manifest.packages.map(async (pkg) => {
+      let kind = pkg.kind ?? pkg.type ?? "package";
       const path = pkg.path
         .trim()
         .replace(/^\.?\//, "")
         .replace(/\/+$/, "");
       const name = pkg.slug || pkg.name || path.split("/").pop() || "package";
+      try {
+        const packageManifest = await fetchJson<NenjoModulePackageManifest>(
+          githubRawUrl(info.owner, info.repo, sourceFetchRef(info), path),
+        );
+        const groups = await resolvePackageModuleGroups(info, path, packageManifest);
+        kind =
+          pkg.kind ??
+          pkg.type ??
+          combinedPackageKind(
+            groups.flatMap((group) => group.modules.map((module) => module.kind)),
+          );
+      } catch {
+        kind = pkg.kind ?? pkg.type ?? packageKindFromPath(path);
+      }
       const selector = packageSupportsSelector(kind)
         ? `git://${info.owner}/${info.repo}/${name}`
         : null;
@@ -522,7 +585,7 @@ async function fetchMarketplacePackages(
           },
         },
       };
-    });
+    }));
   }
   return (manifest.plugins ?? []).map((plugin) => {
     const path = plugin.source
@@ -557,14 +620,6 @@ async function fetchMarketplacePackages(
   });
 }
 
-async function fetchOptionalJson<T>(url: string): Promise<T | null> {
-  const res = await fetch(url);
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
-  const text = await res.text();
-  return parseStructuredText<T>(text);
-}
-
 function parseStructuredText<T>(text: string): T {
   const trimmed = text.trimStart();
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
@@ -590,11 +645,10 @@ async function fetchPackageDetails(
   const dir = descriptorPath.includes("/")
     ? descriptorPath.slice(0, descriptorPath.lastIndexOf("/"))
     : "";
-  const entry = descriptor.entry?.trim() || "manifest.yaml";
-  const manifestPath = `${dir ? `${dir}/` : ""}${entry.replace(/^\/+/, "")}`;
-  const manifest = await fetchJson<Record<string, unknown>>(
-    githubRawUrl(info.owner, info.repo, sourceFetchRef(info), manifestPath),
-  );
+  const [moduleGroups, dependencies] = await Promise.all([
+    resolvePackageModuleGroups(info, descriptorPath, descriptor),
+    resolvePackageDependencies(info, descriptor),
+  ]);
   const readme =
     (await fetchOptionalText(
       githubRawUrl(
@@ -614,121 +668,196 @@ async function fetchPackageDetails(
     ));
   return {
     descriptor,
-    manifest,
+    moduleGroups,
+    dependencies,
     readme,
     descriptorPath,
-    manifestPath,
   };
 }
 
-async function fetchClaudePluginInstallRequest(
-  source: PackageSource | MarketplaceSource,
-  pkg: MarketplacePackage,
-): Promise<PackageReview["plugin_request"]> {
-  const info = sourceGitHubInfo(source);
-  if (!info)
-    throw new Error("Marketplace source is missing GitHub owner/repo metadata");
-  const pluginPath = pkg.source_path;
-  const pluginManifest = await fetchOptionalJson<ClaudePluginManifest>(
-    githubRawUrl(
-      info.owner,
-      info.repo,
-      sourceFetchRef(info),
-      `${pluginPath}/.claude-plugin/plugin.json`,
-    ),
+async function resolvePackageModuleGroups(
+  info: {
+    owner: string;
+    repo: string;
+    ref: string;
+    resolvedCommitSha: string | null;
+  },
+  descriptorPath: string,
+  descriptor: Pick<NenjoPackageDescriptor, "entry" | "modules">,
+): Promise<LoadedPackageModuleGroup[]> {
+  const packageDir = descriptorPath.includes("/")
+    ? descriptorPath.slice(0, descriptorPath.lastIndexOf("/"))
+    : "";
+  const rootModules = descriptor.entry?.trim()
+    ? [descriptor.entry.trim()]
+    : (descriptor.modules ?? [])
+        .map((module) =>
+          typeof module === "string" ? module : (module.path ?? ""),
+        )
+        .map((path) => path.trim())
+        .filter(Boolean);
+  const groups = await Promise.all(
+    rootModules.map(async (modulePath) => ({
+      label: modulePath,
+      modules: await expandPackageModule(info, packageDir, modulePath, modulePath, new Set()),
+    })),
   );
-  const mcpFile = await fetchOptionalJson<{
-    mcpServers?: Record<string, ClaudeMcpServerConfig>;
-    mcp_servers?: Record<string, ClaudeMcpServerConfig>;
-  }>(
-    githubRawUrl(
-      info.owner,
-      info.repo,
-      sourceFetchRef(info),
-      `${pluginPath}/.mcp.json`,
-    ),
-  );
-  const tree = await fetchJson<GithubTreeResponse>(
-    `https://api.github.com/repos/${info.owner}/${info.repo}/git/trees/${sourceFetchRef(info)}?recursive=1`,
-  );
-  const skillPrefix = `${pluginPath}/skills/`;
-  const skillEntries = (tree.tree ?? []).filter(
-    (entry) =>
-      entry.type === "blob" &&
-      entry.path.startsWith(skillPrefix) &&
-      entry.path.endsWith("/SKILL.md"),
-  );
-  const skills: SkillReview[] = await Promise.all(
-    skillEntries.map(async (entry) => {
-      const skillName = entry.path
-        .replace(skillPrefix, "")
-        .replace(/\/SKILL\.md$/, "");
+  return groups.filter((group) => group.modules.length > 0);
+}
+
+async function expandPackageModule(
+  info: {
+    owner: string;
+    repo: string;
+    ref: string;
+    resolvedCommitSha: string | null;
+  },
+  packageDir: string,
+  modulePath: string,
+  groupLabel: string,
+  seen: Set<string>,
+): Promise<LoadedPackageModule[]> {
+  const resolved = await fetchPackageModuleValue(info, packageDir, modulePath);
+  if (seen.has(resolved.path)) return [];
+  seen.add(resolved.path);
+
+  const schema = valueString(resolved.value, "schema");
+  if (schema === "nenjo.module_index.v1") {
+    const indexDir = resolved.path
+      .slice(packageDir ? packageDir.length + 1 : 0)
+      .replace(/\/?index\.ya?ml$/, "");
+    const children = packageModuleRefs(resolved.value);
+    const expanded = await Promise.all(
+      children.map((child) =>
+        expandPackageModule(
+          info,
+          packageDir,
+          indexDir ? `${indexDir}/${child}` : child,
+          groupLabel,
+          seen,
+        ),
+      ),
+    );
+    return expanded.flat();
+  }
+
+  return resourceManifestEntries(resolved.value, resolved.path);
+}
+
+async function fetchPackageModuleValue(
+  info: {
+    owner: string;
+    repo: string;
+    ref: string;
+    resolvedCommitSha: string | null;
+  },
+  packageDir: string,
+  modulePath: string,
+): Promise<{ path: string; value: Record<string, unknown> }> {
+  const paths = packageModuleCandidatePaths(packageDir, modulePath);
+  let lastError: unknown = null;
+  for (const path of paths) {
+    try {
       return {
-        name: skillName,
-        display_name: skillName.replace(/[-_]/g, " "),
-        description: pluginManifest?.description ?? pkg.description,
-        entrypoint: entry.path.replace(`${pluginPath}/`, ""),
-        skill_path: entry.path,
-        content: await fetchText(
-          githubRawUrl(info.owner, info.repo, sourceFetchRef(info), entry.path),
+        path,
+        value: await fetchJson<Record<string, unknown>>(
+          githubRawUrl(info.owner, info.repo, sourceFetchRef(info), path),
         ),
       };
-    }),
-  );
-  const mcpServers = {
-    ...(mcpFile?.mcpServers ?? {}),
-    ...(mcpFile?.mcp_servers ?? {}),
-    ...(pluginManifest?.mcpServers ?? {}),
-    ...(pluginManifest?.mcp_servers ?? {}),
-  };
-  return {
-    name: pkg.name,
-    display_name: pluginManifest?.name ?? pkg.display_name,
-    description: pluginManifest?.description ?? pkg.description,
-    source: { path: pluginPath },
-    version: {
-      ref_: info.ref,
-      resolved_commit_sha: info.resolvedCommitSha,
-      package_version: pluginManifest?.version ?? pkg.latest_version,
-    },
-    skills,
-    mcp_servers: mcpServers,
-  };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError ?? new Error("Failed to fetch package manifest");
 }
 
-async function fetchMarketplaceSkillReview(
-  source: PackageSource | MarketplaceSource,
-  pkg: MarketplacePackage,
-): Promise<PackageReview["plugin_request"]> {
-  const info = sourceGitHubInfo(source);
-  if (!info)
-    throw new Error("Marketplace source is missing GitHub owner/repo metadata");
-  const skillPath = `${pkg.source_path.replace(/\/+$/, "")}/SKILL.md`;
-  const content = await fetchText(
-    githubRawUrl(info.owner, info.repo, sourceFetchRef(info), skillPath),
+function packageModuleCandidatePaths(packageDir: string, modulePath: string): string[] {
+  const relative = modulePath.replace(/^\/+/, "");
+  const path = `${packageDir ? `${packageDir}/` : ""}${relative}`;
+  if (!modulePath.trim().endsWith("/")) return [path];
+  return [`${path}index.yml`, `${path}index.yaml`];
+}
+
+function packageModuleRefs(value: Record<string, unknown>): string[] {
+  const modules = value.modules;
+  if (!Array.isArray(modules)) return [];
+  return modules
+    .map((module) =>
+      typeof module === "string"
+        ? module
+        : module && typeof module === "object" && !Array.isArray(module)
+          ? (module as Record<string, unknown>).path
+          : null,
+    )
+    .filter((path): path is string => typeof path === "string" && path.trim().length > 0)
+    .map((path) => path.trim());
+}
+
+function resourceManifestEntries(
+  value: Record<string, unknown>,
+  path: string,
+): LoadedPackageModule[] {
+  const resources = Array.isArray(value.resources)
+    ? value.resources.filter(
+        (item): item is Record<string, unknown> =>
+          item !== null && typeof item === "object" && !Array.isArray(item),
+      )
+    : [value];
+  return resources.map((resource, index) => {
+    const manifest =
+      resource.manifest && typeof resource.manifest === "object" && !Array.isArray(resource.manifest)
+        ? (resource.manifest as Record<string, unknown>)
+        : {};
+    const name = valueString(manifest, "display_name") ?? valueString(manifest, "name");
+    const schema = valueString(resource, "schema");
+    return {
+      title: name ?? (resources.length > 1 ? `Module ${index + 1}` : "Module"),
+      path,
+      value: resource,
+      kind: packageKindFromSchema(schema),
+    };
+  });
+}
+
+async function resolvePackageDependencies(
+  info: {
+    owner: string;
+    repo: string;
+    ref: string;
+    resolvedCommitSha: string | null;
+    marketplacePath: string;
+  },
+  descriptor: NenjoPackageDescriptor,
+): Promise<PackageDependency[]> {
+  const dependencies = descriptor.dependencies ?? {};
+  const legacy = descriptor.depends_on ?? [];
+  const registry = await fetchJson<NenjoPackagesManifest>(
+    githubRawUrl(info.owner, info.repo, sourceFetchRef(info), info.marketplacePath),
+  ).catch(() => null);
+  const pathByName = new Map<string, string>();
+  if (registry?.packages && !Array.isArray(registry.packages)) {
+    for (const [name, path] of Object.entries(registry.packages)) {
+      pathByName.set(name, path);
+    }
+  } else if (Array.isArray(registry?.packages)) {
+    for (const pkg of registry.packages) {
+      const name = pkg.name ?? pkg.slug;
+      if (name) pathByName.set(name, pkg.path);
+    }
+  }
+  const resolved: PackageDependency[] = Object.entries(dependencies).map(([name, version]) => ({
+    name,
+    path: pathByName.get(name) ?? name,
+    version,
+  }));
+  resolved.push(
+    ...legacy.map((dependency) => ({
+      name: dependency.name ?? dependency.path,
+      path: dependency.path,
+      version: dependency.version,
+    })),
   );
-  return {
-    name: pkg.name,
-    display_name: pkg.display_name,
-    description: pkg.description,
-    source: { path: pkg.source_path },
-    version: {
-      ref_: info.ref,
-      resolved_commit_sha: info.resolvedCommitSha,
-      package_version: pkg.latest_version,
-    },
-    skills: [
-      {
-        name: pkg.name,
-        display_name: pkg.display_name,
-        description: pkg.description,
-        entrypoint: "SKILL.md",
-        skill_path: skillPath,
-        content,
-      },
-    ],
-    mcp_servers: {},
-  };
+  return resolved;
 }
 
 function knowledgeSelector(pack: KnowledgePack): string {
@@ -760,19 +889,23 @@ function parseGitHubRepoUrl(
 
 export default function KnowledgePage() {
   const router = useRouter();
+  const { mutate } = useSWRConfig();
   const {
     packs,
     isLoading: packsLoading,
     mutate: mutatePacks,
   } = useKnowledgePacks();
-  const { agents, isLoading: agentsLoading } = useAgents();
+  const {
+    agents,
+    isLoading: agentsLoading,
+    mutate: mutateAgents,
+  } = useAgents();
   const {
     abilities,
     isLoading: abilitiesLoading,
     mutate: mutateAbilities,
   } = useAbilities();
   const {
-    mcpServers,
     isLoading: mcpLoading,
     mutate: mutateMcp,
   } = useMcpServers();
@@ -810,6 +943,9 @@ export default function KnowledgePage() {
     pkg: MarketplacePackage;
     source: PackageSource | null;
   } | null>(null);
+  const [packageInstallDetails, setPackageInstallDetails] = useState<
+    Record<string, PackageInstallDetail>
+  >({});
   const [envEditor, setEnvEditor] = useState<{
     ability: Ability;
     envNamesText: string;
@@ -832,7 +968,33 @@ export default function KnowledgePage() {
     () => (installs ?? []).filter((install) => install.status === "installed"),
     [installs],
   );
-  const packageRootRefs = useMemo(() => {
+
+  useEffect(() => {
+    const missing = activePackageInstalls.filter(
+      (install) => !packageInstallDetails[install.id],
+    );
+    if (!missing.length) return;
+    let cancelled = false;
+    Promise.all(
+      missing.map((install) =>
+        fetchPackageInstallDetail(install.id).catch(() => null),
+      ),
+    ).then((details) => {
+      if (cancelled) return;
+      setPackageInstallDetails((current) => {
+        const next = { ...current };
+        for (const detail of details) {
+          if (detail) next[detail.install.id] = detail;
+        }
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activePackageInstalls, packageInstallDetails]);
+
+  const packageResourceRefs = useMemo(() => {
     const refs = {
       knowledgeIds: new Set<string>(),
       knowledgePaths: new Set<string>(),
@@ -860,8 +1022,27 @@ export default function KnowledgePage() {
         refs.abilityPaths.add(install.root_path);
       }
     }
+    for (const install of activePackageInstalls) {
+      const detail = packageInstallDetails[install.id];
+      for (const resource of detail?.resources ?? []) {
+        if (resource.install_state !== "installed") continue;
+        const resourceType = normalizedPackageResourceType(
+          resource.resource_type,
+        );
+        if (resourceType === "knowledge") {
+          refs.knowledgeIds.add(resource.resource_id);
+          refs.knowledgePaths.add(resource.source_path);
+        } else if (resourceType === "agent") {
+          refs.agentIds.add(resource.resource_id);
+          refs.agentPaths.add(resource.source_path);
+        } else if (resourceType === "ability") {
+          refs.abilityIds.add(resource.resource_id);
+          refs.abilityPaths.add(resource.source_path);
+        }
+      }
+    }
     return refs;
-  }, [activePackageInstalls]);
+  }, [activePackageInstalls, packageInstallDetails]);
   const activePacks = useMemo(
     () =>
       (packs ?? []).filter((pack) => {
@@ -872,11 +1053,13 @@ export default function KnowledgePage() {
           "source_path",
         ]);
         return (
-          packageRootRefs.knowledgeIds.has(pack.id) ||
-          Boolean(sourcePath && packageRootRefs.knowledgePaths.has(sourcePath))
+          packageResourceRefs.knowledgeIds.has(pack.id) ||
+          Boolean(
+            sourcePath && packageResourceRefs.knowledgePaths.has(sourcePath),
+          )
         );
       }),
-    [packageRootRefs, packs],
+    [packageResourceRefs, packs],
   );
   const packageAgents = useMemo(
     () =>
@@ -886,11 +1069,11 @@ export default function KnowledgePage() {
           "source_path",
         ]);
         return (
-          packageRootRefs.agentIds.has(agent.id) ||
-          Boolean(sourcePath && packageRootRefs.agentPaths.has(sourcePath))
+          packageResourceRefs.agentIds.has(agent.id) ||
+          Boolean(sourcePath && packageResourceRefs.agentPaths.has(sourcePath))
         );
       }),
-    [agents, packageRootRefs],
+    [agents, packageResourceRefs],
   );
   const packageAbilities = useMemo(
     () =>
@@ -901,21 +1084,18 @@ export default function KnowledgePage() {
           "source_path",
         ]);
         return (
-          packageRootRefs.abilityIds.has(ability.id) ||
-          Boolean(sourcePath && packageRootRefs.abilityPaths.has(sourcePath))
+          packageResourceRefs.abilityIds.has(ability.id) ||
+          Boolean(
+            sourcePath && packageResourceRefs.abilityPaths.has(sourcePath),
+          )
         );
       }),
-    [abilities, packageRootRefs],
+    [abilities, packageResourceRefs],
   );
   const skillAbilities = useMemo(
     () =>
       (abilities ?? []).filter((ability) => ability.source_type === "skill"),
     [abilities],
-  );
-  const pluginMcpServers = useMemo(
-    () =>
-      (mcpServers ?? []).filter((server) => server.source_type === "plugin"),
-    [mcpServers],
   );
   const selectedPack =
     activePacks.find((pack) => pack.id === selectedPackId) ?? null;
@@ -928,18 +1108,21 @@ export default function KnowledgePage() {
     }
     return keys;
   }, [activePackageInstalls]);
+  const installedInstallsByKey = useMemo(() => {
+    const map = new Map<string, PackageInstall>();
+    for (const install of activePackageInstalls) {
+      map.set(packageInstallKey(install.package_source_id, install.root_path), install);
+    }
+    return map;
+  }, [activePackageInstalls]);
   const installedSelectors = useMemo(() => {
     const selectors = new Set<string>();
     for (const ability of skillAbilities) {
       const selector = metadataText(ability.metadata, ["install", "selector"]);
       if (selector) selectors.add(selector);
     }
-    for (const server of pluginMcpServers) {
-      const selector = metadataText(server.metadata, ["install", "selector"]);
-      if (selector) selectors.add(selector);
-    }
     return selectors;
-  }, [pluginMcpServers, skillAbilities]);
+  }, [skillAbilities]);
 
   useEffect(() => {
     if (!sourceId && sources?.length) setSourceId(sources[0].id);
@@ -1022,10 +1205,6 @@ export default function KnowledgePage() {
   const filteredSkills = useMemo(() => {
     return skillAbilities;
   }, [skillAbilities]);
-
-  const filteredMcp = useMemo(() => {
-    return pluginMcpServers;
-  }, [pluginMcpServers]);
 
   const filteredPackages = useMemo(() => {
     return packages.filter((pkg) => {
@@ -1157,112 +1336,104 @@ export default function KnowledgePage() {
   };
 
   const handleReviewPackage = async (pkg: MarketplacePackage) => {
-    if (pkg.kind !== "plugin" && pkg.kind !== "skill") {
-      void handleInstallPackage(pkg);
-      return;
-    }
-    if (!selectedSource) {
-      setError("Select a package source first");
-      return;
-    }
-    setBusyKey(`review:${pkg.id}`);
-    resetNotice();
-    try {
-      const pluginRequest =
-        pkg.kind === "plugin"
-          ? await fetchClaudePluginInstallRequest(selectedSource, pkg)
-          : await fetchMarketplaceSkillReview(selectedSource, pkg);
-      if (!pluginRequest.skills.length) {
-        throw new Error("No SKILL.md files were found for this package");
-      }
-      const envNames = inferMcpEnvNames(pluginRequest.mcp_servers ?? {});
-      setPackageReview({
-        pkg,
-        source: selectedSource,
-        plugin_request: pluginRequest,
-        envNamesText: envNames.join("\n"),
-        selectedSkillIndex: 0,
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load skill");
-    } finally {
-      setBusyKey(null);
-    }
+    setPackageDetails({ pkg, source: selectedSource });
   };
 
-  const handleInstallPackage = async (
-    pkg: MarketplacePackage,
-    review?: PackageReview,
-  ) => {
-    const selector = packageSelector(pkg);
+  const mutateAgentDomainAssignments = () =>
+    mutate(
+      (key) =>
+        typeof key === "string" &&
+        key.includes("/agents/") &&
+        key.endsWith("/domains"),
+    );
+
+  const handleInstallPackage = async (pkg: MarketplacePackage) => {
     setBusyKey(`install:${pkg.id}`);
     resetNotice();
     try {
-      if (selectedSource?.adapter === "nenjo_packages") {
-        await installPackage({
-          source_id: selectedSource.id,
-          path: pkg.source_path,
-        });
-        await Promise.all([
-          mutateInstalls(),
-          mutatePacks(),
-          mutateAbilities(),
-          mutateMcp(),
-        ]);
-      } else if (pkg.kind === "plugin") {
-        const source = review?.source ?? selectedSource;
-        if (!source) throw new Error("Select a package source first");
-        const request = review
-          ? pluginRequestWithRuntime(
-              review.plugin_request,
-              parseEnvNames(review.envNamesText),
-            )
-          : pluginRequestWithRuntime(
-              await fetchClaudePluginInstallRequest(source, pkg),
-              [],
-            );
-        await installClaudePlugin(source.id, request);
-        await Promise.all([mutateAbilities(), mutateMcp()]);
-      } else if (pkg.kind === "skill") {
-        if (!selector)
-          throw new Error("Skill package is missing an install selector");
-        const name = identifier(pkg.name);
-        const envNames = parseEnvNames(review?.envNamesText ?? "");
-        await installSkill({
-          name,
-          path: "repo",
-          description: pkg.description ?? undefined,
-          activation_condition: pkg.description ?? "",
-          selector,
-          metadata: {
-            ...withInstallSelector(pkg.metadata, selector, "skill"),
-            runtime: { env_names: envNames },
-          },
-        });
-        await mutateAbilities();
-      } else {
-        if (!selector)
-          throw new Error("Knowledge package is missing an install selector");
-        await installKnowledgePack({
-          name: pkg.display_name ?? pkg.name,
-          slug: slugify(pkg.name),
-          description: pkg.description,
-          selector,
-          source_type: "github",
-          metadata: withInstallSelector(
-            pkg.metadata,
-            selector,
-            "knowledge_pack",
-          ),
-        });
-        await mutatePacks();
-      }
+      if (!selectedSource) throw new Error("Select a package source first");
+      const detail = await installPackage({
+        source_id: selectedSource.id,
+        path: pkg.source_path,
+      });
+      setPackageInstallDetails((current) => ({
+        ...current,
+        [detail.install.id]: detail,
+      }));
+      await Promise.all([
+        mutateInstalls(),
+        mutatePacks(),
+        mutateAbilities(),
+        mutate(domainsUrl()),
+        mutateAgentDomainAssignments(),
+        mutateAgents(),
+        mutateMcp(),
+      ]);
       setPackageReview(null);
       setPackageDetails(null);
       setMessage(`${pkg.display_name ?? pkg.name} installed.`);
       setActiveTab("installed");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Install failed");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const handleUpdateInstall = async (install: PackageInstall) => {
+    setBusyKey(`update-install:${install.id}`);
+    resetNotice();
+    try {
+      const detail = await updatePackageInstall(install.id);
+      setPackageInstallDetails((current) => ({
+        ...current,
+        [install.id]: detail,
+      }));
+      await Promise.all([
+        mutateInstalls(),
+        mutatePacks(),
+        mutateAbilities(),
+        mutate(domainsUrl()),
+        mutateAgentDomainAssignments(),
+        mutateAgents(),
+        mutateMcp(),
+      ]);
+      setMessage(
+        `${install.root_path} updated to latest ${install.requested_ref}.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Package update failed");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const handleUninstallPackageInstall = async (install: PackageInstall) => {
+    const confirmed = window.confirm(
+      `Uninstall ${install.root_path} and package-owned dependencies that are not used by another install?`,
+    );
+    if (!confirmed) return;
+    setBusyKey(`uninstall-install:${install.id}`);
+    resetNotice();
+    try {
+      await uninstallPackageInstall(install.id);
+      setPackageInstallDetails((current) => {
+        const next = { ...current };
+        delete next[install.id];
+        return next;
+      });
+      await Promise.all([
+        mutateInstalls(),
+        mutatePacks(),
+        mutateAbilities(),
+        mutate(domainsUrl()),
+        mutateAgentDomainAssignments(),
+        mutateAgents(),
+        mutateMcp(),
+      ]);
+      setMessage(`${install.root_path} uninstalled.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Package uninstall failed");
     } finally {
       setBusyKey(null);
     }
@@ -1333,22 +1504,6 @@ export default function KnowledgePage() {
     }
   };
 
-  const handleUninstallPlugin = async (server: McpServer) => {
-    setBusyKey(`uninstall-plugin:${server.id}`);
-    resetNotice();
-    try {
-      await uninstallPluginInstall(server.id);
-      await Promise.all([mutateAbilities(), mutateMcp()]);
-      setMessage(`${server.display_name} uninstalled.`);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to uninstall plugin",
-      );
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
   const handleDeleteSource = async (source: PackageSource) => {
     setBusyKey(`delete-source:${source.id}`);
     resetNotice();
@@ -1380,46 +1535,7 @@ export default function KnowledgePage() {
     setBusyKey("direct-import");
     resetNotice();
     try {
-      if (importMode === "claude_plugin") {
-        const resolvedCommitSha = await resolveGitHubCommitSha(
-          owner,
-          repo,
-          ref,
-        );
-        const source = await createMarketplaceSource({
-          name: `${owner}/${repo}`,
-          source_type: "github",
-          metadata: {
-            adapter: "claude_plugin",
-            owner,
-            repo,
-            ref,
-            resolved_commit_sha: resolvedCommitSha,
-            manifest_path:
-              sourceManifestPath.trim() &&
-              sourceManifestPath.trim() !== "packages.yaml"
-                ? sourceManifestPath.trim()
-                : ".claude-plugin/marketplace.json",
-          },
-        });
-        const pkg: MarketplacePackage = {
-          id: `${source.id}:${path}`,
-          kind: "plugin",
-          name,
-          display_name: name,
-          description: null,
-          latest_version: null,
-          synced_at: null,
-          source_path: path,
-          metadata: {
-            source: { provider: "github", owner, repo, path, package: name },
-            version: { ref, resolved_commit_sha: resolvedCommitSha },
-          },
-        };
-        const request = await fetchClaudePluginInstallRequest(source, pkg);
-        await installClaudePlugin(source.id, request);
-        await Promise.all([mutateSources(), mutateAbilities(), mutateMcp()]);
-      } else if (importMode === "skill") {
+      if (importMode === "skill") {
         const selector = `repo://${owner}/${repo}/${name}`;
         const normalizedName = identifier(name);
         await installSkill({
@@ -1507,7 +1623,7 @@ export default function KnowledgePage() {
             <SourceKnowledgeSection pack={selectedPack} />
           ) : (
             <KnowledgeSection
-              packId={selectedPack.id}
+              packRef={selectedPack.slug}
               readOnly={selectedPack.read_only}
             />
           )}
@@ -1558,7 +1674,6 @@ export default function KnowledgePage() {
             agents={packageAgents}
             packageAbilities={packageAbilities}
             abilities={filteredSkills}
-            mcpServers={filteredMcp}
             isLoading={
               installsLoading ||
               packsLoading ||
@@ -1574,7 +1689,6 @@ export default function KnowledgePage() {
             onOpenAbility={handleOpenAbilityPage}
             onUninstallSkill={handleUninstallSkill}
             onEditSkillEnv={handleOpenEnvEditor}
-            onUninstallPlugin={handleUninstallPlugin}
             busyKey={busyKey}
           />
         ) : null}
@@ -1593,8 +1707,10 @@ export default function KnowledgePage() {
               setPackageDetails({ pkg, source: selectedSource })
             }
             onInstall={(pkg) => handleInstallPackage(pkg)}
+            onUninstallInstall={handleUninstallPackageInstall}
             onRefresh={() => setMarketplaceRefresh((value) => value + 1)}
             installedKeys={installedCatalogKeys}
+            installedInstallsByKey={installedInstallsByKey}
             installedSelectors={installedSelectors}
             busyKey={busyKey}
           />
@@ -1655,9 +1771,7 @@ export default function KnowledgePage() {
           )
         }
         onInstall={() =>
-          packageReview
-            ? handleInstallPackage(packageReview.pkg, packageReview)
-            : undefined
+          packageReview ? handleInstallPackage(packageReview.pkg) : undefined
         }
       />
       <PackageDetailsModal
@@ -1768,24 +1882,6 @@ function packageVersionBadge(metadata: Record<string, unknown>): string | null {
   );
 }
 
-function inferMcpEnvNames(
-  servers: Record<string, ClaudeMcpServerConfig>,
-): string[] {
-  const names = new Set<string>();
-  for (const server of Object.values(servers)) {
-    if (
-      !server.env ||
-      typeof server.env !== "object" ||
-      Array.isArray(server.env)
-    )
-      continue;
-    for (const key of Object.keys(server.env)) {
-      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) names.add(key);
-    }
-  }
-  return Array.from(names).sort();
-}
-
 function parseEnvNames(value: string): string[] {
   const names = new Set<string>();
   value
@@ -1874,26 +1970,9 @@ async function fetchInstalledSkillReview(
           content,
         },
       ],
-      mcp_servers: {},
     },
     envNamesText: abilityEnvNames(ability).join("\n"),
     selectedSkillIndex: 0,
-  };
-}
-
-function pluginRequestWithRuntime(
-  request: PackageReview["plugin_request"],
-  envNames: string[],
-): InstallClaudePluginRequest {
-  return {
-    ...request,
-    skills: request.skills.map((skill) => ({
-      name: skill.name,
-      display_name: skill.display_name,
-      description: skill.description,
-      entrypoint: skill.entrypoint,
-      runtime: { env_names: envNames },
-    })),
   };
 }
 
@@ -1968,7 +2047,6 @@ function InstalledTab({
   agents,
   packageAbilities,
   abilities,
-  mcpServers,
   isLoading,
   onOpenPack,
   onOpenAgent,
@@ -1976,14 +2054,12 @@ function InstalledTab({
   onOpenAbility,
   onUninstallSkill,
   onEditSkillEnv,
-  onUninstallPlugin,
   busyKey,
 }: {
   packs: KnowledgePack[];
   agents: AgentDefinition[];
   packageAbilities: Ability[];
   abilities: Ability[];
-  mcpServers: McpServer[];
   isLoading: boolean;
   onOpenPack: (id: string) => void;
   onOpenAgent: (agent: AgentDefinition) => void;
@@ -1991,7 +2067,6 @@ function InstalledTab({
   onOpenAbility: (ability: Ability) => void;
   onUninstallSkill: (ability: Ability) => void;
   onEditSkillEnv: (ability: Ability) => void;
-  onUninstallPlugin: (server: McpServer) => void;
   busyKey: string | null;
 }) {
   if (isLoading) return <LoadingGrid />;
@@ -1999,8 +2074,7 @@ function InstalledTab({
     packs.length ||
     agents.length ||
     packageAbilities.length ||
-    abilities.length ||
-    mcpServers.length;
+    abilities.length;
   if (!hasInstalledItems)
     return <EmptyState text="No external packages installed." />;
   return (
@@ -2107,7 +2181,7 @@ function InstalledTab({
               description={ability.description}
               badges={[
                 "Skill",
-                `${ability.mcp_server_ids.length} MCP`,
+                `${ability.mcp_servers.length} MCP`,
                 ability.read_only ? "Read-only" : null,
               ]}
               updatedAt={ability.updated_at}
@@ -2151,45 +2225,6 @@ function InstalledTab({
         </CollapsibleAssetSection>
       ) : null}
 
-      {mcpServers.length ? (
-        <CollapsibleAssetSection
-          title="Plugin MCP"
-          count={mcpServers.length}
-          icon={<PlugZap className="h-4 w-4" />}
-        >
-          {mcpServers.map((server) => (
-            <div key={server.id} className="space-y-3">
-              <AssetCard
-                icon={<PlugZap className="h-5 w-5" />}
-                title={server.display_name}
-                subtitle={
-                  metadataText(server.metadata, ["install", "selector"]) ??
-                  server.name
-                }
-                description={server.description}
-                badges={[
-                  "MCP",
-                  server.transport,
-                  server.read_only ? "Read-only" : null,
-                ]}
-                updatedAt={server.updated_at}
-              />
-              {!server.is_system ? (
-                <Button
-                  size="sm"
-                  variant="danger"
-                  className="w-full"
-                  onClick={() => onUninstallPlugin(server)}
-                  isLoading={busyKey === `uninstall-plugin:${server.id}`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Uninstall Plugin
-                </Button>
-              ) : null}
-            </div>
-          ))}
-        </CollapsibleAssetSection>
-      ) : null}
     </div>
   );
 }
@@ -2205,8 +2240,10 @@ function MarketplaceTab({
   onOpen,
   onOpenDetails,
   onInstall,
+  onUninstallInstall,
   onRefresh,
   installedKeys,
+  installedInstallsByKey,
   installedSelectors,
   busyKey,
 }: {
@@ -2220,8 +2257,10 @@ function MarketplaceTab({
   onOpen: (pkg: MarketplacePackage) => void;
   onOpenDetails: (pkg: MarketplacePackage) => void;
   onInstall: (pkg: MarketplacePackage) => void;
+  onUninstallInstall: (install: PackageInstall) => void;
   onRefresh: () => void;
   installedKeys: Set<string>;
+  installedInstallsByKey: Map<string, PackageInstall>;
   installedSelectors: Set<string>;
   busyKey: string | null;
 }) {
@@ -2254,10 +2293,14 @@ function MarketplaceTab({
           }
         >
           <option value="all">All package types</option>
+          <option value="package">Packages</option>
           <option value="knowledge">Knowledge</option>
           <option value="agent">Agents</option>
           <option value="ability">Abilities</option>
-          <option value="knowledge_pack">Legacy knowledge packs</option>
+          <option value="domain">Domains</option>
+          <option value="context_block">Context blocks</option>
+          <option value="mcp">MCP</option>
+          <option value="routine">Routines</option>
           <option value="skill">Skills</option>
           <option value="plugin">Plugins</option>
         </Select>
@@ -2286,10 +2329,18 @@ function MarketplaceTab({
                 installedKeys,
                 installedSelectors,
               )}
+              install={
+                selectedSource
+                  ? installedInstallsByKey.get(
+                      packageInstallKey(selectedSource.id, pkg.source_path),
+                    )
+                  : undefined
+              }
               busyKey={busyKey}
               onOpen={onOpen}
               onOpenDetails={onOpenDetails}
               onInstall={onInstall}
+              onUninstallInstall={onUninstallInstall}
             />
           ))}
         </div>
@@ -2303,17 +2354,21 @@ function MarketplaceTab({
 function PackageCatalogCard({
   pkg,
   installed,
+  install,
   busyKey,
   onOpen,
   onOpenDetails,
   onInstall,
+  onUninstallInstall,
 }: {
   pkg: MarketplacePackage;
   installed: boolean;
+  install?: PackageInstall;
   busyKey: string | null;
   onOpen: (pkg: MarketplacePackage) => void;
   onOpenDetails: (pkg: MarketplacePackage) => void;
   onInstall: (pkg: MarketplacePackage) => void;
+  onUninstallInstall: (install: PackageInstall) => void;
 }) {
   const isSkillLike = pkg.kind === "plugin" || pkg.kind === "skill";
   return (
@@ -2363,6 +2418,17 @@ function PackageCatalogCard({
           >
             <Download className="h-4 w-4" />
             Install
+          </Button>
+        ) : install ? (
+          <Button
+            size="sm"
+            variant="danger"
+            className="mt-2 w-full"
+            onClick={() => onUninstallInstall(install)}
+            isLoading={busyKey === `uninstall-install:${install.id}`}
+          >
+            <Trash2 className="h-4 w-4" />
+            Uninstall
           </Button>
         ) : null}
       </div>
@@ -2438,27 +2504,37 @@ function PackageDetailsModal({
       sourceInfo?.resolvedCommitSha ??
       null)
     : null;
+  const gitRepoUrl =
+    (source ? metadataText(source.metadata, ["source", "url"]) : null) ??
+    (sourceOwner && sourceRepo
+      ? `https://github.com/${sourceOwner}/${sourceRepo}`
+      : null);
   const refDetail = ref && sha ? `${ref}  ${sha.slice(0, 7)}` : ref;
   const packageInstalled = activePkg
     ? installed && activePkg.id === pkg?.id
     : installed;
+  const displayedKind =
+    details && details.moduleGroups.length
+      ? combinedPackageKind(
+          details.moduleGroups.flatMap((group) =>
+            group.modules.map((module) => module.kind),
+          ),
+        )
+      : (details?.descriptor?.type ?? activePkg?.kind ?? null);
 
-  const handleOpenDependency = (dependency: {
-    path: string;
-    version?: string | null;
-  }) => {
+  const handleOpenDependency = (dependency: PackageDependency) => {
     if (!activePkg) return;
     const depName =
+      dependency.name ||
       dependency.path.split("/").slice(-2, -1)[0] ||
       dependency.path.split("/").pop() ||
       "package";
-    const depKind = packageKindFromPath(dependency.path);
     setHistory((items) => [...items, activePkg]);
     setDetails(null);
     setDetailsError(null);
     setCurrent({
       id: `${source?.id ?? "source"}:${dependency.path}`,
-      kind: depKind,
+      kind: "package",
       name: depName,
       display_name: depName.replace(/[-_]/g, " "),
       description: null,
@@ -2515,10 +2591,7 @@ function PackageDetailsModal({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge>
-                    {(details?.descriptor?.type ?? activePkg.kind).replace(
-                      "_",
-                      " ",
-                    )}
+                    {(displayedKind ?? activePkg.kind).replace("_", " ")}
                   </Badge>
                   <Badge>{packageInstalled ? "Installed" : "Available"}</Badge>
                   {(details?.descriptor?.version ??
@@ -2536,7 +2609,7 @@ function PackageDetailsModal({
           </div>
 
           <dl className="grid gap-3 sm:grid-cols-2">
-            {activeKind === "knowledge" ||
+            {(displayedKind ?? activeKind) === "knowledge" ||
             activeKind === "knowledge_pack" ||
             activeKind === "context_block" ? (
               <PackageDetail
@@ -2555,6 +2628,7 @@ function PackageDetailsModal({
                   : null)
               }
             />
+            <PackageDetail label="Git repo" value={gitRepoUrl} mono />
             <PackageDetail
               label="Adapter"
               value={
@@ -2579,17 +2653,21 @@ function PackageDetailsModal({
                   value={details.descriptor as Record<string, unknown> | null}
                   showRaw={false}
                 />
-                <PackageFilePanel
-                  title="Manifest"
-                  icon={packageKindIcon(
-                    details.descriptor?.type ?? activePkg.kind,
-                    "h-4 w-4",
-                  )}
-                  path={details.manifestPath}
-                  value={details.manifest}
-                  manifestType={details.descriptor?.type ?? activePkg.kind}
-                  allowRawToggle
-                />
+                {details.moduleGroups.length ? (
+                  details.moduleGroups.map((group) => (
+                    <PackageModuleGroupPanel
+                      key={group.label}
+                      group={group}
+                    />
+                  ))
+                ) : (
+                  <section className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                      <Braces className="h-4 w-4" />
+                      No module manifests could be loaded.
+                    </div>
+                  </section>
+                )}
                 {details.readme ? (
                   <section className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
                     <div className="mb-3 flex items-center gap-2">
@@ -2613,33 +2691,30 @@ function PackageDetailsModal({
                     Dependencies
                   </h3>
                   <span className="text-xs text-gray-400">
-                    {details.descriptor?.depends_on?.length ?? 0}
+                    {details.dependencies.length}
                   </span>
                 </div>
-                {details.descriptor?.depends_on?.length ? (
-                  details.descriptor.depends_on.map((dependency) => (
+                {details.dependencies.length ? (
+                  details.dependencies.map((dependency) => (
                     <button
-                      key={dependency.path}
+                      key={`${dependency.name}:${dependency.path}`}
                       type="button"
                       onClick={() => handleOpenDependency(dependency)}
                       className="block w-full rounded-lg border border-gray-200 bg-white p-3 text-left transition-colors hover:border-deep-space-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-deep-space-blue-700"
                     >
                       <div className="flex items-start gap-2">
                         <span className="mt-0.5 text-gray-500">
-                          {packageKindIcon(
-                            packageKindFromPath(dependency.path),
-                            "h-4 w-4",
-                          )}
+                          {packageKindIcon("package", "h-4 w-4")}
                         </span>
                         <div className="min-w-0 flex-1">
+                          <div className="break-words text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {dependency.name}
+                          </div>
                           <div className="break-words font-mono text-xs text-gray-900 dark:text-gray-100">
                             {dependency.path}
                           </div>
                           <div className="mt-1 text-[10px] uppercase tracking-wide text-gray-400">
-                            {packageKindFromPath(dependency.path).replace(
-                              "_",
-                              " ",
-                            )}
+                            Package dependency
                           </div>
                         </div>
                       </div>
@@ -2697,6 +2772,35 @@ function PackageDetail({
         {value || "-"}
       </dd>
     </div>
+  );
+}
+
+function PackageModuleGroupPanel({ group }: { group: LoadedPackageModuleGroup }) {
+  return (
+    <section className="space-y-3">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Network className="h-4 w-4 text-gray-500" />
+        <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
+          {group.label}
+        </h3>
+        <span className="text-xs text-gray-400">
+          {group.modules.length} module{group.modules.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <div className="space-y-3">
+        {group.modules.map((module, index) => (
+          <PackageFilePanel
+            key={`${module.path}:${index}`}
+            title={module.title}
+            icon={packageKindIcon(module.kind, "h-4 w-4")}
+            path={module.path}
+            value={module.value}
+            manifestType={module.kind}
+            allowRawToggle
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -3556,7 +3660,6 @@ function ImportsTab(props: {
         >
           <option value="knowledge_pack">Knowledge pack</option>
           <option value="skill">Skill</option>
-          <option value="claude_plugin">Claude plugin</option>
         </Select>
         <Input
           value={props.name}

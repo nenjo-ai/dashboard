@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { fetchAbilityPrompt, updateAbilityPrompt } from "@/lib/api";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
-import { TemplateVariableReference } from "./TemplateVariableReference";
+import { PromptReferenceTabs } from "./PromptReferenceTabs";
 import { Button } from "@/components/ui/Button";
 import { Zap } from "lucide-react";
 import type { Ability } from "@/lib/types";
@@ -263,10 +263,8 @@ export function AbilityPromptEditor({
           </div>
 
           {/* -- Right sidebar -- */}
-          <div className="w-80 shrink-0 overflow-y-auto border-l border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
-            <TemplateVariableReference
-              onInsertVariable={handleInsertVariable}
-            />
+          <div className="w-80 shrink-0 overflow-hidden border-l border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50">
+            <PromptReferenceTabs onInsertVariable={handleInsertVariable} />
           </div>
         </div>
 

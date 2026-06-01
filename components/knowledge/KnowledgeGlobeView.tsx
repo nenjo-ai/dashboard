@@ -41,14 +41,18 @@ interface RuntimeEdge {
   line: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 }
 
-const NODE_COLORS: Record<string, string> = {
-  guide: "#6366f1",
-  reference: "#0891b2",
-  taxonomy: "#16a34a",
-  domain: "#d97706",
-  entity: "#7c3aed",
-  policy: "#e11d48",
-};
+const NODE_COLOR_PALETTE = [
+  "#6366f1",
+  "#0891b2",
+  "#16a34a",
+  "#d97706",
+  "#7c3aed",
+  "#e11d48",
+  "#0284c7",
+  "#65a30d",
+  "#ea580c",
+  "#db2777",
+];
 
 const EDGE_COLORS: Record<string, string> = {
   "depends on": "#2563eb",
@@ -81,7 +85,6 @@ export function KnowledgeGlobeView({ manifest, headerControls }: { manifest: Kno
   const connectedEdges = selectedNode
     ? graph.edges.filter((edge) => edge.source.id === selectedNode.id || edge.target.id === selectedNode.id)
     : [];
-  const incoming = selectedNode ? connectedEdges.filter((edge) => edge.target.id === selectedNode.id) : [];
   const outgoing = selectedNode ? connectedEdges.filter((edge) => edge.source.id === selectedNode.id) : [];
 
   useEffect(() => {
@@ -312,7 +315,7 @@ export function KnowledgeGlobeView({ manifest, headerControls }: { manifest: Kno
       </div>
       <aside className="min-h-0 overflow-y-auto border-l border-gray-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
         {selectedNode ? (
-          <NodeDetails node={selectedNode} incoming={incoming} outgoing={outgoing} />
+          <NodeDetails node={selectedNode} outgoing={outgoing} />
         ) : (
           <div className="text-sm text-gray-500 dark:text-slate-400">Select a document.</div>
         )}
@@ -321,7 +324,7 @@ export function KnowledgeGlobeView({ manifest, headerControls }: { manifest: Kno
   );
 }
 
-function NodeDetails({ node, incoming, outgoing }: { node: GlobeNode; incoming: GlobeEdge[]; outgoing: GlobeEdge[] }) {
+function NodeDetails({ node, outgoing }: { node: GlobeNode; outgoing: GlobeEdge[] }) {
   return (
     <div className="space-y-5">
       <div>
@@ -331,8 +334,7 @@ function NodeDetails({ node, incoming, outgoing }: { node: GlobeNode; incoming: 
       <Detail label="Kind" value={node.doc.kind ?? "None"} />
       {node.doc.summary ? <Detail label="Summary" value={node.doc.summary} /> : null}
       <TokenList label="Tags" values={node.doc.tags ?? []} />
-      <ConnectionList title={`Outgoing (${outgoing.length})`} edges={outgoing} direction="outgoing" />
-      <ConnectionList title={`Incoming (${incoming.length})`} edges={incoming} direction="incoming" />
+      <ConnectionList title={`Outgoing (${outgoing.length})`} edges={outgoing} />
     </div>
   );
 }
@@ -365,18 +367,17 @@ function TokenList({ label, values }: { label: string; values: string[] }) {
   );
 }
 
-function ConnectionList({ title, edges, direction }: { title: string; edges: GlobeEdge[]; direction: "incoming" | "outgoing" }) {
+function ConnectionList({ title, edges }: { title: string; edges: GlobeEdge[] }) {
   return (
     <div>
       <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">{title}</h4>
       {edges.length ? (
         <div className="space-y-2">
           {edges.map((edge) => {
-            const other = direction === "outgoing" ? edge.target : edge.source;
             return (
               <div key={edge.id} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-950/50">
                 <div className="text-xs font-medium text-gray-500 dark:text-slate-400">{edgeLabel(edge.type)}</div>
-                <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-slate-100">{other.label}</div>
+                <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-slate-100">{edge.target.label}</div>
                 {edge.note ? <div className="mt-1 text-xs text-gray-500 dark:text-slate-400">{edge.note}</div> : null}
               </div>
             );
@@ -402,7 +403,12 @@ function buildGlobeGraph(manifest: KnowledgeManifestGraph): { nodes: GlobeNode[]
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const byPath = new Map<string, GlobeNode>();
   for (const node of nodes) {
-    for (const value of [node.doc.id, node.doc.path, node.doc.title]) {
+    for (const value of [
+      node.doc.id,
+      node.doc.selector,
+      node.doc.path,
+      node.doc.title,
+    ]) {
       if (value) byPath.set(value, node);
     }
   }
@@ -549,25 +555,34 @@ function labelPlatePath(context: CanvasRenderingContext2D, x: number, y: number,
 }
 
 function nodeColor(doc: KnowledgeManifestDoc): string {
-  return doc.kind ? NODE_COLORS[doc.kind] ?? DEFAULT_NODE_COLOR : DEFAULT_NODE_COLOR;
+  if (!doc.kind) return DEFAULT_NODE_COLOR;
+  return NODE_COLOR_PALETTE[hashString(doc.kind) % NODE_COLOR_PALETTE.length];
 }
 
 function nodeGeometry(doc: KnowledgeManifestDoc): THREE.BufferGeometry {
-  switch (doc.kind) {
-    case "reference":
+  if (!doc.kind) return new THREE.SphereGeometry(12, 24, 16);
+  switch (hashString(doc.kind) % 6) {
+    case 0:
       return new THREE.BoxGeometry(22, 22, 22);
-    case "taxonomy":
+    case 1:
       return new THREE.OctahedronGeometry(16, 0);
-    case "domain":
+    case 2:
       return new THREE.DodecahedronGeometry(18, 0);
-    case "entity":
+    case 3:
       return new THREE.IcosahedronGeometry(16, 0);
-    case "policy":
+    case 4:
       return new THREE.ConeGeometry(15, 28, 5);
-    case "guide":
     default:
       return new THREE.SphereGeometry(12, 24, 16);
   }
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
 }
 
 function edgeColor(type: string): string {
