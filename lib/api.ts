@@ -2980,6 +2980,8 @@ export async function triggerRoutine(routineId: string): Promise<void> {
 export function chatMessagesUrl(params?: {
   project_id?: string;
   agent_id?: string;
+  target_type?: "agent" | "council";
+  target_id?: string;
   limit?: number;
   before?: string;
   session_id?: string;
@@ -2988,6 +2990,8 @@ export function chatMessagesUrl(params?: {
   const projectId = normalizeOptionalProjectId(params?.project_id);
   if (projectId) qs.set("project_id", projectId);
   if (params?.agent_id) qs.set("agent_id", params.agent_id);
+  if (params?.target_type) qs.set("target_type", params.target_type);
+  if (params?.target_id) qs.set("target_id", params.target_id);
   if (params?.limit) qs.set("limit", String(params.limit));
   if (params?.before) qs.set("before", params.before);
   if (params?.session_id) qs.set("session_id", params.session_id);
@@ -2997,14 +3001,17 @@ export function chatMessagesUrl(params?: {
 
 export async function fetchChatMessages(
   projectId: string | null | undefined,
-  agentId: string,
+  targetId: string,
   opts?: { limit?: number; before?: string; session_id: string },
+  targetType: "agent" | "council" = "agent",
 ): Promise<ChatMessagePage> {
   const normalizedProjectId = normalizeOptionalProjectId(projectId);
   return fetcher<ChatMessagePage>(
     chatMessagesUrl({
       ...(normalizedProjectId ? { project_id: normalizedProjectId } : {}),
-      agent_id: agentId,
+      ...(targetType === "agent" ? { agent_id: targetId } : {}),
+      target_type: targetType,
+      target_id: targetId,
       limit: opts?.limit,
       before: opts?.before,
       session_id: opts?.session_id,
@@ -3014,7 +3021,9 @@ export async function fetchChatMessages(
 
 export async function createChatMessage(body: {
   project_id?: string | null;
-  agent_id: string;
+  agent_id?: string | null;
+  target_type?: "agent" | "council";
+  target_id?: string;
   sender: string;
   content: string;
   session_id: string;
@@ -3051,18 +3060,23 @@ export async function deleteChatMessage(messageId: string): Promise<void> {
 
 export async function fetchChatSessions(
   projectId: string | null | undefined,
-  agentId: string,
+  targetId: string,
+  targetType: "agent" | "council" = "agent",
 ): Promise<ChatSession[]> {
   const qs = new URLSearchParams();
   const normalizedProjectId = normalizeOptionalProjectId(projectId);
   if (normalizedProjectId) qs.set("project_id", normalizedProjectId);
-  qs.set("agent_id", agentId);
+  if (targetType === "agent") qs.set("agent_id", targetId);
+  qs.set("target_type", targetType);
+  qs.set("target_id", targetId);
   return fetcher<ChatSession[]>(`${API_V1}/chat-sessions?${qs.toString()}`);
 }
 
 export async function createChatSession(body: {
   project_id?: string | null;
-  agent_id: string;
+  agent_id?: string | null;
+  target_type?: "agent" | "council";
+  target_id?: string;
   title?: string;
 }): Promise<ChatSession> {
   const projectId = normalizeOptionalProjectId(body.project_id);

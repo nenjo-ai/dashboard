@@ -415,11 +415,13 @@ export function usePlannerChat(
   projectId: string | null | undefined,
   agentId?: string,
   initialSessionId?: string,
+  targetType: "agent" | "council" = "agent",
 ) {
   const { userId } = useCurrentUser();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [livePreview, setLivePreview] = useState<string | undefined>(undefined);
   const status = "connected";
+  const isAgentTarget = targetType === "agent";
 
   // Initialize from pendingAgentId so the typing indicator is correct on the
   // very first render after remount — no useEffect delay.
@@ -622,7 +624,7 @@ export function usePlannerChat(
     }
 
     setIsLoadingSessions(true);
-    fetchChatSessions(projectId, agentId)
+    fetchChatSessions(projectId, agentId, targetType)
       .then(async (fetched) => {
         setSessions(fetched);
         // Pick most recent non-archived session, or auto-create one
@@ -633,7 +635,9 @@ export function usePlannerChat(
           try {
             const session = await createChatSession({
               ...(projectId ? { project_id: projectId } : {}),
-              agent_id: agentId,
+              ...(isAgentTarget ? { agent_id: agentId } : {}),
+              target_type: targetType,
+              target_id: agentId,
             });
             setSessions((prev) => [session, ...prev]);
             setActiveSessionId(session.id);
@@ -649,7 +653,7 @@ export function usePlannerChat(
         setActiveSessionId(null);
       })
       .finally(() => setIsLoadingSessions(false));
-  }, [projectId, agentId, initialSessionId]);
+  }, [projectId, agentId, initialSessionId, targetType, isAgentTarget]);
 
   // ── Load history on mount / role / session change ─────────────────────
   useEffect(() => {
@@ -731,7 +735,7 @@ export function usePlannerChat(
 
     fetchChatMessages(projectId, agentId, {
       session_id: activeSessionId,
-    })
+    }, targetType)
       .then(async (page) => {
         if (fetchId !== historyFetchIdRef.current) return;
         const storedAck = await loadStoredAccountContentKey().catch(() => null);
@@ -894,7 +898,7 @@ export function usePlannerChat(
       const page = await fetchChatMessages(projectId, agentId, {
         before: oldest.timestamp,
         session_id: activeSessionId,
-      });
+      }, targetType);
       const storedAck = await loadStoredAccountContentKey().catch(() => null);
       console.warn("Chat history pagination fetch", {
         sessionId: activeSessionId,
@@ -1965,7 +1969,9 @@ export function usePlannerChat(
           : activeDomainSession
             ? { domain_session_id: activeDomainSession.id }
             : {}),
-        agent_id: agentId!,
+        ...(isAgentTarget ? { agent_id: agentId! } : {}),
+        target_type: targetType,
+        target_id: agentId!,
         ...(projectId ? { project_id: projectId } : {}),
       };
 
@@ -2002,7 +2008,7 @@ export function usePlannerChat(
           if (!sessionId || !resolvedAgentId) return;
           const page = await fetchChatMessages(projectId, resolvedAgentId, {
             session_id: sessionId,
-          });
+          }, targetType);
           const loaded: ChatMessage[] = await Promise.all(
             page.messages.reverse().map(async (message) => ({
               id: message.id,
@@ -2111,7 +2117,7 @@ export function usePlannerChat(
 
   // Exit the active domain
   const exitDomain = useCallback(async () => {
-    if (!activeDomainSession || !agentId) return;
+    if (!isAgentTarget || !activeDomainSession || !agentId) return;
 
     try {
       const restoreKey = domainRestoreKey(projectId, agentId);
@@ -2132,11 +2138,11 @@ export function usePlannerChat(
       );
       console.error("Failed to exit domain:", err);
     }
-  }, [projectId, agentId, activeSessionId, activeDomainSession, domainRestoreKey]);
+  }, [projectId, agentId, activeSessionId, activeDomainSession, domainRestoreKey, isAgentTarget]);
 
   // Cancel the active domain (discard artifact)
   const cancelDomain = useCallback(async () => {
-    if (!activeDomainSession || !agentId) return;
+    if (!isAgentTarget || !activeDomainSession || !agentId) return;
 
     try {
       const restoreKey = domainRestoreKey(projectId, agentId);
@@ -2157,7 +2163,7 @@ export function usePlannerChat(
       );
       console.error("Failed to cancel domain:", err);
     }
-  }, [projectId, agentId, activeSessionId, activeDomainSession, domainRestoreKey]);
+  }, [projectId, agentId, activeSessionId, activeDomainSession, domainRestoreKey, isAgentTarget]);
 
   const deleteMessage = useCallback(
     (messageId: string) => {
@@ -2208,7 +2214,9 @@ export function usePlannerChat(
           try {
             const session = await createChatSession({
               ...(projectId ? { project_id: projectId } : {}),
-              agent_id: agentId,
+              ...(isAgentTarget ? { agent_id: agentId } : {}),
+              target_type: targetType,
+              target_id: agentId,
             });
             setSessions((prev) => [session, ...prev]);
             setActiveSessionId(session.id);
@@ -2219,7 +2227,7 @@ export function usePlannerChat(
         })
         .catch((err) => console.error("Failed to archive session:", err));
     }
-  }, [projectId, agentId, activeSessionId, cacheKey]);
+  }, [projectId, agentId, activeSessionId, cacheKey, isAgentTarget, targetType]);
 
   const cancelResponse = useCallback(() => {
     if (!isTyping) return;
@@ -2234,7 +2242,7 @@ export function usePlannerChat(
       notifyChatStreamSnapshot({ sessionId: activeSessionId, clear: true });
     }
 
-    if (projectId) {
+    if (projectId && isAgentTarget) {
       void cancelChat({
         project_id: projectId,
         ...(agentId ? { agent_id: agentId } : {}),
@@ -2243,7 +2251,7 @@ export function usePlannerChat(
         console.error("Failed to cancel chat:", err);
       });
     }
-  }, [projectId, agentId, activeSessionId, isTyping]);
+  }, [projectId, agentId, activeSessionId, isTyping, isAgentTarget]);
 
   // ── Session management callbacks ─────────────────────────────────────
   const switchSession = useCallback(
@@ -2266,14 +2274,16 @@ export function usePlannerChat(
     try {
       const session = await createChatSession({
         ...(projectId ? { project_id: projectId } : {}),
-        agent_id: agentId,
+        ...(isAgentTarget ? { agent_id: agentId } : {}),
+        target_type: targetType,
+        target_id: agentId,
       });
       setSessions((prev) => [session, ...prev]);
       switchSession(session.id);
     } catch (err) {
       console.error("Failed to create session:", err);
     }
-  }, [projectId, agentId, switchSession]);
+  }, [projectId, agentId, switchSession, isAgentTarget, targetType]);
 
   const renameSession = useCallback(async (id: string, title: string) => {
     try {
@@ -2289,7 +2299,7 @@ export function usePlannerChat(
   // Notify the worker to delete the chat history file for a session
   const notifyWorkerSessionDelete = useCallback(
     (sessionId: string) => {
-      if (!agentId) return;
+      if (!isAgentTarget || !agentId) return;
       if (projectId) {
         void notifyChatSessionDelete({
           project_id: projectId,
@@ -2300,7 +2310,7 @@ export function usePlannerChat(
         });
       }
     },
-    [projectId, agentId],
+    [projectId, agentId, isAgentTarget],
   );
 
   const archiveSession = useCallback(
@@ -2321,7 +2331,9 @@ export function usePlannerChat(
             try {
               const session = await createChatSession({
                 ...(projectId ? { project_id: projectId } : {}),
-                agent_id: agentId!,
+                ...(isAgentTarget ? { agent_id: agentId! } : {}),
+                target_type: targetType,
+                target_id: agentId!,
               });
               setSessions((prev) => [session, ...prev]);
               setActiveSessionId(session.id);
@@ -2342,6 +2354,8 @@ export function usePlannerChat(
       projectId,
       cacheKey,
       notifyWorkerSessionDelete,
+      isAgentTarget,
+      targetType,
     ],
   );
 
@@ -2362,7 +2376,9 @@ export function usePlannerChat(
             try {
               const session = await createChatSession({
                 ...(projectId ? { project_id: projectId } : {}),
-                agent_id: agentId!,
+                ...(isAgentTarget ? { agent_id: agentId! } : {}),
+                target_type: targetType,
+                target_id: agentId!,
               });
               setSessions((prev) => [session, ...prev]);
               setActiveSessionId(session.id);

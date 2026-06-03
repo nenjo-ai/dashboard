@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useCouncils } from "@/lib/hooks";
-import { deleteCouncil } from "@/lib/api";
+import { createChatSession, deleteCouncil } from "@/lib/api";
 import type { CouncilDetail } from "@/lib/types";
 
 import { Button } from "@/components/ui/Button";
@@ -18,6 +19,7 @@ interface CouncilsSectionProps {
 
 export function CouncilsSection({ allowCreate = true }: CouncilsSectionProps) {
   const { councils, isLoading, isError, mutate } = useCouncils();
+  const router = useRouter();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingCouncil, setEditingCouncil] = useState<CouncilDetail | null>(null);
@@ -43,6 +45,22 @@ export function CouncilsSection({ allowCreate = true }: CouncilsSectionProps) {
   const handleDeleteRequest = useCallback((council: CouncilDetail) => {
     setDeletingCouncil(council);
   }, []);
+
+  const handleChat = useCallback(
+    async (council: CouncilDetail) => {
+      try {
+        const session = await createChatSession({
+          target_type: "council",
+          target_id: council.id,
+          title: council.name,
+        });
+        router.push(`/dashboard/chat?session=${session.id}`);
+      } catch {
+        toast.error("Failed to start council chat.");
+      }
+    },
+    [router],
+  );
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!deletingCouncil) return;
@@ -96,6 +114,7 @@ export function CouncilsSection({ allowCreate = true }: CouncilsSectionProps) {
         isLoading={isLoading}
         isError={isError}
         onView={handleView}
+        onChat={handleChat}
         onCreate={allowCreate ? handleCreate : undefined}
       />
 

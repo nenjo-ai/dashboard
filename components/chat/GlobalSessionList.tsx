@@ -24,6 +24,7 @@ function displayProjectName(name: string): string {
 }
 
 function displayAgentName(session: ChatSessionExtended): string {
+  if (session.target_type === "council") return session.council_name ?? session.title;
   return session.agent_display_name ?? session.agent_name;
 }
 
@@ -208,7 +209,7 @@ export default function GlobalSessionList({
                 onClick={() => onSelect(session)}
               >
                 {(() => {
-                  const agent = agentMap.get(session.agent_id);
+                  const agent = session.target_type === "agent" && session.agent_id ? agentMap.get(session.agent_id) : undefined;
                   const isActive = session.id === activeSessionId;
                   return editingId === session.id ? (
                     <div className="flex min-w-0 items-center gap-2.5">
@@ -250,6 +251,12 @@ export default function GlobalSessionList({
                         )}>
                           {channelType === "notification" ? (
                             <span className="truncate">@{session.agent_name}</span>
+                          ) : session.target_type === "council" ? (
+                            <>
+                              <span className="min-w-0 truncate">{displayProjectName(session.project_name)}</span>
+                              <span>·</span>
+                              <span className="shrink-0">Council</span>
+                            </>
                           ) : (
                             <>
                               <span className="min-w-0 truncate">{displayProjectName(session.project_name)}</span>

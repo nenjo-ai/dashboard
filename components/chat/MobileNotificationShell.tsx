@@ -98,7 +98,7 @@ export function MobileNotificationShell({
                 <div className="flex h-full min-h-0 flex-col">
                   <div className="flex-1 min-h-0">
                     <NotificationArea
-                      agentId={activeSession.agent_id}
+                      agentId={activeSession.agent_id!}
                       sessionId={activeSession.id}
                       agentName={activeSession.agent_display_name ?? activeSession.agent_name}
                       variant="mobile"

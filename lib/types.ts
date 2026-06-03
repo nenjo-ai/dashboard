@@ -334,7 +334,9 @@ export interface ChatStreamRequest {
     domain_session_id: string;
     domain_command: string;
   };
-  agent_id: string;
+  agent_id?: string;
+  target_type?: "agent" | "council";
+  target_id?: string;
   project_id?: string;
 }
 
@@ -558,7 +560,7 @@ export type ChatMessageInbound =
 export interface PersistedChatMessage {
   id: string;
   project_id: string | null;
-  agent_id: string;
+  agent_id: string | null;
   user_id: string;
   sender: "user" | "assistant";
   content: string;
@@ -587,7 +589,10 @@ export interface ChatMessagePage {
 export interface ChatSession {
   id: string;
   project_id: string | null;
-  agent_id: string;
+  agent_id: string | null;
+  target_type: "agent" | "council";
+  target_agent_id: string | null;
+  target_council_id: string | null;
   user_id: string;
   title: string;
   created_at: string;
@@ -603,6 +608,8 @@ export interface ChatSessionExtended extends ChatSession {
   project_name: string;
   agent_name: string;
   agent_display_name: string | null;
+  council_name: string | null;
+  council_description: string | null;
 }
 
 export interface UnreadCountEntry {
@@ -634,12 +641,6 @@ export interface PushSubscriptionRecord {
   created_at: string;
   updated_at: string;
   last_used_at: string | null;
-}
-
-export interface ChatSessionExtended extends ChatSession {
-  project_name: string;
-  agent_name: string;
-  agent_display_name: string | null;
 }
 
 // ---------------------------------------------------------------------------

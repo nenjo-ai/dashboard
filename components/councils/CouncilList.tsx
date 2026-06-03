@@ -13,6 +13,7 @@ interface CouncilListProps {
   isLoading: boolean;
   isError: boolean;
   onView: (council: CouncilDetail) => void;
+  onChat?: (council: CouncilDetail) => void;
   onCreate?: () => void;
 }
 
@@ -141,21 +142,20 @@ function EmptyState({ onCreate }: { onCreate?: () => void }) {
 function CouncilCard({
   council,
   onView,
+  onChat,
 }: {
   council: CouncilDetail;
   onView: (council: CouncilDetail) => void;
+  onChat?: (council: CouncilDetail) => void;
 }) {
   const strategyColors = getStrategyColors(council.delegation_strategy);
 
   return (
-    <button
-      type="button"
-      onClick={() => onView(council)}
+    <div
       className={cn(
         "theme-surface theme-border theme-text w-full rounded-xl border p-5 text-left shadow-xs transition-all",
         "hover:border-deep-space-blue-300 hover:shadow-md",
         "dark:hover:border-deep-space-blue-700",
-        "focus:outline-hidden focus:ring-2 focus:ring-deep-space-blue-500 focus:ring-offset-1 dark:focus:ring-offset-[#05070b]",
       )}
     >
       {/* Header */}
@@ -236,7 +236,24 @@ function CouncilCard({
           Leader: <span className="font-medium theme-text">{council.leader_agent?.name ?? "Unknown"}</span>
         </span>
       </div>
-    </button>
+      <div className="mt-4 flex justify-end gap-2">
+        <Button
+          variant="secondary"
+          className="h-8 px-3 text-xs"
+          onClick={() => onView(council)}
+        >
+          View
+        </Button>
+        {onChat ? (
+          <Button
+            className="h-8 !bg-deep-space-blue-500 px-3 text-xs !text-white hover:!bg-deep-space-blue-400"
+            onClick={() => onChat(council)}
+          >
+            Chat
+          </Button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -249,6 +266,7 @@ export function CouncilList({
   isLoading,
   isError,
   onView,
+  onChat,
   onCreate,
 }: CouncilListProps) {
   if (isLoading) {
@@ -295,7 +313,7 @@ export function CouncilList({
     <MotionList className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       {councils.map((council) => (
         <MotionItem key={council.id}>
-          <CouncilCard council={council} onView={onView} />
+          <CouncilCard council={council} onView={onView} onChat={onChat} />
         </MotionItem>
       ))}
     </MotionList>
