@@ -1301,13 +1301,11 @@ export type RoutineStepType =
   | "gate"
   | "terminal"
   | "terminal_fail"
-  | "council"
-  | "cron";
+  | "council";
 
 export const ROUTINE_STEP_TYPES: { id: RoutineStepType; label: string }[] = [
   { id: "agent", label: "Agent" },
   { id: "council", label: "Council" },
-  { id: "cron", label: "Cron" },
   { id: "gate", label: "Gate" },
   { id: "terminal", label: "Terminal" },
   { id: "terminal_fail", label: "Terminal (Fail)" },
@@ -1612,7 +1610,7 @@ export interface PromptConfig {
   /** Developer prompt — sent as a separate `developer` message to OpenAI-spec models, combined with system prompt for others. */
   developer_prompt: string;
   /** Task-specific templates keyed by Nenjo's accepted wire names:
-   * `task`, `chat`, `gate`, `cron`, `heartbeat`.
+   * `task`, `chat`, `gate`, `heartbeat`.
    */
   templates: Record<string, string>;
   /** Memory profile — guides what agents remember and retrieval priorities. */

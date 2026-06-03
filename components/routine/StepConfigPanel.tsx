@@ -44,12 +44,12 @@ export function StepConfigPanel({
   const [localAgentId, setLocalAgentId] = useState(agentId ?? "");
   const [localCouncilId, setLocalCouncilId] = useState(councilId ?? "");
   const [localRoleId, setLocalRoleId] = useState<string>((config?.agent_id as string) ?? agentId ?? "");
-  const [localInterval, setLocalInterval] = useState<string>((config?.interval as string) ?? "60s");
-  const [localTimeout, setLocalTimeout] = useState<string>((config?.timeout as string) ?? "24h");
   const [localInstructions, setLocalInstructions] = useState<string>(
-    (config?.instructions as string) ?? (config?.description as string) ?? (config?.context as string) ?? "",
+    (config?.instructions as string) ??
+      (config?.description as string) ??
+      (config?.context as string) ??
+      "",
   );
-  const [localCriteria, setLocalCriteria] = useState<string>((config?.criteria as string) ?? "");
   const [localFailureReason, setLocalFailureReason] = useState<string>((config?.failure_reason as string) ?? "");
   const [localMetadata, setLocalMetadata] = useState<string>(
     config?.metadata ? JSON.stringify(config.metadata, null, 2) : "",
@@ -66,10 +66,12 @@ export function StepConfigPanel({
     setLocalAgentId(agentId ?? "");
     setLocalCouncilId(councilId ?? "");
     setLocalRoleId((config?.agent_id as string) ?? agentId ?? "");
-    setLocalInterval((config?.interval as string) ?? "60s");
-    setLocalTimeout((config?.timeout as string) ?? "24h");
-    setLocalInstructions((config?.instructions as string) ?? (config?.description as string) ?? (config?.context as string) ?? "");
-    setLocalCriteria((config?.criteria as string) ?? "");
+    setLocalInstructions(
+      (config?.instructions as string) ??
+        (config?.description as string) ??
+        (config?.context as string) ??
+        "",
+    );
     setLocalFailureReason((config?.failure_reason as string) ?? "");
     setLocalMetadata(config?.metadata ? JSON.stringify(config.metadata, null, 2) : "");
     setMetadataError(null);
@@ -95,7 +97,7 @@ export function StepConfigPanel({
 
     const parsedConfig: Record<string, unknown> = { ...config };
 
-    if (localStepType === "agent" || localStepType === "gate" || localStepType === "cron") {
+    if (localStepType === "agent" || localStepType === "gate") {
       if (localRoleId) {
         parsedConfig.agent_id = localRoleId;
       } else {
@@ -105,15 +107,10 @@ export function StepConfigPanel({
       delete parsedConfig.agent_id;
     }
 
-    if (localStepType === "cron") {
-      parsedConfig.interval = localInterval || "60s";
-      parsedConfig.timeout = localTimeout || "24h";
-    } else {
-      delete parsedConfig.interval;
-      delete parsedConfig.timeout;
-    }
+    delete parsedConfig.interval;
+    delete parsedConfig.timeout;
 
-    if (localStepType === "agent" || localStepType === "gate" || localStepType === "council" || localStepType === "cron") {
+    if (localStepType === "agent" || localStepType === "gate" || localStepType === "council") {
       if (localInstructions.trim()) {
         parsedConfig.instructions = localInstructions.trim();
       } else {
@@ -125,16 +122,7 @@ export function StepConfigPanel({
     delete parsedConfig.description;
     delete parsedConfig.context;
     delete parsedConfig.max_turns;
-
-    if (localStepType === "gate") {
-      if (localCriteria.trim()) {
-        parsedConfig.criteria = localCriteria.trim();
-      } else {
-        delete parsedConfig.criteria;
-      }
-    } else {
-      delete parsedConfig.criteria;
-    }
+    delete parsedConfig.criteria;
 
     if (localStepType === "terminal_fail") {
       parsedConfig.failure_reason = localFailureReason || "Routine terminated with failure";
@@ -328,7 +316,7 @@ export function StepConfigPanel({
             </>
           )}
 
-          {(localStepType === "agent" || localStepType === "gate" || localStepType === "cron") && (
+          {(localStepType === "agent" || localStepType === "gate") && (
             <>
               <div>
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Agent</label>
@@ -355,66 +343,9 @@ export function StepConfigPanel({
               </div>
 
               {localStepType === "gate" && (
-                <>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Gate Criteria</label>
-                    <textarea
-                      value={localCriteria}
-                      onChange={(e) => setLocalCriteria(e.target.value)}
-                      rows={3}
-                      placeholder="Describe what must be true for this gate to pass."
-                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
-                    />
-                  </div>
-
-                  <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2">
-                    Gate steps produce pass/fail outcomes. Use edge settings to cap retry loops.
-                  </p>
-                </>
-              )}
-
-              {localStepType === "cron" && (
-                <>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Interval</label>
-                    <input
-                      type="text"
-                      value={localInterval}
-                      onChange={(e) => setLocalInterval(e.target.value)}
-                      placeholder="60s"
-                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
-                    />
-                    <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-                      How often the agent runs. Examples: 30s, 5m, 1h
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Timeout</label>
-                    <input
-                      type="text"
-                      value={localTimeout}
-                      onChange={(e) => setLocalTimeout(e.target.value)}
-                      placeholder="24h"
-                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
-                    />
-                    <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-                      Maximum total runtime before the step fails. Examples: 1h, 24h, 2d
-                    </p>
-                  </div>
-
-                  <p className="text-xs text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/20 rounded-lg px-3 py-2">
-                    Cron steps run an agent on a recurring interval. The agent signals completion by including
-                    {" "}
-                    <code className="font-mono text-[11px]">CRON_DONE:PASS</code>
-                    {" "}
-                    or
-                    {" "}
-                    <code className="font-mono text-[11px]">CRON_DONE:FAIL</code>
-                    {" "}
-                    in its output.
-                  </p>
-                </>
+                <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2">
+                  Gate steps produce pass/fail outcomes. Use step instructions to describe what the gate should check.
+                </p>
               )}
 
               <div>

@@ -52,12 +52,6 @@ const STEP_STYLES: Record<RoutineStepType, { bg: string; border: string; icon: s
     icon: "⚑",
     iconBg: "bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-300",
   },
-  cron: {
-    bg: "theme-surface",
-    border: "border-cyan-300 dark:border-cyan-600",
-    icon: "⟳",
-    iconBg: "bg-cyan-100 text-cyan-600 dark:bg-cyan-900/50 dark:text-cyan-300",
-  },
   terminal_fail: {
     bg: "theme-surface",
     border: "border-red-300 dark:border-red-600",
@@ -91,7 +85,7 @@ function RoutineStepNodeInner({ data, selected }: NodeProps) {
             .filter(Boolean)
             .join(" · ")
         : null
-      : (nodeData.stepType === "agent" || nodeData.stepType === "gate" || nodeData.stepType === "cron") && nodeData.agentName
+      : (nodeData.stepType === "agent" || nodeData.stepType === "gate") && nodeData.agentName
         ? nodeData.agentName
         : null;
 
@@ -133,7 +127,7 @@ function RoutineStepNodeInner({ data, selected }: NodeProps) {
       </div>
 
       {/* Output handles */}
-      {nodeData.stepType === "gate" || nodeData.stepType === "cron" ? (
+      {nodeData.stepType === "gate" ? (
         <>
           {/* Gate: pass-out (bottom-left, green) */}
           <Handle

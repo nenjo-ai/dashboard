@@ -33,7 +33,6 @@ const CATEGORIES: Category[] = [
     label: "Flow Control",
     subtitle: "Wrap a function to shape execution",
     steps: [
-      { type: "cron", icon: "⟳", name: "Cron", color: "cyan", desc: "Loop a function on an interval" },
       { type: "gate", icon: "⬥", name: "Gate", color: "amber", desc: "Branch on function pass / fail" },
     ],
   },
@@ -52,7 +51,6 @@ const ALL_STEPS = CATEGORIES.flatMap((category) => category.steps);
 const ICON_BG: Record<string, string> = {
   blue: "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300",
   purple: "bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300",
-  cyan: "bg-cyan-100 text-cyan-600 dark:bg-cyan-900/40 dark:text-cyan-300",
   amber: "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300",
   emerald: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300",
   red: "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300",
@@ -61,7 +59,6 @@ const ICON_BG: Record<string, string> = {
 const CARD_SELECTED: Record<string, string> = {
   blue: "border-blue-400 bg-blue-50 dark:border-blue-500 dark:bg-blue-900/20",
   purple: "border-purple-400 bg-purple-50 dark:border-purple-500 dark:bg-purple-900/20",
-  cyan: "border-cyan-400 bg-cyan-50 dark:border-cyan-500 dark:bg-cyan-900/20",
   amber: "border-amber-400 bg-amber-50 dark:border-amber-500 dark:bg-amber-900/20",
   emerald: "border-emerald-400 bg-emerald-50 dark:border-emerald-500 dark:bg-emerald-900/20",
   red: "border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-900/20",
@@ -70,7 +67,6 @@ const CARD_SELECTED: Record<string, string> = {
 const ADD_BTN: Record<string, string> = {
   blue: "bg-blue-500 hover:bg-blue-600",
   purple: "bg-purple-500 hover:bg-purple-600",
-  cyan: "bg-cyan-500 hover:bg-cyan-600",
   amber: "bg-amber-500 hover:bg-amber-600",
   emerald: "bg-emerald-500 hover:bg-emerald-600",
   red: "bg-red-500 hover:bg-red-600",
@@ -252,21 +248,6 @@ function RightPanelBody({
           )}
         </div>
       );
-    case "cron":
-      return (
-        <FlowControlConfig
-          hint="The selected function runs on each interval tick until it signals completion."
-          fnType={flowFnType}
-          setFnType={setFlowFnType}
-          roles={roles}
-          loadingRoles={loadingRoles}
-          councils={councils}
-          selectedRoleId={selectedRoleId}
-          setSelectedRoleId={setSelectedRoleId}
-          selectedCouncilId={selectedCouncilId}
-          setSelectedCouncilId={setSelectedCouncilId}
-        />
-      );
     case "gate":
       return (
         <FlowControlConfig
@@ -345,7 +326,6 @@ export function AddStepModal({ open, councils, onAdd, onClose }: AddStepModalPro
         return selectedRoleId !== "";
       case "council":
         return selectedCouncilId !== "";
-      case "cron":
       case "gate":
         return flowFnType === "agent" ? selectedRoleId !== "" : selectedCouncilId !== "";
       default:
@@ -356,11 +336,11 @@ export function AddStepModal({ open, councils, onAdd, onClose }: AddStepModalPro
   function handleAdd() {
     if (!isValid) return;
     const roleId =
-      selectedType === "agent" || ((selectedType === "cron" || selectedType === "gate") && flowFnType === "agent")
+      selectedType === "agent" || (selectedType === "gate" && flowFnType === "agent")
         ? selectedRoleId || undefined
         : undefined;
     const councilId =
-      selectedType === "council" || ((selectedType === "cron" || selectedType === "gate") && flowFnType === "council")
+      selectedType === "council" || (selectedType === "gate" && flowFnType === "council")
         ? selectedCouncilId || undefined
         : undefined;
     onAdd(selectedType, roleId, councilId);
