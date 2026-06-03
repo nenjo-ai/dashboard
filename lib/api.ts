@@ -14,8 +14,8 @@ import type {
   CouncilDetail,
   CreateCouncilRequest,
   UpdateCouncilRequest,
-  CouncilMember,
   AddCouncilMemberRequest,
+  AgentSummary,
   AgentDefinition,
   AgentHeartbeat,
   PromptConfig,
@@ -722,7 +722,7 @@ export async function disconnectRepo(projectId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export function tasksUrl(
-  projectId: string,
+  project: string,
   params?: {
     status?: string;
     limit?: number;
@@ -730,7 +730,7 @@ export function tasksUrl(
   },
 ): string {
   const search = new URLSearchParams();
-  search.set("project_id", projectId);
+  search.set("project", project);
   if (params?.status) search.set("status", params.status);
   if (params?.limit) search.set("limit", String(params.limit));
   if (params?.offset) search.set("offset", String(params.offset));
@@ -836,7 +836,7 @@ export async function createTask(data: {
     method: "POST",
     body: JSON.stringify({
       id: taskId,
-      project_id: data.project_id,
+      project: data.project_id,
       title: data.title,
       status: data.status,
       priority: data.priority,
@@ -967,9 +967,9 @@ export function executionsUrl(params?: {
   limit?: number;
 }): string {
   const search = new URLSearchParams();
-  if (params?.project_id) search.set("project_id", params.project_id);
-  if (params?.agent_id) search.set("agent_id", params.agent_id);
-  if (params?.routine_id) search.set("routine_id", params.routine_id);
+  if (params?.project_id) search.set("project", params.project_id);
+  if (params?.agent_id) search.set("agent", params.agent_id);
+  if (params?.routine_id) search.set("routine", params.routine_id);
   if (params?.status) search.set("status", params.status);
   if (params?.limit) search.set("limit", String(params.limit));
   const qs = search.toString();
@@ -1039,7 +1039,7 @@ export async function fetchExecutions(
 }
 
 export async function createExecution(data: {
-  project_id: string;
+  project: string;
   parallel_count: number;
   config?: Record<string, unknown>;
 }): Promise<ExecutionDetails> {
@@ -2431,12 +2431,51 @@ export function councilMemberUrl(councilId: string, memberId: string): string {
   return `${API_V1}/councils/${councilId}/members/${memberId}`;
 }
 
+type CouncilAgentResponse = AgentSummary & {
+  slug?: string;
+};
+
+type CouncilMemberResponse = Omit<CouncilDetail["members"][number], "agent_id" | "agent"> & {
+  agent: string;
+  agent_detail: CouncilAgentResponse;
+};
+
+type CouncilDetailResponse = Omit<CouncilDetail, "leader_agent_id" | "leader_agent" | "members"> & {
+  leader_agent: string;
+  leader_agent_detail: CouncilAgentResponse;
+  members: CouncilMemberResponse[];
+};
+
+function normalizeCouncilDetail(raw: CouncilDetail | CouncilDetailResponse): CouncilDetail {
+  const response = raw as CouncilDetailResponse;
+  if ("leader_agent_detail" in response) {
+    return {
+      ...response,
+      leader_agent_id: response.leader_agent_detail.id,
+      leader_agent: response.leader_agent_detail,
+      members: response.members.map((member) => ({
+        ...member,
+        agent_id: member.agent_detail.id,
+        agent: member.agent_detail,
+      })),
+    };
+  }
+
+  return raw as CouncilDetail;
+}
+
 export async function fetchCouncils(): Promise<CouncilDetail[]> {
-  return catalogFetcher<CouncilDetail[]>(councilsUrl());
+  const data = await catalogFetcher<(CouncilDetail | CouncilDetailResponse)[]>(
+    councilsUrl(),
+  );
+  return data.map(normalizeCouncilDetail);
 }
 
 export async function fetchCouncil(councilId: string): Promise<CouncilDetail> {
-  return fetcher<CouncilDetail>(councilUrl(councilId));
+  const data = await fetcher<CouncilDetail | CouncilDetailResponse>(
+    councilUrl(councilId),
+  );
+  return normalizeCouncilDetail(data);
 }
 
 export async function createCouncil(
@@ -2447,7 +2486,7 @@ export async function createCouncil(
     body: JSON.stringify(data),
   });
   invalidateCouncilsCatalogCache();
-  return res.json() as Promise<CouncilDetail>;
+  return normalizeCouncilDetail(await res.json());
 }
 
 export async function updateCouncil(
@@ -2459,7 +2498,7 @@ export async function updateCouncil(
     body: JSON.stringify(data),
   });
   invalidateCouncilsCatalogCache();
-  return res.json() as Promise<CouncilDetail>;
+  return normalizeCouncilDetail(await res.json());
 }
 
 export async function deleteCouncil(councilId: string): Promise<void> {
@@ -2470,26 +2509,26 @@ export async function deleteCouncil(councilId: string): Promise<void> {
 export async function addCouncilMember(
   councilId: string,
   data: AddCouncilMemberRequest,
-): Promise<CouncilMember> {
+): Promise<CouncilDetail> {
   const res = await authFetch(councilMembersUrl(councilId), {
     method: "POST",
     body: JSON.stringify(data),
   });
   invalidateCouncilsCatalogCache();
-  return res.json() as Promise<CouncilMember>;
+  return normalizeCouncilDetail(await res.json());
 }
 
 export async function updateCouncilMember(
   councilId: string,
   memberId: string,
   data: Partial<AddCouncilMemberRequest>,
-): Promise<CouncilMember> {
+): Promise<CouncilDetail> {
   const res = await authFetch(councilMemberUrl(councilId, memberId), {
     method: "PATCH",
     body: JSON.stringify(data),
   });
   invalidateCouncilsCatalogCache();
-  return res.json() as Promise<CouncilMember>;
+  return normalizeCouncilDetail(await res.json());
 }
 
 export async function removeCouncilMember(

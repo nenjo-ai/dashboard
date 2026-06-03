@@ -8,8 +8,12 @@ import { TemplateVariableReference } from "./TemplateVariableReference";
 import { LibraryReferenceList } from "./LibraryReferenceList";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
 import { Button } from "@/components/ui/Button";
-import { SourceManagedResourcePanel } from "@/components/resources/SourceManagedResourcePanel";
+import {
+  SourceManagedResourcePanel,
+  type SourceManagedDetailSection,
+} from "@/components/resources/SourceManagedResourcePanel";
 import { MCP_RESOURCE_SCOPES } from "@/lib/types";
+import { manifestResourceDisplayPath } from "@/lib/manifestResourcePath";
 import type { Ability, McpServer } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -252,10 +256,90 @@ export function AbilityEditorInline({ ability, onSaved, onDelete }: AbilityEdito
 
 function ManagedAbilityDetails({ ability }: { ability: Ability }) {
   const { mcpServers, isLoading } = useMcpServers();
+  const [fetchedPrompt, setFetchedPrompt] = useState<{
+    abilityId: string;
+    value: string;
+  } | null>(null);
+  const prompt =
+    fetchedPrompt?.abilityId === ability.id
+      ? fetchedPrompt.value
+      : ability.prompt ?? "";
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAbilityPrompt(ability.id)
+      .then((value) => {
+        if (!cancelled) setFetchedPrompt({ abilityId: ability.id, value });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [ability.id]);
+
   const attachedServers = useMemo(() => {
     const assigned = new Set(ability.mcp_servers);
     return (mcpServers ?? []).filter((server) => assigned.has(server.name));
   }, [ability.mcp_servers, mcpServers]);
+  const fallbackContent = useMemo(
+    () =>
+      JSON.stringify(
+        {
+          name: ability.name,
+          path: manifestResourceDisplayPath(ability),
+          description: ability.description,
+          activation_condition: ability.activation_condition,
+          prompt_config: { developer_prompt: prompt },
+          platform_scopes: ability.platform_scopes,
+          mcp_servers: ability.mcp_servers,
+          metadata: ability.metadata,
+        },
+        null,
+        2,
+      ),
+    [ability, prompt],
+  );
+  const sections = useMemo<SourceManagedDetailSection[]>(
+    () => [
+      {
+        title: "Ability",
+        fields: [
+          { label: "Name", value: ability.name, mono: true },
+          { label: "Path", value: manifestResourceDisplayPath(ability), mono: true },
+          { label: "Activation", value: ability.activation_condition },
+          { label: "Source type", value: ability.source_type },
+        ],
+      },
+      {
+        title: "Prompt",
+        code: {
+          label: "Developer prompt",
+          value: prompt || "No developer prompt configured.",
+          language: "yaml",
+        },
+      },
+      {
+        title: "Assignments",
+        fields: [
+          {
+            label: "Platform scopes",
+            value: ability.platform_scopes.length
+              ? ability.platform_scopes.join(", ")
+              : "None",
+            mono: true,
+          },
+          {
+            label: "MCP servers",
+            value: ability.mcp_servers.length
+              ? ability.mcp_servers.join(", ")
+              : "None",
+            mono: true,
+          },
+        ],
+      },
+    ],
+    [ability, prompt],
+  );
 
   if (ability.read_only && ability.source_type !== "skill") {
     return (
@@ -263,14 +347,9 @@ function ManagedAbilityDetails({ ability }: { ability: Ability }) {
         resource={ability}
         title={ability.name}
         description={ability.description}
-        fallbackContent={JSON.stringify({
-          name: ability.name,
-          description: ability.description,
-          activation_condition: ability.activation_condition,
-          platform_scopes: ability.platform_scopes,
-          mcp_servers: ability.mcp_servers,
-        }, null, 2)}
+        fallbackContent={fallbackContent}
         fallbackLanguage="yaml"
+        sections={sections}
       />
     );
   }

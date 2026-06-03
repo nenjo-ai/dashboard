@@ -87,7 +87,7 @@ export function MobileProjectList({
       {projects.map((project) => (
         <Link
           key={project.id}
-          href={`/dashboard/projects/${project.id}`}
+          href={`/dashboard/projects/${project.slug || project.id}`}
           className="group block rounded-[1.6rem] border border-black/10 bg-transparent p-4 transition-transform active:scale-[0.99] dark:border-white/10"
         >
           <div className="flex items-start gap-3">

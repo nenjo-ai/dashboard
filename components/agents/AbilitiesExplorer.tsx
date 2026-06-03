@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Label } from "@/components/ui/Label";
+import { manifestResourceDisplayPath } from "@/lib/manifestResourcePath";
 import type { Ability } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -87,8 +88,9 @@ function buildTree(abilities: Ability[]): TreeEntry[] {
   const rootFolders = new Set<string>();
 
   for (const ability of abilities) {
-    if (ability.path) {
-      const folder = getOrCreateFolder(ability.path);
+    const displayPath = manifestResourceDisplayPath(ability);
+    if (displayPath) {
+      const folder = getOrCreateFolder(displayPath);
       folder.children.push({ type: "file", ability });
     } else {
       rootItems.push({ type: "file", ability });
@@ -617,8 +619,9 @@ export function AbilitiesExplorer() {
         setSelectedAbilityRaw(match);
         saveSelectedName(match.name);
         // Expand ancestor folders
-        if (match.path) {
-          const parts = match.path.split("/");
+        const displayPath = manifestResourceDisplayPath(match);
+        if (displayPath) {
+          const parts = displayPath.split("/");
           setExpandedRaw((prev) => {
             const next = new Set(prev);
             for (let i = 1; i <= parts.length; i++)
@@ -642,7 +645,13 @@ export function AbilitiesExplorer() {
     for (const folderPath of localFolders) {
       const parts = folderPath.split("/");
       const alreadyExists = items.some(
-        (a) => a.path === folderPath || a.path.startsWith(folderPath + "/"),
+        (a) => {
+          const displayPath = manifestResourceDisplayPath(a);
+          return (
+            displayPath === folderPath ||
+            displayPath.startsWith(folderPath + "/")
+          );
+        },
       );
       if (!alreadyExists && parts.length === 1) {
         builtTree.push({
@@ -670,7 +679,7 @@ export function AbilitiesExplorer() {
       else next.add(path);
       return next;
     });
-  }, []);
+  }, [setExpanded]);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
@@ -706,7 +715,7 @@ export function AbilitiesExplorer() {
         /* */
       }
     },
-    [abilities, mutate],
+    [abilities, mutate, setExpanded],
   );
 
   const handleDeleteAbility = async () => {
@@ -818,7 +827,7 @@ export function AbilitiesExplorer() {
       }
       setMovingAbility(null);
     },
-    [abilities, mutate],
+    [abilities, mutate, setExpanded],
   );
 
   if (isLoading) {

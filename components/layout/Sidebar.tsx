@@ -122,11 +122,12 @@ function ProjectSubmenu({ activeProjectId }: { activeProjectId: string | undefin
   return (
     <>
       {projects && projects.length > 0 && projects.map((project) => {
-        const isProjectActive = activeProjectId === project.id;
+        const projectRef = project.slug || project.id;
+        const isProjectActive = activeProjectId === projectRef || activeProjectId === project.id;
         return (
           <Link
             key={project.id}
-            href={`/dashboard/projects/${project.id}`}
+            href={`/dashboard/projects/${projectRef}`}
             className={cn(
               "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs transition-colors",
               isProjectActive

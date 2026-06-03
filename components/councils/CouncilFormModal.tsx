@@ -149,6 +149,14 @@ export function CouncilFormModal({
     [],
   );
 
+  const agentRefForId = useCallback(
+    (agentId: string): string => {
+      const agent = agents.find((item) => item.id === agentId);
+      return agent?.slug?.trim() || agent?.name || agentId;
+    },
+    [agents],
+  );
+
   const handleMemberChange = useCallback(
     (index: number, value: string) => {
       setForm((prev) => {
@@ -260,10 +268,10 @@ export function CouncilFormModal({
           const data: CreateCouncilRequest = {
             name: form.name.trim(),
             description: form.description.trim() || undefined,
-            leader_agent_id: form.leader_agent_id,
+            leader_agent: agentRefForId(form.leader_agent_id),
             delegation_strategy: form.delegation_strategy,
             members: form.members.map((m) => ({
-              agent_id: m.agent_id,
+              agent: agentRefForId(m.agent_id),
             })),
           };
           await createCouncil(data);
@@ -279,7 +287,7 @@ export function CouncilFormModal({
         setSubmitting(false);
       }
     },
-    [form, isEdit, council, validate, onSaved, onClose],
+    [form, isEdit, council, validate, agentRefForId, onSaved, onClose],
   );
 
   const handleClose = useCallback(() => {

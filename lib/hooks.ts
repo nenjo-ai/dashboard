@@ -7,6 +7,8 @@ import {
   fetchProject,
   fetchProjects,
   fetchRoutine,
+  fetchCouncil,
+  fetchCouncils,
   fetcher,
   fetchTasks,
   projectsUrl,
@@ -27,8 +29,6 @@ import {
   workerStatusUrl,
   routinesUrl,
   routineUrl,
-  councilsUrl,
-  councilUrl,
   agentsUrl,
   agentUrl,
   domainsUrl,
@@ -808,8 +808,8 @@ export function useRoutine(routineId: string | undefined) {
 
 export function useCouncils() {
   const { data, error, isLoading, mutate } = useSWR<CouncilDetail[]>(
-    councilsUrl(),
-    catalogFetcher,
+    "councils",
+    fetchCouncils,
     catalogSWROptions,
   );
 
@@ -824,8 +824,8 @@ export function useCouncils() {
 
 export function useCouncil(id: string | undefined) {
   const { data, error, isLoading, mutate } = useSWR<CouncilDetail>(
-    id ? councilUrl(id) : null,
-    fetcher,
+    id ? ["council", id] : null,
+    () => fetchCouncil(id!),
     { revalidateOnFocus: false },
   );
 

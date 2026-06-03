@@ -98,7 +98,7 @@ function friendlyToolName(toolName: string): string {
 
 function stepDisplayName(step: ExecutionTask["steps"][number]): string {
   if (step.step_type === "tool") {
-    return formatToolCallSignature(friendlyToolName(step.step_name), toolArgsForStep(step));
+    return friendlyToolName(step.step_name);
   }
   return step.step_name;
 }
@@ -110,55 +110,177 @@ function stepStatusLabel(step: ExecutionTask["steps"][number]): string {
     : "open";
 }
 
-function StepDetail({ step }: { step: ExecutionTask["steps"][number] }) {
+interface DisplayStep {
+  step: ExecutionTask["steps"][number];
+  children: ExecutionTask["steps"][number][];
+}
+
+function stepIdentityKey(step: ExecutionTask["steps"][number]): string {
+  const stepRunId = step.data?.step_run_id;
+  if (typeof stepRunId === "string" && stepRunId.length > 0) return `routine-run:${stepRunId}`;
+  const stepId = step.data?.step_id;
+  if (typeof stepId === "string" && stepId.length > 0) return `routine:${stepId}`;
+  return `${step.step_type}:${step.step_name}`;
+}
+
+function isChildActivityStep(step: ExecutionTask["steps"][number]): boolean {
+  return step.step_type === "tool" || step.step_type === "ability" || step.step_type === "delegation";
+}
+
+function mergeStep(
+  prev: ExecutionTask["steps"][number],
+  next: ExecutionTask["steps"][number],
+): ExecutionTask["steps"][number] {
+  return {
+    ...next,
+    step_name: next.step_name || prev.step_name,
+    step_type: next.step_type || prev.step_type,
+    agent: next.agent ?? prev.agent,
+    data: { ...(prev.data ?? {}), ...(next.data ?? {}) },
+    payload: next.payload ?? prev.payload,
+    encrypted_payload: next.encrypted_payload ?? prev.encrypted_payload,
+  };
+}
+
+function buildDisplaySteps(steps: ExecutionTask["steps"]): DisplayStep[] {
+  const groups: DisplayStep[] = [];
+  const parentIndex = new Map<string, number>();
+
+  for (const step of steps) {
+    if (isChildActivityStep(step)) continue;
+    const key = stepIdentityKey(step);
+    const existingIndex = parentIndex.get(key);
+    if (existingIndex != null) {
+      groups[existingIndex] = {
+        ...groups[existingIndex],
+        step: mergeStep(groups[existingIndex].step, step),
+      };
+      continue;
+    }
+
+    const index = groups.length;
+    groups.push({ step, children: [] });
+    parentIndex.set(key, index);
+    if (step.step_name) parentIndex.set(step.step_name, index);
+  }
+
+  let currentParentName: string | null = null;
+  for (const step of steps) {
+    if (!isChildActivityStep(step)) {
+      currentParentName = step.step_name;
+      continue;
+    }
+
+    const parentGroupIndex =
+      parentIndex.get(stepIdentityKey(step)) ??
+      (currentParentName ? parentIndex.get(currentParentName) : undefined);
+
+    if (parentGroupIndex != null) {
+      groups[parentGroupIndex].children.push(step);
+    } else {
+      groups.push({ step, children: [] });
+    }
+  }
+
+  return groups;
+}
+
+function StepDetail({
+  step,
+  activitySteps = [],
+}: {
+  step: ExecutionTask["steps"][number];
+  activitySteps?: ExecutionTask["steps"][number][];
+}) {
+  const [argsExpanded, setArgsExpanded] = useState(false);
+  const [activityExpanded, setActivityExpanded] = useState(false);
   const d = step.data as Record<string, unknown> | undefined;
   const agent = step.agent;
   const isRunning = step.event_type === "step_started";
   const status = stepStatusLabel(step);
+  const isTool = step.step_type === "tool";
+  const toolArgs = isTool ? toolArgsForStep(step) : "";
+  const hasActivity = activitySteps.length > 0;
   const inputTok = typeof d?.input_tokens === "number" ? d.input_tokens : 0;
   const outputTok = typeof d?.output_tokens === "number" ? d.output_tokens : 0;
   const totalTok = inputTok + outputTok;
 
   return (
-    <div className="ml-2 flex items-center gap-2 py-1">
-      {agent ? (
-        <RoleIdenticon
-          roleId={agent.agent_id}
-          color={agent.agent_color ?? "#6B7280"}
-          size={14}
-          className="shrink-0"
-          animate={isRunning}
-          name={agent.agent_name ?? undefined}
-        />
-      ) : (
-        <TaskStatusIcon status={status} />
-      )}
-      <span
-        className={`flex-1 truncate text-xs text-gray-600 dark:text-gray-400 ${step.step_type === "tool" ? "font-mono" : ""}`}
-        title={stepDisplayName(step)}
-      >
-        {stepDisplayName(step)}
-      </span>
-      {totalTok > 0 && (
+    <div className="ml-2 py-1">
+      <div className="flex items-center gap-2">
+        {agent ? (
+          <RoleIdenticon
+            roleId={agent.agent}
+            color={agent.agent_color ?? "#6B7280"}
+            size={14}
+            className="shrink-0"
+            animate={isRunning}
+            name={agent.agent_name ?? undefined}
+          />
+        ) : (
+          <TaskStatusIcon status={status} />
+        )}
         <span
-          className="text-[10px] text-gray-400 tabular-nums"
-          title={`In: ${inputTok.toLocaleString()} / Out: ${outputTok.toLocaleString()}`}
+          className={`flex-1 truncate text-xs text-gray-600 dark:text-gray-400 ${isTool ? "font-mono" : ""}`}
+          title={isTool && toolArgs ? formatToolCallSignature(stepDisplayName(step), toolArgs) : stepDisplayName(step)}
         >
-          {formatTokens(totalTok)} tok
+          {stepDisplayName(step)}
         </span>
+        {isTool && toolArgs && (
+          <button
+            type="button"
+            onClick={() => setArgsExpanded((value) => !value)}
+            className="theme-border theme-surface rounded-sm border px-1.5 py-0.5 text-[10px] font-medium text-gray-500 transition-colors hover:[background:var(--app-hover)] dark:text-gray-400"
+          >
+            {argsExpanded ? "Hide args" : "Show args"}
+          </button>
+        )}
+        {totalTok > 0 && (
+          <span
+            className="text-[10px] text-gray-400 tabular-nums"
+            title={`In: ${inputTok.toLocaleString()} / Out: ${outputTok.toLocaleString()}`}
+          >
+            {formatTokens(totalTok)} tok
+          </span>
+        )}
+        {step.duration_ms != null && (
+          <span className="text-[10px] text-gray-400">
+            {step.duration_ms < 1000
+              ? `${step.duration_ms}ms`
+              : `${(step.duration_ms / 1000).toFixed(1)}s`}
+          </span>
+        )}
+        {hasActivity && (
+          <button
+            type="button"
+            onClick={() => setActivityExpanded((value) => !value)}
+            className="theme-border theme-surface rounded-sm border px-1.5 py-0.5 text-[10px] font-medium text-gray-500 transition-colors hover:[background:var(--app-hover)] dark:text-gray-400"
+          >
+            {activityExpanded ? "Hide tools" : "Show tools"} ({activitySteps.length})
+          </button>
+        )}
+      </div>
+      {isTool && toolArgs && argsExpanded && (
+        <pre className="theme-surface mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-md px-2.5 py-2 font-mono text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+          {toolArgs}
+        </pre>
       )}
-      {step.duration_ms != null && (
-        <span className="text-[10px] text-gray-400">
-          {step.duration_ms < 1000
-            ? `${step.duration_ms}ms`
-            : `${(step.duration_ms / 1000).toFixed(1)}s`}
-        </span>
+      {hasActivity && activityExpanded && (
+        <div className="mt-1 space-y-0.5 rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 dark:border-gray-700 dark:bg-gray-900/30">
+          {activitySteps.map((child, index) => (
+            <StepDetail
+              key={`${child.step_name}:${child.event_type}:${index}`}
+              step={child}
+            />
+          ))}
+        </div>
       )}
     </div>
   );
 }
 
 function TaskDetail({ task }: { task: ExecutionTask }) {
+  const displaySteps = buildDisplaySteps(task.steps);
   return (
     <div className="py-1.5">
       <div className="flex items-center gap-2.5">
@@ -170,10 +292,14 @@ function TaskDetail({ task }: { task: ExecutionTask }) {
           {task.status.replace("_", " ")}
         </span>
       </div>
-      {task.steps.length > 0 && (
+      {displaySteps.length > 0 && (
         <div className="mt-1 space-y-0.5 pl-4">
-          {task.steps.map((step, index) => (
-            <StepDetail key={`${step.step_name}:${step.event_type}:${index}`} step={step} />
+          {displaySteps.map(({ step, children }, index) => (
+            <StepDetail
+              key={`${step.step_name}:${step.event_type}:${index}`}
+              step={step}
+              activitySteps={children}
+            />
           ))}
         </div>
       )}

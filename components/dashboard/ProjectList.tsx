@@ -113,7 +113,11 @@ export function ProjectList({
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       {projects.map((project) => (
-        <a key={project.id} href={`/dashboard/projects/${project.id}`} className="group">
+        <a
+          key={project.id}
+          href={`/dashboard/projects/${project.slug || project.id}`}
+          className="group"
+        >
           <Card className="h-full transition-all group-hover:border-deep-space-blue-200 group-hover:shadow-md dark:group-hover:border-deep-space-blue-700">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">

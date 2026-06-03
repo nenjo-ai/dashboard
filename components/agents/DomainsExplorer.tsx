@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Label } from "@/components/ui/Label";
+import { manifestResourceDisplayPath } from "@/lib/manifestResourcePath";
 import type { Domain } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -47,6 +48,10 @@ interface FileNode {
 }
 
 type TreeEntry = FolderNode | FileNode;
+
+function canManageDomain(domain: Domain): boolean {
+  return !domain.is_system && !domain.read_only && domain.source_type !== "package";
+}
 
 function buildTree(domains: Domain[]): TreeEntry[] {
   const folderMap = new Map<string, FolderNode>();
@@ -78,8 +83,9 @@ function buildTree(domains: Domain[]): TreeEntry[] {
   const rootFolders = new Set<string>();
 
   for (const domain of domains) {
-    if (domain.path) {
-      const folder = getOrCreateFolder(domain.path);
+    const displayPath = manifestResourceDisplayPath(domain);
+    if (displayPath) {
+      const folder = getOrCreateFolder(displayPath);
       folder.children.push({ type: "file", domain });
     } else {
       rootItems.push({ type: "file", domain });
@@ -128,16 +134,18 @@ function DraggableFile({
   onContextMenu: (e: React.MouseEvent) => void;
   depth: number;
 }) {
+  const canDrag = canManageDomain(domain);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: domain.id,
     data: { type: "domain", domain },
+    disabled: !canDrag,
   });
 
   return (
     <button
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
+      {...(canDrag ? listeners : {})}
+      {...(canDrag ? attributes : {})}
       type="button"
       onClick={onClick}
       onContextMenu={onContextMenu}
@@ -179,6 +187,11 @@ function DraggableFile({
             d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
           />
         </svg>
+      )}
+      {!domain.is_system && !canDrag && (
+        <span className="theme-surface-muted theme-text-muted shrink-0 rounded px-1 py-0.5 text-[9px] font-medium">
+          Read-only
+        </span>
       )}
     </button>
   );
@@ -434,6 +447,7 @@ function FileContextMenu({
   onDelete: (domain: Domain) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const canManage = canManageDomain(domain);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -449,21 +463,27 @@ function FileContextMenu({
       className="theme-surface-elevated theme-border fixed z-50 w-40 rounded-lg border py-1 shadow-lg"
       style={{ left: x, top: y }}
     >
-      <button
-        type="button"
-        className="theme-text flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:[background:var(--app-hover)]"
-        onClick={() => onMoveTo(domain)}
-      >
-        Move to...
-      </button>
-      {!domain.is_system && (
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-flag-red-500 hover:bg-red-50 dark:hover:bg-red-900/30"
-          onClick={() => onDelete(domain)}
-        >
-          Delete
-        </button>
+      {canManage ? (
+        <>
+          <button
+            type="button"
+            className="theme-text flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:[background:var(--app-hover)]"
+            onClick={() => onMoveTo(domain)}
+          >
+            Move to...
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-flag-red-500 hover:bg-red-50 dark:hover:bg-red-900/30"
+            onClick={() => onDelete(domain)}
+          >
+            Delete
+          </button>
+        </>
+      ) : (
+        <div className="theme-text-muted px-3 py-1.5 text-xs">
+          Managed domain
+        </div>
       )}
     </div>
   );
@@ -540,8 +560,9 @@ export function DomainsExplorer() {
       const match = domains.find((d) => d.id === savedId);
       if (match) {
         setSelectedDomainRaw(match);
-        if (match.path) {
-          const parts = match.path.split("/");
+        const displayPath = manifestResourceDisplayPath(match);
+        if (displayPath) {
+          const parts = displayPath.split("/");
           setExpandedRaw((prev) => {
             const next = new Set(prev);
             for (let i = 1; i <= parts.length; i++) next.add(parts.slice(0, i).join("/"));
@@ -564,7 +585,13 @@ export function DomainsExplorer() {
     for (const folderPath of localFolders) {
       const parts = folderPath.split("/");
       const alreadyExists = items.some(
-        (d) => d.path === folderPath || d.path.startsWith(folderPath + "/"),
+        (d) => {
+          const displayPath = manifestResourceDisplayPath(d);
+          return (
+            displayPath === folderPath ||
+            displayPath.startsWith(folderPath + "/")
+          );
+        },
       );
       if (!alreadyExists && parts.length === 1) {
         builtTree.push({
@@ -597,7 +624,8 @@ export function DomainsExplorer() {
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
     if (active.data.current?.type === "domain") {
-      setDraggingDomain(active.data.current.domain as Domain);
+      const domain = active.data.current.domain as Domain;
+      if (canManageDomain(domain)) setDraggingDomain(domain);
     }
   }, []);
 
@@ -611,7 +639,7 @@ export function DomainsExplorer() {
       if (!overId.startsWith("folder:")) return;
       const newPath = overId.replace("folder:", "");
       const domain = domains?.find((d) => d.id === domainId);
-      if (!domain || domain.path === newPath) return;
+      if (!domain || !canManageDomain(domain) || domain.path === newPath) return;
       try {
         await moveDomain(domainId, newPath);
         mutate();
@@ -625,6 +653,10 @@ export function DomainsExplorer() {
 
   const handleDeleteDomain = async () => {
     if (!confirmDeleteDomain) return;
+    if (!canManageDomain(confirmDeleteDomain)) {
+      setConfirmDeleteDomain(null);
+      return;
+    }
     setDeletingId(confirmDeleteDomain.id);
     try {
       await deleteDomain(confirmDeleteDomain.id);
@@ -690,6 +722,11 @@ export function DomainsExplorer() {
 
   const handleMoveDomain = useCallback(
     async (domainId: string, newPath: string) => {
+      const domain = domains?.find((d) => d.id === domainId);
+      if (!domain || !canManageDomain(domain)) {
+        setMovingDomain(null);
+        return;
+      }
       try {
         await moveDomain(domainId, newPath);
         mutate();
@@ -699,7 +736,7 @@ export function DomainsExplorer() {
       } catch { /* */ }
       setMovingDomain(null);
     },
-    [mutate, setExpanded],
+    [domains, mutate, setExpanded],
   );
 
   if (isLoading) {
