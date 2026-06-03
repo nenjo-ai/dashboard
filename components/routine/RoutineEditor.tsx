@@ -65,7 +65,7 @@ function slugify(value: string): string {
 // Edge styling helpers
 // ---------------------------------------------------------------------------
 
-/** Edge styling based on condition. Gate/cron edges show pass/fail labels. */
+/** Edge styling based on condition. Gate edges show pass/fail labels. */
 function conditionEdgeStyle(condition: RoutineEdgeCondition, isFromGate: boolean): {
   stroke: string;
   animated: boolean;
@@ -166,12 +166,12 @@ function triggerEdgesFromMetadata(metadata: Record<string, unknown>): Edge[] {
 function routineEdgesToFlowEdges(edges: RoutineEdgeType[], steps: RoutineStep[]): Edge[] {
   return edges.map((edge) => {
     const sourceStep = steps.find((s) => s.slug === edge.source_step);
-    const isFromGateOrCron = sourceStep?.step_type === "gate" || sourceStep?.step_type === "cron";
-    const style = conditionEdgeStyle(edge.condition, isFromGateOrCron);
+    const isFromGate = sourceStep?.step_type === "gate";
+    const style = conditionEdgeStyle(edge.condition, isFromGate);
 
-    // For gate/cron edges, map condition back to the correct source handle
+    // For gate edges, map condition back to the correct source handle
     let sourceHandle: string | undefined;
-    if (isFromGateOrCron) {
+    if (isFromGate) {
       if (edge.condition === "on_fail") {
         sourceHandle = HANDLE_GATE_FAIL;
       } else {
@@ -506,9 +506,7 @@ function RoutineEditorInner({
           ? council?.name ?? "New Council Step"
           : stepType === "agent"
             ? "Agent Step"
-            : stepType === "cron"
-              ? "Cron Step"
-              : stepType === "gate"
+            : stepType === "gate"
                   ? "Quality Gate"
                   : stepType === "terminal_fail"
                     ? "Failed"
@@ -891,7 +889,7 @@ function EdgeConfigPanel({
   const sourceData = sourceStep?.data as StepNodeData | undefined;
   const sourceLabel = sourceData?.label;
   const targetLabel = steps.find((step) => step.id === edge.target)?.data?.label as string | undefined;
-  const canRetry = sourceData?.stepType === "gate" || sourceData?.stepType === "cron";
+  const canRetry = sourceData?.stepType === "gate";
 
   const handleApply = () => {
     const nextMetadata = { ...metadata };
@@ -946,7 +944,7 @@ function EdgeConfigPanel({
           </div>
         ) : (
           <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
-            Retry attempts are only available on edges leaving gate or cron steps.
+            Retry attempts are only available on edges leaving gate steps.
           </p>
         )}
 

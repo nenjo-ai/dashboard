@@ -78,7 +78,6 @@ interface PromptPreviewModalProps {
 const TASK_TYPES = [
   { id: "task", label: "Task" },
   { id: "gate", label: "Gate" },
-  { id: "cron", label: "Cron" },
   { id: "heartbeat", label: "Heartbeat" },
 ];
 
