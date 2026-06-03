@@ -12,8 +12,12 @@ import { TemplateVariableReference } from "./TemplateVariableReference";
 import { LibraryReferenceList } from "./LibraryReferenceList";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
 import { Button } from "@/components/ui/Button";
-import { SourceManagedResourcePanel } from "@/components/resources/SourceManagedResourcePanel";
+import {
+  SourceManagedResourcePanel,
+  type SourceManagedDetailSection,
+} from "@/components/resources/SourceManagedResourcePanel";
 import { MCP_RESOURCE_SCOPES } from "@/lib/types";
+import { manifestResourceDisplayPath } from "@/lib/manifestResourcePath";
 import type { Domain, DomainManifest, Ability, McpServer } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -51,15 +55,7 @@ export function DomainEditorInline({
   onDelete,
 }: DomainEditorInlineProps) {
   if (domain.read_only || domain.metadata?.install) {
-    return (
-      <SourceManagedResourcePanel
-        resource={domain}
-        title={domain.display_name || domain.name}
-        description={domain.description}
-        fallbackContent={JSON.stringify(domain.manifest ?? {}, null, 2)}
-        fallbackLanguage="yaml"
-      />
-    );
+    return <ManagedDomainDetails domain={domain} />;
   }
 
   return (
@@ -67,6 +63,110 @@ export function DomainEditorInline({
       domain={domain}
       onSaved={onSaved}
       onDelete={onDelete}
+    />
+  );
+}
+
+function ManagedDomainDetails({ domain }: { domain: Domain }) {
+  const [fetchedManifest, setFetchedManifest] = useState<{
+    domainId: string;
+    manifest: DomainManifest;
+  } | null>(null);
+  const manifest =
+    fetchedManifest?.domainId === domain.id
+      ? fetchedManifest.manifest
+      : domain.manifest ?? null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchDomainManifest(domain.id)
+      .then((nextManifest) => {
+        if (!cancelled) {
+          setFetchedManifest({ domainId: domain.id, manifest: nextManifest });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [domain.id]);
+
+  const prompt = manifest?.prompt?.developer_prompt_addon ?? "";
+  const sections = useMemo<SourceManagedDetailSection[]>(
+    () => [
+      {
+        title: "Domain",
+        fields: [
+          { label: "Name", value: domain.name, mono: true },
+          { label: "Display name", value: domain.display_name },
+          { label: "Command", value: domain.command, mono: true },
+          { label: "Path", value: manifestResourceDisplayPath(domain), mono: true },
+          { label: "Source type", value: domain.source_type ?? "native" },
+        ],
+      },
+      {
+        title: "Prompt",
+        code: {
+          label: "Developer prompt addon",
+          value: prompt || "No developer prompt addon configured.",
+          language: "yaml",
+        },
+      },
+      {
+        title: "Assignments",
+        fields: [
+          {
+            label: "Platform scopes",
+            value: manifest?.platform_scopes?.length
+              ? manifest.platform_scopes.join(", ")
+              : "None",
+            mono: true,
+          },
+          {
+            label: "Abilities",
+            value: manifest?.abilities?.length
+              ? manifest.abilities.join(", ")
+              : "None",
+            mono: true,
+          },
+          {
+            label: "MCP servers",
+            value: manifest?.mcp_servers?.length
+              ? manifest.mcp_servers.join(", ")
+              : "None",
+            mono: true,
+          },
+        ],
+      },
+    ],
+    [domain, manifest, prompt],
+  );
+  const fallbackContent = useMemo(
+    () =>
+      JSON.stringify(
+        {
+          name: domain.name,
+          display_name: domain.display_name,
+          command: domain.command,
+          path: manifestResourceDisplayPath(domain),
+          description: domain.description,
+          manifest,
+          metadata: domain.metadata,
+        },
+        null,
+        2,
+      ),
+    [domain, manifest],
+  );
+
+  return (
+    <SourceManagedResourcePanel
+      resource={domain}
+      title={domain.display_name || domain.name}
+      description={domain.description}
+      fallbackContent={fallbackContent}
+      fallbackLanguage="yaml"
+      sections={sections}
     />
   );
 }

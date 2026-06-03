@@ -8,7 +8,11 @@ import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference, JinjaGuide } from "./TemplateVariableReference";
 import { LibraryReferenceList } from "./LibraryReferenceList";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
-import { SourceManagedResourcePanel } from "@/components/resources/SourceManagedResourcePanel";
+import {
+  SourceManagedResourcePanel,
+  type SourceManagedDetailSection,
+} from "@/components/resources/SourceManagedResourcePanel";
+import { manifestResourceDisplayPath } from "@/lib/manifestResourcePath";
 
 // ---------------------------------------------------------------------------
 // File-tree node for context blocks
@@ -282,6 +286,79 @@ function setSectionValue(
   return cfg;
 }
 
+function managedAgentPromptSections(
+  role: AgentDefinition,
+  promptConfig: PromptConfig,
+): SourceManagedDetailSection[] {
+  const templates = Object.entries(promptConfig.templates ?? {})
+    .filter(([, value]) => value?.trim())
+    .map(([name, value]) => `## ${name}\n${value}`)
+    .join("\n\n");
+
+  return [
+    {
+      title: "Agent",
+      fields: [
+        { label: "Name", value: role.name, mono: true },
+        { label: "Display name", value: role.display_name },
+        { label: "Path", value: manifestResourceDisplayPath(role), mono: true },
+        { label: "Model", value: role.model_name ?? role.model_id ?? "Not assigned" },
+        { label: "Source type", value: role.source_type },
+      ],
+    },
+    {
+      title: "System Prompt",
+      code: {
+        label: "Soul",
+        value: promptConfig.system_prompt || "No system prompt configured.",
+        language: "yaml",
+      },
+    },
+    {
+      title: "Developer Prompt",
+      code: {
+        label: "Guidance",
+        value: promptConfig.developer_prompt || "No developer prompt configured.",
+        language: "yaml",
+      },
+    },
+    {
+      title: "Task Templates",
+      code: {
+        value: templates || "No task templates configured.",
+        language: "yaml",
+      },
+    },
+    {
+      title: "Assignments",
+      fields: [
+        {
+          label: "Platform scopes",
+          value: role.platform_scopes.length
+            ? role.platform_scopes.join(", ")
+            : "None",
+          mono: true,
+        },
+        {
+          label: "Abilities",
+          value: role.abilities?.length ? role.abilities.join(", ") : "None",
+          mono: true,
+        },
+        {
+          label: "Domains",
+          value: role.domain_ids?.length ? role.domain_ids.join(", ") : "None",
+          mono: true,
+        },
+        {
+          label: "MCP servers",
+          value: role.mcp_servers?.length ? role.mcp_servers.join(", ") : "None",
+          mono: true,
+        },
+      ],
+    },
+  ];
+}
+
 /** Get current value for a domain section. */
 function getDomainSectionValue(rm: AgentDomainAssignment, field: "developer_prompt_addon"): string {
   if (!rm.domain?.manifest?.prompt) return "";
@@ -325,6 +402,7 @@ export function AgentPromptEditor({
         description={role.description}
         fallbackContent={JSON.stringify(promptConfig, null, 2)}
         fallbackLanguage="yaml"
+        sections={managedAgentPromptSections(role, promptConfig)}
       />
     );
   }
@@ -1044,6 +1122,7 @@ export function AgentPromptEditorContent(props: AgentPromptEditorContentProps) {
         description={role.description}
         fallbackContent={JSON.stringify(promptConfig, null, 2)}
         fallbackLanguage="yaml"
+        sections={managedAgentPromptSections(role, promptConfig)}
       />
     );
   }

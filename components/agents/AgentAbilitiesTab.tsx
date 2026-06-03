@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useAbilities, useAgentAbilities } from "@/lib/hooks";
 import { setAgentAbilities } from "@/lib/api";
 import { agentColorAlpha } from "@/lib/agent-colors";
+import { manifestResourceDisplayPath } from "@/lib/manifestResourcePath";
 import type { Ability } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -56,8 +57,9 @@ function buildTree(abilities: Ability[]): TreeEntry[] {
   const rootFolders = new Set<string>();
 
   for (const ability of abilities) {
-    if (ability.path) {
-      const folder = getOrCreateFolder(ability.path);
+    const displayPath = manifestResourceDisplayPath(ability);
+    if (displayPath) {
+      const folder = getOrCreateFolder(displayPath);
       folder.children.push({ type: "file", ability });
     } else {
       rootItems.push({ type: "file", ability });

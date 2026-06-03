@@ -191,15 +191,15 @@ function stepIdentityKey(step: TaskStepProgress): string {
   if (typeof stepId === "string" && stepId.length > 0) {
     return `routine:${stepId}`;
   }
-  if (step.step_type === "agent" && step.agent?.agent_id) {
-    return `agent:${step.agent.agent_id}:${step.step_name}`;
+  if (step.step_type === "agent" && step.agent?.agent) {
+    return `agent:${step.agent.agent}:${step.step_name}`;
   }
   return `${step.step_type}:${step.step_name}`;
 }
 
 function agentStepIdentityKey(step: TaskStepProgress): string | null {
-  if (!step.agent?.agent_id) return null;
-  return `${step.agent.agent_id}:${stepIdentityKey(step)}`;
+  if (!step.agent?.agent) return null;
+  return `${step.agent.agent}:${stepIdentityKey(step)}`;
 }
 
 function extractStringFields(data: Record<string, unknown> | undefined): StepPayloadData {
@@ -493,7 +493,7 @@ function buildDisplaySteps(
   };
 
   const createImplicitAgentParent = (step: TaskStepProgress): number | null => {
-    if (!step.agent?.agent_id) return null;
+    if (!step.agent?.agent) return null;
     const stepId = step.data?.step_id;
     const stepRunId = step.data?.step_run_id;
     const implicitStep: TaskStepProgress = {
@@ -515,7 +515,7 @@ function buildDisplaySteps(
 
   for (const rawStep of steps) {
     if (!isChildActivityStep(rawStep)) {
-      if (rawStep.step_type === "agent" && rawStep.agent?.agent_id) {
+      if (rawStep.step_type === "agent" && rawStep.agent?.agent) {
         upsertAgentTopLevel(rawStep);
       } else {
         upsertTopLevel(rawStep);
@@ -779,13 +779,14 @@ function TaskRow({
             const activityKey = `${task.id ?? task.slug ?? task.title}:${stepKey}`;
             const renderKey = `${activityKey}:${parentIndex}`;
             const isDone = isCompletedStep(step);
-            const activityExpanded = isDone ? !!openActivity[activityKey] : hasActivity;
+            const activityExpanded = !!openActivity[activityKey];
+            const activityLabel = isDone ? "source activity" : "live stream";
             return (
               <div key={renderKey}>
                 <div className="flex items-center gap-2 py-1">
                   {agent ? (
                     <RoleIdenticon
-                      roleId={agent.agent_id}
+                      roleId={agent.agent}
                       color={agent.agent_color ?? "#6B7280"}
                       size={14}
                       className="shrink-0"
@@ -838,7 +839,7 @@ function TaskRow({
                     {warningMsg}
                   </div>
                 )}
-                {hasActivity && isDone && (
+                {hasActivity && (
                   <div className="ml-5 mt-1 mb-2">
                     <button
                       type="button"
@@ -850,9 +851,9 @@ function TaskRow({
                       }
                       className="theme-surface theme-border theme-text inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:[background:var(--app-hover)]"
                     >
-                      <span>{activityExpanded ? "Hide" : "Show"} source activity</span>
+                      <span>{activityExpanded ? "Hide" : "Show"} {activityLabel}</span>
                       <span className="theme-surface-muted theme-text-muted rounded-sm px-1.5 py-0.5 text-[10px]">
-                        {children.length}
+                        {children.length || (isRunning ? "live" : 0)}
                       </span>
                     </button>
                   </div>
@@ -1117,7 +1118,7 @@ export function ExecutionPanel({
     setCreating(true);
     try {
       await createExecution({
-        project_id: projectId,
+        project: projectId,
         parallel_count: parallelCount,
       });
       onRefresh();

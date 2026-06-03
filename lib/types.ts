@@ -165,7 +165,7 @@ export type StepStatus =
   | "skipped";
 
 export interface StepAgent {
-  agent_id: string;
+  agent: string;
   agent_name: string | null;
   agent_color: string | null;
 }
@@ -1698,10 +1698,10 @@ export interface CouncilDetail extends Council {
 export interface CreateCouncilRequest {
   name: string;
   description?: string;
-  leader_agent_id: string;
+  leader_agent: string;
   delegation_strategy?: DelegationStrategy;
   config?: Record<string, unknown>;
-  members?: { agent_id: string; priority?: number }[];
+  members?: { agent: string; priority?: number; config?: Record<string, unknown> }[];
 }
 
 export interface UpdateCouncilRequest {
@@ -1712,7 +1712,7 @@ export interface UpdateCouncilRequest {
 }
 
 export interface AddCouncilMemberRequest {
-  agent_id: string;
+  agent: string;
   priority?: number;
   config?: Record<string, unknown>;
 }
@@ -1765,7 +1765,7 @@ export interface Domain {
   category: string | null;
   tags: string[];
   is_system: boolean;
-  source_type?: "native";
+  source_type?: "native" | "package";
   read_only?: boolean;
   metadata?: Record<string, unknown>;
   created_by: string | null;

@@ -70,7 +70,7 @@ export function CreateProjectModal({
       onCreated();
       onClose();
       // Navigate to the project detail page
-      router.push(`/dashboard/projects/${project.id}`);
+      router.push(`/dashboard/projects/${project.slug || project.id}`);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to create project.",

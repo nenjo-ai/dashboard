@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 import {
   startAgentHeartbeat,
@@ -21,6 +21,11 @@ function formatTimestamp(value: string | null | undefined): string {
   return new Date(value).toLocaleString();
 }
 
+function heartbeatFinalOutput(config: Record<string, unknown> | undefined): string | null {
+  const output = config?.final_output;
+  return typeof output === "string" && output.trim() ? output : null;
+}
+
 interface AgentHeartbeatTabProps {
   agentId: string;
   initialInterval?: string | null;
@@ -34,6 +39,13 @@ export function AgentHeartbeatTab({
 }: AgentHeartbeatTabProps) {
   const { heartbeat, mutate: mutateHeartbeat, isLoading } = useAgentHeartbeat(agentId);
   const { executions, mutate: mutateExecutions } = useAgentExecutions(agentId, 15);
+  const heartbeatExecutions = useMemo(
+    () =>
+      (executions ?? []).filter(
+        (execution) => execution.config?.trigger === "agent_heartbeat",
+      ),
+    [executions],
+  );
   const [interval, setInterval] = useState(initialInterval ?? heartbeat?.interval ?? "");
   const [timezone, setTimezone] = useState("UTC");
   const [saving, setSaving] = useState(false);
@@ -225,25 +237,44 @@ export function AgentHeartbeatTab({
               </tr>
             </thead>
             <tbody className="theme-border divide-y">
-              {(executions ?? []).map((execution) => (
-                <tr key={execution.id}>
-                  <td className="theme-text py-3 pr-4">
-                    {formatTimestamp(execution.started_at ?? execution.created_at)}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span className="theme-surface-muted theme-text rounded-full px-2 py-1 text-xs font-medium">
-                      {execution.status}
-                    </span>
-                  </td>
-                  <td className="theme-text py-3 pr-4">
-                    {(execution.config?.trigger as string | undefined) ?? "execution"}
-                  </td>
-                  <td className="theme-text-muted py-3 pr-4 font-mono text-xs">
-                    {execution.id}
-                  </td>
-                </tr>
-              ))}
-              {!executions?.length && (
+              {heartbeatExecutions.map((execution) => {
+                const finalOutput = heartbeatFinalOutput(execution.config);
+                return (
+                  <Fragment key={execution.id}>
+                    <tr>
+                      <td className="theme-text py-3 pr-4">
+                        {formatTimestamp(execution.started_at ?? execution.created_at)}
+                      </td>
+                      <td className="py-3 pr-4">
+                        <span className="theme-surface-muted theme-text rounded-full px-2 py-1 text-xs font-medium">
+                          {execution.status}
+                        </span>
+                      </td>
+                      <td className="theme-text py-3 pr-4">
+                        {(execution.config?.trigger as string | undefined) ?? "execution"}
+                      </td>
+                      <td className="theme-text-muted py-3 pr-4 font-mono text-xs">
+                        {execution.id}
+                      </td>
+                    </tr>
+                    {finalOutput ? (
+                      <tr>
+                        <td colSpan={4} className="pb-4">
+                          <details className="theme-surface-muted rounded-xl px-3 py-2">
+                            <summary className="theme-text cursor-pointer text-xs font-medium">
+                              Final output
+                            </summary>
+                            <pre className="theme-text-muted mt-3 max-h-64 overflow-auto whitespace-pre-wrap text-xs leading-relaxed">
+                              {finalOutput}
+                            </pre>
+                          </details>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+              {heartbeatExecutions.length === 0 && (
                 <tr>
                   <td colSpan={4} className="theme-text-muted py-6 text-sm">
                     No heartbeat executions yet.

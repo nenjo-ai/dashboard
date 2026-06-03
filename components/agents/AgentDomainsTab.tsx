@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useDomains, useAgentDomains } from "@/lib/hooks";
 import { assignDomainToAgent, removeDomainFromAgent, toggleAgentDomain } from "@/lib/api";
 import { agentColorAlpha } from "@/lib/agent-colors";
+import { manifestResourceDisplayPath } from "@/lib/manifestResourcePath";
 import type { Domain } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -54,8 +55,9 @@ function buildTree(domains: Domain[]): TreeEntry[] {
   const rootFolders = new Set<string>();
 
   for (const domain of domains) {
-    if (domain.path) {
-      const folder = getOrCreateFolder(domain.path);
+    const displayPath = manifestResourceDisplayPath(domain);
+    if (displayPath) {
+      const folder = getOrCreateFolder(displayPath);
       folder.children.push({ type: "file", domain });
     } else {
       rootItems.push({ type: "file", domain });
