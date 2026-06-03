@@ -153,18 +153,25 @@ export function ChatView() {
 
   // Create new chat
   const handleCreateChat = useCallback(
-    async (projectId: string | null, agentId: string, agentName: string) => {
+    async (
+      projectId: string | null,
+      targetId: string,
+      targetName: string,
+      targetType: "agent" | "council" = "agent",
+    ) => {
       // Count existing sessions for this project+agent to auto-name
       const existingCount =
         sessions?.filter(
-          (s) => s.project_id === projectId && s.agent_id === agentId,
+          (s) => s.project_id === projectId && s.target_type === targetType && (s.target_agent_id ?? s.target_council_id) === targetId,
         ).length ?? 0;
 
-      const title = `${agentName.charAt(0).toUpperCase() + agentName.slice(1)} #${existingCount + 1}`;
+      const title = `${targetName.charAt(0).toUpperCase() + targetName.slice(1)} #${existingCount + 1}`;
 
       const newSession = await createChatSession({
         ...(projectId ? { project_id: projectId } : {}),
-        agent_id: agentId,
+        ...(targetType === "agent" ? { agent_id: targetId } : {}),
+        target_type: targetType,
+        target_id: targetId,
         title,
       });
 
@@ -258,12 +265,16 @@ export function ChatView() {
               <div className="flex items-center gap-3 border-b border-black/10 px-4 py-2.5 dark:border-white/10">
                 <div className="min-w-0 flex-1">
                   <h2 className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {activeSession.agent_display_name ?? activeSession.agent_name}
+                    {activeSession.target_type === "council"
+                      ? activeSession.council_name ?? activeSession.title
+                      : activeSession.agent_display_name ?? activeSession.agent_name}
                   </h2>
                   <p className="truncate text-xs text-gray-500 dark:text-gray-400">
                     {isNotificationView
                       ? `@${activeSession.agent_name}`
-                      : `${activeSession.project_id ? activeSession.project_name : "General"} · @${activeSession.agent_name}`}
+                      : activeSession.target_type === "council"
+                        ? `${activeSession.project_id ? activeSession.project_name : "General"} · Council`
+                        : `${activeSession.project_id ? activeSession.project_name : "General"} · @${activeSession.agent_name}`}
                   </p>
                 </div>
               </div>
@@ -272,16 +283,17 @@ export function ChatView() {
               <div className="flex-1 min-h-0">
                 {isNotificationView ? (
                   <NotificationArea
-                    agentId={activeSession.agent_id}
+                    agentId={activeSession.agent_id!}
                     sessionId={activeSession.id}
                     agentName={activeSession.agent_display_name ?? activeSession.agent_name}
                     variant="desktop"
                   />
                 ) : (
                   <ChatArea
-                    key={`${activeSession.id}:${activeSession.agent_id}`}
+                    key={`${activeSession.id}:${activeSession.target_type}:${activeSession.target_agent_id ?? activeSession.target_council_id}`}
                     projectId={activeSession.project_id}
-                    agentId={activeSession.agent_id}
+                    agentId={(activeSession.target_agent_id ?? activeSession.target_council_id)!}
+                    targetType={activeSession.target_type}
                     sessionId={activeSession.id}
                     onNavigateToSession={navigateToSessionById}
                     onSessionCreated={() => mutateSessions()}

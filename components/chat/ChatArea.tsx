@@ -28,6 +28,7 @@ import { MobileEmptyState } from "./MobileEmptyState";
 interface ChatAreaProps {
   projectId: string | null;
   agentId: string;
+  targetType?: "agent" | "council";
   sessionId: string | null;
   /** Navigate to a different session (from @mention agent→session picker). */
   onNavigateToSession?: (sessionId: string) => void;
@@ -768,8 +769,9 @@ function displayProjectName(projectName: string | null | undefined): string {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, onSessionCreated, variant = "desktop", onSwitchAgent }: ChatAreaProps) {
+export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, onNavigateToSession, onSessionCreated, variant = "desktop", onSwitchAgent }: ChatAreaProps) {
   const isMobile = variant === "mobile";
+  const isAgentTarget = targetType === "agent";
   const { user } = useUser();
   const userImageUrl = user?.imageUrl;
   const userInitials = user?.firstName?.[0] ?? "U";
@@ -794,8 +796,8 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
 
   const { agents: allAgents } = useAgents();
-  const { agent: activeAgentDetail } = useAgent(agentId);
-  const { agentDomains } = useAgentDomains(agentId);
+  const { agent: activeAgentDetail } = useAgent(isAgentTarget ? agentId : undefined);
+  const { agentDomains } = useAgentDomains(isAgentTarget ? agentId : undefined);
   const { projects } = useProjects();
 
   // Projectless "General" chats run in the worker's root workspace.
@@ -835,8 +837,8 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
 
 
   const activeAgent = useMemo(
-    () => activeAgentDetail ?? allAgents?.find((a: AgentDefinition) => a.id === agentId),
-    [activeAgentDetail, allAgents, agentId],
+    () => activeAgentDetail ?? (isAgentTarget ? allAgents?.find((a: AgentDefinition) => a.id === agentId) : undefined),
+    [activeAgentDetail, allAgents, agentId, isAgentTarget],
   );
 
   useEffect(() => { setSelectedDropdownIndex(0); }, [filteredAgents]);
@@ -845,7 +847,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
     messages, sendMessage, deleteMessage, isTyping, activeTools, livePreview, isLoadingHistory,
     hasMore, isLoadingMore, loadMore,
     activeDomainSession, isDomainPending, enterDomain, exitDomain, cancelResponse,
-  } = usePlannerChat(projectId, agentId, sessionId ?? undefined);
+  } = usePlannerChat(projectId, agentId, sessionId ?? undefined, targetType);
   const hasActiveTools = activeTools.length > 0;
 
   // Domains
@@ -854,7 +856,7 @@ export function ChatArea({ projectId, agentId, sessionId, onNavigateToSession, o
     [agentDomains],
   );
   // Only show domains assigned to the current agent
-  const availableDomains: Domain[] = agentDomainsList;
+  const availableDomains: Domain[] = isAgentTarget ? agentDomainsList : [];
 
   const filteredDomains: Domain[] = useMemo(() => {
     if (!showDomainDropdown) return [];

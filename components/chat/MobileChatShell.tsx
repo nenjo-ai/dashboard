@@ -43,6 +43,7 @@ export function MobileChatShell({
 
   const activeAgent = useMemo(() => {
     if (!activeSession || !allAgents) return undefined;
+    if (activeSession.target_type !== "agent" || !activeSession.agent_id) return undefined;
     return allAgents.find((a: AgentDefinition) => a.id === activeSession.agent_id && a.model_id);
   }, [activeSession, allAgents]);
 
@@ -50,7 +51,11 @@ export function MobileChatShell({
     <div className="flex h-full min-h-0 flex-col overflow-x-hidden bg-[#f5f7fb] dark:bg-[#05070b]">
       <div className="fixed inset-x-0 top-0 z-30">
         <MobileHeroBar
-          title={mobileShowChat && activeSession ? (activeSession.agent_display_name ?? activeSession.agent_name) : "Chat"}
+          title={mobileShowChat && activeSession
+            ? activeSession.target_type === "council"
+              ? activeSession.council_name ?? activeSession.title
+              : activeSession.agent_display_name ?? activeSession.agent_name
+            : "Chat"}
           leading={mobileShowChat && activeSession ? (
             <MobileTouchButton
               onPress={onBack}
@@ -107,9 +112,10 @@ export function MobileChatShell({
               <div className="flex h-full min-h-0 flex-col">
                 <div className="flex-1 min-h-0">
                   <ChatArea
-                    key={`${activeSession.id}:${activeSession.agent_id}`}
+                    key={`${activeSession.id}:${activeSession.target_type}:${activeSession.target_agent_id ?? activeSession.target_council_id}`}
                     projectId={activeSession.project_id}
-                    agentId={activeSession.agent_id}
+                    agentId={(activeSession.target_agent_id ?? activeSession.target_council_id)!}
+                    targetType={activeSession.target_type}
                     sessionId={activeSession.id}
                     onNavigateToSession={onNavigateToSession}
                     onSessionCreated={onSessionCreated}
