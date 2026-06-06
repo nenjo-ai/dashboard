@@ -2,17 +2,32 @@
 
 import { cn } from "@/lib/cn";
 import { Children, isValidElement, useState, useRef, useEffect, useMemo, useCallback, memo } from "react";
+import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import useSWR from "swr";
-import type { ChatMessage, AgentDefinition, ChatSessionExtended, Domain } from "@/lib/types";
+import type {
+  AgentDefinition,
+  ChatMessage,
+  ChatSessionExtended,
+  Domain,
+  PackageInstall,
+  PackageInstallDetail,
+  PackageInstallResource,
+} from "@/lib/types";
 import {
   useAgent,
   useAgents,
   useAgentDomains,
   useProjects,
 } from "@/lib/hooks";
-import { fetcher, allChatSessionsUrl, createChatSession } from "@/lib/api";
+import {
+  allChatSessionsUrl,
+  createChatSession,
+  fetchPackageInstallDetail,
+  fetcher,
+  packageInstallsUrl,
+} from "@/lib/api";
 import { usePlannerChat } from "@/lib/usePlannerChat";
 import { formatToolCallSignature } from "@/lib/toolCallDisplay";
 import { useUser } from "@clerk/nextjs";
@@ -24,6 +39,7 @@ import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
 import { motion, AnimatePresence } from "motion/react";
 import { MobileInputBar } from "./MobileInputBar";
 import { MobileEmptyState } from "./MobileEmptyState";
+import { PendingCommandPill } from "./PendingCommandPill";
 
 interface ChatAreaProps {
   projectId: string | null;
@@ -48,6 +64,9 @@ type ChatProjectOption = {
 type ChatCommandOption = {
   command: string;
   description: string;
+  source: "builtin" | "package";
+  sourcePath?: string;
+  updatedAt?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -60,8 +79,87 @@ const CHAT_COMMANDS: ChatCommandOption[] = [
   {
     command: NEW_SESSION_COMMAND,
     description: "Create a fresh chat with this agent and project.",
+    source: "builtin",
   },
 ];
+
+function metadataText(
+  metadata: Record<string, unknown>,
+  path: string[],
+): string | null {
+  let current: unknown = metadata;
+  for (const key of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return null;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === "string" && current.trim() ? current : null;
+}
+
+function packageCommandOption(
+  resource: PackageInstallResource,
+): ChatCommandOption | null {
+  if (resource.install_state !== "installed" || resource.resource_type !== "command") {
+    return null;
+  }
+  const command = metadataText(resource.metadata, ["runtime", "command"]);
+  if (!command?.startsWith("/")) return null;
+  return {
+    command,
+    description:
+      metadataText(resource.metadata, ["runtime", "description"]) ??
+      metadataText(resource.metadata, ["source", "package"]) ??
+      resource.source_path,
+    source: "package",
+    sourcePath: resource.source_path,
+    updatedAt: resource.updated_at,
+  };
+}
+
+function installedPackageCommands(
+  details: PackageInstallDetail[] | undefined,
+): ChatCommandOption[] {
+  if (!details?.length) return [];
+  const seen = new Set(CHAT_COMMANDS.map((command) => command.command));
+  const commands = new Map<string, ChatCommandOption>();
+  for (const detail of details) {
+    for (const resource of detail.resources) {
+      const option = packageCommandOption(resource);
+      if (!option || seen.has(option.command)) continue;
+      const existing = commands.get(option.command);
+      if (
+        !existing ||
+        new Date(option.updatedAt ?? 0).getTime() >
+          new Date(existing.updatedAt ?? 0).getTime()
+      ) {
+        commands.set(option.command, option);
+      }
+    }
+  }
+  return Array.from(commands.values()).sort((left, right) =>
+    left.command.localeCompare(right.command),
+  );
+}
+
+function matchInstalledPackageCommand(
+  text: string,
+  commands: ChatCommandOption[],
+): ChatCommandOption | null {
+  const trimmed = text.trim();
+  const lowerText = trimmed.toLowerCase();
+  return (
+    commands
+      .filter((command) => command.source === "package")
+      .sort((left, right) => right.command.length - left.command.length)
+      .find((command) => {
+        const lowerCommand = command.command.toLowerCase();
+        return (
+          lowerText === lowerCommand || lowerText.startsWith(`${lowerCommand} `)
+        );
+      }) ?? null
+  );
+}
 
 function ChatCommandDropdown({
   commands,
@@ -77,8 +175,33 @@ function ChatCommandDropdown({
   anchorRef: React.RefObject<HTMLElement | null>;
 }) {
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{
+    bottom: number;
+    left: number;
+    width: number;
+  } | null>(null);
 
   useEffect(() => {
+    const updatePosition = () => {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const width = Math.min(320, Math.max(0, window.innerWidth - 32));
+      const left = Math.min(
+        Math.max(rect.left, 16),
+        Math.max(16, window.innerWidth - width - 16),
+      );
+      setPosition({
+        bottom: Math.max(window.innerHeight - rect.top + 8, 8),
+        left,
+        width,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
     function handleClickOutside(e: MouseEvent) {
       if (
         dropdownRef.current &&
@@ -90,22 +213,33 @@ function ChatCommandDropdown({
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, [anchorRef, onClose]);
 
-  if (commands.length === 0) return null;
+  if (commands.length === 0 || !position || typeof document === "undefined") {
+    return null;
+  }
 
-  return (
+  return createPortal(
     <div
       ref={dropdownRef}
-      className="theme-border theme-surface absolute bottom-full left-0 z-50 mb-1 w-80 overflow-hidden rounded-lg border shadow-lg"
+      className="theme-border fixed isolate z-[9999] max-h-72 overflow-y-auto rounded-lg border bg-white shadow-2xl ring-1 ring-black/5 dark:bg-gray-950 dark:ring-white/10"
+      style={{
+        bottom: position.bottom,
+        left: position.left,
+        width: position.width,
+      }}
     >
       <div className="px-3 py-1.5 text-xs font-medium text-gray-400 dark:text-gray-500">
         Available Commands
       </div>
       {commands.map((command, index) => (
         <button
-          key={command.command}
+          key={`${command.source}:${command.command}`}
           type="button"
           className={cn(
             "flex w-full items-start gap-3 px-3 py-2 text-left text-sm transition-colors",
@@ -139,7 +273,8 @@ function ChatCommandDropdown({
           </span>
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -791,6 +926,7 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   const [domainFilter, setDomainFilter] = useState("");
   const [selectedDomainIndex, setSelectedDomainIndex] = useState(0);
   const [pendingDomain, setPendingDomain] = useState<Domain | null>(null);
+  const [pendingCommand, setPendingCommand] = useState<ChatCommandOption | null>(null);
   const [showCommandDropdown, setShowCommandDropdown] = useState(false);
   const [commandFilter, setCommandFilter] = useState("");
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
@@ -799,6 +935,47 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   const { agent: activeAgentDetail } = useAgent(isAgentTarget ? agentId : undefined);
   const { agentDomains } = useAgentDomains(isAgentTarget ? agentId : undefined);
   const { projects } = useProjects();
+  const { data: packageInstalls } = useSWR<PackageInstall[]>(
+    packageInstallsUrl(),
+    fetcher,
+    { revalidateOnFocus: true, dedupingInterval: 5000 },
+  );
+  const activePackageInstalls = useMemo(
+    () => (packageInstalls ?? []).filter((install) => install.status === "installed"),
+    [packageInstalls],
+  );
+  const packageInstallDetailKey = useMemo(() => {
+    if (!activePackageInstalls.length) return null;
+    return [
+      "chat-package-install-details",
+      activePackageInstalls
+        .map((install) => `${install.id}:${install.updated_at}`)
+        .join("|"),
+    ] as const;
+  }, [activePackageInstalls]);
+  const { data: packageInstallDetails } = useSWR<PackageInstallDetail[]>(
+    packageInstallDetailKey,
+    async () => {
+      const details = await Promise.all(
+        activePackageInstalls.map((install) =>
+          fetchPackageInstallDetail(install.id).catch(() => null),
+        ),
+      );
+      return details.filter(
+        (detail): detail is PackageInstallDetail => detail !== null,
+      );
+    },
+    { revalidateOnFocus: true, dedupingInterval: 5000 },
+  );
+  const chatCommands = useMemo(
+    () => [...CHAT_COMMANDS, ...installedPackageCommands(packageInstallDetails)],
+    [packageInstallDetails],
+  );
+  useEffect(() => {
+    if (!pendingCommand) return;
+    if (chatCommands.some((command) => command.command === pendingCommand.command)) return;
+    setPendingCommand(null);
+  }, [chatCommands, pendingCommand]);
 
   // Projectless "General" chats run in the worker's root workspace.
   const userProjects = useMemo<ChatProjectOption[]>(() => {
@@ -856,7 +1033,10 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     [agentDomains],
   );
   // Only show domains assigned to the current agent
-  const availableDomains: Domain[] = isAgentTarget ? agentDomainsList : [];
+  const availableDomains: Domain[] = useMemo(
+    () => (isAgentTarget ? agentDomainsList : []),
+    [agentDomainsList, isAgentTarget],
+  );
 
   const filteredDomains: Domain[] = useMemo(() => {
     if (!showDomainDropdown) return [];
@@ -874,12 +1054,12 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   const filteredCommands = useMemo(() => {
     if (!showCommandDropdown) return [];
     const lower = commandFilter.toLowerCase();
-    return CHAT_COMMANDS.filter(
+    return chatCommands.filter(
       (command) =>
         command.command.slice(1).toLowerCase().includes(lower) ||
         command.description.toLowerCase().includes(lower),
     );
-  }, [showCommandDropdown, commandFilter]);
+  }, [showCommandDropdown, commandFilter, chatCommands]);
 
   useEffect(() => { setSelectedCommandIndex(0); }, [filteredCommands]);
 
@@ -993,13 +1173,11 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     for (const message of assistantMessages) {
       const previousContent = lastAssistantContentRef.current.get(message.id);
       const seenContent = seenAssistantContentRef.current.get(message.id);
-      const seenByContent = seenAssistantContentRef.current.has(getSeenAssistantContentKey(message.content));
 
       if (
         previousContent !== undefined &&
         previousContent !== message.content &&
-        seenContent !== message.content &&
-        !seenByContent
+        seenContent !== message.content
       ) {
         latestChangedId = message.id;
         seenAssistantContentRef.current.set(message.id, message.content);
@@ -1007,8 +1185,7 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
       } else if (
         previousContent === undefined &&
         assistantMessages[assistantMessages.length - 1]?.id === message.id &&
-        seenContent !== message.content &&
-        !seenByContent
+        seenContent !== message.content
       ) {
         latestChangedId = message.id;
         seenAssistantContentRef.current.set(message.id, message.content);
@@ -1017,7 +1194,16 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
       lastAssistantContentRef.current.set(message.id, message.content);
     }
     writeSeenAssistantMap(sessionId, seenAssistantContentRef.current);
-    setStreamingAssistantId(latestChangedId);
+    setStreamingAssistantId((currentId) => {
+      if (latestChangedId) return latestChangedId;
+      if (
+        currentId &&
+        assistantMessages.some((message) => message.id === currentId)
+      ) {
+        return currentId;
+      }
+      return null;
+    });
   }, [messages, sessionId]);
 
   useEffect(() => {
@@ -1103,7 +1289,7 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
       closeMentionFlow();
     }
 
-    if (value.startsWith("/")) {
+    if (value.startsWith("/") && !pendingCommand) {
       const commandText = value.slice(1);
       if (!/\s/.test(commandText)) {
         setShowCommandDropdown(true);
@@ -1136,7 +1322,7 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     setShowAgentDropdown(false);
     setMentionFilter("");
 
-    if (value.startsWith("#") && activeDomainSession) {
+    if (value.startsWith("#") && activeDomainSession && !pendingCommand) {
       const domainText = value.slice(1);
       if (!/\s/.test(domainText)) {
         setShowDomainDropdown(true);
@@ -1146,7 +1332,7 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
       }
     }
 
-    if (value.startsWith("#") && !activeDomainSession && !pendingDomain) {
+    if (value.startsWith("#") && !activeDomainSession && !pendingDomain && !pendingCommand) {
       const domainText = value.slice(1);
       if (!/\s/.test(domainText)) {
         setShowDomainDropdown(true);
@@ -1163,9 +1349,12 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   const handleDomainSelect = useCallback(
     (domain: Domain) => {
       setPendingDomain(domain);
+      setPendingCommand(null);
       setInput("");
       setShowDomainDropdown(false);
       setDomainFilter("");
+      setShowCommandDropdown(false);
+      setCommandFilter("");
       inputRef.current?.focus();
     },
     [],
@@ -1256,17 +1445,44 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
       resetInputHeight();
       setShowCommandDropdown(false);
       setCommandFilter("");
+      setShowDomainDropdown(false);
+      setDomainFilter("");
 
       if (command.command === NEW_SESSION_COMMAND) {
+        setPendingCommand(null);
+        setPendingDomain(null);
         await handleNewSessionCommand();
+        return;
       }
+
+      if (command.source === "package") {
+        setPendingCommand(command);
+        setPendingDomain(null);
+        requestAnimationFrame(() => {
+          inputRef.current?.focus();
+        });
+        return;
+      }
+
+      setPendingCommand(null);
+      setPendingDomain(null);
+      setInput(`${command.command} `);
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        if (inputRef.current) {
+          inputRef.current.selectionStart = inputRef.current.value.length;
+          inputRef.current.selectionEnd = inputRef.current.value.length;
+          inputRef.current.style.height = "auto";
+          inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`;
+        }
+      });
     },
     [handleNewSessionCommand, resetInputHeight],
   );
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text && !pendingCommand) return;
 
     // Close any open mention flow
     closeMentionFlow();
@@ -1300,6 +1516,25 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
       return;
     }
 
+    if (pendingCommand) {
+      if (isTyping) return;
+      const commandText = `${pendingCommand.command} ${text}`.trim();
+      sendMessage(commandText, {
+        commandInvocation: {
+          command: pendingCommand.command,
+        },
+      });
+      setPendingCommand(null);
+      setInput("");
+      resetInputHeight();
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      });
+      return;
+    }
+
     if (text.startsWith("#") && !activeDomainSession && availableDomains.length > 0) {
       const matchedDomain = [...availableDomains]
         .sort((a, b) => b.command.length - a.command.length)
@@ -1321,7 +1556,16 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     }
 
     if (isTyping) return;
-    sendMessage(text);
+    const packageCommand = matchInstalledPackageCommand(text, chatCommands);
+    if (packageCommand) {
+      sendMessage(text, {
+        commandInvocation: {
+          command: packageCommand.command,
+        },
+      });
+    } else {
+      sendMessage(text);
+    }
     setInput("");
     resetInputHeight();
     // On mobile, force scroll to bottom after send to prevent layout shift
@@ -1333,6 +1577,12 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (pendingCommand && !input.trim() && (e.key === "Backspace" || e.key === "Escape")) {
+      e.preventDefault();
+      setPendingCommand(null);
+      return;
+    }
+
     if (pendingDomain && !input.trim() && (e.key === "Backspace" || e.key === "Escape")) {
       e.preventDefault();
       setPendingDomain(null);
@@ -1421,7 +1671,10 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   // Mobile: handle enter domain via MobileEmptyState
   const handleEnterDomainFromChip = useCallback((domain: Domain) => {
     setPendingDomain(domain);
+    setPendingCommand(null);
     setInput("");
+    setShowCommandDropdown(false);
+    setCommandFilter("");
     inputRef.current?.focus();
   }, []);
 
@@ -1646,10 +1899,10 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
 
       {/* Mobile input bar */}
       {isMobile && (
-        <div className="pointer-events-none z-20 shrink-0">
+        <div className="pointer-events-none relative z-[90] shrink-0">
           {/* Dropdowns render above the mobile input */}
           {showCommandDropdown && filteredCommands.length > 0 && (
-            <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-50 px-4 pb-2">
+            <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-[120] px-4 pb-2">
               <ChatCommandDropdown
                 commands={filteredCommands}
                 selectedIndex={selectedCommandIndex}
@@ -1810,12 +2063,14 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
             activeDomainLabel={activeDomainSession ? availableDomains.find((m) => m.id === activeDomainSession.domain_id)?.command : undefined}
             pendingDomain={pendingDomain}
             onClearPendingDomain={() => setPendingDomain(null)}
+            pendingCommand={pendingCommand}
+            onClearPendingCommand={() => setPendingCommand(null)}
           />
         </div>
       )}
 
       {/* Desktop Input */}
-      {!isMobile && <div className="theme-border theme-surface border-t p-3">
+      {!isMobile && <div className="theme-border theme-surface relative z-[90] border-t p-3">
         <div className="relative">
           {showCommandDropdown && filteredCommands.length > 0 && (
             <ChatCommandDropdown
@@ -2086,6 +2341,14 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
                     className="mb-0.5"
                   />
                 )}
+                {pendingCommand && (
+                  <PendingCommandPill
+                    command={pendingCommand}
+                    onClear={() => setPendingCommand(null)}
+                    accentColor={agentColor}
+                    className="mb-0.5"
+                  />
+                )}
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -2096,6 +2359,8 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
                       ? "Activating domain..."
                       : pendingDomain
                         ? "Describe what to do in this domain..."
+                        : pendingCommand
+                          ? `Arguments for ${pendingCommand.command}...`
                         : placeholder
                   }
                   disabled={isDomainPending}
@@ -2138,7 +2403,7 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
             )}
             <Button
               onClick={handleSend}
-              disabled={!input.trim()}
+              disabled={!input.trim() && !pendingCommand}
               size="md"
               className="!bg-deep-space-blue-500 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
             >

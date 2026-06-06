@@ -28,8 +28,10 @@ These scopes add built-in platform tools to an agent when the worker builds its 
 | `abilities:write` | `create_ability`, `update_ability`, `update_ability_prompt`, `delete_ability` |
 | `domains:read` | `list_domains`, `get_domain`, `get_domain_prompt` |
 | `domains:write` | `create_domain`, `update_domain`, `update_domain_prompt`, `delete_domain` |
-| `projects:read` | `list_projects`, `get_project`, `list_knowledge_packs`, `list_knowledge_docs`, `read_knowledge_doc_manifest`, `read_knowledge_doc`, `search_knowledge`, `search_knowledge_paths`, `list_knowledge_tree`, `list_knowledge_neighbors`, `list_project_tasks`, `get_project_task`, `list_project_execution_runs`, `get_project_execution_run` |
-| `projects:write` | `create_project`, `update_project`, `delete_project`, `create_knowledge_item`, `update_knowledge_item_content`, `delete_knowledge_item`, `create_project_tasks`, `update_project_task`, `delete_project_task`, `start_project_execution`, `pause_project_execution`, `resume_project_execution` |
+| `projects:read` | `list_projects`, `get_project`, `list_project_tasks`, `get_project_task`, `list_project_execution_runs`, `get_project_execution_run` |
+| `projects:write` | `create_project`, `update_project`, `delete_project`, `create_project_tasks`, `update_project_task`, `delete_project_task`, `start_project_execution`, `pause_project_execution`, `resume_project_execution` |
+| `library:read` | Allows reading library knowledge packs and documents through API/admin surfaces. Knowledge traversal tools such as `list_knowledge_packs`, `read_knowledge_doc`, `search_knowledge`, and `list_knowledge_neighbors` are exposed dynamically when knowledge packs are available. |
+| `library:write` | `create_knowledge_doc`, `update_knowledge_doc`, `delete_knowledge_doc` |
 | `routines:read` | `list_routines`, `get_routine` |
 | `routines:write` | `create_routine`, `update_routine`, `delete_routine` |
 | `models:read` | `list_models`, `get_model` |
@@ -41,20 +43,30 @@ These scopes add built-in platform tools to an agent when the worker builds its 
 
 Write scopes add mutation tools and satisfy read checks for the same resource family. For example, `projects:write` also satisfies a `projects:read` requirement.
 
-## Project Scope Covers More Than Projects
+## Project Scope Covers Project Work
 
 `projects:read` and `projects:write` cover project-scoped surfaces:
 
 - Projects
 - Tasks
-- Project documents
-- Document relationships
 - Task dependencies
 - Execution runs
 - Execution controls
 - Project-scoped state used by workers
 
-That is why there are no separate runtime tool scopes such as `tasks:write` or `documents:write` in the current implementation.
+That is why there are no separate runtime tool scopes such as `tasks:write` in the current implementation.
+
+## Library Scope Covers Knowledge
+
+`library:read` and `library:write` cover organization-level library knowledge:
+
+- Knowledge packs
+- Knowledge documents
+- Document content
+- Document relationships
+- Package-installed knowledge resources
+
+Library scopes are separate from project scopes because projects do not own knowledge documents.
 
 ## Valid API and Assignment Scopes
 
@@ -64,8 +76,8 @@ These scopes are valid in the broader platform scope registry. Some are used for
 |-------|-------------|
 | `mcp_servers:read` | Allows reading MCP server configuration and assignments through API/admin surfaces. External MCP tools are assigned by server assignment; platform-scoped MCP tools may also be filtered by their own scope field. |
 | `mcp_servers:write` | Allows creating, updating, deleting, or assigning MCP server configuration through API/admin surfaces. |
-| `chat:read` | API-key scope for chat sessions, messages, commands, stream metadata, and notifications where exposed. |
-| `chat:write` | API-key scope for creating, updating, sending, streaming, or mutating chat-related resources. |
+| `notify:read` | Read notification sessions, unread counts, and persisted notification messages. |
+| `notify:write` | Emit org-scoped encrypted push notifications from an agent; implies `notify:read`. |
 | `org:read` | Read organization metadata. |
 | `org:write` | Mutate organization metadata. |
 | `org_members:read` | Read organization members and member permissions. |
@@ -98,11 +110,11 @@ In normal design work, an agent can recommend the minimum scopes needed. The use
 
 | Use case | Suggested scopes |
 |----------|------------------|
-| Read-only platform guide | `agents:read`, `projects:read`, `routines:read`, `domains:read`, `abilities:read`, `models:read`, `context_blocks:read`, `mcp_servers:read` |
+| Read-only platform guide | `agents:read`, `projects:read`, `library:read`, `routines:read`, `domains:read`, `abilities:read`, `models:read`, `context_blocks:read`, `mcp_servers:read` |
 | Project work manager | `projects:write`, `routines:read`, `agents:read`, `models:read` |
 | Workflow builder | `routines:write`, `councils:read`, `agents:read`, `projects:read`, `context_blocks:read` |
 | Council builder | `councils:write`, `agents:read`, `projects:read`, `routines:read`, `context_blocks:read` |
 | Agent designer | `agents:read`, `models:read`, `abilities:read`, `domains:read`, `context_blocks:read`, `mcp_servers:read` |
-| Creator mode | `agents:write`, `projects:write`, `routines:write`, `domains:write`, `abilities:write`, `context_blocks:write`, `models:write` |
+| Creator mode | `agents:write`, `projects:write`, `library:write`, `routines:write`, `domains:write`, `abilities:write`, `context_blocks:write`, `models:write` |
 
 Start read-only when the agent only needs to explain, inspect, diagnose, or design. Add write scopes only when the agent must perform the mutation itself.

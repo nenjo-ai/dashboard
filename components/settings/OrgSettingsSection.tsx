@@ -46,6 +46,8 @@ const SCOPE_OPTIONS = [
   "api_keys:write",
   "projects:read",
   "projects:write",
+  "library:read",
+  "library:write",
   "agents:read",
   "agents:write",
   "models:read",
@@ -62,6 +64,8 @@ const SCOPE_OPTIONS = [
   "context_blocks:write",
   "mcp_servers:read",
   "mcp_servers:write",
+  "notify:read",
+  "notify:write",
 ] as const;
 
 function defaultScopes(role: (typeof ROLE_OPTIONS)[number]) {
@@ -73,6 +77,8 @@ function defaultScopes(role: (typeof ROLE_OPTIONS)[number]) {
       "workers:read",
       "projects:read",
       "projects:write",
+      "library:read",
+      "library:write",
       "agents:read",
       "agents:write",
       "models:read",
@@ -89,6 +95,7 @@ function defaultScopes(role: (typeof ROLE_OPTIONS)[number]) {
       "context_blocks:write",
       "mcp_servers:read",
       "mcp_servers:write",
+      "notify:read",
     ];
   }
   return [
@@ -96,6 +103,7 @@ function defaultScopes(role: (typeof ROLE_OPTIONS)[number]) {
     "org_members:read",
     "workers:read",
     "projects:read",
+    "library:read",
     "agents:read",
     "models:read",
     "routines:read",
@@ -104,6 +112,7 @@ function defaultScopes(role: (typeof ROLE_OPTIONS)[number]) {
     "abilities:read",
     "context_blocks:read",
     "mcp_servers:read",
+    "notify:read",
   ];
 }
 

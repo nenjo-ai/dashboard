@@ -47,7 +47,13 @@ function DashboardLayoutWithClerk({
   const isChatRoute = pathname.startsWith("/dashboard/chat");
   const showMobileNav = !isChatRoute;
   const [authReady, setAuthReady] = useState(false);
-  const [routeReady, setRouteReady] = useState(false);
+  const routeCheckKey =
+    isChromeless || !authReady || !isLoaded || !isSignedIn
+      ? null
+      : pathname;
+  const [completedRouteCheckKey, setCompletedRouteCheckKey] = useState<
+    string | null
+  >(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== "undefined"
@@ -103,17 +109,9 @@ function DashboardLayoutWithClerk({
   }, [getToken, isLoaded]);
 
   useEffect(() => {
-    if (isChromeless) {
-      setRouteReady(true);
-      return;
-    }
-    if (!authReady || !isLoaded || !isSignedIn) {
-      setRouteReady(false);
-      return;
-    }
+    if (!routeCheckKey) return;
 
     let cancelled = false;
-    setRouteReady(false);
 
     void (async () => {
       try {
@@ -140,14 +138,14 @@ function DashboardLayoutWithClerk({
       }
 
       if (!cancelled) {
-        setRouteReady(true);
+        setCompletedRouteCheckKey(routeCheckKey);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [authReady, isChromeless, isLoaded, isSignedIn, router]);
+  }, [routeCheckKey, router]);
 
   if (isChromeless) {
     // Wait for Clerk to load so the auth token getter is wired up
@@ -192,7 +190,7 @@ function DashboardLayoutWithClerk({
     );
   }
 
-  if (!routeReady) {
+  if (!routeCheckKey || completedRouteCheckKey !== routeCheckKey) {
     return (
       <div className="min-h-screen bg-[#f5f7fb] dark:bg-[#05070b]">
         <main className="min-h-screen flex items-center justify-center">

@@ -350,6 +350,7 @@ function ManagedAbilityDetails({ ability }: { ability: Ability }) {
         fallbackContent={fallbackContent}
         fallbackLanguage="yaml"
         sections={sections}
+        showMetadata={false}
       />
     );
   }

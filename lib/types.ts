@@ -328,6 +328,7 @@ export interface ChatStreamRequest {
   id: string;
   message: string;
   encrypted_message?: EncryptedPayload;
+  command?: string;
   session_id: string;
   domain_session_id?: string;
   domain_activation?: {
@@ -568,6 +569,7 @@ export interface PersistedChatMessage {
   created_at: string;
   updated_at: string;
   metadata: NotificationMetadata | null;
+  encrypted_payload?: EncryptedPayload | null;
 }
 
 export interface NotificationMetadata {
@@ -1031,6 +1033,8 @@ export const MCP_RESOURCE_SCOPES = [
   "domains:write",
   "projects:read",
   "projects:write",
+  "library:read",
+  "library:write",
   "routines:read",
   "routines:write",
   "councils:read",
@@ -1039,8 +1043,8 @@ export const MCP_RESOURCE_SCOPES = [
   "context_blocks:write",
   "mcp_servers:read",
   "mcp_servers:write",
-  "chat:read",
-  "chat:write",
+  "notify:read",
+  "notify:write",
   "models:read",
   "models:write",
 ] as const;
@@ -1135,6 +1139,7 @@ export interface Ability {
   prompt?: string;
   platform_scopes: string[];
   mcp_servers: string[];
+  script_tools?: string[];
   is_system: boolean;
   source_type: "native" | "skill" | "package";
   read_only: boolean;
@@ -1154,6 +1159,7 @@ export interface CreateAbilityRequest {
   prompt?: string;
   platform_scopes?: string[];
   mcp_servers?: string[];
+  script_tools?: string[];
   source_type?: "native" | "skill" | "package";
   read_only?: boolean;
   metadata?: Record<string, unknown>;
@@ -1243,6 +1249,11 @@ export interface PackageInstallDetail {
   lock: Record<string, unknown> | null;
 }
 
+export interface PackageCatalogResponse {
+  source: PackageSource;
+  manifest: Record<string, unknown>;
+}
+
 export interface InstallPackageRequest {
   source_id: string;
   path: string;
@@ -1255,6 +1266,7 @@ export interface UpdateAbilityRequest {
   activation_condition?: string;
   platform_scopes?: string[];
   mcp_servers?: string[];
+  script_tools?: string[];
 }
 
 export interface AgentAbilityAssignment {
@@ -1386,6 +1398,12 @@ export interface RoutineSummary {
   next_run_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface RoutineCronTaskPayload {
+  title: string;
+  description?: string | null;
+  acceptance_criteria?: string | null;
 }
 
 export interface CreateRoutineRequest {
@@ -1542,6 +1560,7 @@ export interface AgentDefinition {
   metadata: Record<string, unknown>;
   domain_ids?: string[];
   mcp_servers?: string[];
+  script_tools?: string[];
   abilities?: string[];
   heartbeat?: AgentHeartbeat | null;
 }
@@ -1559,9 +1578,14 @@ export interface AgentHeartbeat {
   last_run_at: string | null;
   next_run_at: string | null;
   metadata: Record<string, unknown>;
+  encrypted_payload?: EncryptedPayload | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface HeartbeatInstructionsPayload {
+  instructions: string;
 }
 
 export interface CreateAgentRequest {
@@ -1777,6 +1801,7 @@ export interface DomainManifest {
   platform_scopes?: string[];
   abilities?: string[];
   mcp_servers?: string[];
+  script_tools?: string[];
   session?: DomainSessionConfig;
 }
 
@@ -1834,4 +1859,5 @@ export interface UpdateDomainRequest {
   platform_scopes?: string[];
   abilities?: string[];
   mcp_servers?: string[];
+  script_tools?: string[];
 }

@@ -16,6 +16,8 @@ interface SourceManagedResourcePanelProps {
   fallbackContent?: string | null;
   fallbackLanguage?: "markdown" | "yaml" | "text";
   sections?: SourceManagedDetailSection[];
+  showSourceDetails?: boolean;
+  showMetadata?: boolean;
 }
 
 export function SourceManagedResourcePanel({
@@ -25,6 +27,8 @@ export function SourceManagedResourcePanel({
   fallbackContent,
   fallbackLanguage = "yaml",
   sections = [],
+  showSourceDetails = true,
+  showMetadata = true,
 }: SourceManagedResourcePanelProps) {
   const source = useMemo(() => sourceManagedMetadata(resource), [resource]);
   const rawUrl = useMemo(() => sourceManagedRawUrl(source), [source]);
@@ -79,12 +83,14 @@ export function SourceManagedResourcePanel({
             {description ? <p className="theme-text-muted mt-1 text-sm">{description}</p> : null}
           </div>
         </div>
-        <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
-          <SourceField label="Repository" value={repoLabel} />
-          <SourceField label="Ref" value={refLabel ?? "default"} />
-          <SourceField label="Path" value={source.sourcePath ?? "Not recorded"} mono />
-          <SourceField label="Selector" value={source.selector ?? "None"} mono />
-        </div>
+        {showSourceDetails ? (
+          <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+            <SourceField label="Repository" value={repoLabel} />
+            <SourceField label="Ref" value={refLabel ?? "default"} />
+            <SourceField label="Path" value={source.sourcePath ?? "Not recorded"} mono />
+            <SourceField label="Selector" value={source.selector ?? "None"} mono />
+          </div>
+        ) : null}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
@@ -92,7 +98,7 @@ export function SourceManagedResourcePanel({
           {sections.map((section) => (
             <DetailSection key={section.title} section={section} />
           ))}
-          <MetadataDetails metadata={resource.metadata} />
+          {showMetadata ? <MetadataDetails metadata={resource.metadata} /> : null}
         </div>
         {loading ? (
           <div className="theme-text-muted text-sm">Loading source content...</div>

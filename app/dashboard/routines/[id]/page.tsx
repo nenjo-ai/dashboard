@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, use, useState, useCallback, useRef, useEffect } from "react";
+import { Suspense, use, useState, useCallback, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   useRoutine,
@@ -52,19 +52,13 @@ function RoutineDetailContent({
 
   const isCron = routine?.trigger === "cron";
   const needsTabs = isCron;
-  const defaultTab = initialTab === "edit" || initialTab === "run" ? initialTab : isCron ? "run" : "edit";
-  const [activeTab, setActiveTab] = useState<"edit" | "run">(defaultTab);
-
-  // Update tab when routine data loads and default should change
-  const initializedRef = useRef(false);
-  useEffect(() => {
-    if (routine && !initializedRef.current) {
-      initializedRef.current = true;
-      if (!initialTab) {
-        setActiveTab(routine.trigger === "cron" ? "run" : "edit");
-      }
-    }
-  }, [routine, initialTab]);
+  const initialTabValue =
+    initialTab === "edit" || initialTab === "run" ? initialTab : null;
+  const defaultTab = initialTabValue ?? (isCron ? "run" : "edit");
+  const [selectedTab, setSelectedTab] = useState<"edit" | "run" | null>(
+    initialTabValue,
+  );
+  const activeTab = selectedTab ?? defaultTab;
 
   const handleSaved = useCallback(() => {
     mutateRoutine();
@@ -164,7 +158,7 @@ function RoutineDetailContent({
                   { id: "edit", label: "Editor" },
                 ]}
                 activeTab={activeTab}
-                onChange={(id) => setActiveTab(id as "edit" | "run")}
+                onChange={(id) => setSelectedTab(id as "edit" | "run")}
                 layoutId="routine-detail-tab"
               />
             </div>

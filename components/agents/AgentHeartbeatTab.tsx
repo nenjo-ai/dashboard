@@ -3,6 +3,8 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 
 import {
+  decryptHeartbeatInstructionsPayload,
+  encryptHeartbeatInstructionsPayload,
   startAgentHeartbeat,
   stopAgentHeartbeat,
   triggerAgentHeartbeat,
@@ -48,6 +50,8 @@ export function AgentHeartbeatTab({
   );
   const [interval, setInterval] = useState(initialInterval ?? heartbeat?.interval ?? "");
   const [timezone, setTimezone] = useState("UTC");
+  const [instructions, setInstructions] = useState("");
+  const [loadingInstructions, setLoadingInstructions] = useState(false);
   const [saving, setSaving] = useState(false);
   const [runningAction, setRunningAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +69,22 @@ export function AgentHeartbeatTab({
     );
   }, [heartbeat?.metadata]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingInstructions(true);
+    void decryptHeartbeatInstructionsPayload(heartbeat?.encrypted_payload)
+      .then((value) => {
+        if (!cancelled) setInstructions(value);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingInstructions(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [heartbeat?.encrypted_payload]);
+
   async function refreshAll() {
     await Promise.all([mutateHeartbeat(), mutateExecutions(), onSaved?.()]);
   }
@@ -73,12 +93,17 @@ export function AgentHeartbeatTab({
     setSaving(true);
     setError(null);
     try {
+      const encryptedPayload = await encryptHeartbeatInstructionsPayload(
+        agentId,
+        instructions,
+      );
       await updateAgentHeartbeat(agentId, {
         interval,
         metadata: {
           ...(heartbeat?.metadata ?? {}),
           timezone: timezone.trim() || browserTimezone(),
         },
+        encrypted_payload: encryptedPayload,
       });
       await refreshAll();
     } catch (err) {
@@ -93,12 +118,17 @@ export function AgentHeartbeatTab({
     setError(null);
     try {
       if (kind === "start") {
+        const encryptedPayload = await encryptHeartbeatInstructionsPayload(
+          agentId,
+          instructions,
+        );
         await updateAgentHeartbeat(agentId, {
           interval,
           metadata: {
             ...(heartbeat?.metadata ?? {}),
             timezone: timezone.trim() || browserTimezone(),
           },
+          encrypted_payload: encryptedPayload,
         });
         await startAgentHeartbeat(agentId);
       }
@@ -207,11 +237,27 @@ export function AgentHeartbeatTab({
           </div>
         </div>
 
+        <label className="mt-4 block">
+          <span className="theme-text-muted mb-2 block text-xs font-medium uppercase tracking-[0.18em]">
+            Instructions
+          </span>
+          <textarea
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            rows={5}
+            placeholder="Optional heartbeat instructions"
+            className="theme-surface theme-border theme-text w-full resize-y rounded-xl border px-3 py-2 text-sm outline-none transition focus:border-deep-space-blue-400 focus:ring-2 focus:ring-deep-space-blue-200"
+          />
+        </label>
+
         <div className="mt-4 flex items-center gap-3">
           <Button size="sm" isLoading={saving} onClick={handleSave} disabled={!interval.trim()}>
             Save Schedule
           </Button>
           {isLoading && <span className="theme-text-muted text-xs">Loading state…</span>}
+          {loadingInstructions && (
+            <span className="theme-text-muted text-xs">Loading instructions…</span>
+          )}
           {error && <span className="text-xs text-red-500">{error}</span>}
         </div>
       </section>

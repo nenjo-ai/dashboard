@@ -55,6 +55,12 @@ function isAbilityTool(name: string): boolean {
   return name === "use_ability" || name.startsWith("ability/");
 }
 
+function hookToolDisplayName(hook: string | undefined, hookEvent: string | undefined): string {
+  const label = hook?.trim() || "hook";
+  const event = hookEvent?.trim();
+  return event ? `hook/${label}:${event}` : `hook/${label}`;
+}
+
 function appendPreview(
   existing?: string,
   incoming?: string,
@@ -70,6 +76,7 @@ const PENDING_AGENT_KEY = "nenjo:pendingAgentId";
 const TOOLS_KEY = "nenjo:activeTools";
 const LIVE_PREVIEW_KEY = "nenjo:livePreview";
 const STREAM_CHANNEL_NAME = "nenjo-chat-stream";
+const ENCRYPTED_USER_MESSAGE_PLACEHOLDER = "[Encrypted message]";
 
 function isClearSnapshot(
   snapshot: ChatStreamSnapshot | { sessionId: string; clear: true },
@@ -162,6 +169,9 @@ function normalizeSseAgentEvent(event: {
     tool_completed: "ToolCompleted",
     ability_activated: "AbilityActivated",
     ability_completed: "AbilityCompleted",
+    hook_activated: "HookActivated",
+    hook_started: "HookStarted",
+    hook_completed: "HookCompleted",
     delegation_started: "DelegationStarted",
     delegation_completed: "DelegationCompleted",
     done: "Done",
@@ -223,7 +233,20 @@ function mergeLoadedMessages(
           isRecentMatch(message, loadedMessage.timestamp)),
     );
     if (localMatch?.status === "cancelled") {
-      return { ...loadedMessage, status: "cancelled" as const };
+      return {
+        ...loadedMessage,
+        id: localMatch.id,
+        persistedId: loadedKey,
+        status: "cancelled" as const,
+      };
+    }
+    if (localMatch) {
+      return {
+        ...loadedMessage,
+        id: localMatch.id,
+        persistedId: loadedKey,
+        status: loadedMessage.status ?? localMatch.status,
+      };
     }
     return loadedMessage;
   });
@@ -295,10 +318,17 @@ function normalizeResolvedAssistantContent(content: string): string {
   return content;
 }
 
+function isEncryptedUserMessagePlaceholder(content: string): boolean {
+  return (
+    content.trim().toLowerCase() ===
+    ENCRYPTED_USER_MESSAGE_PLACEHOLDER.toLowerCase()
+  );
+}
+
 async function resolvePersistedMessageContent(
-  message: Pick<PersistedChatMessage, "content" | "metadata">,
+  message: Pick<PersistedChatMessage, "content" | "metadata" | "encrypted_payload">,
 ): Promise<string> {
-  const encryptedPayload = message.metadata?.encrypted_payload;
+  const encryptedPayload = message.encrypted_payload ?? message.metadata?.encrypted_payload;
   if (!encryptedPayload) {
     return normalizeResolvedAssistantContent(message.content);
   }
@@ -747,9 +777,9 @@ export function usePlannerChat(
             .map((message) => ({
               id: message.id,
               content: message.content,
-              hasEncryptedPayload: Boolean(message.metadata?.encrypted_payload),
-              objectId: message.metadata?.encrypted_payload?.object_id,
-              objectType: message.metadata?.encrypted_payload?.object_type,
+              hasEncryptedPayload: Boolean(message.encrypted_payload ?? message.metadata?.encrypted_payload),
+              objectId: (message.encrypted_payload ?? message.metadata?.encrypted_payload)?.object_id,
+              objectType: (message.encrypted_payload ?? message.metadata?.encrypted_payload)?.object_type,
             })),
           hasAck: Boolean(storedAck),
         });
@@ -908,9 +938,9 @@ export function usePlannerChat(
           .map((message) => ({
             id: message.id,
             content: message.content,
-            hasEncryptedPayload: Boolean(message.metadata?.encrypted_payload),
-            objectId: message.metadata?.encrypted_payload?.object_id,
-            objectType: message.metadata?.encrypted_payload?.object_type,
+            hasEncryptedPayload: Boolean(message.encrypted_payload ?? message.metadata?.encrypted_payload),
+            objectId: (message.encrypted_payload ?? message.metadata?.encrypted_payload)?.object_id,
+            objectType: (message.encrypted_payload ?? message.metadata?.encrypted_payload)?.object_type,
           })),
         hasAck: Boolean(storedAck),
       });
@@ -958,12 +988,14 @@ export function usePlannerChat(
           content: string;
           created_at: string;
           metadata?: PersistedChatMessage["metadata"];
+          encrypted_payload?: EncryptedPayload | null;
         };
         if (!msg?.id) return;
         void (async () => {
           const resolvedContent = await resolvePersistedMessageContent({
             content: msg.content,
             metadata: msg.metadata ?? null,
+            encrypted_payload: msg.encrypted_payload ?? null,
           });
 
           setMessages((prev) => {
@@ -981,7 +1013,11 @@ export function usePlannerChat(
                     ? {
                         ...m,
                         persistedId: msg.id,
-                        content: resolvedContent,
+                        content: isEncryptedUserMessagePlaceholder(
+                          resolvedContent,
+                        )
+                          ? m.content
+                          : resolvedContent,
                         timestamp: msg.created_at,
                         status:
                           m.status === "cancelled" ? "cancelled" : "delivered",
@@ -995,12 +1031,10 @@ export function usePlannerChat(
                 (m) => m.id === responseIdRef.current,
               );
               if (responseIdx >= 0) {
-                responseIdRef.current = msg.id;
                 return prev.map((m, i) =>
                   i === responseIdx
                     ? {
                         ...m,
-                        id: msg.id,
                         persistedId: msg.id,
                         content: resolvedContent,
                         timestamp: msg.created_at,
@@ -1023,7 +1057,6 @@ export function usePlannerChat(
                   i === partialIdx
                     ? {
                         ...m,
-                        id: msg.id,
                         persistedId: msg.id,
                         content: resolvedContent,
                         timestamp: msg.created_at,
@@ -1043,12 +1076,6 @@ export function usePlannerChat(
             );
             if (idx >= 0) {
               if (
-                role === "assistant" &&
-                responseIdRef.current === prev[idx].id
-              ) {
-                responseIdRef.current = msg.id;
-              }
-              if (
                 role === "user" &&
                 optimisticUserMessageIdRef.current === prev[idx].id
               ) {
@@ -1058,7 +1085,6 @@ export function usePlannerChat(
                 i === idx
                   ? {
                       ...m,
-                      id: role === "assistant" ? msg.id : m.id,
                       persistedId: msg.id,
                       content: resolvedContent,
                       timestamp: msg.created_at,
@@ -1536,6 +1562,197 @@ export function usePlannerChat(
             break;
           }
 
+          case "HookActivated": {
+            const {
+              hook,
+              hook_event,
+              hook_type,
+              source,
+              payload,
+              encrypted_payload,
+            } = streamEvent.data as {
+              hook: string;
+              hook_event: string;
+              hook_type: string;
+              source: string;
+              payload?: {
+                command?: string;
+                command_name?: string;
+                display_name?: string;
+                matcher?: string;
+              };
+              encrypted_payload?: EncryptedPayload;
+            };
+            void (async () => {
+              const encryptedData = await resolveEncryptedPayloadJson<{
+                command?: string;
+                command_name?: string;
+                display_name?: string;
+                matcher?: string;
+              }>(encrypted_payload);
+              const resolvedPayload = encryptedData ?? payload;
+              const hookName = hook || resolvedPayload?.display_name || "hook";
+              const hookToolName = hookToolDisplayName(hookName, hook_event);
+              const hookArgs = normalizeToolCallArgs({
+                event: hook_event,
+                type: hook_type,
+                source,
+                command: resolvedPayload?.command,
+                matcher: resolvedPayload?.matcher,
+              });
+              setTypingIfDelivered();
+              setActiveTools((prev) => {
+                const next = {
+                  name: hookToolName,
+                  args: hookArgs,
+                  status: "completed" as const,
+                  children: [],
+                };
+                const existing = prev.find((tool) => tool.name === hookToolName);
+                if (!existing) {
+                  return [...prev, next];
+                }
+                return prev.map((tool) =>
+                  tool.name === hookToolName
+                    ? {
+                        ...tool,
+                        args: hookArgs || tool.args,
+                        status: "completed" as const,
+                        outputPreview: undefined,
+                        errorPreview: undefined,
+                      }
+                    : tool,
+                );
+              });
+            })();
+            break;
+          }
+
+          case "HookStarted": {
+            const { hook, hook_event, hook_type, source } =
+              streamEvent.data as {
+                hook: string;
+                hook_event: string;
+                hook_type: string;
+                source: string;
+              };
+            const hookToolName = hookToolDisplayName(hook, hook_event);
+            const hookArgs = normalizeToolCallArgs({
+              event: hook_event,
+              type: hook_type,
+              source,
+            });
+            setTypingIfDelivered();
+            setActiveTools((prev) => {
+              const existing = prev.find((tool) => tool.name === hookToolName);
+              if (!existing) {
+                return [
+                  ...prev,
+                  {
+                    name: hookToolName,
+                    args: hookArgs,
+                    status: "running" as const,
+                    children: [],
+                  },
+                ];
+              }
+              return prev.map((tool) =>
+                tool.name === hookToolName
+                  ? {
+                      ...tool,
+                      args: hookArgs || tool.args,
+                      status: "running" as const,
+                      outputPreview: undefined,
+                      errorPreview: undefined,
+                    }
+                  : tool,
+              );
+            });
+            break;
+          }
+
+          case "HookCompleted": {
+            const {
+              hook,
+              hook_event,
+              hook_type,
+              source,
+              success,
+              blocked,
+              payload,
+              encrypted_payload,
+            } = streamEvent.data as {
+              hook: string;
+              hook_event: string;
+              hook_type: string;
+              source: string;
+              success: boolean;
+              blocked: boolean;
+              payload?: {
+                exit_code?: number | null;
+                output_preview?: string | null;
+                error_preview?: string | null;
+                reason?: string | null;
+              };
+              encrypted_payload?: EncryptedPayload;
+            };
+            void (async () => {
+              const encryptedData = await resolveEncryptedPayloadJson<{
+                exit_code?: number | null;
+                output_preview?: string | null;
+                error_preview?: string | null;
+                reason?: string | null;
+              }>(encrypted_payload);
+              const resolvedPayload = encryptedData ?? payload;
+              const hookToolName = hookToolDisplayName(hook, hook_event);
+              const outputPreview =
+                resolvedPayload?.reason ??
+                resolvedPayload?.output_preview ??
+                undefined;
+              const errorPreview =
+                resolvedPayload?.error_preview ??
+                (!success || blocked ? resolvedPayload?.reason : undefined) ??
+                undefined;
+              const hookArgs = normalizeToolCallArgs({
+                event: hook_event,
+                type: hook_type,
+                source,
+                exit_code: resolvedPayload?.exit_code,
+                blocked,
+              });
+              setTypingIfDelivered();
+              setLivePreview((prev) => appendPreview(prev, outputPreview));
+              setActiveTools((prev) => {
+                const existing = prev.find((tool) => tool.name === hookToolName);
+                if (!existing) {
+                  return [
+                    ...prev,
+                    {
+                      name: hookToolName,
+                      args: hookArgs,
+                      status: success && !blocked ? "completed" : "failed",
+                      outputPreview,
+                      errorPreview,
+                      children: [],
+                    },
+                  ];
+                }
+                return prev.map((tool) =>
+                  tool.name === hookToolName
+                    ? {
+                        ...tool,
+                        args: hookArgs || tool.args,
+                        status: success && !blocked ? "completed" : "failed",
+                        outputPreview,
+                        errorPreview,
+                      }
+                    : tool,
+                );
+              });
+            })();
+            break;
+          }
+
           case "ToolCalls": {
             const { tool_calls, parent_tool_name, payload, encrypted_payload } =
               streamEvent.data as {
@@ -1856,6 +2073,9 @@ export function usePlannerChat(
           domain_session_id: string;
           domain_command: string;
         };
+        commandInvocation?: {
+          command: string;
+        };
       },
     ) => {
       const trimmed = text.trim();
@@ -1960,6 +2180,9 @@ export function usePlannerChat(
         id: msgId,
         message: "[Encrypted message]",
         encrypted_message: encryptedMessage,
+        ...(options?.commandInvocation
+          ? { command: options.commandInvocation.command }
+          : {}),
         session_id: activeSessionId,
         ...(options?.domainActivation
           ? {

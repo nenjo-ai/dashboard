@@ -393,19 +393,6 @@ export function AgentPromptEditor({
   const isLocked = role.prompt_locked;
   const isSourceManaged = Boolean(role.read_only || role.metadata?.install);
 
-  if (isSourceManaged) {
-    return (
-      <SourceManagedResourcePanel
-        resource={role}
-        title={role.display_name || role.name}
-        description={role.description}
-        fallbackContent={JSON.stringify(promptConfig, null, 2)}
-        fallbackLanguage="yaml"
-        sections={managedAgentPromptSections(role, promptConfig)}
-      />
-    );
-  }
-
   const handleToggleLock = useCallback(async () => {
     setLockToggling(true);
     try {
@@ -607,6 +594,20 @@ export function AgentPromptEditor({
     allSections.find((s) => s.id === activeSection)?.label ?? "";
 
   // --- Render --------------------------------------------------------------
+
+  if (isSourceManaged) {
+    return (
+      <SourceManagedResourcePanel
+        resource={role}
+        title={role.display_name || role.name}
+        description={role.description}
+        fallbackContent={JSON.stringify(promptConfig, null, 2)}
+        fallbackLanguage="yaml"
+        sections={managedAgentPromptSections(role, promptConfig)}
+        showMetadata={false}
+      />
+    );
+  }
 
   return (
     <>
@@ -1122,6 +1123,7 @@ export function AgentPromptEditorContent(props: AgentPromptEditorContentProps) {
         fallbackContent={JSON.stringify(promptConfig, null, 2)}
         fallbackLanguage="yaml"
         sections={managedAgentPromptSections(role, promptConfig)}
+        showMetadata={false}
       />
     );
   }

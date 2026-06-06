@@ -668,7 +668,9 @@ export function ContentEncryptionSection({
                   title={device.device_label || device.device_id}
                   description={device.device_id}
                 >
-                  <VerificationWarning code={device.verification_code} />
+                  {device.verification_code ? (
+                    <VerificationWarning code={device.verification_code} />
+                  ) : null}
                   <Button variant="primary" size="sm" onClick={() => void handleApproveDevice(device)}>
                     Approve
                   </Button>

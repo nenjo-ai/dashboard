@@ -54,10 +54,11 @@ function ToastItem({ item }: { item: ToastItem }) {
 }
 
 export function ToastProvider() {
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [toasts, setToasts] = useState<ToastItem[]>(() =>
+    toastApi.getToasts(),
+  );
 
   useEffect(() => {
-    setToasts(toastApi.getToasts());
     return toastApi.subscribe(setToasts);
   }, []);
 

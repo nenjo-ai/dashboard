@@ -296,11 +296,12 @@ export function AddStepModal({ open, councils, onAdd, onClose }: AddStepModalPro
       .finally(() => setLoadingRoles(false));
   }, []);
 
-  useEffect(() => {
+  const handleSelectType = useCallback((stepType: RoutineStepType) => {
+    setSelectedType(stepType);
     setSelectedRoleId("");
     setSelectedCouncilId("");
     setFlowFnType("agent");
-  }, [selectedType]);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -368,7 +369,7 @@ export function AddStepModal({ open, councils, onAdd, onClose }: AddStepModalPro
                   return (
                     <button
                       key={step.type}
-                      onClick={() => setSelectedType(step.type)}
+                      onClick={() => handleSelectType(step.type)}
                       className={`flex flex-col items-center gap-1.5 rounded-lg border p-2.5 text-center transition-all ${
                         isSelected
                           ? CARD_SELECTED[step.color]

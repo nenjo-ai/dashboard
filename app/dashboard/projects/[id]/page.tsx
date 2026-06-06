@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   useProject,
@@ -83,7 +83,7 @@ export default function ProjectDetailPage() {
   const projectId = params.id as string;
 
   const [activeTab, setActiveTab] = useTabParam<ProjectTabId>("tasks", ["tasks", "context", "execution", "settings"] as const);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   // Data fetching
   const {
@@ -106,13 +106,13 @@ export default function ProjectDetailPage() {
   } = useExecutions(projectId);
   const { routines } = useRoutines();
 
-  useEffect(() => {
-    if (!selectedTask || !tasks) return;
-    const refreshedTask = tasks.find((task) => task.id === selectedTask.id);
-    if (refreshedTask && refreshedTask !== selectedTask) {
-      setSelectedTask(refreshedTask);
-    }
-  }, [selectedTask, tasks]);
+  const selectedTask = useMemo(
+    () =>
+      selectedTaskId && tasks
+        ? tasks.find((task) => task.id === selectedTaskId) ?? null
+        : null,
+    [selectedTaskId, tasks],
+  );
   const { graph, mutate: mutateGraph } = useDependencyGraph(projectId);
 
   // Tab content with task counts
@@ -215,7 +215,7 @@ export default function ProjectDetailPage() {
                 tasks={tasks}
                 isLoading={tasksLoading}
                 isError={tasksError}
-                onSelectTask={(t) => setSelectedTask(t)}
+                onSelectTask={(t) => setSelectedTaskId(t.id)}
                 onDeleted={() => {
                   mutateTasks();
                 }}
@@ -257,10 +257,10 @@ export default function ProjectDetailPage() {
       {/* Task detail modal */}
       <TaskDetailModal
         task={selectedTask}
-        onClose={() => setSelectedTask(null)}
+        onClose={() => setSelectedTaskId(null)}
         onUpdated={() => mutateTasks()}
         onDeleted={() => {
-          setSelectedTask(null);
+          setSelectedTaskId(null);
           mutateTasks();
         }}
         routines={routines}

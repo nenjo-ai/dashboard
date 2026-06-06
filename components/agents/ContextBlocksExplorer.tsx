@@ -511,9 +511,37 @@ function saveCbSelectedId(id: string | null) {
   } catch { /* */ }
 }
 
+function contextBlockUrlKeys(block: ContextBlock): string[] {
+  const pathName = block.path ? `${block.path}/${block.name}` : block.name;
+  const dottedPath = block.path
+    ? `${block.path.replace(/\//g, ".")}.${block.name}`
+    : block.name;
+  const slug = (block as ContextBlock & { slug?: string }).slug;
+  return [
+    block.id,
+    block.name,
+    block.display_name,
+    pathName,
+    dottedPath,
+    slug,
+  ].filter((value): value is string => Boolean(value && value.trim()));
+}
+
+function findContextBlockByUrlKey(
+  blocks: ContextBlock[],
+  value: string,
+): ContextBlock | null {
+  const key = value.trim();
+  if (!key) return null;
+  return (
+    blocks.find((block) => contextBlockUrlKeys(block).includes(key)) ?? null
+  );
+}
+
 export function ContextBlocksExplorer() {
   const { contextBlocks, isLoading, isError, mutate } = useContextBlocks();
   const searchParams = useSearchParams();
+  const blockParam = searchParams.get("block");
   const [selectedBlock, setSelectedBlockRaw] = useState<ContextBlock | null>(null);
   const [expanded, setExpandedRaw] = useState<Set<string>>(loadCbExpanded);
   const [didAutoSelect, setDidAutoSelect] = useState(false);
@@ -545,33 +573,30 @@ export function ContextBlocksExplorer() {
 
   // Auto-select block from ?block= query param or localStorage
   useEffect(() => {
-    if (didAutoSelect || !contextBlocks?.length) return;
+    if (!contextBlocks?.length || (!blockParam && didAutoSelect)) return;
 
-    // URL param takes priority
-    const blockParam = searchParams.get("block");
     const savedId = loadCbSelectedId();
-    const targetId = blockParam
-      ? contextBlocks.find((b) => b.name === blockParam)?.id
-      : savedId;
+    const targetBlock = blockParam
+      ? findContextBlockByUrlKey(contextBlocks, blockParam)
+      : savedId
+        ? contextBlocks.find((block) => block.id === savedId)
+        : null;
 
-    if (targetId) {
-      const match = contextBlocks.find((b) => b.id === targetId);
-      if (match) {
-        setSelectedBlockRaw(match);
-        if (match.path) {
-          const parts = match.path.split("/");
-          setExpandedRaw((prev) => {
-            const next = new Set(prev);
-            for (let i = 1; i <= parts.length; i++) {
-              next.add(parts.slice(0, i).join("/"));
-            }
-            return next;
-          });
-        }
+    if (targetBlock) {
+      setSelectedBlockRaw(targetBlock);
+      if (targetBlock.path) {
+        const parts = targetBlock.path.split("/");
+        setExpandedRaw((prev) => {
+          const next = new Set(prev);
+          for (let i = 1; i <= parts.length; i++) {
+            next.add(parts.slice(0, i).join("/"));
+          }
+          return next;
+        });
       }
     }
-    setDidAutoSelect(true);
-  }, [contextBlocks, searchParams, didAutoSelect]);
+    if (!blockParam) setDidAutoSelect(true);
+  }, [blockParam, contextBlocks, didAutoSelect]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -618,7 +643,7 @@ export function ContextBlocksExplorer() {
       else next.add(path);
       return next;
     });
-  }, []);
+  }, [setExpanded]);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
@@ -652,7 +677,7 @@ export function ContextBlocksExplorer() {
         /* silently fail */
       }
     },
-    [contextBlocks, mutate],
+    [contextBlocks, mutate, setExpanded],
   );
 
   const handleDeleteBlock = async () => {
