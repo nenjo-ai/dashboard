@@ -12,23 +12,15 @@ import {
   editorTheme,
   editorThemeDark,
 } from "./CodeTextarea";
+import { useTheme } from "@/lib/theme";
 
 // ---------------------------------------------------------------------------
 // Read-only CodeMirror viewer
 // ---------------------------------------------------------------------------
 
 function PromptViewer({ value }: { value: string }) {
-  const [isDark, setIsDark] = useState(false);
-
-  useEffect(() => {
-    const html = document.documentElement;
-    setIsDark(html.classList.contains("dark"));
-    const observer = new MutationObserver(() => {
-      setIsDark(html.classList.contains("dark"));
-    });
-    observer.observe(html, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
-  }, []);
+  const { resolved } = useTheme();
+  const isDark = resolved === "dark";
 
   const extensions = useMemo(
     () => [

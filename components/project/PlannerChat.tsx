@@ -356,11 +356,6 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
     hasSetDefaultAgent.current = true;
   }, [allAgents, activeAgentId, setActiveAgentId]);
 
-  // Reset dropdown index when filtered results change
-  useEffect(() => {
-    setSelectedDropdownIndex(0);
-  }, [filteredAgents]);
-
   const {
     messages,
     sendMessage,
@@ -423,9 +418,14 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
         m.name.toLowerCase().includes(lower),
     );
   }, [showDomainDropdown, domainFilter, availableDomains]);
-  useEffect(() => {
-    setSelectedDomainIndex(0);
-  }, [filteredDomains]);
+  const activeDomainIndex =
+    filteredDomains.length > 0
+      ? Math.min(selectedDomainIndex, filteredDomains.length - 1)
+      : 0;
+  const activeAgentIndex =
+    filteredAgents.length > 0
+      ? Math.min(selectedDropdownIndex, filteredAgents.length - 1)
+      : 0;
 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -528,6 +528,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
         setShowAgentDropdown(true);
         setMentionFilter(textAfterAt);
         setMentionCursorPos(atIndex);
+        setSelectedDropdownIndex(0);
         return;
       }
     }
@@ -732,7 +733,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
       }
       if (e.key === "Tab" || e.key === "Enter") {
         e.preventDefault();
-        handleDomainSelect(filteredDomains[selectedDomainIndex]);
+        handleDomainSelect(filteredDomains[activeDomainIndex]);
         return;
       }
     }
@@ -760,7 +761,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
       }
       if ((e.key === "Tab" || e.key === "Enter") && filteredAgents.length > 0) {
         e.preventDefault();
-        handleAgentSelect(filteredAgents[selectedDropdownIndex]);
+        handleAgentSelect(filteredAgents[activeAgentIndex]);
         return;
       }
     }
@@ -901,7 +902,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
           {showDomainDropdown && (filteredDomains.length > 0 || activeDomainSession) && (
             <DomainSlashCommandDropdown
               domains={filteredDomains}
-              selectedIndex={selectedDomainIndex}
+              selectedIndex={activeDomainIndex}
               onSelect={handleDomainSelect}
               onClose={() => setShowDomainDropdown(false)}
               anchorRef={inputRef}
@@ -932,7 +933,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
                     }}
                     className={cn(
                       "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
-                      index === selectedDropdownIndex
+                      index === activeAgentIndex
                         ? "bg-gray-100 dark:bg-gray-700"
                         : "hover:bg-gray-50 dark:hover:bg-gray-750",
                     )}

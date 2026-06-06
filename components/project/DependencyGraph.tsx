@@ -474,7 +474,8 @@ export function DependencyGraph({
 
   // Fit on mount / graph change
   useEffect(() => {
-    fitToView();
+    const frame = requestAnimationFrame(fitToView);
+    return () => cancelAnimationFrame(frame);
   }, [fitToView]);
 
   // Wheel event capture — prevent page scrolling, zoom graph

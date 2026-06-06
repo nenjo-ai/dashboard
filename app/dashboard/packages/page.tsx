@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Sparkles,
   ShieldCheck,
+  Terminal,
   Trash2,
   Zap,
 } from "lucide-react";
@@ -48,6 +49,7 @@ import {
 import {
   createPackageSource,
   ensureOfficialNenjoPackageSource,
+  fetchPackageCatalog,
   fetchPackageInstallDetail,
   installKnowledgePack,
   installPackage,
@@ -62,15 +64,16 @@ import {
 } from "@/lib/api";
 import type {
   Ability,
-  AgentDefinition,
   KnowledgePack,
   PackageInstall,
   PackageInstallDetail,
+  PackageInstallResource,
   PackageSource,
   PackageSourceAdapter,
 } from "@/lib/types";
 
 type LibraryTab = "installed" | "packages" | "sources" | "imports";
+type PackageDetailsTab = "readme" | "metadata";
 type ImportMode = "knowledge_pack" | "skill";
 type MarketplacePackageKind =
   | "package"
@@ -83,6 +86,9 @@ type MarketplacePackageKind =
   | "routine"
   | "knowledge_pack"
   | "skill"
+  | "command"
+  | "hook"
+  | "script_tool"
   | "plugin";
 
 const LIBRARY_TABS: LibraryTab[] = [
@@ -106,12 +112,21 @@ interface MarketplacePackage {
 
 interface ClaudeMarketplaceManifest {
   plugins?: Array<{
-    name: string;
-    version?: string | null;
-    description?: string | null;
-    source: string;
+    name?: unknown;
+    title?: unknown;
+    id?: unknown;
+    version?: unknown;
+    description?: unknown;
+    source?: unknown;
+    path?: unknown;
+    root_path?: unknown;
+    plugin_path?: unknown;
+    source_path?: unknown;
+    manifest_path?: unknown;
   }>;
 }
+
+type ClaudeMarketplacePlugin = NonNullable<ClaudeMarketplaceManifest["plugins"]>[number];
 
 interface NenjoPackagesManifest {
   packages?:
@@ -142,6 +157,23 @@ interface NenjoModulePackageManifest {
 
 interface GithubCommitResponse {
   sha: string;
+}
+
+interface GithubContentsEntry {
+  name: string;
+  path: string;
+  type: string;
+}
+
+interface MarketplaceGitHubInfo {
+  owner: string;
+  repo: string;
+  ref: string;
+  resolvedCommitSha: string | null;
+}
+
+interface MarketplacePluginSourceInfo extends MarketplaceGitHubInfo {
+  rootPath: string;
 }
 
 interface SkillReview {
@@ -215,6 +247,17 @@ interface LoadedPackageDetails {
   descriptorPath: string;
 }
 
+interface PackageDependencyRef {
+  rootPath: string;
+  name: string;
+}
+
+interface PackageInstallDependencyInfo {
+  autoInstalled: boolean;
+  dependsOn: PackageDependencyRef[];
+  requiredBy: PackageDependencyRef[];
+}
+
 function formatLibraryDate(iso: string | null | undefined): string {
   if (!iso) return "Never";
   return new Date(iso).toLocaleDateString(undefined, {
@@ -250,6 +293,97 @@ function metadataText(
   return typeof current === "string" && current.trim() ? current : null;
 }
 
+function textValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function firstTextValue(...values: unknown[]): string | null {
+  for (const value of values) {
+    const text = textValue(value);
+    if (text) return text;
+  }
+  return null;
+}
+
+function normalizeCatalogPath(value: string): string {
+  return value.trim().replace(/^\.?\//, "").replace(/\/+$/, "");
+}
+
+function normalizePluginRootPath(value: string | null | undefined): string {
+  const path = normalizeCatalogPath(value ?? "");
+  return path || ".";
+}
+
+function joinRelativePath(rootPath: string, childPath: string): string {
+  const root = normalizePluginRootPath(rootPath);
+  const child = childPath.trim().replace(/^\/+/, "");
+  return root === "." ? child : `${root}/${child}`;
+}
+
+function marketplacePluginPath(plugin: ClaudeMarketplacePlugin): string {
+  const candidates = [
+    plugin.source,
+    plugin.path,
+    plugin.root_path,
+    plugin.plugin_path,
+    plugin.source_path,
+    plugin.manifest_path,
+  ];
+  for (const candidate of candidates) {
+    const direct = textValue(candidate);
+    if (direct) return direct;
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      const record = candidate as Record<string, unknown>;
+      const nested = firstTextValue(
+        record.path,
+        record.root_path,
+        record.plugin_path,
+        record.source_path,
+        record.manifest_path,
+      );
+      if (nested) return nested;
+    }
+  }
+  return "";
+}
+
+function marketplacePluginSourceInfo(
+  plugin: ClaudeMarketplacePlugin,
+  fallback: MarketplaceGitHubInfo,
+): MarketplacePluginSourceInfo {
+  const sourceRecord = isRecord(plugin.source) ? plugin.source : null;
+  const sourceUrl = sourceRecord ? textValue(sourceRecord.url) : null;
+  const sourceRepo = sourceUrl ? parseGitHubRepoUrl(sourceUrl) : null;
+  const usesFallbackRepo = !sourceRepo;
+  const resolvedCommitSha = sourceRecord
+    ? firstTextValue(
+        sourceRecord.resolved_commit_sha,
+        sourceRecord.commit_sha,
+        sourceRecord.commit,
+        sourceRecord.sha,
+      )
+    : null;
+
+  return {
+    owner: sourceRepo?.owner ?? fallback.owner,
+    repo: sourceRepo?.repo ?? fallback.repo,
+    ref:
+      (sourceRecord
+        ? firstTextValue(
+            sourceRecord.ref,
+            sourceRecord.reference,
+            sourceRecord.tag,
+            sourceRecord.sha,
+          )
+        : null) ??
+      (usesFallbackRepo ? fallback.ref : "main"),
+    resolvedCommitSha:
+      resolvedCommitSha ??
+      (usesFallbackRepo ? fallback.resolvedCommitSha : null),
+    rootPath: normalizePluginRootPath(marketplacePluginPath(plugin)),
+  };
+}
+
 function metadataBool(
   metadata: Record<string, unknown>,
   path: string[],
@@ -261,6 +395,123 @@ function metadataBool(
     current = (current as Record<string, unknown>)[key];
   }
   return typeof current === "boolean" ? current : null;
+}
+
+function packageInstallDependencyInfo(
+  install: PackageInstall,
+): PackageInstallDependencyInfo {
+  const claude = isRecord(install.metadata.claude)
+    ? install.metadata.claude
+    : null;
+  const dependencies =
+    claude && isRecord(claude.dependencies) ? claude.dependencies : null;
+  if (!dependencies) {
+    return { autoInstalled: false, dependsOn: [], requiredBy: [] };
+  }
+  return {
+    autoInstalled: dependencies.auto_installed === true,
+    dependsOn: dependencyRefs(dependencies.depends_on),
+    requiredBy: dependencyRefs(dependencies.required_by),
+  };
+}
+
+function dependencyRefs(value: unknown): PackageDependencyRef[] {
+  if (!Array.isArray(value)) return [];
+  const refs: PackageDependencyRef[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const rootPath = textValue(item.root_path);
+    if (!rootPath || seen.has(rootPath)) continue;
+    refs.push({
+      rootPath,
+      name: textValue(item.name) ?? rootPath,
+    });
+    seen.add(rootPath);
+  }
+  return refs;
+}
+
+function dependencyRefListLabel(refs: PackageDependencyRef[]): string {
+  const [first, ...rest] = refs;
+  if (!first) return "";
+  return rest.length ? `${first.name} +${rest.length}` : first.name;
+}
+
+function packageInstallDependencyBadges(
+  info: PackageInstallDependencyInfo,
+): Array<string | null> {
+  return [
+    info.autoInstalled ? "Auto-installed" : null,
+    info.dependsOn.length
+      ? `Depends on ${dependencyRefListLabel(info.dependsOn)}`
+      : null,
+    info.requiredBy.length
+      ? `Required by ${dependencyRefListLabel(info.requiredBy)}`
+      : null,
+  ];
+}
+
+function installedPackageResources(
+  detail: PackageInstallDetail | undefined,
+): PackageInstallResource[] {
+  return (detail?.resources ?? []).filter(
+    (resource) => resource.install_state === "installed",
+  );
+}
+
+function packageResourceActionLabel(
+  resource: PackageInstallResource,
+): string | null {
+  switch (normalizedPackageResourceType(resource.resource_type)) {
+    case "knowledge":
+      return "Graph";
+    case "agent":
+    case "ability":
+    case "domain":
+    case "context_block":
+    case "mcp_server":
+    case "mcp":
+      return "Open";
+    default:
+      return null;
+  }
+}
+
+function runtimeResourceDetails(resource: PackageInstallResource): string[] {
+  const resourceType = normalizedPackageResourceType(resource.resource_type);
+  const runtime = isRecord(resource.metadata.runtime)
+    ? resource.metadata.runtime
+    : {};
+  const details = new Set<string>();
+  const add = (label: string, value: unknown) => {
+    const text =
+      textValue(value) ??
+      (typeof value === "number" && Number.isFinite(value)
+        ? String(value)
+        : null);
+    if (text) details.add(`${label}: ${text}`);
+  };
+  switch (resourceType) {
+    case "command":
+      add("Command", runtime.command);
+      break;
+    case "hook":
+      add("Event", runtime.event);
+      add("Matcher", runtime.matcher);
+      add("Type", runtime.type);
+      break;
+    case "script_tool":
+      add("Tool", runtime.name);
+      break;
+    case "mcp_server":
+    case "mcp":
+      add("Transport", runtime.transport);
+      add("Command", runtime.command);
+      add("URL", runtime.url);
+      break;
+  }
+  return Array.from(details);
 }
 
 function sourceLabel(metadata: Record<string, unknown>): string {
@@ -294,6 +545,13 @@ function packageSupportsSelector(kind: MarketplacePackageKind): boolean {
 }
 
 function packageKindFromPath(path: string): MarketplacePackageKind {
+  if (path.endsWith(".claude-plugin/plugin.json")) return "plugin";
+  if (
+    path.endsWith("/SKILL.md") ||
+    path === "SKILL.md" ||
+    path.includes("/skills/")
+  )
+    return "skill";
   if (path.includes("/agents/")) return "agent";
   if (path.includes("/abilities/")) return "ability";
   if (path.includes("/domains/")) return "domain";
@@ -301,6 +559,9 @@ function packageKindFromPath(path: string): MarketplacePackageKind {
   if (path.includes("/knowledge/")) return "knowledge";
   if (path.includes("/mcp/")) return "mcp";
   if (path.includes("/routines/")) return "routine";
+  if (path.includes("/commands/")) return "command";
+  if (path.includes("/hooks/")) return "hook";
+  if (path.includes("/script_tools/")) return "script_tool";
   return "package";
 }
 
@@ -310,10 +571,18 @@ function packageKindFromSchema(schema: string | null | undefined): MarketplacePa
   if (schema.startsWith("nenjo.ability.")) return "ability";
   if (schema.startsWith("nenjo.domain.")) return "domain";
   if (schema.startsWith("nenjo.context_block.")) return "context_block";
-  if (schema.startsWith("nenjo.knowledge.") || schema.startsWith("nenjo.knowledge_pack."))
+  if (
+    schema.startsWith("nenjo.knowledge.") ||
+    schema.startsWith("nenjo.knowledge_pack.")
+  )
     return "knowledge";
+  if (schema.startsWith("nenjo.skill.")) return "skill";
+  if (schema.startsWith("nenjo.plugin.")) return "plugin";
   if (schema.startsWith("nenjo.mcp.")) return "mcp";
   if (schema.startsWith("nenjo.routine.")) return "routine";
+  if (schema.startsWith("nenjo.command.")) return "command";
+  if (schema.startsWith("nenjo.hook.")) return "hook";
+  if (schema.startsWith("nenjo.script_tool.")) return "script_tool";
   return "package";
 }
 
@@ -350,6 +619,12 @@ function packageKindIcon(
       return <Clock3 className={className} />;
     case "skill":
       return <Sparkles className={className} />;
+    case "command":
+      return <Terminal className={className} />;
+    case "hook":
+      return <GitBranch className={className} />;
+    case "script_tool":
+      return <Zap className={className} />;
     case "knowledge":
     case "knowledge_pack":
       return <BookOpen className={className} />;
@@ -360,6 +635,16 @@ function packageKindIcon(
 
 function packageInstallKey(sourceId: string, path: string): string {
   return `${sourceId}:${path}`;
+}
+
+function pluginCatalogId(
+  sourceId: string,
+  sourcePath: string,
+  name: string,
+  index: number,
+): string {
+  const stableName = identifier(name) || "plugin";
+  return `${sourceId}:plugin:${sourcePath}:${stableName}:${index}`;
 }
 
 function sourceGitHubInfo(source: PackageSource): {
@@ -410,6 +695,20 @@ function githubRawUrl(
   return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path.replace(/^\/+/, "")}`;
 }
 
+function githubContentsUrl(
+  owner: string,
+  repo: string,
+  ref: string,
+  path: string,
+): string {
+  const cleanPath = path.replace(/^\/+|\/+$/g, "");
+  if (!cleanPath || cleanPath === ".") {
+    return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents?ref=${encodeURIComponent(ref)}`;
+  }
+  const encodedPath = cleanPath.split("/").map(encodeURIComponent).join("/");
+  return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
@@ -446,24 +745,14 @@ async function fetchMarketplacePackages(
 ): Promise<MarketplacePackage[]> {
   const info = sourceGitHubInfo(source);
   if (!info) return [];
-  const manifest = await fetchJson<
-    ClaudeMarketplaceManifest & NenjoPackagesManifest
-  >(
-    githubRawUrl(
-      info.owner,
-      info.repo,
-      sourceFetchRef(info),
-      info.marketplacePath,
-    ),
-  );
+  const catalog = await fetchPackageCatalog(source.id);
+  const manifest =
+    catalog.manifest as ClaudeMarketplaceManifest & NenjoPackagesManifest;
   if (manifest.packages && !Array.isArray(manifest.packages)) {
     return Promise.all(
       Object.entries(manifest.packages).map(
         async ([packageName, packagePath]) => {
-          const path = packagePath
-            .trim()
-            .replace(/^\.?\//, "")
-            .replace(/\/+$/, "");
+          const path = normalizeCatalogPath(packagePath);
           let packageManifest: NenjoModulePackageManifest | null = null;
           try {
             packageManifest = await fetchJson<NenjoModulePackageManifest>(
@@ -522,10 +811,7 @@ async function fetchMarketplacePackages(
   if (Array.isArray(manifest.packages)) {
     return Promise.all(manifest.packages.map(async (pkg) => {
       let kind = pkg.kind ?? pkg.type ?? "package";
-      const path = pkg.path
-        .trim()
-        .replace(/^\.?\//, "")
-        .replace(/\/+$/, "");
+      const path = normalizeCatalogPath(pkg.path);
       const name = pkg.slug || pkg.name || path.split("/").pop() || "package";
       try {
         const packageManifest = await fetchJson<NenjoModulePackageManifest>(
@@ -587,33 +873,37 @@ async function fetchMarketplacePackages(
       };
     }));
   }
-  return (manifest.plugins ?? []).map((plugin) => {
-    const path = plugin.source
-      .trim()
-      .replace(/^\.?\//, "")
-      .replace(/\/+$/, "");
+  return (manifest.plugins ?? []).map((plugin, index) => {
+    const pluginSource = marketplacePluginSourceInfo(plugin, info);
+    const path = pluginSource.rootPath === "." ? "" : pluginSource.rootPath;
+    const name =
+      firstTextValue(plugin.name, plugin.title, plugin.id) ||
+      path.split("/").filter(Boolean).pop() ||
+      "plugin";
+    const sourcePath = path || name;
     return {
-      id: `${source.id}:${path || plugin.name}`,
+      id: pluginCatalogId(source.id, sourcePath, name, index),
       kind: "plugin",
-      name: plugin.name,
-      display_name: plugin.name,
-      description: plugin.description ?? null,
-      latest_version: plugin.version ?? null,
+      name,
+      display_name: name,
+      description: textValue(plugin.description),
+      latest_version: textValue(plugin.version),
       synced_at: null,
-      source_path: path,
+      source_path: sourcePath,
       metadata: {
         adapter: "claude_plugin",
         source: {
           provider: "github",
-          owner: info.owner,
-          repo: info.repo,
-          path,
-          package: plugin.name,
+          owner: pluginSource.owner,
+          repo: pluginSource.repo,
+          path: pluginSource.rootPath,
+          package: name,
+          marketplace_path: sourcePath,
         },
         version: {
-          ref: info.ref,
-          resolved_commit_sha: info.resolvedCommitSha,
-          package_version: plugin.version ?? null,
+          ref: pluginSource.ref,
+          resolved_commit_sha: pluginSource.resolvedCommitSha,
+          package_version: textValue(plugin.version),
         },
       },
     };
@@ -896,8 +1186,6 @@ export default function KnowledgePage() {
     mutate: mutatePacks,
   } = useKnowledgePacks();
   const {
-    agents,
-    isLoading: agentsLoading,
     mutate: mutateAgents,
   } = useAgents();
   const {
@@ -998,10 +1286,6 @@ export default function KnowledgePage() {
     const refs = {
       knowledgeIds: new Set<string>(),
       knowledgePaths: new Set<string>(),
-      agentIds: new Set<string>(),
-      agentPaths: new Set<string>(),
-      abilityIds: new Set<string>(),
-      abilityPaths: new Set<string>(),
     };
     for (const install of activePackageInstalls) {
       const rootType =
@@ -1012,14 +1296,6 @@ export default function KnowledgePage() {
         if (install.root_resource_id)
           refs.knowledgeIds.add(install.root_resource_id);
         refs.knowledgePaths.add(install.root_path);
-      } else if (rootType === "agent") {
-        if (install.root_resource_id)
-          refs.agentIds.add(install.root_resource_id);
-        refs.agentPaths.add(install.root_path);
-      } else if (rootType === "ability") {
-        if (install.root_resource_id)
-          refs.abilityIds.add(install.root_resource_id);
-        refs.abilityPaths.add(install.root_path);
       }
     }
     for (const install of activePackageInstalls) {
@@ -1032,12 +1308,6 @@ export default function KnowledgePage() {
         if (resourceType === "knowledge") {
           refs.knowledgeIds.add(resource.resource_id);
           refs.knowledgePaths.add(resource.source_path);
-        } else if (resourceType === "agent") {
-          refs.agentIds.add(resource.resource_id);
-          refs.agentPaths.add(resource.source_path);
-        } else if (resourceType === "ability") {
-          refs.abilityIds.add(resource.resource_id);
-          refs.abilityPaths.add(resource.source_path);
         }
       }
     }
@@ -1060,37 +1330,6 @@ export default function KnowledgePage() {
         );
       }),
     [packageResourceRefs, packs],
-  );
-  const packageAgents = useMemo(
-    () =>
-      (agents ?? []).filter((agent) => {
-        const sourcePath = metadataText(agent.metadata, [
-          "install",
-          "source_path",
-        ]);
-        return (
-          packageResourceRefs.agentIds.has(agent.id) ||
-          Boolean(sourcePath && packageResourceRefs.agentPaths.has(sourcePath))
-        );
-      }),
-    [agents, packageResourceRefs],
-  );
-  const packageAbilities = useMemo(
-    () =>
-      (abilities ?? []).filter((ability) => {
-        if (ability.source_type !== "package") return false;
-        const sourcePath = metadataText(ability.metadata, [
-          "install",
-          "source_path",
-        ]);
-        return (
-          packageResourceRefs.abilityIds.has(ability.id) ||
-          Boolean(
-            sourcePath && packageResourceRefs.abilityPaths.has(sourcePath),
-          )
-        );
-      }),
-    [abilities, packageResourceRefs],
   );
   const skillAbilities = useMemo(
     () =>
@@ -1336,7 +1575,23 @@ export default function KnowledgePage() {
   };
 
   const handleReviewPackage = async (pkg: MarketplacePackage) => {
-    setPackageDetails({ pkg, source: selectedSource });
+    if (pkg.kind !== "plugin" && pkg.kind !== "skill") {
+      setPackageDetails({ pkg, source: selectedSource });
+      return;
+    }
+    setBusyKey(`review:${pkg.id}`);
+    resetNotice();
+    try {
+      const review = await fetchMarketplacePackageReview(pkg, selectedSource);
+      setPackageDetails(null);
+      setPackageReview(review);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load skill markdown",
+      );
+    } finally {
+      setBusyKey(null);
+    }
   };
 
   const mutateAgentDomainAssignments = () =>
@@ -1670,23 +1925,39 @@ export default function KnowledgePage() {
 
         {activeTab === "installed" ? (
           <InstalledTab
-            packs={filteredPacks}
-            agents={packageAgents}
-            packageAbilities={packageAbilities}
+            installs={activePackageInstalls}
+            installDetails={packageInstallDetails}
+            sources={sources ?? []}
             abilities={filteredSkills}
             isLoading={
               installsLoading ||
               packsLoading ||
-              agentsLoading ||
               abilitiesLoading ||
               mcpLoading
             }
             onOpenPack={setSelectedPackId}
-            onOpenAgent={(agent) =>
-              router.push(`/dashboard/agents/${agent.id}`)
+            onOpenAgent={(agentId) =>
+              router.push(`/dashboard/agents/${agentId}`)
             }
+            onOpenAbility={(abilityName) =>
+              router.push(
+                `/dashboard/agents?tab=abilities&ability=${encodeURIComponent(abilityName)}`,
+              )
+            }
+            onOpenDomain={(domainName) =>
+              router.push(
+                `/dashboard/agents?tab=domains&domain=${encodeURIComponent(domainName)}`,
+              )
+            }
+            onOpenContextBlock={(blockName) =>
+              router.push(
+                `/dashboard/agents?tab=context&block=${encodeURIComponent(blockName)}`,
+              )
+            }
+            onOpenMcp={() => router.push("/dashboard/agents?tab=mcp")}
+            onUpdateInstall={handleUpdateInstall}
+            onUninstallInstall={handleUninstallPackageInstall}
             onViewSkill={handleViewInstalledSkill}
-            onOpenAbility={handleOpenAbilityPage}
             onUninstallSkill={handleUninstallSkill}
             onEditSkillEnv={handleOpenEnvEditor}
             busyKey={busyKey}
@@ -1882,6 +2153,249 @@ function packageVersionBadge(metadata: Record<string, unknown>): string | null {
   );
 }
 
+function rootInstallResource(
+  install: PackageInstall,
+  detail: PackageInstallDetail | undefined,
+): PackageInstallResource | null {
+  const resources = detail?.resources ?? [];
+  if (!resources.length) return null;
+  return (
+    resources.find(
+      (resource) => resource.resource_id === install.root_resource_id,
+    ) ??
+    resources.find(
+      (resource) => resource.resource_type === install.root_type,
+    ) ??
+    resources[0] ??
+    null
+  );
+}
+
+function packageInstallTitle(
+  install: PackageInstall,
+  detail: PackageInstallDetail | undefined,
+): string {
+  const rootResource = rootInstallResource(install, detail);
+  return (
+    metadataText(rootResource?.metadata ?? {}, ["runtime", "display_name"]) ??
+    metadataText(rootResource?.metadata ?? {}, ["runtime", "name"]) ??
+    metadataText(rootResource?.metadata ?? {}, ["package", "name"]) ??
+    metadataText(rootResource?.metadata ?? {}, ["source", "package"]) ??
+    metadataText(install.metadata, ["runtime", "display_name"]) ??
+    metadataText(install.metadata, ["runtime", "name"]) ??
+    metadataText(install.metadata, ["package", "name"]) ??
+    metadataText(install.metadata, ["source", "package"]) ??
+    packageNameFromInstallPath(install.root_path) ??
+    install.root_path
+  );
+}
+
+function packageInstallSubtitle(
+  install: PackageInstall,
+  source: PackageSource | undefined,
+): string {
+  return (
+    packageInstallSourceBadge(source) ??
+    packageInstallKindLabel(install.root_type)
+  );
+}
+
+function packageInstallKindLabel(rootType: string): string {
+  switch (normalizedPackageResourceType(rootType)) {
+    case "agent":
+      return "Agent";
+    case "ability":
+      return "Ability";
+    case "domain":
+      return "Domain";
+    case "context_block":
+      return "Context block";
+    case "knowledge":
+      return "Knowledge";
+    case "mcp_server":
+    case "mcp":
+      return "MCP";
+    case "routine":
+      return "Routine";
+    case "skill":
+      return "Skill";
+    case "command":
+      return "Command";
+    case "hook":
+      return "Hook";
+    case "script_tool":
+      return "Script tool";
+    case "plugin":
+      return "Plugin";
+    default:
+      return "Package";
+  }
+}
+
+function packageInstallSourceBadge(
+  source: PackageSource | undefined,
+): string | null {
+  if (!source) return null;
+  if (source.adapter === "claude_marketplace") return "Claude marketplace";
+  if (source.adapter === "codex_plugin") return "Codex plugin";
+  return source.name;
+}
+
+function packageInstallVersionBadge(install: PackageInstall): string | null {
+  return install.resolved_commit_sha
+    ? install.resolved_commit_sha.slice(0, 7)
+    : install.requested_ref;
+}
+
+function packageInstallDescription(
+  install: PackageInstall,
+  detail: PackageInstallDetail | undefined,
+  source: PackageSource | undefined,
+): string | null {
+  const rootResource = rootInstallResource(install, detail);
+  return (
+    metadataText(rootResource?.metadata ?? {}, ["runtime", "description"]) ??
+    metadataText(rootResource?.metadata ?? {}, ["description"]) ??
+    metadataText(install.metadata, ["description"]) ??
+    source?.name ??
+    null
+  );
+}
+
+function packageInstallIcon(
+  install: PackageInstall,
+  detail: PackageInstallDetail | undefined,
+): React.ReactNode {
+  const rootResource = rootInstallResource(install, detail);
+  const icon =
+    metadataText(rootResource?.metadata ?? {}, ["package", "icon"]) ??
+    metadataText(rootResource?.metadata ?? {}, ["runtime", "icon"]) ??
+    metadataText(rootResource?.metadata ?? {}, ["icon"]) ??
+    metadataText(install.metadata, ["package", "icon"]) ??
+    metadataText(install.metadata, ["runtime", "icon"]) ??
+    metadataText(install.metadata, ["icon"]);
+
+  return packageIconNode(icon);
+}
+
+function packageIconNode(icon: string | null): React.ReactNode {
+  if (icon && isImageIcon(icon)) {
+    return (
+      <span
+        aria-hidden="true"
+        className="h-7 w-7 rounded-md bg-contain bg-center bg-no-repeat"
+        style={{ backgroundImage: `url(${JSON.stringify(icon.trim())})` }}
+      />
+    );
+  }
+  if (icon && isCompactIconGlyph(icon)) {
+    return (
+      <span aria-hidden="true" className="text-xl leading-none">
+        {icon.trim()}
+      </span>
+    );
+  }
+  return <Package className="h-5 w-5" />;
+}
+
+function isImageIcon(value: string): boolean {
+  const icon = value.trim();
+  return (
+    /^https?:\/\//i.test(icon) ||
+    /^data:image\//i.test(icon) ||
+    icon.startsWith("/")
+  );
+}
+
+function isCompactIconGlyph(value: string): boolean {
+  const icon = value.trim();
+  return icon.length > 0 && icon.length <= 4 && !/[A-Za-z0-9/_:.-]/.test(icon);
+}
+
+function resourceNameTail(value: string | null | undefined): string | null {
+  const text = value?.trim();
+  if (!text) return null;
+  const fragment = text.split("#").pop() ?? text;
+  const segment = fragment.split("/").pop() ?? fragment;
+  return segment.trim() || null;
+}
+
+function packageNameFromInstallPath(value: string | null | undefined): string | null {
+  const text = value?.trim().replace(/^\/+|\/+$/g, "");
+  if (!text) return null;
+  const parts = text.split("/").filter(Boolean);
+  if (!parts.length) return null;
+  const last = parts[parts.length - 1];
+  if (last === "plugin.json" && parts[parts.length - 2] === ".claude-plugin") {
+    return parts[parts.length - 3] ?? null;
+  }
+  if (
+    last === "package.yaml" ||
+    last === "package.yml" ||
+    last === "nenjo.package.yaml" ||
+    last === "nenjo.package.yml"
+  ) {
+    return parts[parts.length - 2] ?? null;
+  }
+  return resourceNameTail(text);
+}
+
+function runtimeResourceTitle(resource: PackageInstallResource): string {
+  const resourceType = normalizedPackageResourceType(resource.resource_type);
+  if (resourceType === "command") {
+    return (
+      metadataText(resource.metadata, ["runtime", "command"]) ??
+      metadataText(resource.metadata, ["runtime", "display_name"]) ??
+      resource.resource_name
+    );
+  }
+  if (resourceType === "context_block") {
+    return (
+      metadataText(resource.metadata, ["runtime", "display_name"]) ??
+      metadataText(resource.metadata, ["runtime", "name"]) ??
+      resourceNameTail(resource.resource_name) ??
+      resourceNameTail(resource.source_path) ??
+      resource.resource_name
+    );
+  }
+  return (
+    metadataText(resource.metadata, ["runtime", "display_name"]) ??
+    resourceNameTail(resource.resource_name) ??
+    resource.resource_name
+  );
+}
+
+function runtimeResourceDescription(
+  resource: PackageInstallResource,
+): string | null {
+  return (
+    metadataText(resource.metadata, ["runtime", "description"]) ??
+    metadataText(resource.metadata, ["source", "package"])
+  );
+}
+
+function runtimeResourceSubtitle(resource: PackageInstallResource): string {
+  const event = metadataText(resource.metadata, ["runtime", "event"]);
+  const matcher = metadataText(resource.metadata, ["runtime", "matcher"]);
+  if (event && matcher) return `${event} · ${matcher}`;
+  if (event) return event;
+  return resource.source_path;
+}
+
+function runtimeResourceBadges(
+  resource: PackageInstallResource,
+): Array<string | null> {
+  const resourceType = normalizedPackageResourceType(resource.resource_type);
+  return [
+    packageInstallKindLabel(resourceType),
+    packageSourceLabel(resource.metadata),
+    packageVersionBadge(resource.metadata),
+    metadataText(resource.metadata, ["runtime", "category"]),
+    metadataText(resource.metadata, ["runtime", "type"]),
+    "Read-only",
+  ];
+}
+
 function parseEnvNames(value: string): string[] {
   const names = new Set<string>();
   value
@@ -1901,6 +2415,354 @@ function abilityEnvNames(ability: Ability): string[] {
   return Array.isArray(envNames)
     ? envNames.filter((name): name is string => typeof name === "string")
     : [];
+}
+
+function marketplacePackageGitHubInfo(
+  pkg: MarketplacePackage,
+  source: PackageSource | null,
+): MarketplaceGitHubInfo | null {
+  const sourceInfo = source ? sourceGitHubInfo(source) : null;
+  const owner =
+    metadataText(pkg.metadata, ["source", "owner"]) ??
+    sourceInfo?.owner ??
+    null;
+  const repo =
+    metadataText(pkg.metadata, ["source", "repo"]) ?? sourceInfo?.repo ?? null;
+  if (!owner || !repo) return null;
+  return {
+    owner,
+    repo,
+    ref:
+      metadataText(pkg.metadata, ["version", "ref"]) ??
+      metadataText(pkg.metadata, ["version", "requested_ref"]) ??
+      sourceInfo?.ref ??
+      "main",
+    resolvedCommitSha:
+      metadataText(pkg.metadata, ["version", "resolved_commit_sha"]) ??
+      sourceInfo?.resolvedCommitSha ??
+      null,
+  };
+}
+
+async function fetchGitHubContentsOptional(
+  owner: string,
+  repo: string,
+  ref: string,
+  path: string,
+): Promise<GithubContentsEntry[] | null> {
+  const res = await fetch(githubContentsUrl(owner, repo, ref, path));
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(
+      `Failed to fetch GitHub contents for ${path}: ${res.status}`,
+    );
+  }
+  const text = await res.text();
+  const value =
+    parseStructuredText<GithubContentsEntry[] | GithubContentsEntry>(text);
+  return Array.isArray(value) ? value : [value];
+}
+
+function skillReviewFromMarkdown(
+  skillPath: string,
+  content: string,
+  fallbackName: string,
+  fallbackDescription: string | null,
+): SkillReview {
+  const rendered = splitFrontmatter(content);
+  const metadataName = frontmatterValue(rendered.frontmatter, "name");
+  const metadataDescription = frontmatterValue(
+    rendered.frontmatter,
+    "description",
+  );
+  const segments = skillPath.split("/").filter(Boolean);
+  const folderName =
+    segments.length >= 2 ? segments[segments.length - 2] : fallbackName;
+  return {
+    name: metadataName ?? folderName,
+    display_name: metadataName ?? fallbackName,
+    description: metadataDescription ?? fallbackDescription,
+    entrypoint: segments[segments.length - 1] ?? "SKILL.md",
+    skill_path: skillPath,
+    content,
+  };
+}
+
+function packageReviewFromSkills(
+  pkg: MarketplacePackage,
+  source: PackageSource | null,
+  info: MarketplaceGitHubInfo,
+  sourcePath: string,
+  skills: SkillReview[],
+): PackageReview {
+  return {
+    pkg,
+    source,
+    plugin_request: {
+      name: pkg.name,
+      display_name: pkg.display_name,
+      description: pkg.description,
+      source: { path: sourcePath },
+      version: {
+        ref_: info.ref,
+        resolved_commit_sha: info.resolvedCommitSha,
+        package_version:
+          pkg.latest_version ??
+          metadataText(pkg.metadata, ["version", "package_version"]),
+      },
+      skills,
+    },
+    envNamesText: "",
+    selectedSkillIndex: 0,
+  };
+}
+
+async function fetchSkillReviewsFromPaths(
+  info: MarketplaceGitHubInfo,
+  paths: string[],
+  pkg: MarketplacePackage,
+): Promise<{ skills: SkillReview[]; lastError: unknown }> {
+  const fetchRef = sourceFetchRef(info);
+  const uniquePaths = Array.from(
+    new Set(paths.map(normalizeCatalogPath).filter(Boolean)),
+  );
+  const results = await Promise.all(
+    uniquePaths.map(async (path) => {
+      try {
+        const content = await fetchOptionalText(
+          githubRawUrl(info.owner, info.repo, fetchRef, path),
+        );
+        return {
+          skill: content
+            ? skillReviewFromMarkdown(
+                path,
+                content,
+                pkg.display_name ?? pkg.name,
+                pkg.description,
+              )
+            : null,
+          error: null,
+        };
+      } catch (error) {
+        return { skill: null, error };
+      }
+    }),
+  );
+
+  let lastError: unknown = null;
+  const skills: SkillReview[] = [];
+  for (const result of results) {
+    if (result.error) lastError = result.error;
+    if (result.skill) skills.push(result.skill);
+  }
+  return { skills, lastError };
+}
+
+function fallbackPluginSkillPaths(
+  pkg: MarketplacePackage,
+  rootPath: string,
+): string[] {
+  const names = new Set<string>();
+  const addName = (value: string | null | undefined) => {
+    if (!value) return;
+    const clean = normalizeCatalogPath(value);
+    if (clean && !clean.includes("/")) names.add(clean);
+    const slug = slugify(value);
+    if (slug) names.add(slug);
+    const hyphenated = identifier(value).replace(/_/g, "-");
+    if (hyphenated) names.add(hyphenated);
+  };
+  addName(pkg.name);
+  addName(pkg.display_name ?? undefined);
+  addName(metadataText(pkg.metadata, ["source", "package"]));
+  addName(pkg.source_path.split("/").filter(Boolean).pop());
+
+  return [
+    ...Array.from(names).map((name) =>
+      joinRelativePath(rootPath, `skills/${name}/SKILL.md`),
+    ),
+    joinRelativePath(rootPath, "skills/SKILL.md"),
+    joinRelativePath(rootPath, "SKILL.md"),
+  ];
+}
+
+async function discoverPluginSkillPaths(
+  info: MarketplaceGitHubInfo,
+  rootPath: string,
+  pkg: MarketplacePackage,
+): Promise<string[]> {
+  const discovered: string[] = [];
+  try {
+    const rootEntries = await fetchGitHubContentsOptional(
+      info.owner,
+      info.repo,
+      sourceFetchRef(info),
+      rootPath,
+    );
+    const skillsEntry = rootEntries?.find(
+      (entry) => entry.type === "dir" && entry.name === "skills",
+    );
+    if (!skillsEntry) {
+      return fallbackPluginSkillPaths(pkg, rootPath);
+    }
+    const entries = await fetchGitHubContentsOptional(
+      info.owner,
+      info.repo,
+      sourceFetchRef(info),
+      skillsEntry.path,
+    );
+    for (const entry of entries ?? []) {
+      if (entry.type === "dir") {
+        discovered.push(joinRelativePath(entry.path, "SKILL.md"));
+      } else if (
+        entry.type === "file" &&
+        entry.name.toLowerCase() === "skill.md"
+      ) {
+        discovered.push(entry.path);
+      }
+    }
+  } catch {
+    // Fall back to conventional paths when the unauthenticated GitHub API is unavailable.
+  }
+  return Array.from(
+    new Set([...discovered, ...fallbackPluginSkillPaths(pkg, rootPath)]),
+  );
+}
+
+async function fetchPluginDocumentationReview(
+  pkg: MarketplacePackage,
+  source: PackageSource | null,
+  info: MarketplaceGitHubInfo,
+  rootPath: string,
+): Promise<PackageReview | null> {
+  const candidates = [
+    "README.md",
+    "readme.md",
+    ".claude-plugin/plugin.json",
+    "plugin.json",
+  ].map((path) => joinRelativePath(rootPath, path));
+  const fetchRef = sourceFetchRef(info);
+  for (const path of candidates) {
+    const content = await fetchOptionalText(
+      githubRawUrl(info.owner, info.repo, fetchRef, path),
+    );
+    if (!content) continue;
+    const isJson = path.endsWith(".json");
+    const body = isJson
+      ? `# ${pkg.display_name ?? pkg.name}\n\n\`\`\`json\n${content.trim()}\n\`\`\`\n`
+      : content;
+    return packageReviewFromSkills(pkg, source, info, rootPath, [
+      {
+        name: isJson ? "plugin-manifest" : "readme",
+        display_name: isJson ? "Plugin manifest" : "README",
+        description: pkg.description,
+        entrypoint: path.split("/").pop() ?? "README.md",
+        skill_path: path,
+        content: body,
+      },
+    ]);
+  }
+  return null;
+}
+
+function skillPackageEntrypointPath(pkg: MarketplacePackage): string {
+  const sourcePath = normalizePluginRootPath(
+    metadataText(pkg.metadata, ["source", "path"]) ?? pkg.source_path,
+  );
+  const entrypoint =
+    metadataText(pkg.metadata, ["distribution", "entrypoint"]) ?? "SKILL.md";
+  if (/\.(ya?ml|json|toml)$/i.test(sourcePath)) {
+    const packageDir = sourcePath.includes("/")
+      ? sourcePath.slice(0, sourcePath.lastIndexOf("/"))
+      : ".";
+    return joinRelativePath(packageDir, entrypoint);
+  }
+  return joinRelativePath(sourcePath, entrypoint);
+}
+
+async function fetchMarketplaceSkillPackageReview(
+  pkg: MarketplacePackage,
+  source: PackageSource | null,
+  info: MarketplaceGitHubInfo,
+): Promise<PackageReview> {
+  const paths: string[] = [];
+  if (source?.adapter === "nenjo_packages") {
+    try {
+      const details = await fetchPackageDetails(source, pkg);
+      paths.push(
+        ...details.moduleGroups.flatMap((group) =>
+          group.modules
+            .filter((module) => module.kind === "skill")
+            .map((module) => module.path),
+        ),
+      );
+    } catch {
+      // Direct skill packages can still be previewed via their entrypoint.
+    }
+  }
+  if (!paths.length) paths.push(skillPackageEntrypointPath(pkg));
+
+  const { skills, lastError } = await fetchSkillReviewsFromPaths(
+    info,
+    paths,
+    pkg,
+  );
+  if (!skills.length) {
+    const message = `No SKILL.md found for ${pkg.display_name ?? pkg.name}`;
+    if (lastError instanceof Error) throw new Error(`${message}: ${lastError.message}`);
+    throw new Error(message);
+  }
+  return packageReviewFromSkills(
+    pkg,
+    source,
+    info,
+    pkg.source_path,
+    skills,
+  );
+}
+
+async function fetchMarketplacePluginReview(
+  pkg: MarketplacePackage,
+  source: PackageSource | null,
+  info: MarketplaceGitHubInfo,
+): Promise<PackageReview> {
+  const rootPath = normalizePluginRootPath(
+    metadataText(pkg.metadata, ["source", "path"]),
+  );
+  const paths = await discoverPluginSkillPaths(info, rootPath, pkg);
+  const { skills, lastError } = await fetchSkillReviewsFromPaths(
+    info,
+    paths,
+    pkg,
+  );
+  if (!skills.length) {
+    const documentation = await fetchPluginDocumentationReview(
+      pkg,
+      source,
+      info,
+      rootPath,
+    );
+    if (documentation) return documentation;
+    const searchRoot = rootPath === "." ? "skills/" : `${rootPath}/skills/`;
+    const message = `No SKILL.md found under ${searchRoot}`;
+    if (lastError instanceof Error) throw new Error(`${message}: ${lastError.message}`);
+    throw new Error(message);
+  }
+  return packageReviewFromSkills(pkg, source, info, rootPath, skills);
+}
+
+async function fetchMarketplacePackageReview(
+  pkg: MarketplacePackage,
+  source: PackageSource | null,
+): Promise<PackageReview> {
+  const info = marketplacePackageGitHubInfo(pkg, source);
+  if (!info) {
+    throw new Error("Package is missing GitHub source metadata");
+  }
+  if (pkg.kind === "plugin") {
+    return fetchMarketplacePluginReview(pkg, source, info);
+  }
+  return fetchMarketplaceSkillPackageReview(pkg, source, info);
 }
 
 async function fetchInstalledSkillReview(
@@ -2042,130 +2904,443 @@ function Notice({
   );
 }
 
+function PackageInstallCard({
+  install,
+  detail,
+  source,
+  onInspect,
+  onUpdateInstall,
+  onUninstallInstall,
+  busyKey,
+}: {
+  install: PackageInstall;
+  detail: PackageInstallDetail | undefined;
+  source: PackageSource | undefined;
+  onInspect: () => void;
+  onUpdateInstall: (install: PackageInstall) => void;
+  onUninstallInstall: (install: PackageInstall) => void;
+  busyKey: string | null;
+}) {
+  const dependencyInfo = packageInstallDependencyInfo(install);
+  const resources = installedPackageResources(detail);
+  const uninstallBlocked = dependencyInfo.requiredBy.length > 0;
+  const uninstallTitle = uninstallBlocked
+    ? `Required by ${dependencyRefListLabel(dependencyInfo.requiredBy)}`
+    : undefined;
+
+  return (
+    <AssetCard
+      icon={packageInstallIcon(install, detail)}
+      title={packageInstallTitle(install, detail)}
+      subtitle={packageInstallSubtitle(install, source)}
+      description={packageInstallDescription(install, detail, source)}
+      badges={[
+        packageInstallVersionBadge(install),
+        ...packageInstallDependencyBadges(dependencyInfo),
+        detail ? `${resources.length} resources` : null,
+      ]}
+      updatedAt={install.updated_at}
+      isBusy={busyKey === `update-install:${install.id}`}
+      actions={
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Button
+            size="sm"
+            variant="secondary"
+            className="w-full"
+            onClick={onInspect}
+          >
+            <ChevronDown className="-rotate-90 h-4 w-4" />
+            Inspect
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="w-full"
+            onClick={() => onUpdateInstall(install)}
+            isLoading={busyKey === `update-install:${install.id}`}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Update
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            className="w-full"
+            onClick={() => onUninstallInstall(install)}
+            isLoading={busyKey === `uninstall-install:${install.id}`}
+            disabled={uninstallBlocked}
+            title={uninstallTitle}
+          >
+            <Trash2 className="h-4 w-4" />
+            Uninstall
+          </Button>
+        </div>
+      }
+    />
+  );
+}
+
+function PackageInstallInspectionModal({
+  install,
+  detail,
+  source,
+  dependencyInstallByRootPath,
+  onClose,
+  onOpenInstall,
+  onOpenResource,
+}: {
+  install: PackageInstall | null;
+  detail: PackageInstallDetail | undefined;
+  source: PackageSource | undefined;
+  dependencyInstallByRootPath: Map<string, PackageInstall>;
+  onClose: () => void;
+  onOpenInstall: (installId: string) => void;
+  onOpenResource: (resource: PackageInstallResource) => void;
+}) {
+  const dependencyInfo = install
+    ? packageInstallDependencyInfo(install)
+    : { autoInstalled: false, dependsOn: [], requiredBy: [] };
+  const resources = installedPackageResources(detail);
+  return (
+    <Modal
+      open={Boolean(install)}
+      onClose={onClose}
+      title={install ? packageInstallTitle(install, detail) : "Package"}
+      className="max-w-4xl"
+    >
+      {install ? (
+        <div className="space-y-5">
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {[
+                packageInstallKindLabel(install.root_type),
+                packageInstallSourceBadge(source),
+                packageInstallVersionBadge(install),
+                ...packageInstallDependencyBadges(dependencyInfo),
+                detail ? `${resources.length} resources` : null,
+              ]
+                .filter(Boolean)
+                .map((badge) => (
+                  <Badge key={badge}>{badge}</Badge>
+                ))}
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {packageInstallDescription(install, detail, source) ??
+                packageInstallSubtitle(install, source)}
+            </p>
+          </div>
+          <PackageInstallInspection
+            detailLoaded={Boolean(detail)}
+            dependencyInfo={dependencyInfo}
+            dependencyInstallByRootPath={dependencyInstallByRootPath}
+            resources={resources}
+            onOpenInstall={onOpenInstall}
+            onOpenResource={onOpenResource}
+          />
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
+function PackageInstallInspection({
+  detailLoaded,
+  dependencyInfo,
+  dependencyInstallByRootPath,
+  resources,
+  onOpenInstall,
+  onOpenResource,
+}: {
+  detailLoaded: boolean;
+  dependencyInfo: PackageInstallDependencyInfo;
+  dependencyInstallByRootPath: Map<string, PackageInstall>;
+  resources: PackageInstallResource[];
+  onOpenInstall: (installId: string) => void;
+  onOpenResource: (resource: PackageInstallResource) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <PackageDependencyList
+        title="Dependencies"
+        refs={dependencyInfo.dependsOn}
+        dependencyInstallByRootPath={dependencyInstallByRootPath}
+        emptyText="No plugin dependencies."
+        onOpenInstall={onOpenInstall}
+      />
+      <PackageDependencyList
+        title="Required By"
+        refs={dependencyInfo.requiredBy}
+        dependencyInstallByRootPath={dependencyInstallByRootPath}
+        emptyText="No installed package requires this."
+        onOpenInstall={onOpenInstall}
+      />
+      <div className="space-y-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          Resources
+        </h4>
+        {!detailLoaded ? (
+          <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
+            Loading resources...
+          </p>
+        ) : resources.length ? (
+          <div className="divide-y divide-gray-100 rounded-lg border border-gray-100 dark:divide-gray-800 dark:border-gray-800">
+            {resources.map((resource) => (
+              <PackageResourceRow
+                key={`${resource.resource_type}:${resource.id}`}
+                resource={resource}
+                onOpenResource={onOpenResource}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
+            No installed resources recorded.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PackageDependencyList({
+  title,
+  refs,
+  dependencyInstallByRootPath,
+  emptyText,
+  onOpenInstall,
+}: {
+  title: string;
+  refs: PackageDependencyRef[];
+  dependencyInstallByRootPath: Map<string, PackageInstall>;
+  emptyText: string;
+  onOpenInstall: (installId: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {title}
+      </h4>
+      {refs.length ? (
+        <div className="space-y-1.5">
+          {refs.map((ref) => {
+            const install = dependencyInstallByRootPath.get(ref.rootPath);
+            return (
+              <button
+                key={ref.rootPath}
+                type="button"
+                disabled={!install}
+                onClick={() => {
+                  if (install) onOpenInstall(install.id);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-left text-xs text-gray-600 transition-colors hover:bg-gray-100 disabled:cursor-default disabled:opacity-70 dark:bg-gray-800/60 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <Package className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                <span className="min-w-0 flex-1 truncate">
+                  {ref.name}
+                  <span className="ml-1 text-gray-400">{ref.rootPath}</span>
+                </span>
+                <span className="shrink-0 text-[11px] text-gray-400">
+                  {install ? "Inspect" : "Missing"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
+          {emptyText}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PackageResourceRow({
+  resource,
+  onOpenResource,
+}: {
+  resource: PackageInstallResource;
+  onOpenResource: (resource: PackageInstallResource) => void;
+}) {
+  const resourceType = normalizedPackageResourceType(resource.resource_type);
+  const actionLabel = packageResourceActionLabel(resource);
+  const details = runtimeResourceDetails(resource);
+  return (
+    <div className="flex items-start gap-3 px-3 py-2.5">
+      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300">
+        {packageKindIcon(resourceType, "h-4 w-4")}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="truncate text-sm font-medium text-gray-800 dark:text-gray-100">
+            {runtimeResourceTitle(resource)}
+          </p>
+          <span className="shrink-0 text-[11px] text-gray-400">
+            {packageInstallKindLabel(resourceType)}
+          </span>
+        </div>
+        <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+          {runtimeResourceSubtitle(resource)}
+        </p>
+        {runtimeResourceDescription(resource) ? (
+          <p className="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
+            {runtimeResourceDescription(resource)}
+          </p>
+        ) : null}
+        {details.length ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {details.map((detail) => (
+              <span
+                key={detail}
+                className="rounded-md bg-gray-50 px-1.5 py-0.5 text-[11px] text-gray-500 dark:bg-gray-800/70 dark:text-gray-400"
+              >
+                {detail}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {actionLabel ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          className="shrink-0"
+          onClick={() => onOpenResource(resource)}
+        >
+          {actionLabel}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 function InstalledTab({
-  packs,
-  agents,
-  packageAbilities,
+  installs,
+  installDetails,
+  sources,
   abilities,
   isLoading,
   onOpenPack,
   onOpenAgent,
-  onViewSkill,
   onOpenAbility,
+  onOpenDomain,
+  onOpenContextBlock,
+  onOpenMcp,
+  onUpdateInstall,
+  onUninstallInstall,
+  onViewSkill,
   onUninstallSkill,
   onEditSkillEnv,
   busyKey,
 }: {
-  packs: KnowledgePack[];
-  agents: AgentDefinition[];
-  packageAbilities: Ability[];
+  installs: PackageInstall[];
+  installDetails: Record<string, PackageInstallDetail>;
+  sources: PackageSource[];
   abilities: Ability[];
   isLoading: boolean;
   onOpenPack: (id: string) => void;
-  onOpenAgent: (agent: AgentDefinition) => void;
+  onOpenAgent: (id: string) => void;
+  onOpenAbility: (name: string) => void;
+  onOpenDomain: (name: string) => void;
+  onOpenContextBlock: (name: string) => void;
+  onOpenMcp: () => void;
+  onUpdateInstall: (install: PackageInstall) => void;
+  onUninstallInstall: (install: PackageInstall) => void;
   onViewSkill: (ability: Ability) => void;
-  onOpenAbility: (ability: Ability) => void;
   onUninstallSkill: (ability: Ability) => void;
   onEditSkillEnv: (ability: Ability) => void;
   busyKey: string | null;
 }) {
+  const [inspectingInstallId, setInspectingInstallId] = useState<string | null>(
+    null,
+  );
+  const sourcesById = useMemo(
+    () => new Map(sources.map((source) => [source.id, source])),
+    [sources],
+  );
+  const installsByRootPath = useMemo(
+    () => new Map(installs.map((install) => [install.root_path, install])),
+    [installs],
+  );
+  const inspectingInstall =
+    installs.find((install) => install.id === inspectingInstallId) ?? null;
+  const openInstall = (installId: string) => setInspectingInstallId(installId);
+  const openResource = (resource: PackageInstallResource) => {
+    setInspectingInstallId(null);
+    const resourceType = normalizedPackageResourceType(resource.resource_type);
+    if (resourceType === "knowledge") {
+      onOpenPack(resource.resource_id);
+    } else if (resourceType === "agent") {
+      onOpenAgent(resource.resource_id);
+    } else if (resourceType === "ability") {
+      onOpenAbility(
+        metadataText(resource.metadata, ["runtime", "name"]) ??
+          resource.resource_name,
+      );
+    } else if (resourceType === "domain") {
+      onOpenDomain(
+        metadataText(resource.metadata, ["runtime", "name"]) ??
+          resource.resource_name,
+      );
+    } else if (resourceType === "context_block") {
+      onOpenContextBlock(
+        metadataText(resource.metadata, ["runtime", "name"]) ??
+          metadataText(resource.metadata, ["runtime", "display_name"]) ??
+          resource.resource_name,
+      );
+    } else if (resourceType === "mcp_server" || resourceType === "mcp") {
+      onOpenMcp();
+    }
+  };
+
   if (isLoading) return <LoadingGrid />;
-  const hasInstalledItems =
-    packs.length ||
-    agents.length ||
-    packageAbilities.length ||
-    abilities.length;
+  const hasInstalledItems = installs.length || abilities.length;
   if (!hasInstalledItems)
     return <EmptyState text="No external packages installed." />;
   return (
     <div className="space-y-7">
-      {agents.length ? (
+      {installs.length ? (
         <CollapsibleAssetSection
-          title="Agents"
-          count={agents.length}
-          icon={<Bot className="h-4 w-4" />}
+          title="Installed Packages"
+          count={installs.length}
+          icon={<Package className="h-4 w-4" />}
         >
-          {agents.map((agent) => (
-            <AssetCard
-              key={agent.id}
-              icon={<Bot className="h-5 w-5" />}
-              title={agent.display_name ?? agent.name}
-              subtitle={
-                metadataText(agent.metadata, ["install", "source_path"]) ??
-                agent.name
-              }
-              description={agent.description}
-              badges={[
-                "agent",
-                packageSourceLabel(agent.metadata),
-                packageVersionBadge(agent.metadata),
-                agent.read_only ? "Read-only" : null,
-              ]}
-              updatedAt={agent.updated_at}
-              onClick={() => onOpenAgent(agent)}
+          {installs.map((install) => (
+            <PackageInstallCard
+              key={install.id}
+              install={install}
+              detail={installDetails[install.id]}
+              source={sourcesById.get(install.package_source_id)}
+              onInspect={() => setInspectingInstallId(install.id)}
+              onUpdateInstall={onUpdateInstall}
+              onUninstallInstall={onUninstallInstall}
+              busyKey={busyKey}
             />
           ))}
         </CollapsibleAssetSection>
       ) : null}
 
-      {packs.length ? (
-        <CollapsibleAssetSection
-          title="Knowledge Packs"
-          count={packs.length}
-          icon={<BookOpen className="h-4 w-4" />}
-        >
-          {packs.map((pack) => (
-            <AssetCard
-              key={pack.id}
-              icon={<BookOpen className="h-5 w-5" />}
-              title={pack.name}
-              subtitle={knowledgeSelector(pack)}
-              description={pack.description}
-              badges={[
-                pack.source_type === "package" ? "Package" : "Platform",
-                pack.version,
-                pack.read_only ? "Read-only" : null,
-                pack.is_system ? "System" : null,
-              ]}
-              updatedAt={pack.updated_at}
-              onClick={() => onOpenPack(pack.id)}
-            />
-          ))}
-        </CollapsibleAssetSection>
-      ) : null}
-
-      {packageAbilities.length ? (
-        <CollapsibleAssetSection
-          title="Abilities"
-          count={packageAbilities.length}
-          icon={<Zap className="h-4 w-4" />}
-        >
-          {packageAbilities.map((ability) => (
-            <AssetCard
-              key={ability.id}
-              icon={<Zap className="h-5 w-5" />}
-              title={ability.name}
-              subtitle={
-                metadataText(ability.metadata, ["install", "source_path"]) ??
-                ability.name
-              }
-              description={ability.description}
-              badges={[
-                "ability",
-                packageSourceLabel(ability.metadata),
-                packageVersionBadge(ability.metadata),
-                ability.read_only ? "Read-only" : null,
-              ]}
-              updatedAt={ability.updated_at}
-              onClick={() => onOpenAbility(ability)}
-            />
-          ))}
-        </CollapsibleAssetSection>
-      ) : null}
+      <PackageInstallInspectionModal
+        install={inspectingInstall}
+        detail={
+          inspectingInstall
+            ? installDetails[inspectingInstall.id]
+            : undefined
+        }
+        source={
+          inspectingInstall
+            ? sourcesById.get(inspectingInstall.package_source_id)
+            : undefined
+        }
+        dependencyInstallByRootPath={installsByRootPath}
+        onClose={() => setInspectingInstallId(null)}
+        onOpenInstall={openInstall}
+        onOpenResource={openResource}
+      />
 
       {abilities.length ? (
         <CollapsibleAssetSection
-          title="Skills"
+          title="Legacy Skills"
           count={abilities.length}
           icon={<Sparkles className="h-4 w-4" />}
         >
@@ -2194,7 +3369,7 @@ function InstalledTab({
                       size="sm"
                       variant="secondary"
                       className="w-full"
-                      onClick={() => onOpenAbility(ability)}
+                      onClick={() => onOpenAbility(ability.name)}
                     >
                       <Zap className="h-4 w-4" />
                       Ability
@@ -2224,7 +3399,6 @@ function InstalledTab({
           ))}
         </CollapsibleAssetSection>
       ) : null}
-
     </div>
   );
 }
@@ -2302,6 +3476,9 @@ function MarketplaceTab({
           <option value="mcp">MCP</option>
           <option value="routine">Routines</option>
           <option value="skill">Skills</option>
+          <option value="command">Commands</option>
+          <option value="hook">Hooks</option>
+          <option value="script_tool">Script tools</option>
           <option value="plugin">Plugins</option>
         </Select>
         <Button
@@ -2371,6 +3548,7 @@ function PackageCatalogCard({
   onUninstallInstall: (install: PackageInstall) => void;
 }) {
   const isSkillLike = pkg.kind === "plugin" || pkg.kind === "skill";
+  const showCatalogMetadata = pkg.kind !== "plugin";
   return (
     <div
       role="button"
@@ -2382,23 +3560,28 @@ function PackageCatalogCard({
           onOpenDetails(pkg);
         }
       }}
-      className="rounded-lg border border-gray-200 bg-white p-4 text-left transition-colors hover:border-deep-space-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-deep-space-blue-700"
+      className="flex h-full flex-col rounded-lg border border-gray-200 bg-white p-4 text-left transition-colors hover:border-deep-space-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-deep-space-blue-700"
     >
       <AssetCard
         icon={packageKindIcon(pkg.kind)}
         title={pkg.display_name ?? pkg.name}
         subtitle={packageSelector(pkg) ?? pkg.source_path}
         description={pkg.description}
-        badges={[
-          pkg.kind.replace("_", " "),
-          sourceLabel(pkg.metadata),
-          pkg.latest_version,
-        ]}
+        badges={
+          showCatalogMetadata
+            ? [
+                pkg.kind.replace("_", " "),
+                sourceLabel(pkg.metadata),
+                pkg.latest_version,
+              ]
+            : []
+        }
         updatedAt={pkg.synced_at}
         framed={false}
+        showMetadata={showCatalogMetadata}
         statusLabel={installed ? "Installed" : "Available"}
       />
-      <div onClick={(event) => event.stopPropagation()}>
+      <div className="mt-auto" onClick={(event) => event.stopPropagation()}>
         <Button
           size="sm"
           variant="secondary"
@@ -2455,6 +3638,8 @@ function PackageDetailsModal({
   const [history, setHistory] = useState<MarketplacePackage[]>([]);
   const [details, setDetails] = useState<LoadedPackageDetails | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [activeDetailsTab, setActiveDetailsTab] =
+    useState<PackageDetailsTab>("metadata");
 
   useEffect(() => {
     if (!current || !source || source.adapter !== "nenjo_packages") {
@@ -2463,11 +3648,16 @@ function PackageDetailsModal({
     let cancelled = false;
     fetchPackageDetails(source, current)
       .then((loaded) => {
-        if (!cancelled) setDetails(loaded);
+        if (!cancelled) {
+          setDetails(loaded);
+          setDetailsError(null);
+          setActiveDetailsTab(loaded.readme ? "readme" : "metadata");
+        }
       })
       .catch((err) => {
         if (!cancelled) {
           setDetails(null);
+          setActiveDetailsTab("metadata");
           setDetailsError(
             err instanceof Error
               ? err.message
@@ -2532,6 +3722,7 @@ function PackageDetailsModal({
     setHistory((items) => [...items, activePkg]);
     setDetails(null);
     setDetailsError(null);
+    setActiveDetailsTab("metadata");
     setCurrent({
       id: `${source?.id ?? "source"}:${dependency.path}`,
       kind: "package",
@@ -2564,10 +3755,32 @@ function PackageDetailsModal({
       const previous = next.pop() ?? null;
       setDetails(null);
       setDetailsError(null);
+      setActiveDetailsTab("metadata");
       setCurrent(previous);
       return next;
     });
   };
+
+  const detailTabs = details
+    ? [
+        ...(details.readme
+          ? [
+              {
+                id: "readme",
+                label: "README",
+                icon: <BookOpen className="h-4 w-4" />,
+              },
+            ]
+          : []),
+        {
+          id: "metadata",
+          label: "Metadata",
+          count: details.dependencies.length,
+          icon: <Braces className="h-4 w-4" />,
+        },
+      ]
+    : [];
+  const visibleDetailsTab = details?.readme ? activeDetailsTab : "metadata";
 
   return (
     <Modal
@@ -2608,127 +3821,36 @@ function PackageDetailsModal({
             </div>
           </div>
 
-          <dl className="grid gap-3 sm:grid-cols-2">
-            {(displayedKind ?? activeKind) === "knowledge" ||
-            activeKind === "knowledge_pack" ||
-            activeKind === "context_block" ? (
-              <PackageDetail
-                label="Selector"
-                value={packageSelector(activePkg)}
-                mono
-              />
-            ) : null}
-            <PackageDetail label="Path" value={activePkg.source_path} mono />
-            <PackageDetail
-              label="Source"
-              value={
-                source?.name ??
-                (sourceOwner && sourceRepo
-                  ? `${sourceOwner}/${sourceRepo}`
-                  : null)
-              }
-            />
-            <PackageDetail label="Git repo" value={gitRepoUrl} mono />
-            <PackageDetail
-              label="Adapter"
-              value={
-                source?.adapter?.replace("_", " ") ??
-                metadataText(activePkg.metadata, ["adapter"])
-              }
-            />
-            <PackageDetail label="Ref" value={refDetail} mono />
-          </dl>
-
           {!details && !detailsError && source?.adapter === "nenjo_packages" ? (
             <EmptyState text="Loading package files..." />
           ) : null}
           {detailsError ? <Notice tone="error">{detailsError}</Notice> : null}
           {details ? (
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <main className="space-y-4">
-                <PackageFilePanel
-                  title="Package"
-                  icon={<Package className="h-4 w-4" />}
-                  path={details.descriptorPath}
-                  value={details.descriptor as Record<string, unknown> | null}
-                  showRaw={false}
+            <div className="space-y-4">
+              {details.readme ? (
+                <Tabs
+                  tabs={detailTabs}
+                  activeTab={visibleDetailsTab}
+                  onChange={(id) => setActiveDetailsTab(id as PackageDetailsTab)}
+                  indicatorAnimation="slide"
                 />
-                {details.moduleGroups.length ? (
-                  details.moduleGroups.map((group) => (
-                    <PackageModuleGroupPanel
-                      key={group.label}
-                      group={group}
-                    />
-                  ))
-                ) : (
-                  <section className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                      <Braces className="h-4 w-4" />
-                      No module manifests could be loaded.
-                    </div>
-                  </section>
-                )}
-                {details.readme ? (
-                  <section className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-                    <div className="mb-3 flex items-center gap-2">
-                      <BookOpen className="h-4 w-4 text-gray-500" />
-                      <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
-                        README
-                      </h3>
-                    </div>
-                    <div className="prose prose-sm max-w-none dark:prose-invert">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {details.readme}
-                      </ReactMarkdown>
-                    </div>
-                  </section>
-                ) : null}
-              </main>
-              <aside className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Network className="h-4 w-4 text-gray-500" />
-                  <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
-                    Dependencies
-                  </h3>
-                  <span className="text-xs text-gray-400">
-                    {details.dependencies.length}
-                  </span>
-                </div>
-                {details.dependencies.length ? (
-                  details.dependencies.map((dependency) => (
-                    <button
-                      key={`${dependency.name}:${dependency.path}`}
-                      type="button"
-                      onClick={() => handleOpenDependency(dependency)}
-                      className="block w-full rounded-lg border border-gray-200 bg-white p-3 text-left transition-colors hover:border-deep-space-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-deep-space-blue-700"
-                    >
-                      <div className="flex items-start gap-2">
-                        <span className="mt-0.5 text-gray-500">
-                          {packageKindIcon("package", "h-4 w-4")}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="break-words text-sm font-medium text-gray-900 dark:text-gray-100">
-                            {dependency.name}
-                          </div>
-                          <div className="break-words font-mono text-xs text-gray-900 dark:text-gray-100">
-                            {dependency.path}
-                          </div>
-                          <div className="mt-1 text-[10px] uppercase tracking-wide text-gray-400">
-                            Package dependency
-                          </div>
-                        </div>
-                      </div>
-                      {dependency.version ? (
-                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                          {dependency.version}
-                        </div>
-                      ) : null}
-                    </button>
-                  ))
-                ) : (
-                  <EmptyState text="No dependencies." />
-                )}
-              </aside>
+              ) : null}
+              {visibleDetailsTab === "readme" && details.readme ? (
+                <PackageReadmePanel readme={details.readme} />
+              ) : (
+                <PackageMetadataPanel
+                  activeKind={activeKind}
+                  activePkg={activePkg}
+                  details={details}
+                  displayedKind={displayedKind}
+                  gitRepoUrl={gitRepoUrl}
+                  onOpenDependency={handleOpenDependency}
+                  refDetail={refDetail}
+                  source={source}
+                  sourceOwner={sourceOwner}
+                  sourceRepo={sourceRepo}
+                />
+              )}
             </div>
           ) : null}
 
@@ -2749,6 +3871,153 @@ function PackageDetailsModal({
         </div>
       ) : null}
     </Modal>
+  );
+}
+
+function PackageReadmePanel({ readme }: { readme: string }) {
+  return (
+    <section className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+      <div className="mb-3 flex items-center gap-2">
+        <BookOpen className="h-4 w-4 text-gray-500" />
+        <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
+          README
+        </h3>
+      </div>
+      <div className="prose prose-sm max-w-none break-words dark:prose-invert prose-headings:font-semibold prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-700 dark:prose-p:text-gray-300 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:rounded prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] dark:prose-code:bg-gray-800 prose-pre:overflow-x-auto prose-pre:rounded-lg prose-pre:border prose-pre:border-slate-800 prose-pre:bg-slate-950 prose-pre:p-4 prose-pre:text-sm prose-pre:text-gray-100 dark:prose-pre:bg-slate-950 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-gray-100 prose-li:text-gray-700 dark:prose-li:text-gray-300 prose-table:text-sm prose-th:bg-gray-100 prose-th:px-3 prose-th:py-2 dark:prose-th:bg-gray-800 prose-td:border-t prose-td:border-gray-200 prose-td:px-3 prose-td:py-2 dark:prose-td:border-gray-700 prose-blockquote:border-deep-space-blue-300 dark:prose-blockquote:border-deep-space-blue-700">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{readme}</ReactMarkdown>
+      </div>
+    </section>
+  );
+}
+
+function PackageMetadataPanel({
+  activeKind,
+  activePkg,
+  details,
+  displayedKind,
+  gitRepoUrl,
+  onOpenDependency,
+  refDetail,
+  source,
+  sourceOwner,
+  sourceRepo,
+}: {
+  activeKind: MarketplacePackageKind | string | null;
+  activePkg: MarketplacePackage;
+  details: LoadedPackageDetails;
+  displayedKind: MarketplacePackageKind | string | null;
+  gitRepoUrl: string | null;
+  onOpenDependency: (dependency: PackageDependency) => void;
+  refDetail: string | null;
+  source: PackageSource | null;
+  sourceOwner: string | null;
+  sourceRepo: string | null;
+}) {
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <main className="space-y-4">
+        <section className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+          <div className="mb-3 flex items-center gap-2">
+            <GitBranch className="h-4 w-4 text-gray-500" />
+            <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
+              Source Details
+            </h3>
+          </div>
+          <dl className="grid gap-3 sm:grid-cols-2">
+            {(displayedKind ?? activeKind) === "knowledge" ||
+            activeKind === "knowledge_pack" ||
+            activeKind === "context_block" ? (
+              <PackageDetail
+                label="Selector"
+                value={packageSelector(activePkg)}
+                mono
+              />
+            ) : null}
+            <PackageDetail label="Path" value={activePkg.source_path} mono />
+            <PackageDetail
+              label="Source"
+              value={
+                source?.name ??
+                (sourceOwner && sourceRepo ? `${sourceOwner}/${sourceRepo}` : null)
+              }
+            />
+            <PackageDetail label="Git repo" value={gitRepoUrl} mono />
+            <PackageDetail
+              label="Adapter"
+              value={
+                source?.adapter?.replace("_", " ") ??
+                metadataText(activePkg.metadata, ["adapter"])
+              }
+            />
+            <PackageDetail label="Ref" value={refDetail} mono />
+          </dl>
+        </section>
+        <PackageFilePanel
+          title="Package"
+          icon={<Package className="h-4 w-4" />}
+          path={details.descriptorPath}
+          value={details.descriptor as Record<string, unknown> | null}
+          showRaw={false}
+        />
+        {details.moduleGroups.length ? (
+          details.moduleGroups.map((group) => (
+            <PackageModuleGroupPanel key={group.label} group={group} />
+          ))
+        ) : (
+          <section className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+              <Braces className="h-4 w-4" />
+              No module manifests could be loaded.
+            </div>
+          </section>
+        )}
+      </main>
+      <aside className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Network className="h-4 w-4 text-gray-500" />
+          <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
+            Dependencies
+          </h3>
+          <span className="text-xs text-gray-400">
+            {details.dependencies.length}
+          </span>
+        </div>
+        {details.dependencies.length ? (
+          details.dependencies.map((dependency) => (
+            <button
+              key={`${dependency.name}:${dependency.path}`}
+              type="button"
+              onClick={() => onOpenDependency(dependency)}
+              className="block w-full rounded-lg border border-gray-200 bg-white p-3 text-left transition-colors hover:border-deep-space-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-deep-space-blue-700"
+            >
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 text-gray-500">
+                  {packageKindIcon("package", "h-4 w-4")}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="break-words text-sm font-medium text-gray-900 dark:text-gray-100">
+                    {dependency.name}
+                  </div>
+                  <div className="break-words font-mono text-xs text-gray-900 dark:text-gray-100">
+                    {dependency.path}
+                  </div>
+                  <div className="mt-1 text-[10px] uppercase tracking-wide text-gray-400">
+                    Package dependency
+                  </div>
+                </div>
+              </div>
+              {dependency.version ? (
+                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  {dependency.version}
+                </div>
+              ) : null}
+            </button>
+          ))
+        ) : (
+          <EmptyState text="No dependencies." />
+        )}
+      </aside>
+    </div>
   );
 }
 
@@ -2879,14 +4148,9 @@ function PackageRichSummary({ value }: { value: Record<string, unknown> }) {
       ? (manifestValue as Record<string, unknown>)
       : value;
   const rows = [
-    ["Schema", valueString(value, "schema")],
-    ["Type", valueString(value, "type")],
-    ["Slug", valueString(value, "slug")],
     ["Name", valueString(value, "name")],
     ["Version", valueString(value, "version")],
-    ["Entry", valueString(value, "entry")],
     ["Display", valueString(manifest, "display_name")],
-    ["Path", valueString(manifest, "path")],
     ["Description", valueString(manifest, "description")],
   ].filter(([, item]) => item);
   if (!rows.length) return null;
@@ -2945,7 +4209,9 @@ function ManifestRichView({
           <PromptPreview value={manifest} />
         </>
       ) : null}
-      {type === "context_block" ? <PromptPreview value={manifest} /> : null}
+      {type === "context_block" ? (
+        <PromptPreview value={manifest} renderMarkdown />
+      ) : null}
     </div>
   );
 }
@@ -2956,10 +4222,8 @@ function manifestRows(
   manifest: Record<string, unknown>,
 ): Array<[string, string]> {
   const base: Array<[string, string | null]> = [
-    ["Schema", valueString(root, "schema")],
     ["Name", valueString(manifest, "name") ?? valueString(root, "name")],
     ["Display", valueString(manifest, "display_name")],
-    ["Path", valueString(manifest, "path")],
     ["Description", valueString(manifest, "description")],
   ];
   if (type === "knowledge") {
@@ -2982,11 +4246,24 @@ function manifestRows(
   if (type === "domain") {
     base.push(["Command", valueString(manifest, "command")]);
   }
-  if (type === "context_block") {
-    base.push([
-      "Template",
-      `${valueString(manifest, "template")?.length ?? 0} chars`,
-    ]);
+  if (type === "command") {
+    base.push(
+      ["Command", valueString(manifest, "command")],
+      ["Entry", valueString(manifest, "entry_path")],
+    );
+  }
+  if (type === "hook") {
+    base.push(
+      ["Event", valueString(manifest, "event")],
+      ["Matcher", valueString(manifest, "matcher")],
+      ["Type", valueString(manifest, "type")],
+    );
+  }
+  if (type === "script_tool") {
+    base.push(
+      ["Category", valueString(manifest, "category")],
+      ["Root", valueString(manifest, "root_path")],
+    );
   }
   return base.filter(([, item]) => item && item !== "0") as Array<
     [string, string]
@@ -3048,7 +4325,7 @@ function KnowledgeManifestView({ value }: { value: Record<string, unknown> }) {
 function AssignmentsView({ value }: { value: Record<string, unknown> }) {
   const assignments = nestedRecord(value, "assignments");
   if (!assignments) return null;
-  const groups = ["abilities", "domains", "mcp_servers"]
+  const groups = ["abilities", "domains", "mcp_servers", "script_tools"]
     .map((key) => [key, arrayValue(assignments, key)] as const)
     .filter(([, items]) => items.length);
   if (!groups.length) return null;
@@ -3166,7 +4443,13 @@ function MemoryProfileView({ value }: { value: Record<string, unknown> }) {
   );
 }
 
-function PromptPreview({ value }: { value: Record<string, unknown> }) {
+function PromptPreview({
+  value,
+  renderMarkdown = false,
+}: {
+  value: Record<string, unknown>;
+  renderMarkdown?: boolean;
+}) {
   const prompt = nestedRecord(value, "prompt_config");
   const template = valueString(value, "template");
   if (!prompt && !template) return null;
@@ -3195,9 +4478,17 @@ function PromptPreview({ value }: { value: Record<string, unknown> }) {
           <summary className="cursor-pointer text-sm font-medium text-gray-900 dark:text-gray-100">
             {key.replace("_", " ")}
           </summary>
-          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs text-gray-800 dark:bg-gray-950 dark:text-gray-200">
-            {String(item)}
-          </pre>
+          {renderMarkdown ? (
+            <div className="prose prose-sm mt-3 max-w-none dark:prose-invert">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {String(item)}
+              </ReactMarkdown>
+            </div>
+          ) : (
+            <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs text-gray-800 dark:bg-gray-950 dark:text-gray-200">
+              {String(item)}
+            </pre>
+          )}
         </details>
       ))}
     </section>
@@ -3744,10 +5035,12 @@ function AssetCard({
   badges,
   updatedAt,
   actions,
+  children,
   onClick,
   isBusy = false,
   framed = true,
   statusLabel = "Installed",
+  showMetadata = true,
 }: {
   icon: React.ReactNode;
   title: string;
@@ -3756,10 +5049,12 @@ function AssetCard({
   badges: Array<string | null | undefined>;
   updatedAt: string | null | undefined;
   actions?: React.ReactNode;
+  children?: React.ReactNode;
   onClick?: () => void;
   isBusy?: boolean;
   framed?: boolean;
   statusLabel?: string;
+  showMetadata?: boolean;
 }) {
   const body = (
     <>
@@ -3783,15 +5078,25 @@ function AssetCard({
           {description || "No description available."}
         </p>
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        {badges.filter(Boolean).map((badge) => (
-          <Badge key={badge}>{badge}</Badge>
-        ))}
-        <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-gray-400">
-          <Clock3 className="h-3.5 w-3.5" />
-          {isBusy ? "Loading..." : formatLibraryDate(updatedAt)}
-        </span>
-      </div>
+      {showMetadata ? (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {badges.filter(Boolean).map((badge) => (
+            <Badge key={badge}>{badge}</Badge>
+          ))}
+          <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-gray-400">
+            <Clock3 className="h-3.5 w-3.5" />
+            {isBusy ? "Loading..." : formatLibraryDate(updatedAt)}
+          </span>
+        </div>
+      ) : null}
+      {children ? (
+        <div
+          className="mt-4 border-t border-gray-100 pt-3 dark:border-gray-800"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {children}
+        </div>
+      ) : null}
       {actions ? (
         <div
           className="mt-4 border-t border-gray-100 pt-3 dark:border-gray-800"

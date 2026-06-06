@@ -132,7 +132,7 @@ async function resolveEncryptedNotification(data) {
     icon: data.icon || '/pwa-icon-192.png',
     badge: data.badge || '/pwa-icon-192.png',
     tag: data.tag,
-    data: { url: '/notifications' },
+    data: { url: '/dashboard/chat?channel=notifications' },
   }
 
   try {

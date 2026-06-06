@@ -140,9 +140,12 @@ export function PwaProvider({ children }: { children: ReactNode }) {
     window.addEventListener('online', onOnline)
     window.addEventListener('offline', onOffline)
     displayModeQuery.addEventListener('change', onDisplayModeChange)
-    void syncPushSubscription()
+    const syncTimer = window.setTimeout(() => {
+      void syncPushSubscription()
+    }, 0)
 
     return () => {
+      window.clearTimeout(syncTimer)
       window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt)
       window.removeEventListener('appinstalled', onAppInstalled)
       window.removeEventListener('online', onOnline)

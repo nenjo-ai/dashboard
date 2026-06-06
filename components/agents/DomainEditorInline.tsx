@@ -89,7 +89,7 @@ function ManagedDomainDetails({ domain }: { domain: Domain }) {
     return () => {
       cancelled = true;
     };
-  }, [domain.id]);
+  }, [domain.id, domain.display_name, domain.manifest]);
 
   const prompt = manifest?.prompt?.developer_prompt_addon ?? "";
   const sections = useMemo<SourceManagedDetailSection[]>(
@@ -167,6 +167,7 @@ function ManagedDomainDetails({ domain }: { domain: Domain }) {
       fallbackContent={fallbackContent}
       fallbackLanguage="yaml"
       sections={sections}
+      showMetadata={false}
     />
   );
 }
@@ -202,7 +203,7 @@ function EditableDomainEditorInline({
     setActiveTab("prompt");
     setError(null);
     setSaved(false);
-  }, [domain.id]);
+  }, [domain.id, domain.display_name, domain.manifest]);
 
   useEffect(() => {
     let cancelled = false;

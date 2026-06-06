@@ -39,7 +39,9 @@ import type {
   ChatSessionDeleteRequest,
   ChatStreamRequest,
   EncryptedPayload,
+  HeartbeatInstructionsPayload,
   PromptConfigResponse,
+  RoutineCronTaskPayload,
   TokenUsageSource,
 } from "./types";
 import { mutate as mutateSWR } from "swr";
@@ -1215,6 +1217,12 @@ export function packageCatalogUrl(sourceId: string): string {
   return `${API_V1}/packages/catalog?source_id=${encodeURIComponent(sourceId)}`;
 }
 
+export async function fetchPackageCatalog(
+  sourceId: string,
+): Promise<import("./types").PackageCatalogResponse> {
+  return catalogFetcher(packageCatalogUrl(sourceId));
+}
+
 export function packageInstallsUrl(): string {
   return `${API_V1}/packages/installs`;
 }
@@ -1251,15 +1259,15 @@ const OFFICIAL_NENJO_PACKAGE_SOURCE = {
   name: "Nenjo Official Packages",
   source_type: "registry" as const,
   adapter: "nenjo_packages" as const,
-  metadata: {
-    source: {
-      kind: "git",
-      url: "https://github.com/nenjo-ai/packages.git",
-      reference: "feat/v2",
-      manifest_path: "packages.yaml",
+    metadata: {
+      source: {
+        kind: "git",
+        url: "https://github.com/nenjo-ai/packages.git",
+        reference: "main",
+        manifest_path: "packages.yaml",
+      },
     },
-  },
-};
+  };
 
 function officialNenjoPackageSourceNeedsUpdate(
   source: import("./types").PackageSource,
@@ -2662,6 +2670,76 @@ async function decryptJsonPayload<T>(
   }
 }
 
+export async function encryptHeartbeatInstructionsPayload(
+  agentId: string,
+  instructions: string,
+): Promise<EncryptedPayload | null> {
+  const trimmed = instructions.trim();
+  if (!trimmed) return null;
+
+  return encryptOrgJsonPayload({
+    objectId: agentId,
+    objectType: "agent.heartbeat.instructions",
+    value: { instructions: trimmed } satisfies HeartbeatInstructionsPayload,
+    label: "Heartbeat instructions",
+  });
+}
+
+export async function decryptHeartbeatInstructionsPayload(
+  payload: unknown,
+): Promise<string> {
+  const decrypted = await decryptJsonPayload<Partial<HeartbeatInstructionsPayload> | null>(
+    payload,
+    null,
+    "heartbeat instructions",
+  );
+  return typeof decrypted?.instructions === "string" ? decrypted.instructions : "";
+}
+
+export async function encryptRoutineCronTaskPayload(
+  routineId: string,
+  task: RoutineCronTaskPayload,
+): Promise<EncryptedPayload> {
+  const title = task.title.trim();
+  if (!title) {
+    throw new ApiError("Cron task title is required", 400);
+  }
+
+  return encryptOrgJsonPayload({
+    objectId: routineId,
+    objectType: "routine.cron_task",
+    value: {
+      title,
+      description: task.description?.trim() || null,
+      acceptance_criteria: task.acceptance_criteria?.trim() || null,
+    } satisfies RoutineCronTaskPayload,
+    label: "Cron task",
+  });
+}
+
+export async function decryptRoutineCronTaskPayload(
+  payload: unknown,
+): Promise<RoutineCronTaskPayload | null> {
+  const decrypted = await decryptJsonPayload<Partial<RoutineCronTaskPayload> | null>(
+    payload,
+    null,
+    "cron task",
+  );
+  if (!decrypted || typeof decrypted.title !== "string" || !decrypted.title.trim()) {
+    return null;
+  }
+
+  return {
+    title: decrypted.title,
+    description:
+      typeof decrypted.description === "string" ? decrypted.description : null,
+    acceptance_criteria:
+      typeof decrypted.acceptance_criteria === "string"
+        ? decrypted.acceptance_criteria
+        : null,
+  };
+}
+
 async function encryptContextBlockTemplate(
   objectId: string,
   template: string,
@@ -2721,7 +2799,11 @@ export async function fetchAgentHeartbeat(
 
 export async function updateAgentHeartbeat(
   agentId: string,
-  data: { interval: string; metadata?: Record<string, unknown> },
+  data: {
+    interval: string;
+    metadata?: Record<string, unknown>;
+    encrypted_payload?: EncryptedPayload | null;
+  },
 ): Promise<AgentDefinition> {
   const res = await authFetch(`${agentUrl(agentId)}/heartbeat`, {
     method: "PUT",
@@ -3214,6 +3296,9 @@ export async function fetchAllChatSessions(params?: {
 
 export const notificationsUnreadUrl = () => `${API_V1}/notifications/unread`;
 
+export const notificationMessagesUrl = (sessionId: string, limit = 100) =>
+  `${API_V1}/notifications/${sessionId}/messages?limit=${limit}`;
+
 export async function markNotificationRead(sessionId: string): Promise<void> {
   await authFetch(`${API_V1}/notifications/${sessionId}/read`, {
     method: "POST",
@@ -3297,6 +3382,7 @@ export async function fetchDomainManifest(id: string): Promise<DomainManifest> {
     platform_scopes?: string[];
     abilities?: string[];
     mcp_servers?: string[];
+    script_tools?: string[];
   };
   const promptData = (await promptRes.json()) as {
     prompt_config?: DomainManifest["prompt"];
@@ -3315,6 +3401,7 @@ export async function fetchDomainManifest(id: string): Promise<DomainManifest> {
     platform_scopes: domain.platform_scopes ?? [],
     abilities: domain.abilities ?? [],
     mcp_servers: domain.mcp_servers ?? [],
+    script_tools: domain.script_tools ?? [],
   };
 }
 

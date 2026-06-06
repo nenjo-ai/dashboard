@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   fetchContextBlockContent,
   updateContextBlock,
@@ -10,7 +12,7 @@ import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { PromptReferenceTabs } from "./PromptReferenceTabs";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
 import { Button } from "@/components/ui/Button";
-import { SourceManagedResourcePanel } from "@/components/resources/SourceManagedResourcePanel";
+import { sourceManagedMetadata } from "@/lib/sourceManaged";
 import type { ContextBlock } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -119,7 +121,19 @@ interface ContextBlockEditorProps {
 }
 
 export function ContextBlockEditor({ block, onClose, onSaved }: ContextBlockEditorProps) {
-  const editor = useBlockEditor(block, onSaved);
+  const {
+    template,
+    setTemplate,
+    cursorLine,
+    cursorCol,
+    saving,
+    saved,
+    error,
+    editorRef,
+    handleSave,
+    handleInsertVariable,
+    handleCursorChange,
+  } = useBlockEditor(block, onSaved);
   const panel = useResizablePanel(320, 240, 560);
 
   useEffect(() => {
@@ -127,12 +141,12 @@ export function ContextBlockEditor({ block, onClose, onSaved }: ContextBlockEdit
       if (e.key === "Escape") onClose();
       if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        editor.handleSave();
+        handleSave();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose, editor.handleSave]);
+  }, [onClose, handleSave]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-stretch justify-center">
@@ -170,8 +184,8 @@ export function ContextBlockEditor({ block, onClose, onSaved }: ContextBlockEdit
           </div>
 
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={editor.handleSave} disabled={editor.saving || editor.saved}>
-              {editor.saving ? "Saving..." : editor.saved ? "Saved!" : "Save"}
+            <Button size="sm" onClick={handleSave} disabled={saving || saved}>
+              {saving ? "Saving..." : saved ? "Saved!" : "Save"}
             </Button>
             <button onClick={onClose} className="rounded-lg p-1.5 text-gray-400 transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300" aria-label="Close">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -220,14 +234,14 @@ export function ContextBlockEditor({ block, onClose, onSaved }: ContextBlockEdit
             </div>
             <div className="flex-1 overflow-hidden p-3">
               <CodeTextarea
-                ref={editor.editorRef}
-                value={editor.template}
-                onChange={editor.setTemplate}
+                ref={editorRef}
+                value={template}
+                onChange={setTemplate}
                 placeholder={block.source_block_id
                   ? '<available_agents>\n{{ agents }}\n</available_agents>'
                   : 'Write your context content here...\nUse {{ variable }} syntax for dynamic values.'
                 }
-                onCursorChange={editor.handleCursorChange}
+                onCursorChange={handleCursorChange}
               />
             </div>
           </div>
@@ -238,18 +252,18 @@ export function ContextBlockEditor({ block, onClose, onSaved }: ContextBlockEdit
             style={{ width: panel.width }}
             className="theme-surface-muted shrink-0 overflow-hidden"
           >
-            <PromptReferenceTabs onInsertVariable={editor.handleInsertVariable} />
+            <PromptReferenceTabs onInsertVariable={handleInsertVariable} />
           </div>
         </div>
 
         {/* Status bar */}
         <div className="theme-border flex shrink-0 items-center justify-between border-t px-4 py-1.5 text-xs text-gray-500 dark:text-gray-400">
           <div className="flex items-center gap-4">
-            <span>{editor.template.length.toLocaleString()} chars</span>
-            <span>Ln {editor.cursorLine}, Col {editor.cursorCol}</span>
+            <span>{template.length.toLocaleString()} chars</span>
+            <span>Ln {cursorLine}, Col {cursorCol}</span>
           </div>
           <div className="flex items-center gap-2">
-            {editor.error && <span className="text-red-500 dark:text-red-400">{editor.error}</span>}
+            {error && <span className="text-red-500 dark:text-red-400">{error}</span>}
           </div>
         </div>
       </div>
@@ -269,44 +283,203 @@ interface ContextBlockEditorInlineProps {
 
 export function ContextBlockEditorInline({ block, onSaved, onDelete }: ContextBlockEditorInlineProps) {
   if (block.read_only || block.metadata?.install) {
-    return (
-      <SourceManagedResourcePanel
-        resource={block}
-        title={block.display_name || block.name}
-        description={block.description}
-        fallbackContent={block.template ?? ""}
-        fallbackLanguage="markdown"
-      />
-    );
+    return <ReadOnlyContextBlockPanel block={block} />;
   }
 
   return <EditableContextBlockEditorInline block={block} onSaved={onSaved} onDelete={onDelete} />;
 }
 
+function ReadOnlyContextBlockPanel({ block }: { block: ContextBlock }) {
+  const [content, setContent] = useState<{
+    blockId: string;
+    value: string;
+    loaded: boolean;
+    error: string | null;
+  }>({
+    blockId: block.id,
+    value: block.template ?? "",
+    loaded: typeof block.template === "string",
+    error: null,
+  });
+  const source = sourceManagedMetadata(block);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchContextBlockContent(block.id)
+      .then((response) => {
+        if (!cancelled) {
+          setContent({
+            blockId: block.id,
+            value: response.template ?? "",
+            loaded: true,
+            error: null,
+          });
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setContent({
+            blockId: block.id,
+            value: block.template ?? "",
+            loaded: true,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Failed to load context block content",
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [block.id, block.template]);
+
+  const contentLoading = content.blockId !== block.id || !content.loaded;
+  const contentError = content.blockId === block.id ? content.error : null;
+  const contentValue =
+    content.blockId === block.id ? content.value : (block.template ?? "");
+
+  const repoLabel =
+    source.owner && source.repo ? `${source.owner}/${source.repo}` : null;
+  const refLabel = source.commit ? source.commit.slice(0, 7) : source.ref;
+  const hasSourceDetails = Boolean(
+    repoLabel || refLabel || source.sourcePath || source.selector,
+  );
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="theme-border border-b px-4 py-3">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="theme-text text-sm font-semibold">
+                {block.display_name || block.name}
+              </h2>
+              <span className="theme-surface-muted-strong theme-text rounded-full px-2 py-0.5 text-[10px] font-medium">
+                Source managed
+              </span>
+            </div>
+            {block.description ? (
+              <p className="theme-text-muted mt-1 text-sm">
+                {block.description}
+              </p>
+            ) : null}
+          </div>
+          <code className="theme-surface-muted rounded px-2 py-1 text-[11px] font-mono text-teal-600 dark:text-teal-400">
+            {variableRef(block)}
+          </code>
+        </div>
+        {hasSourceDetails ? (
+          <details className="mt-3">
+            <summary className="theme-text-muted cursor-pointer text-xs font-medium">
+              Source details
+            </summary>
+            <dl className="mt-2 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+              <ReadOnlySourceField label="Repository" value={repoLabel} />
+              <ReadOnlySourceField label="Ref" value={refLabel} />
+              <ReadOnlySourceField
+                label="Path"
+                value={source.sourcePath}
+                mono
+              />
+              <ReadOnlySourceField
+                label="Selector"
+                value={source.selector}
+                mono
+              />
+            </dl>
+          </details>
+        ) : null}
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        {contentLoading ? (
+          <div className="theme-text-muted text-sm">
+            Loading context block content...
+          </div>
+        ) : contentError ? (
+          <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+            {contentError}. Showing the stored summary snapshot.
+          </div>
+        ) : null}
+        {contentValue.trim() ? (
+          <div className="prose prose-sm max-w-none dark:prose-invert">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {contentValue}
+            </ReactMarkdown>
+          </div>
+        ) : (
+          <div className="theme-text-muted text-sm">
+            No context block content available.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReadOnlySourceField({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string | null | undefined;
+  mono?: boolean;
+}) {
+  if (!value) return null;
+  return (
+    <div className="theme-border theme-surface-muted min-w-0 rounded-lg border px-3 py-2">
+      <dt className="theme-text-muted text-[10px] font-semibold uppercase tracking-wider">
+        {label}
+      </dt>
+      <dd className={`theme-text mt-0.5 truncate ${mono ? "font-mono" : ""}`}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
 function EditableContextBlockEditorInline({ block, onSaved, onDelete }: ContextBlockEditorInlineProps) {
-  const editor = useBlockEditor(block, onSaved);
+  const {
+    template,
+    setTemplate,
+    name,
+    setName,
+    displayName,
+    setDisplayName,
+    cursorLine,
+    cursorCol,
+    saving,
+    saved,
+    error,
+    editorRef,
+    handleSave,
+    handleInsertVariable,
+    handleCursorChange,
+  } = useBlockEditor(block, onSaved);
   const containerRef = useRef<HTMLDivElement>(null);
   const panel = useResizablePanel(280, 200, 480);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      editor.handleSave();
+      handleSave();
     }
-  }, [editor.handleSave]);
+  }, [handleSave]);
 
   const handleDownload = useCallback(() => {
     const filename = block.path
       ? `${block.path.replace(/\//g, "/")}/${block.name}.md`
       : `${block.name}.md`;
-    const blob = new Blob([editor.template], { type: "text/markdown;charset=utf-8" });
+    const blob = new Blob([template], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
-  }, [block.path, block.name, editor.template]);
+  }, [block.path, block.name, template]);
 
   return (
     <div ref={containerRef} tabIndex={-1} onKeyDown={handleKeyDown} className="flex h-full flex-col outline-none">
@@ -315,15 +488,15 @@ function EditableContextBlockEditorInline({ block, onSaved, onDelete }: ContextB
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <input
             type="text"
-            value={editor.displayName}
-            onChange={(e) => editor.setDisplayName(e.target.value)}
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
             placeholder={block.name}
             className="min-w-0 flex-1 truncate border-0 bg-transparent text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400 focus:ring-0 dark:text-gray-100 dark:placeholder:text-gray-500"
           />
           <input
             type="text"
-            value={editor.name}
-            onChange={(e) => editor.setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"))}
+            value={name}
+            onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"))}
             className="theme-surface-muted theme-text-muted w-36 shrink-0 rounded px-1.5 py-0.5 text-xs font-mono outline-none focus:ring-1 focus:ring-teal-400"
             readOnly={!!block.source_block_id}
           />
@@ -358,8 +531,8 @@ function EditableContextBlockEditorInline({ block, onSaved, onDelete }: ContextB
               </svg>
             </button>
           )}
-          <Button size="sm" onClick={editor.handleSave} disabled={editor.saving || editor.saved}>
-            {editor.saving ? "Saving..." : editor.saved ? "Saved!" : "Save"}
+          <Button size="sm" onClick={handleSave} disabled={saving || saved}>
+            {saving ? "Saving..." : saved ? "Saved!" : "Save"}
           </Button>
         </div>
       </div>
@@ -377,14 +550,14 @@ function EditableContextBlockEditorInline({ block, onSaved, onDelete }: ContextB
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex-1 overflow-hidden p-2">
             <CodeTextarea
-              ref={editor.editorRef}
-              value={editor.template}
-              onChange={editor.setTemplate}
+              ref={editorRef}
+              value={template}
+              onChange={setTemplate}
               placeholder={block.source_block_id
                 ? '<available_agents>\n{{ agents }}\n</available_agents>'
                 : 'Write your context content here...\nUse {{ variable }} syntax for dynamic values.'
               }
-              onCursorChange={editor.handleCursorChange}
+              onCursorChange={handleCursorChange}
             />
           </div>
         </div>
@@ -395,17 +568,17 @@ function EditableContextBlockEditorInline({ block, onSaved, onDelete }: ContextB
           style={{ width: panel.width }}
           className="theme-surface-muted shrink-0 overflow-hidden"
         >
-          <PromptReferenceTabs onInsertVariable={editor.handleInsertVariable} />
+          <PromptReferenceTabs onInsertVariable={handleInsertVariable} />
         </div>
       </div>
 
       {/* Status bar */}
       <div className="theme-border flex shrink-0 items-center justify-between border-t px-4 py-1 text-[10px] text-gray-500 dark:text-gray-400">
         <div className="flex items-center gap-3">
-          <span>{editor.template.length.toLocaleString()} chars</span>
-          <span>Ln {editor.cursorLine}, Col {editor.cursorCol}</span>
+          <span>{template.length.toLocaleString()} chars</span>
+          <span>Ln {cursorLine}, Col {cursorCol}</span>
         </div>
-        {editor.error && <span className="text-red-500 dark:text-red-400">{editor.error}</span>}
+        {error && <span className="text-red-500 dark:text-red-400">{error}</span>}
       </div>
     </div>
   );

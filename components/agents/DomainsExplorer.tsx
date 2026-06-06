@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   DndContext,
   type DragEndEvent,
@@ -521,6 +522,7 @@ function saveSelectedId(id: string | null) {
 
 export function DomainsExplorer() {
   const { domains, isLoading, isError, mutate } = useDomains();
+  const searchParams = useSearchParams();
   const [selectedDomain, setSelectedDomainRaw] = useState<Domain | null>(null);
   const [expanded, setExpandedRaw] = useState<Set<string>>(loadExpanded);
   const [didRestore, setDidRestore] = useState(false);
@@ -552,12 +554,21 @@ export function DomainsExplorer() {
     });
   }, []);
 
-  // Restore selected domain from localStorage when data loads
+  // Restore selected domain from URL or localStorage when data loads
   useEffect(() => {
     if (didRestore || !domains?.length) return;
+    const domainParam = searchParams.get("domain");
     const savedId = loadSelectedId();
-    if (savedId) {
-      const match = domains.find((d) => d.id === savedId);
+    const targetId = domainParam
+      ? domains.find(
+          (domain) =>
+            domain.id === domainParam ||
+            domain.name === domainParam ||
+            domain.display_name === domainParam,
+        )?.id
+      : savedId;
+    if (targetId) {
+      const match = domains.find((d) => d.id === targetId);
       if (match) {
         setSelectedDomainRaw(match);
         const displayPath = manifestResourceDisplayPath(match);
@@ -572,7 +583,7 @@ export function DomainsExplorer() {
       }
     }
     setDidRestore(true);
-  }, [domains, didRestore]);
+  }, [domains, didRestore, searchParams]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),

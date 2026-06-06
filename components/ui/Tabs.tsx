@@ -19,9 +19,24 @@ interface TabsProps {
   onChange: (id: string) => void;
   className?: string;
   layoutId?: string;
+  indicatorAnimation?: "layout" | "slide";
 }
 
-export function Tabs({ tabs, activeTab, onChange, className, layoutId = "tab-indicator" }: TabsProps) {
+export function Tabs({
+  tabs,
+  activeTab,
+  onChange,
+  className,
+  layoutId = "tab-indicator",
+  indicatorAnimation = "layout",
+}: TabsProps) {
+  const tabCount = Math.max(tabs.length, 1);
+  const activeIndex = Math.max(
+    tabs.findIndex((tab) => tab.id === activeTab),
+    0,
+  );
+  const usesSlideIndicator = indicatorAnimation === "slide";
+
   return (
     <>
       {/* Mobile: select dropdown */}
@@ -43,21 +58,39 @@ export function Tabs({ tabs, activeTab, onChange, className, layoutId = "tab-ind
       {/* Desktop: pill tabs */}
       <div
         className={cn(
-          "theme-surface-muted hidden gap-1 rounded-lg p-1 md:flex",
+          usesSlideIndicator
+            ? "theme-surface-muted relative hidden rounded-lg p-1 md:grid"
+            : "theme-surface-muted hidden gap-1 rounded-lg p-1 md:flex",
           className,
         )}
+        style={
+          usesSlideIndicator
+            ? { gridTemplateColumns: `repeat(${tabCount}, minmax(0, 1fr))` }
+            : undefined
+        }
       >
+        {usesSlideIndicator && tabs.length ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute bottom-1 left-1 top-1 rounded-md bg-sunflower-gold-500 shadow-xs transition-transform duration-200 ease-out dark:bg-sunflower-gold-500"
+            style={{
+              width: `calc((100% - 0.5rem) / ${tabCount})`,
+              transform: `translateX(${activeIndex * 100}%)`,
+            }}
+          />
+        ) : null}
         {tabs.map((tab) => {
           const isActive = tab.id === activeTab;
           const className = cn(
             "relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+            usesSlideIndicator ? "justify-center" : undefined,
             isActive
               ? "text-gray-950 dark:text-gray-950"
               : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
           );
           const content = (
             <>
-              {isActive && (
+              {!usesSlideIndicator && isActive && (
                 <motion.div
                   layoutId={layoutId}
                   className="pointer-events-none absolute inset-0 rounded-md bg-sunflower-gold-500 shadow-xs dark:bg-sunflower-gold-500"

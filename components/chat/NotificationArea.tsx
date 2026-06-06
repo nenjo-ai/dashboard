@@ -8,11 +8,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   fetcher,
-  chatMessagesUrl,
+  notificationMessagesUrl,
   markNotificationRead,
   notificationsUnreadUrl,
 } from "@/lib/api";
-import type { ChatMessagePage, NotificationMetadata } from "@/lib/types";
+import { decryptContentPayload } from "@/lib/cryptoContent";
+import type { ChatMessagePage, NotificationMetadata, PersistedChatMessage } from "@/lib/types";
 import { mutate } from "swr";
 
 interface NotificationAreaProps {
@@ -28,6 +29,59 @@ const SEVERITY_STYLES: Record<string, string> = {
   action: "border-l-violet-400 dark:border-l-violet-500",
 };
 
+type ResolvedNotificationMessage = PersistedChatMessage & {
+  resolved_content: string;
+};
+
+type ResolvedNotificationPage = Omit<ChatMessagePage, "messages"> & {
+  messages: ResolvedNotificationMessage[];
+};
+
+function notificationBodyFromPlaintext(plaintext: string): string {
+  try {
+    const parsed = JSON.parse(plaintext);
+    if (parsed && typeof parsed === "object" && typeof parsed.body === "string") {
+      return parsed.body;
+    }
+  } catch {
+    // Keep raw plaintext when the decrypted payload is not JSON.
+  }
+  return plaintext;
+}
+
+async function resolveNotificationMessage(
+  message: PersistedChatMessage,
+): Promise<ResolvedNotificationMessage> {
+  const encryptedPayload = message.encrypted_payload ?? message.metadata?.encrypted_payload;
+  if (!encryptedPayload) {
+    return { ...message, resolved_content: message.content };
+  }
+
+  try {
+    const plaintext = await decryptContentPayload(encryptedPayload);
+    if (plaintext) {
+      return {
+        ...message,
+        resolved_content: notificationBodyFromPlaintext(plaintext),
+      };
+    }
+  } catch (error) {
+    console.warn("Failed to decrypt notification", {
+      error,
+      objectId: encryptedPayload.object_id,
+      objectType: encryptedPayload.object_type,
+    });
+  }
+
+  return { ...message, resolved_content: message.content };
+}
+
+async function notificationPageFetcher(url: string): Promise<ResolvedNotificationPage> {
+  const page = await fetcher<ChatMessagePage>(url);
+  const messages = await Promise.all(page.messages.map(resolveNotificationMessage));
+  return { ...page, messages };
+}
+
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -40,7 +94,6 @@ function timeAgo(dateStr: string): string {
 }
 
 export function NotificationArea({
-  agentId,
   sessionId,
   variant = "desktop",
 }: NotificationAreaProps) {
@@ -48,9 +101,9 @@ export function NotificationArea({
   const isMobile = variant === "mobile";
 
   // Fetch notification messages
-  const { data, isLoading } = useSWR<ChatMessagePage>(
-    chatMessagesUrl({ agent_id: agentId, session_id: sessionId, limit: 100 }),
-    fetcher,
+  const { data, isLoading } = useSWR<ResolvedNotificationPage>(
+    notificationMessagesUrl(sessionId, 100),
+    notificationPageFetcher,
     { revalidateOnFocus: true },
   );
 
@@ -133,7 +186,7 @@ export function NotificationArea({
           >
             <div className="prose prose-sm max-w-none break-words text-gray-800 dark:prose-invert dark:text-gray-200">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {msg.content}
+                {msg.resolved_content}
               </ReactMarkdown>
             </div>
             <div className="mt-1.5 flex items-center gap-3">

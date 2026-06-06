@@ -4,12 +4,27 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
-import { triggerRoutine, updateRoutine, fetchExecutions, sendExecutionCommand } from "@/lib/api";
+import {
+  decryptRoutineCronTaskPayload,
+  encryptRoutineCronTaskPayload,
+  fetchExecutions,
+  sendExecutionCommand,
+  triggerRoutine,
+  updateRoutine,
+} from "@/lib/api";
 import { subscribeExecutionRealtime } from "@/lib/executionRealtime";
 import { useExecutionTasks } from "@/lib/hooks";
 import { cn } from "@/lib/cn";
 import { decryptContentPayload } from "@/lib/cryptoContent";
-import type { EncryptedPayload, ExecutionDetails, ExecutionTask, RoutineDetail, RoutineTrigger, TaskStepProgress } from "@/lib/types";
+import type {
+  EncryptedPayload,
+  ExecutionDetails,
+  ExecutionTask,
+  RoutineCronTaskPayload,
+  RoutineDetail,
+  RoutineTrigger,
+  TaskStepProgress,
+} from "@/lib/types";
 import { ROUTINE_TRIGGERS } from "@/lib/types";
 import useSWR from "swr";
 
@@ -670,6 +685,18 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
   const [draftTimezone, setDraftTimezone] = useState(currentTimezone);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const scheduleInputRef = useRef<HTMLInputElement>(null);
+  const defaultCronTask = useMemo<RoutineCronTaskPayload>(
+    () => ({
+      title: `${routine.name} scheduled run`,
+      description: routine.description ?? "",
+      acceptance_criteria: "",
+    }),
+    [routine.name, routine.description],
+  );
+  const [cronTask, setCronTask] = useState<RoutineCronTaskPayload | null>(null);
+  const [editingCronTask, setEditingCronTask] = useState(false);
+  const [loadingCronTask, setLoadingCronTask] = useState(false);
+  const [savingCronTask, setSavingCronTask] = useState(false);
 
   // Sync draft when routine changes
   useEffect(() => {
@@ -683,6 +710,25 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
   useEffect(() => {
     if (editingSchedule) scheduleInputRef.current?.focus();
   }, [editingSchedule]);
+
+  useEffect(() => {
+    if (!isCron) return;
+    let cancelled = false;
+    setLoadingCronTask(true);
+    void decryptRoutineCronTaskPayload(routine.encrypted_payload)
+      .then((task) => {
+        if (cancelled) return;
+        setCronTask(task);
+        setEditingCronTask(false);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCronTask(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isCron, routine.encrypted_payload]);
 
   useEffect(() => {
     setLastRunAt(routine.last_run_at ?? null);
@@ -865,6 +911,56 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
     }
   }, [draftTimezone, currentTimezone, currentSchedule, routine.id, routine.metadata, onSaved]);
 
+  const updateCronTaskField = useCallback(
+    (field: keyof RoutineCronTaskPayload, value: string) => {
+      setCronTask((current) => ({
+        ...(current ?? defaultCronTask),
+        [field]: value,
+      }));
+    },
+    [defaultCronTask],
+  );
+
+  const handleCreateCronTask = useCallback(() => {
+    setCronTask((current) => current ?? defaultCronTask);
+    setEditingCronTask(true);
+  }, [defaultCronTask]);
+
+  const handleCancelCronTaskEdit = useCallback(() => {
+    if (!routine.encrypted_payload) {
+      setCronTask(null);
+    }
+    setEditingCronTask(false);
+  }, [routine.encrypted_payload]);
+
+  const handleSaveCronTask = useCallback(async () => {
+    const nextTask = cronTask ?? defaultCronTask;
+    if (!nextTask.title.trim()) {
+      setError("Cron task title is required");
+      return;
+    }
+
+    setSavingCronTask(true);
+    setError(null);
+    try {
+      const encryptedPayload = await encryptRoutineCronTaskPayload(routine.id, nextTask);
+      await updateRoutine(routine.id, {
+        encrypted_payload: encryptedPayload,
+      });
+      setCronTask({
+        title: nextTask.title.trim(),
+        description: nextTask.description?.trim() || "",
+        acceptance_criteria: nextTask.acceptance_criteria?.trim() || "",
+      });
+      setEditingCronTask(false);
+      onSaved?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save cron task");
+    } finally {
+      setSavingCronTask(false);
+    }
+  }, [cronTask, defaultCronTask, routine.id, onSaved]);
+
   const handleScheduleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -1003,6 +1099,99 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
               <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
                 Uses your browser timezone by default. Edit this if your browser location is not where the schedule should run.
               </p>
+            </div>
+            <div className="mt-4 border-t border-gray-200 pt-3 dark:border-gray-700">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h5 className="text-xs font-medium text-gray-700 dark:text-gray-200">
+                    Routine Task
+                  </h5>
+                  {cronTask && !editingCronTask ? (
+                    <p className="mt-1 truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                      {cronTask.title}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Create the task used by scheduled and one-time cron runs.
+                    </p>
+                  )}
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleCreateCronTask}
+                  disabled={loadingCronTask || savingCronTask}
+                >
+                  {cronTask ? "Edit Task" : "Create Task"}
+                </Button>
+              </div>
+
+              {loadingCronTask && (
+                <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                  Loading task...
+                </p>
+              )}
+
+              {editingCronTask && (
+                <div className="mt-3 space-y-3">
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-gray-500 dark:text-gray-400">
+                      Title
+                    </span>
+                    <input
+                      type="text"
+                      value={cronTask?.title ?? ""}
+                      onChange={(e) => updateCronTaskField("title", e.target.value)}
+                      disabled={savingCronTask}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 disabled:opacity-50"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-gray-500 dark:text-gray-400">
+                      Description
+                    </span>
+                    <textarea
+                      rows={3}
+                      value={cronTask?.description ?? ""}
+                      onChange={(e) => updateCronTaskField("description", e.target.value)}
+                      disabled={savingCronTask}
+                      className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 disabled:opacity-50"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-gray-500 dark:text-gray-400">
+                      Acceptance Criteria
+                    </span>
+                    <textarea
+                      rows={3}
+                      value={cronTask?.acceptance_criteria ?? ""}
+                      onChange={(e) =>
+                        updateCronTaskField("acceptance_criteria", e.target.value)
+                      }
+                      disabled={savingCronTask}
+                      className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500 disabled:opacity-50"
+                    />
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={handleSaveCronTask}
+                      disabled={savingCronTask || !cronTask?.title.trim()}
+                      isLoading={savingCronTask}
+                    >
+                      Save Task
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleCancelCronTaskEdit}
+                      disabled={savingCronTask}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </Card>
         </div>

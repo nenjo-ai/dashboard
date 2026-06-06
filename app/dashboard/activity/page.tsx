@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useActivity, type ActivityEntry } from "@/lib/hooks";
 import { activityUrl, fetcher } from "@/lib/api";
 import { MobilePageShell } from "@/components/layout/MobilePageShell";
@@ -221,7 +221,10 @@ export default function ActivityPage() {
     setHasMore(true);
   }, []);
 
-  const allEntries = [...(firstPage ?? []), ...olderEntries];
+  const allEntries = useMemo(
+    () => [...(firstPage ?? []), ...olderEntries],
+    [firstPage, olderEntries],
+  );
 
   const loadMore = useCallback(async () => {
     const last = allEntries[allEntries.length - 1];

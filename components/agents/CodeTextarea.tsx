@@ -5,13 +5,12 @@ import {
   useCallback,
   useImperativeHandle,
   forwardRef,
-  useEffect,
-  useState,
   type Ref,
 } from "react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, Decoration, type DecorationSet, ViewPlugin, type ViewUpdate, placeholder as cmPlaceholder } from "@codemirror/view";
 import { RangeSetBuilder, EditorState } from "@codemirror/state";
+import { useTheme } from "@/lib/theme";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -459,19 +458,8 @@ export const CodeTextarea = forwardRef(function CodeTextarea(
   ref: Ref<CodeTextareaHandle>,
 ) {
   const cmRef = useRef<ReactCodeMirrorRef>(null);
-  const [isDark, setIsDark] = useState(false);
-
-  // Detect dark mode via the `dark` class on <html>
-  useEffect(() => {
-    const html = document.documentElement;
-    setIsDark(html.classList.contains("dark"));
-
-    const observer = new MutationObserver(() => {
-      setIsDark(html.classList.contains("dark"));
-    });
-    observer.observe(html, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
-  }, []);
+  const { resolved } = useTheme();
+  const isDark = resolved === "dark";
 
   // Imperative handle for inserting template variables at cursor
   useImperativeHandle(

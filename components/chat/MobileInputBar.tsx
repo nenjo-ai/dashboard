@@ -8,6 +8,10 @@ import { motion, AnimatePresence } from "motion/react";
 import type { AgentDefinition, Domain } from "@/lib/types";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { PendingDomainPill } from "@/components/project/PendingDomainPill";
+import {
+  PendingCommandPill,
+  type PendingCommandPillCommand,
+} from "./PendingCommandPill";
 import { MobileTouchButton } from "./MobileTouchButton";
 import { MobileBottomSheet } from "./MobileBottomSheet";
 
@@ -34,6 +38,8 @@ interface MobileInputBarProps {
   activeDomainLabel?: string;
   pendingDomain?: Domain | null;
   onClearPendingDomain?: () => void;
+  pendingCommand?: PendingCommandPillCommand | null;
+  onClearPendingCommand?: () => void;
 }
 
 export function MobileInputBar({
@@ -59,6 +65,8 @@ export function MobileInputBar({
   activeDomainLabel,
   pendingDomain,
   onClearPendingDomain,
+  pendingCommand,
+  onClearPendingCommand,
 }: MobileInputBarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -78,6 +86,7 @@ export function MobileInputBar({
   const cancelArmTimerRef = useRef<number | null>(null);
   const currentAgentId = activeAgent?.id;
   const interruptActive = isTyping || hasActiveTools;
+  const canSend = input.trim().length > 0 || !!pendingCommand;
   const shouldRenderComposer =
     isMobileViewport
     && pathname.startsWith("/dashboard/chat")
@@ -248,7 +257,7 @@ export function MobileInputBar({
       viewport.removeEventListener("resize", updateKeyboardVisibility);
       viewport.removeEventListener("scroll", updateKeyboardVisibility);
     };
-  }, []);
+  }, [inputRef]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -279,7 +288,7 @@ export function MobileInputBar({
       root.style.removeProperty("--mobile-composer-height");
       root.style.removeProperty("--mobile-composer-dock-height");
     };
-  }, [inDomain, pendingDomain, shouldRenderComposer]);
+  }, [inDomain, pendingCommand, pendingDomain, shouldRenderComposer]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -356,6 +365,14 @@ export function MobileInputBar({
               className="mb-1"
             />
           )}
+          {pendingCommand && onClearPendingCommand && (
+            <PendingCommandPill
+              command={pendingCommand}
+              onClear={onClearPendingCommand}
+              accentColor={agentColor}
+              className="mb-1"
+            />
+          )}
           <textarea
             ref={inputRef}
             value={input}
@@ -366,6 +383,8 @@ export function MobileInputBar({
                 ? "Activating domain..."
                 : pendingDomain
                   ? "Describe what to do..."
+                  : pendingCommand
+                    ? `Arguments for ${pendingCommand.command}...`
                   : placeholder
             }
             disabled={disabled || isDomainPending}
@@ -476,10 +495,10 @@ export function MobileInputBar({
           ) : (
             <MobileTouchButton
               onPress={handleSendPress}
-              disabled={!input.trim() || interruptActive}
+              disabled={!canSend || interruptActive}
               className={cn(
                 "flex h-10 w-10 items-center justify-center rounded-full border border-black/5 transition-colors dark:border-white/10",
-                input.trim() && !interruptActive
+                canSend && !interruptActive
                   ? "bg-gray-950 text-white active:bg-gray-800 dark:bg-white dark:text-gray-950"
                   : "bg-black/[0.04] text-gray-400 dark:bg-white/[0.06] dark:text-gray-500",
               )}

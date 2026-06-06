@@ -43,16 +43,19 @@ export function MobileChatContainer({
   );
 
   useEffect(() => {
-    if (pendingSessionClearRef.current && sessionParam) {
-      return;
-    }
+    const timer = window.setTimeout(() => {
+      if (pendingSessionClearRef.current && sessionParam) {
+        return;
+      }
 
-    if (pendingSessionClearRef.current && !sessionParam) {
-      pendingSessionClearRef.current = false;
-    }
+      if (pendingSessionClearRef.current && !sessionParam) {
+        pendingSessionClearRef.current = false;
+      }
 
-    setSelectedSessionId(sessionParam);
-    setMobileShowChat(Boolean(sessionParam));
+      setSelectedSessionId(sessionParam);
+      setMobileShowChat(Boolean(sessionParam));
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [sessionParam]);
 
   const activeSession = useMemo(
