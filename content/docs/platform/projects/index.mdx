@@ -1,15 +1,15 @@
 ---
 title: Projects
-description: How projects organize tasks, documents, repository context, executions, and project-scoped agent work.
+description: How projects organize tasks, repository context, executions, settings, and project-scoped agent work.
 slug: platform/projects
 order: 2
 ---
 
 # Projects
 
-A **project** is the workspace for a body of work in Nenjo. It groups the tasks, documents, context, repository connection, execution history, and settings that agents use when they work.
+A **project** is the workspace boundary for a body of work in Nenjo. It groups tasks, settings, repository connection, execution history, and project-scoped memory so agents know what they are working on.
 
-Use separate projects when the work has different goals, knowledge, repository context, or history. A project is more than a folder: it is the boundary that tells agents what they are working on and what context is relevant.
+Use separate projects when the work has different goals, repository context, task history, or execution state. Put source material, policies, references, and durable documentation in the [Library](/docs/platform/library), then reference that Library knowledge from project prompts and agents.
 
 ## What a project contains
 
@@ -18,9 +18,9 @@ Use separate projects when the work has different goals, knowledge, repository c
 | Identity | Name, slug, description, and timestamps |
 | Settings | Project context, metadata, repository settings, and other project-level configuration |
 | Tasks | Work items with status, priority, type, acceptance criteria, and optional routine assignment |
-| Documents | Project knowledge files, metadata, and relationships |
 | Repository | Optional Git repository URL, target branch, and sync status |
 | Executions | Runs associated with tasks, agents, routines, and schedules |
+| Memory scope | Project-specific learned context for agents that use project memory |
 
 Projects are organization resources. Project APIs and project-backed agent tools are controlled by `projects:read` and `projects:write`.
 
@@ -31,7 +31,6 @@ The dashboard project detail page has five main tabs:
 | Tab | Purpose |
 |-----|---------|
 | Tasks | Create, filter, inspect, update, and delete project tasks |
-| Documents | Upload, edit, tag, classify, and link project knowledge documents |
 | Context | Store global guidance shared with agents working in the project |
 | Execution | Inspect project execution runs and step progress |
 | Settings | Manage repository sync settings and custom metadata |
@@ -41,10 +40,10 @@ The dashboard project detail page has five main tabs:
 When an agent runs inside a project, Nenjo can provide:
 
 - Project identity such as `{{ project.name }}` and `{{ project.description }}`
-- Project document listings through `{{ project.documents }}`
 - Project settings and metadata
 - Project-specific memory focus
 - Git context when the project repository is synced
 - Task and routine context when the run is task-driven or routine-driven
+- Library knowledge indexes through `{{ lib.<pack_slug> }}` when a prompt includes them
 
-This is why project setup matters. A well-described project with clear tasks, useful documents, and a synced repository gives agents a much better starting point than an empty container.
+This is why project setup matters. A well-described project with clear tasks, useful Library references, and a synced repository gives agents a much better starting point than an empty container.

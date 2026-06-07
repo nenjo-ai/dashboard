@@ -21,13 +21,13 @@ The template variable list in the dashboard comes from the Nenjo SDK. These are 
 | Chat | `{{ chat.message }}` | User chat turns |
 | Task | `{{ task }}`, `{{ task.title }}`, `{{ task.acceptance_criteria }}` | Project task execution |
 | Project | `{{ project }}`, `{{ project.context }}`, `{{ project.working_dir }}` | Project-aware work |
-| Package knowledge | `{{ pkg.nenjo.knowledge }}` | Discovering installed package knowledge material |
+| Knowledge | `{{ lib.product_docs }}`, `{{ pkg.nenjo_ai.packages.knowledge.core }}` | Discovering Library or package knowledge material |
 | Routine | `{{ routine }}`, `{{ routine.step.name }}`, `{{ routine.execution_id }}` | Routine steps |
-| Gate | `{{ gate.criteria }}`, `{{ gate.previous_output }}` | Evaluation steps |
+| Gate | `{{ gate.previous_output }}` | Evaluation steps |
 | Heartbeat | `{{ heartbeat.previous_output }}`, `{{ heartbeat.last_run_at }}` | Periodic checks |
 | Git | `{{ git }}`, `{{ git.current_branch }}`, `{{ git.work_dir }}` | Repository work |
-| Available | `{{ available_agents }}`, `{{ available_abilities }}`, `{{ available_domains }}` | Delegation and capability selection |
 | Memory | `{{ memories }}`, `{{ memories.project }}`, `{{ memory_profile }}` | Retrieved memory and focus lists |
+| Artifacts | `{{ artifacts }}`, `{{ artifacts.project }}` | Saved generated outputs or workspace files |
 
 The dashboard variable picker shows the current canonical list and can insert variables into prompt editors.
 
@@ -43,12 +43,34 @@ A block with:
 is referenced as:
 
 ```jinja
-{{ coding.git_worktree }}
+{{ context.coding.git_worktree }}
 ```
 
-Folders can also be rendered as a group. For example, `{{ coding }}` renders blocks under the `coding` path.
+Package-installed context blocks use the package namespace:
+
+```jinja
+{{ pkg.nenjo_ai.packages.context.tools.tool_usage }}
+{{ pkg.nenjo_ai.packages.context.operations.write_discipline }}
+```
 
 Use context blocks for guidance that should be shared by several agents, such as team review standards, git workflow rules, or common decision principles.
+
+## Knowledge traversal in prompts
+
+Knowledge variables should tell the agent where source material exists, not provide the whole answer. When a prompt includes Library or package knowledge, include an instruction to search, read, and traverse outgoing edges before making source-backed claims:
+
+```jinja
+Knowledge index:
+{{ lib.product_docs }}
+
+For source-backed answers, search the knowledge pack, read the selected
+documents, then follow outgoing neighbor edges when the selected document points
+to policy, taxonomy, scope, or dependency material needed for the answer.
+```
+
+This is especially important for graph-shaped packs. Search usually finds a seed document; outgoing edges tell the agent which adjacent documents the author expected it to inspect next.
+
+> Screenshot placeholder: Agent prompt editor variable picker showing Library and package knowledge variables next to context block refs.
 
 ## Practical examples
 
@@ -72,34 +94,23 @@ Project:
 {{ project }}
 
 Knowledge index:
-{{ pkg.nenjo.knowledge }}
+{{ lib.product_docs }}
 
 Repository rules:
-{{ coding.git_worktree }}
+{{ context.coding.git_worktree }}
 ```
 
 Gate template:
 
 ```jinja
-Criteria:
-{{ gate.criteria }}
-
 Evidence:
 {{ gate.previous_output }}
 
-Return a clear pass or fail with missing criteria.
-```
+Task acceptance criteria:
+{{ task.acceptance_criteria }}
 
-Delegation-aware developer prompt:
-
-```jinja
-Available agents:
-{{ available_agents }}
-
-Available abilities:
-{{ available_abilities }}
-
-Delegate or call an ability only when it is a better fit than doing the work directly.
+Routine step:
+{{ routine.step.instructions }}
 ```
 
 ## What to avoid
@@ -109,3 +120,4 @@ Delegate or call an ability only when it is a better fit than doing the work dir
 - Treating memory as the source of truth when knowledge docs already contain the facts
 - Referencing an ability or domain that is not assigned to the agent
 - Hard-coding project-specific details in the system prompt
+- Treating knowledge indexes as full document bodies

@@ -16,7 +16,7 @@ Use a routine when a job has a real process: draft then review, inspect then app
 | Part | What it does |
 |------|--------------|
 | Trigger | Decides how the routine starts. Current triggers are `task` and `cron`. |
-| Steps | The boxes in the workflow graph: agent, council, gate, cron, terminal, or terminal failure. |
+| Steps | The boxes in the workflow graph: agent, council, gate, terminal, or terminal failure. |
 | Edges | The arrows between steps. Edges can always run, run on pass, or run on fail. |
 | Entry steps | The step or steps connected from the trigger node. |
 | Metadata | Routine settings such as a cron schedule and entry step IDs. |
@@ -29,6 +29,10 @@ Routines are organization resources. The API surface is controlled by `routines:
 Task routines are built in the graph editor. They are meant for project work that should follow a known path.
 
 A task routine usually starts at an agent step, moves through one or more gates, and ends at a terminal step. If a gate fails, the routine can route to a revision step, a council, or a failure terminal.
+
+Agent-step failure is terminal for the routine. Use a gate when you want pass/fail routing or bounded rework.
+
+> Screenshot placeholder: Routine graph editor with an agent step, gate pass/fail handles, a revision loop, and terminal success/failure nodes.
 
 ## Scheduled routines
 
@@ -45,3 +49,5 @@ Use a council when the work needs several perspectives, review, voting, decompos
 ## How execution flows
 
 When a routine runs, Nenjo finds the entry step, executes it, records the step result, and follows the first edge whose condition matches the result. The routine stops when it reaches a terminal step, reaches a terminal failure step, an agent step returns a failure verdict, or there is no matching outgoing edge.
+
+Routine graphs should be acyclic except for bounded gate failure loops. A gate `on_fail` edge may route back to an earlier step with a retry budget.

@@ -1,0 +1,75 @@
+---
+title: Context Blocks
+description: Reusable prompt context for shared operating rules, methodology, routing, and review standards.
+slug: platform/agents/context-blocks
+order: 3
+---
+
+# Context Blocks
+
+Context blocks are reusable prompt-context assets. They let you define common operating guidance once and reference it from agents, abilities, domains, and runtime templates.
+
+Use context blocks for durable behavior guidance:
+
+- Tool-use rules
+- Delegation patterns
+- Review standards
+- Output conventions
+- Domain-specific operating guidance
+- Shared methodology
+
+Do not use context blocks for source-of-truth documentation, task details, generated outputs, or secrets. Use Library knowledge, project tasks, artifacts, and secured settings for those surfaces.
+
+## Reference format
+
+Organization-authored context blocks use `context.<path>.<name>` style refs:
+
+```jinja
+{{ context.coding.git_worktree }}
+{{ context.review.security }}
+```
+
+Package-installed context blocks use `pkg.*`:
+
+```jinja
+{{ pkg.nenjo_ai.packages.context.tools.tool_usage }}
+{{ pkg.nenjo_ai.packages.context.operations.write_discipline }}
+{{ pkg.nenjo_ai.packages.context.knowledge.knowledge_routing }}
+```
+
+## Design guidance
+
+Good context blocks are focused and composable. A block should have one job and a stable name. Prefer a few useful blocks over many overlapping fragments.
+
+Strong uses:
+
+- A coding worktree discipline block
+- A source-grounded research block
+- A policy review checklist
+- A common response style block
+- A write-safety block for resource builders
+
+Weak uses:
+
+- One-off user requests
+- Long product docs
+- Task acceptance criteria
+- Tool schemas already represented by tools
+- Resource metadata that belongs on an agent, ability, domain, or routine
+
+## How prompts should use them
+
+Put stable identity in the system prompt, tactical behavior in the developer prompt, and reusable instructions in context blocks.
+
+```jinja
+You are {{ agent.name }}.
+
+{{ context.coding.git_worktree }}
+{{ pkg.nenjo_ai.packages.context.tools.tool_usage }}
+```
+
+For generic runtime templates, use package context blocks directly:
+
+```jinja
+{{ pkg.nenjo_ai.packages.context.runtime.task_execution }}
+```

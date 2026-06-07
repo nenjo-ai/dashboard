@@ -1,0 +1,85 @@
+---
+title: nenpm
+description: The Nenjo package manager, dependency manifests, registries, lockfiles, installs, upgrades, and validation.
+slug: packages/nenpm
+order: 2
+---
+
+# nenpm
+
+`nenpm` is the Nenjo package manager. It resolves package dependencies, writes lockfiles, and materializes packages under a local `.nenjo/packages` tree.
+
+Most dashboard users do not need to run `nenpm` directly. Use the dashboard Packages page to browse sources, inspect package contents, and install packages, plugins, and skills into the organization without restarting the worker. Use `nenpm` when you are authoring packages locally, validating registries, preparing package metadata, or running an embedded/local SDK setup outside the platform-managed dashboard flow.
+
+## Dependency manifest
+
+Projects declare dependencies in `nenpm.yml` or `nenpm.yaml`. `nenpm.yml` is preferred. If both exist in the same directory, loading fails so resolution is never ambiguous.
+
+```yaml
+schema: nenjo.dependencies.v1
+
+dependencies:
+  "@nenjo-ai/nenji": "^0.1.0"
+
+registries:
+  - https://github.com/nenjo-ai/packages.git
+```
+
+## Common commands
+
+```bash
+nenpm init --root .
+nenpm add @nenjo-ai --root .
+nenpm add @nenjo-ai/nenji --root .
+nenpm add @nenjo-ai/* --root .
+nenpm list --root .
+nenpm install --root .
+nenpm upgrade --root .
+nenpm clean --root .
+```
+
+Use `--dry-run` to print the plan without writing the lockfile or package tree:
+
+```bash
+nenpm install --root . --dry-run
+```
+
+Use `--locked` when the dependency file and lockfile must already agree:
+
+```bash
+nenpm install --root . --locked
+```
+
+## Lockfile and install tree
+
+`nenpm.lock.yml` records the resolved graph, package source metadata, exact versions, manifest hashes, and module hashes. Install materializes packages under:
+
+```text
+.nenjo/packages/<scope>/<name>@<version>
+```
+
+The install also writes `.nenjo/packages/.nenpm-index.json` so the worker can map locked packages to local roots without fetching at runtime.
+
+Dashboard installs store package state in the platform and publish the resulting resource/manifests through the worker's manifest update path. CLI installs are local filesystem installs. Keep those workflows separate unless you are intentionally testing package authoring locally.
+
+## Overrides
+
+Use overrides for local package development:
+
+```yaml
+overrides:
+  "@nenjo-ai/nenji": file:../packages#nenjo/nenji/package.yaml
+```
+
+Without a `#manifest_path`, `file:` defaults to `packages.yaml`, treating the path as a local registry root.
+
+## Validation
+
+Package authors should validate before publishing:
+
+```bash
+nenpm validate --root .
+nenpm prepare --root .
+```
+
+`validate` checks registry files, package manifests, module indexes, wrapper imports, and prompt selector rules. `prepare` writes compiled registry metadata for publisher and runtime tooling.

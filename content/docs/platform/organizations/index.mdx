@@ -22,23 +22,23 @@ An organization is made up of:
 | Area | What it controls |
 |------|------------------|
 | Members | The users who belong to the workspace, their roles, and their platform scopes |
-| Projects | Shared work containers, documents, tasks, and project activity |
+| Projects | Shared work containers, tasks, project settings, repository context, and project activity |
 | Agents | Agent definitions, prompt configuration, abilities, domains, model assignment, and tool access |
 | Routines | Workflow definitions that coordinate work across projects and agents |
 | Models | Provider, model name, and generation settings used by agents |
-| Knowledge | Project documents, context blocks, abilities, and domains used to shape agent behavior |
+| Knowledge | Library knowledge packs, documents, context blocks, abilities, and domains used to shape agent behavior |
 | Workers | Approved local or server workers that can run Nenjo tasks for the organization |
 | API keys | Credentials used by workers and integrations to connect to the organization |
 | Security material | Trusted devices, recovery bundle state, org content key grants, and pending access requests |
 
 ## Encrypted content
 
-Nenjo encrypts the content that is most likely to contain private instructions, user intent, or project knowledge before it is stored.
+Nenjo encrypts the content that is most likely to contain private instructions, user intent, or workspace knowledge before it is stored.
 
 | Content | Scope | Notes |
 |---------|-------|-------|
 | Chat messages and agent responses | User | Encrypted with the user's account content key. The server stores placeholder text and the encrypted payload metadata. |
-| Project document content | Org | Encrypted with the organization content key. Document metadata remains searchable and visible to authorized members. |
+| Library document content | Org | Encrypted with the organization content key. Document metadata remains searchable and visible to authorized members. |
 | Task description and acceptance criteria | Org | Encrypted as task content. Task titles, status, priority, tags, and ordering remain metadata. |
 | Agent prompts | Org | Encrypted as the agent prompt configuration. Agent name, description, color, model assignment, scopes, abilities, and domains remain metadata. |
 | Ability prompts | Org | Encrypted as the ability developer prompt. Ability name, path, tool name, activation condition, scopes, and tool filters remain metadata. |
@@ -54,7 +54,7 @@ Nenjo also stores operational metadata that the app and worker need in plaintext
 
 - Organization name, member roles, member scopes, invites, and timestamps
 - Resource names, display names, descriptions, paths, IDs, timestamps, tags, and status fields
-- Project records, project membership, document metadata, task titles, and activity records
+- Project records, project membership, Library document metadata, task titles, and activity records
 - Routine definitions and routine metadata
 - Model records, including provider, model name, base URL, and temperature
 - Agent assignments, platform scopes, MCP server assignments, abilities, domains, and model IDs

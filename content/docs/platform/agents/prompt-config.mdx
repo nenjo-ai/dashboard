@@ -20,11 +20,10 @@ Prompt configuration is org-scoped encrypted content. The dashboard encrypts it 
 | `templates.chat` | User-message wrapper for chat turns |
 | `templates.task` | Task-execution wrapper for project work |
 | `templates.gate` | Evaluation wrapper for pass/fail checks |
-| `templates.cron` | Scheduled-run wrapper for cron routine steps |
 | `templates.heartbeat` | Periodic maintenance wrapper for heartbeat runs |
 | `memory_profile` | Focus lists that guide memory extraction and retrieval |
 
-The system prompt and developer prompt are rendered with the same template variables as task templates, so they can include context blocks and live workspace data when appropriate.
+The system prompt and developer prompt can include context blocks and compact knowledge indexes. Keep mutable platform state and full source material out of stable prompts; read current state and selected source documents at runtime.
 
 ## System prompt
 
@@ -58,8 +57,7 @@ Templates are the runtime wrappers around the current situation.
 |----------|------------------|
 | Chat | `{{ chat.message }}`, relevant context blocks, and conversational instructions |
 | Task | `{{ task }}`, `{{ project }}`, `{{ project.context }}`, git context, and acceptance criteria |
-| Gate | `{{ gate.criteria }}` and `{{ gate.previous_output }}` |
-| Cron | Routine metadata and instructions for scheduled work |
+| Gate | `{{ gate.previous_output }}`, task acceptance criteria, and routine step instructions |
 | Heartbeat | Previous output, last run time, and next run time |
 
 If a template is empty, the runner can fall back to simpler runtime content. A good template is specific enough to focus the agent without dumping every possible variable into every run.
@@ -76,11 +74,13 @@ The prompt preview endpoint renders:
 
 - The system prompt
 - The developer prompt
-- Sample user messages for chat, task, gate, cron, and heartbeat modes
+- Sample user messages for chat, task, gate, and heartbeat modes
 - Assigned domain guidance
 - Assigned ability prompts
 
 Preview is useful before saving a change because it shows whether template variables and context blocks resolve the way you expect.
+
+> Screenshot placeholder: Prompt preview modal with system, developer, task, and knowledge-index sections visible.
 
 ## Good prompt structure
 
@@ -112,4 +112,17 @@ Project:
 
 Project context:
 {{ project.context }}
+```
+
+For reusable runtime framing, prefer a thin template that includes a package context block:
+
+```jinja
+{{ pkg.nenjo_ai.packages.context.runtime.task_execution }}
+```
+
+Then keep source material in the Library:
+
+```jinja
+Knowledge index:
+{{ lib.product_docs }}
 ```

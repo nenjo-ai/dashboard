@@ -20,7 +20,8 @@ Nenjo checks that:
 - An edge cannot point from a step to itself.
 - Entry step references point to steps in the saved graph.
 - Cron routine schedules parse when a schedule is present.
-- `max_retries` is not negative.
+- Authored step types are `agent`, `council`, `gate`, `terminal`, and `terminal_fail`.
+- Gate `on_fail` retry edges remain bounded by edge metadata or the runner default.
 
 The save operation is transactional. Nenjo replaces the routine's stored steps and edges together, so a partial graph update is not left behind if saving fails.
 
@@ -32,16 +33,16 @@ At runtime, Nenjo prefers those entry step slugs. If none are stored, the worker
 
 ## Runtime guardrails
 
-When a routine runs, the worker walks from step to step by following matching edges. To prevent an accidental infinite loop from running forever, execution has a maximum iteration guard based on the number of steps.
+When a routine runs, the worker walks from step to step by following matching edges. Ordinary flow should be acyclic. The valid retry shape is a bounded gate failure loop: a gate `on_fail` edge can route back to an earlier step and use retry metadata.
 
-That means a graph can contain review loops, but a loop still needs a path to terminal success or terminal failure. Otherwise the routine will eventually stop because it has exceeded the runtime guard.
+That means a graph can contain review loops, but the gate owns the retry decision and the loop still needs a path to terminal success, terminal failure, or escalation after exhaustion.
 
 ## Practical checklist
 
 Before relying on a routine, check that:
 
 - The trigger node is connected to the intended first step.
-- Gate and cron nodes have both pass and fail paths when both outcomes matter.
+- Gate nodes have both pass and fail paths when both outcomes matter.
 - Every intentional success path reaches a terminal step.
 - Every intentional rejection path reaches a terminal fail step or a clear recovery step.
 - Agent and council references are still valid.

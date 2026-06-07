@@ -1,0 +1,53 @@
+---
+title: Packages
+description: Versioned bundles of Nenjo resources, package-installed knowledge, context blocks, and manifests.
+slug: packages
+order: 1
+---
+
+# Packages
+
+Packages are versioned bundles of Nenjo resources. They can provide agents, abilities, domains, context blocks, knowledge packs, MCP servers, script tools, commands, hooks, skills, plugins, and routines.
+
+Use packages when you want reusable resources that can be installed, versioned, and shared across projects or organizations.
+
+## Dashboard workflow
+
+The dashboard package area is the easiest way to browse and install package resources. Use **Browse** to inspect available packages, plugins, skills, knowledge packs, context blocks, MCP servers, and routines from configured sources. Use **Installed** to inspect what the org has already installed and jump directly to installed resources such as agents, abilities, domains, context blocks, MCP servers, and knowledge packs.
+
+Dashboard installs are platform-managed. When you install, update, or uninstall a package, plugin, or skill from the dashboard, Nenjo updates the org package state and the connected worker receives the manifest/resource change through its normal runtime path. You should not need to restart `nenjo run` just to make a newly installed dashboard package available.
+
+> Screenshot placeholder: Packages Browse tab filtered to plugins or skills with Details, Install, and source selector visible.
+
+## Official packages
+
+The official packages registry currently exposes:
+
+| Package | Purpose |
+|---------|---------|
+| `@nenjo-ai/knowledge` | Canonical Nenjo Core knowledge pack |
+| `@nenjo-ai/context` | Reusable prompt context blocks |
+| `@nenjo-ai/nenji` | Nenji agent, `#creator` domain, and build abilities |
+
+Repo-backed package registries author unscoped package names. The installed scope is derived from the source owner. For example, `https://github.com/nenjo-ai/packages.git` exposes `nenji` as `@nenjo-ai/nenji`.
+
+## Package resources and prompt variables
+
+Installed agents, abilities, domains, routines, MCP servers, and script tools become runtime resources. They are not referenced with `pkg.*` in prompts.
+
+The `pkg.*` namespace is only for package-installed context blocks and package knowledge variables:
+
+```jinja
+{{ pkg.nenjo_ai.packages.context.tools.tool_usage }}
+{{ pkg.nenjo_ai.packages.knowledge.core.resources.agents }}
+```
+
+Library knowledge uses `lib.<pack_slug>` instead.
+
+## Current boundary
+
+Packages are installable reference bundles. They are not an agent-writable platform surface. Agents can explain package structure and use package-installed context or knowledge, but package manifest editing, registry publishing, and install mutation are developer or platform-controlled operations.
+
+Package-installed skills and plugins can still expose runtime behavior to agents after installation. The boundary is about who mutates package state: dashboard users and platform/package tooling mutate installs; agents consume the installed resources they are assigned or allowed to use.
+
+See [nenpm](/docs/packages/nenpm) for dependency files and install commands, and [Package Manifests](/docs/packages/manifests) for package authoring shape.

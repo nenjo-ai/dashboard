@@ -29,6 +29,7 @@ The SDK does not reach into the dashboard database directly. It receives manifes
 | MCP servers | External tool servers and transport details |
 | Abilities | Reusable sub-execution modes exposed as tools to agents |
 | Context blocks | MiniJinja templates injected into prompts |
+| Knowledge packs | Searchable source material exposed through generic knowledge tools |
 
 ## Loading and Merging
 
@@ -63,7 +64,7 @@ On startup, the worker fetches the bootstrap manifest from the platform API and 
 | `abilities/**/*.json` | Ability manifests stored as a tree |
 | `context_blocks/**/*.json` | Context block manifests stored as a tree |
 
-The worker also syncs project documents into the local workspace after the bootstrap manifest is cached.
+The worker also resolves package and Library knowledge metadata so agents can use knowledge tools without loading full documents into every prompt.
 
 ## Agent Manifest Shape
 
@@ -89,7 +90,7 @@ A routine manifest is a graph:
 | `trigger` | `task` or `cron` |
 | `metadata.schedule` | Schedule expression for cron-triggered routines |
 | `metadata.entry_steps` | Explicit entry step slugs when present |
-| `steps` | Agent, council, cron, gate, terminal, and terminal-fail nodes |
+| `steps` | Agent, council, gate, terminal, and terminal-fail nodes |
 | `edges` | Directed connections between steps |
 | `edge.condition` | `always`, `on_pass`, or `on_fail` |
 

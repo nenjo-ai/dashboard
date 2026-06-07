@@ -13,7 +13,7 @@ Use Nenji when you know what outcome you want but do not yet know which Nenjo re
 Nenji is a bootstrap and orchestration agent. Its job is to help you:
 
 - Map your work into Nenjo resources
-- Create useful first projects, agents, routines, and knowledge documents
+- Create useful first projects, agents, routines, and Library knowledge
 - Decide when a capability should be an agent, ability, domain, routine, or council
 - Keep platform setup grounded in real constraints like models, workers, scopes, and repository access
 - Inspect and revise existing resources as your workspace matures
@@ -36,4 +36,4 @@ For copyable prompt examples, see [Bootstrap](/docs/getting-started/bootstrap).
 
 ## What to expect
 
-Nenji should usually start by clarifying the goal, then propose a concrete shape for the workspace. For small requests, it may create or update resources directly. For larger bootstraps, it should first give you a plan that you can approve, adjust, or turn into platform actions.
+Nenji should usually start by clarifying the goal, then propose a concrete shape for the workspace. In normal mode it explains, inspects, designs, reviews, and debugs. Use `#creator` when you want Nenji to create or modify platform resources. In creator mode, Nenji should read current state first and verify changes by reading back the updated resource.

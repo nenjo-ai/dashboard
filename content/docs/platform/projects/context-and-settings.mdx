@@ -7,7 +7,7 @@ order: 5
 
 # Context and Settings
 
-Project settings hold configuration that belongs to the project rather than to a single task, agent, or document.
+Project settings hold configuration that belongs to the project rather than to a single task, agent, or Library document.
 
 The dashboard exposes two important settings areas: **Project Context** and **Metadata**.
 
@@ -24,7 +24,7 @@ Use it for high-level guidance that should apply across the project:
 - Important stakeholders or user groups
 - Default assumptions agents should remember during project work
 
-Keep project context readable. It should orient agents, not replace documents or task acceptance criteria.
+Keep project context readable. It should orient agents, not replace Library source material or task acceptance criteria.
 
 ## Project metadata
 
@@ -43,9 +43,9 @@ Metadata is not encrypted. Do not put secrets in project metadata.
 
 ## Settings and prompt context
 
-When a project is part of an agent run, Nenjo builds project prompt context from the project manifest. Project variables include project identity and, when available, repository and document context.
+When a project is part of an agent run, Nenjo builds project prompt context from the project manifest. Project variables include project identity, settings, metadata, and repository context when available.
 
-Good project context gives agents broad orientation. Documents give agents durable reference material. Tasks give agents specific work.
+Good project context gives agents broad orientation. Library knowledge gives agents durable reference material. Tasks give agents specific work.
 
 ## Permissions
 

@@ -4,6 +4,7 @@
     "index",
     "prompt-config",
     "prompt-templating",
+    "context-blocks",
     "abilities",
     "domains",
     "models",

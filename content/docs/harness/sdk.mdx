@@ -15,7 +15,7 @@ tags:
 
 The `nenjo` crate is the core SDK. It turns manifest resources into executable agents and routines.
 
-The SDK is intentionally small at the top level. A caller supplies manifests, a model factory, a tool factory, and optional memory. The SDK handles prompt assembly, agent lookup, the turn loop, streaming events, delegation support, routine execution, and memory tooling.
+The SDK is intentionally small at the top level. A caller supplies manifests, a model factory, tools, knowledge packs, and optional memory. The SDK handles prompt assembly, agent lookup, the turn loop, streaming events, delegation support, routine execution, knowledge tools, and memory tooling.
 
 ## Provider
 
@@ -41,6 +41,7 @@ The builder requires at least one manifest source and a model factory. If no too
 | `with_loader` | Load a partial manifest from a source such as the platform cache or a custom loader |
 | `with_model_factory` | Map manifest provider names like `openai`, `anthropic`, `gemini`, or `ollama` to model clients |
 | `with_tool_factory` | Build the tools available to each agent based on its manifest |
+| `with_knowledge_packs` | Register Library, package, or local knowledge packs as searchable source material |
 | `with_memory` | Add memory tools and prompt memory summaries |
 | `with_agent_config` | Set shared turn loop settings such as max iterations and parallel tool execution |
 
@@ -129,5 +130,4 @@ Use `run_stream()` for routine events and final output handling. Routine steps u
 | `memory` | Memory traits, markdown memory, memory scopes, and memory tools |
 | `context` | Prompt rendering and project/routine/step template variables |
 | `routines` | Routine execution, gates, councils, step results, and routine events |
-| `builtin_knowledge` | Built-in Nenjo knowledge available to worker tools |
-| `client` | Platform API client used by the worker and integrations |
+| `knowledge` | Knowledge pack registration and source-material tools |
