@@ -413,6 +413,9 @@ export default function LandingPage() {
           <a href="mailto:hello@nenjo.ai">hello@nenjo.ai</a>
           <a href="https://nenjo.ai/privacy">Privacy</a>
           <a href="https://nenjo.ai/cookies">Cookies</a>
+          <a href="#" className="termly-display-preferences">
+            Cookie Preferences
+          </a>
           <a href="https://nenjo.ai/terms">Terms</a>
         </div>
       </footer>
