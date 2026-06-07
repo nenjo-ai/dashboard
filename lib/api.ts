@@ -40,6 +40,7 @@ import type {
   ChatStreamRequest,
   EncryptedPayload,
   HeartbeatInstructionsPayload,
+  PackageInstallProgress,
   PromptConfigResponse,
   RoutineCronTaskPayload,
   TokenUsageSource,
@@ -64,7 +65,13 @@ const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
 const CATALOG_CACHE_MAX_BYTES = 512 * 1024;
 const CATALOG_CACHE_PREFIX = "nenjo.catalog-cache";
 const DOCUMENT_CONTENT_CACHE_TTL_MS = 5 * 60 * 1000;
+const PACKAGE_INSTALL_POLL_INTERVAL_MS = 2000;
+const PACKAGE_INSTALL_POLL_TIMEOUT_MS = 5 * 60 * 1000;
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+
+interface PackageInstallWaitOptions {
+  onProgress?: (progress: PackageInstallProgress) => void;
+}
 
 interface DocumentContentResult {
   content: string;
@@ -1234,7 +1241,70 @@ export function packageInstallUrl(installId: string): string {
 export async function fetchPackageInstallDetail(
   installId: string,
 ): Promise<import("./types").PackageInstallDetail> {
-  return catalogFetcher(packageInstallUrl(installId));
+  const res = await authFetch(packageInstallUrl(installId), {
+    cache: "no-store",
+  });
+  return (await res.json()) as import("./types").PackageInstallDetail;
+}
+
+function packageInstallErrorMessage(
+  install: import("./types").PackageInstall,
+): string {
+  const installMetadata = install.metadata?.install;
+  if (
+    installMetadata &&
+    typeof installMetadata === "object" &&
+    !Array.isArray(installMetadata)
+  ) {
+    const message = (installMetadata as Record<string, unknown>).error;
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+  }
+  return `Package install failed for ${install.root_path}`;
+}
+
+async function waitForPackageInstall(
+  installId: string,
+  options?: PackageInstallWaitOptions,
+): Promise<import("./types").PackageInstallDetail> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < PACKAGE_INSTALL_POLL_TIMEOUT_MS) {
+    const detail = await fetchPackageInstallDetail(installId);
+    if (detail.job) {
+      options?.onProgress?.({
+        phase: detail.job.phase,
+        progressPercent: detail.job.progress_percent,
+      });
+    }
+
+    if (detail.install.status === "installed") {
+      options?.onProgress?.({
+        phase: "complete",
+        progressPercent: 100,
+      });
+      return detail;
+    }
+
+    if (detail.install.status === "failed") {
+      throw new ApiError(packageInstallErrorMessage(detail.install), 500);
+    }
+
+    if (detail.install.status === "archived") {
+      throw new ApiError(
+        `Package install was archived for ${detail.install.root_path}`,
+        409,
+      );
+    }
+
+    await sleep(PACKAGE_INSTALL_POLL_INTERVAL_MS);
+  }
+
+  throw new ApiError(
+    "Package install is still running. Check installed packages again shortly.",
+    504,
+  );
 }
 
 export async function fetchPackageSources(): Promise<
@@ -1352,30 +1422,52 @@ export async function deletePackageSource(sourceId: string): Promise<void> {
 
 export async function installPackage(
   data: import("./types").InstallPackageRequest,
+  options?: PackageInstallWaitOptions,
 ): Promise<import("./types").PackageInstallDetail> {
   const res = await authFetch(`${API_V1}/packages/install`, {
     method: "POST",
     body: JSON.stringify(data),
   });
   const install = (await res.json()) as import("./types").PackageInstallDetail;
+  if (install.job) {
+    options?.onProgress?.({
+      phase: install.job.phase,
+      progressPercent: install.job.progress_percent,
+    });
+  }
+  const detail =
+    install.install.status === "installing"
+      ? await waitForPackageInstall(install.install.id, options)
+      : install;
   invalidatePackageCatalogCache(data.source_id);
   invalidateKnowledgeCatalogCache();
   invalidateAbilitiesCatalogCache();
   invalidateAgentsCatalogCache();
-  return install;
+  return detail;
 }
 
 export async function updatePackageInstall(
   installId: string,
+  options?: PackageInstallWaitOptions,
 ): Promise<import("./types").PackageInstallDetail> {
   const res = await authFetch(`${packageInstallUrl(installId)}/update`, {
     method: "POST",
   });
   const install = (await res.json()) as import("./types").PackageInstallDetail;
+  if (install.job) {
+    options?.onProgress?.({
+      phase: install.job.phase,
+      progressPercent: install.job.progress_percent,
+    });
+  }
+  const detail =
+    install.install.status === "installing"
+      ? await waitForPackageInstall(install.install.id, options)
+      : install;
   invalidateKnowledgeCatalogCache();
   invalidateAbilitiesCatalogCache();
   invalidateAgentsCatalogCache();
-  return install;
+  return detail;
 }
 
 export async function uninstallPackageInstall(installId: string): Promise<void> {
@@ -1386,12 +1478,17 @@ export async function uninstallPackageInstall(installId: string): Promise<void> 
   invalidateAgentsCatalogCache();
 }
 
-export async function installOfficialNenjoPackages(): Promise<void> {
+export async function installOfficialNenjoPackages(
+  options?: PackageInstallWaitOptions,
+): Promise<void> {
   const source = await ensureOfficialNenjoPackageSource();
-  await installPackage({
-    source_id: source.id,
-    path: "nenjo/nenji/package.yaml",
-  });
+  await installPackage(
+    {
+      source_id: source.id,
+      path: "nenjo/nenji/package.yaml",
+    },
+    options,
+  );
 }
 
 export async function updateKnowledgePack(

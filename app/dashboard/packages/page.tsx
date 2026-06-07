@@ -38,6 +38,10 @@ import { Textarea } from "@/components/ui/Textarea";
 import { KnowledgeSection } from "@/components/knowledge/KnowledgeSection";
 import { SourceKnowledgeSection } from "@/components/knowledge/SourceKnowledgeSection";
 import {
+  PackageInstallProgressBar,
+  type PackageInstallProgress,
+} from "@/components/packages/PackageInstallProgressBar";
+import {
   useAbilities,
   useAgents,
   useKnowledgePacks,
@@ -1221,6 +1225,9 @@ export default function KnowledgePage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [installProgress, setInstallProgress] = useState<
+    Record<string, PackageInstallProgress>
+  >({});
   const [packages, setPackages] = useState<MarketplacePackage[]>([]);
   const [packagesLoading, setPackagesLoading] = useState(false);
   const [marketplaceRefresh, setMarketplaceRefresh] = useState(0);
@@ -1607,10 +1614,20 @@ export default function KnowledgePage() {
     resetNotice();
     try {
       if (!selectedSource) throw new Error("Select a package source first");
-      const detail = await installPackage({
-        source_id: selectedSource.id,
-        path: pkg.source_path,
-      });
+      const detail = await installPackage(
+        {
+          source_id: selectedSource.id,
+          path: pkg.source_path,
+        },
+        {
+          onProgress: (progress) => {
+            setInstallProgress((current) => ({
+              ...current,
+              [pkg.id]: progress,
+            }));
+          },
+        },
+      );
       setPackageInstallDetails((current) => ({
         ...current,
         [detail.install.id]: detail,
@@ -1631,6 +1648,11 @@ export default function KnowledgePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Install failed");
     } finally {
+      setInstallProgress((current) => {
+        const next = { ...current };
+        delete next[pkg.id];
+        return next;
+      });
       setBusyKey(null);
     }
   };
@@ -1984,6 +2006,7 @@ export default function KnowledgePage() {
             installedInstallsByKey={installedInstallsByKey}
             installedSelectors={installedSelectors}
             busyKey={busyKey}
+            installProgress={installProgress}
           />
         ) : null}
 
@@ -3420,6 +3443,7 @@ function MarketplaceTab({
   installedInstallsByKey,
   installedSelectors,
   busyKey,
+  installProgress,
 }: {
   sources: PackageSource[];
   selectedSourceId: string | undefined;
@@ -3437,6 +3461,7 @@ function MarketplaceTab({
   installedInstallsByKey: Map<string, PackageInstall>;
   installedSelectors: Set<string>;
   busyKey: string | null;
+  installProgress: Record<string, PackageInstallProgress>;
 }) {
   const selectedSource =
     sources.find((source) => source.id === selectedSourceId) ?? null;
@@ -3514,6 +3539,7 @@ function MarketplaceTab({
                   : undefined
               }
               busyKey={busyKey}
+              installProgress={installProgress[pkg.id]}
               onOpen={onOpen}
               onOpenDetails={onOpenDetails}
               onInstall={onInstall}
@@ -3533,6 +3559,7 @@ function PackageCatalogCard({
   installed,
   install,
   busyKey,
+  installProgress,
   onOpen,
   onOpenDetails,
   onInstall,
@@ -3542,6 +3569,7 @@ function PackageCatalogCard({
   installed: boolean;
   install?: PackageInstall;
   busyKey: string | null;
+  installProgress?: PackageInstallProgress;
   onOpen: (pkg: MarketplacePackage) => void;
   onOpenDetails: (pkg: MarketplacePackage) => void;
   onInstall: (pkg: MarketplacePackage) => void;
@@ -3593,15 +3621,23 @@ function PackageCatalogCard({
           {isSkillLike ? "View" : "Details"}
         </Button>
         {!installed ? (
-          <Button
-            size="sm"
-            className="mt-2 w-full"
-            onClick={() => onInstall(pkg)}
-            isLoading={busyKey === `install:${pkg.id}`}
-          >
-            <Download className="h-4 w-4" />
-            Install
-          </Button>
+          <>
+            <Button
+              size="sm"
+              className="mt-2 w-full"
+              onClick={() => onInstall(pkg)}
+              isLoading={busyKey === `install:${pkg.id}`}
+            >
+              <Download className="h-4 w-4" />
+              Install
+            </Button>
+            {busyKey === `install:${pkg.id}` && installProgress ? (
+              <PackageInstallProgressBar
+                progress={installProgress}
+                className="mt-2"
+              />
+            ) : null}
+          </>
         ) : install ? (
           <Button
             size="sm"

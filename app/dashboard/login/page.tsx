@@ -77,7 +77,7 @@ function LoginContent() {
           Terms of Service
         </Link>{" "}
         and{" "}
-        <Link href="/policy" className="underline hover:text-gray-600 dark:hover:text-gray-300">
+        <Link href="/privacy" className="underline hover:text-gray-600 dark:hover:text-gray-300">
           Privacy Policy
         </Link>
         .
