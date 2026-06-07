@@ -1,18 +1,15 @@
 ---
 title: Cron and Scheduling
-description: How scheduled routines and cron steps behave.
+description: How cron-triggered scheduled routines behave.
 slug: routines/cron-and-scheduling
 order: 6
 ---
 
 # Cron and Scheduling
 
-Nenjo has two related scheduling ideas:
+Nenjo scheduling is routine-level. A scheduled routine has `trigger: cron`, plus schedule metadata.
 
-- A routine-level `cron` trigger, which runs the whole routine on a schedule.
-- A `cron` step, which repeats one step inside a routine until it produces a pass or fail verdict or times out.
-
-They are related, but they are not the same setting.
+The graph still uses ordinary authored steps: agent, council, gate, terminal, and terminal fail.
 
 ## Scheduled routines
 
@@ -43,20 +40,12 @@ Scheduled routines can be bound to a project. The project binding gives the run 
 
 Use project binding for recurring work that should inspect or change a specific project.
 
-## Cron steps
+## Manual runs
 
-A cron step sits inside the graph. It runs the selected agent with the cron prompt path on a recurring interval until the step returns a pass or fail verdict.
+The **Run Once** action triggers a scheduled routine immediately without waiting for the next scheduled tick. It does not require the loop to remain active.
 
-Cron step config supports:
+## Prompt context
 
-| Config | Purpose |
-|--------|---------|
-| `interval` | How often to run the step, such as `60s` or `5m` |
-| `timeout` | Maximum total runtime before the step fails |
-| `agent_id` | The agent to run for each cycle |
+Cron-triggered runs receive routine context, project context when bound to a project, and the cron task content configured on the routine Run tab.
 
-Cron steps expose pass and fail routes, so the graph can continue differently depending on the final verdict.
-
-## Current limits
-
-The dashboard editor supports agent-backed cron steps. Use an agent step for scheduled execution.
+Use an agent step for scheduled work and a gate step when the scheduled work needs pass/fail routing.

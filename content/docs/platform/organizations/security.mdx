@@ -16,7 +16,7 @@ There are two encryption scopes in use:
 | Scope | Key | Used for |
 |-------|-----|----------|
 | User | Account content key | Chat messages and assistant responses for that user |
-| Org | Organization content key | Shared project documents, task content, agent prompts, ability prompts, domain prompts, context block templates, and encrypted execution payloads |
+| Org | Organization content key | Shared Library document content, task content, agent prompts, ability prompts, domain prompts, context block templates, and encrypted execution payloads |
 
 The server does not need plaintext for encrypted content. It stores the encrypted payload, object type, object ID, key version, nonce, and ciphertext. Resource metadata is still stored separately so the app can show lists, search, enforce scopes, and route work.
 
@@ -28,7 +28,7 @@ The server does not need plaintext for encrypted content. It stores the encrypte
 
 A trusted device is a browser or client that has local encryption material for the signed-in user. During secure workspace setup, the device creates the user's local content key material, approval signing key, and recovery bundle.
 
-For organization content, a trusted device also needs access to the active organization content key. When a device has that access, it can decrypt org-scoped content such as project documents, task content, agent prompts, and context blocks.
+For organization content, a trusted device also needs access to the active organization content key. When a device has that access, it can decrypt org-scoped content such as Library documents, task content, agent prompts, and context blocks.
 
 If a user signs in from a device that does not have org content access, the device can request access. An owner or admin with access can approve that request by wrapping the organization content key for the requesting device.
 
@@ -54,7 +54,7 @@ Some data is intentionally not encrypted because Nenjo needs it to operate:
 - Project, agent, routine, model, worker, and API key metadata
 - Resource names, descriptions, paths, IDs, timestamps, tags, status, and assignments
 - Routine definitions and model settings
-- Document metadata, task titles, execution run metadata, and activity records
+- Library document metadata, task titles, execution run metadata, and activity records
 
 This metadata is protected by authentication, organization membership, and scopes. It is not protected by content encryption.
 

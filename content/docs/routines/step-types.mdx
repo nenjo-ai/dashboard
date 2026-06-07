@@ -7,7 +7,7 @@ order: 2
 
 # Step Types
 
-Routine steps are the units of work in a graph. The current dashboard editor offers six step types.
+Routine steps are the units of work in a graph. The current dashboard editor offers five authored step types.
 
 ## Agent
 
@@ -31,14 +31,6 @@ Gates are built for routing. In the editor, gate nodes expose separate pass and 
 
 Good gates have clear criteria. A vague gate tends to create vague routing.
 
-## Cron
-
-A **cron** step runs a selected agent using the cron prompt path. It is a flow-control step inside a routine, separate from the routine-level `cron` trigger.
-
-Cron steps are useful when a step should repeat on an interval until it returns a pass or fail verdict. The step config supports an interval such as `30s`, `5m`, or `1h`, and a timeout such as `1h` or `24h`.
-
-Cron steps also expose pass and fail routes.
-
 ## Terminal
 
 A **terminal** step marks a successful end state. It does not run an agent or council.
@@ -58,6 +50,7 @@ Use terminal fail steps when a rejected or blocked path should end intentionally
 | Do work with one role | Agent |
 | Bring in multiple roles | Council |
 | Evaluate and branch | Gate |
-| Repeat a step until verdict or timeout | Cron step |
 | End successfully | Terminal |
 | End as failed | Terminal fail |
+
+Use a routine-level `cron` trigger for scheduled routines. The graph itself still uses ordinary agent, council, gate, terminal, and terminal-fail steps.

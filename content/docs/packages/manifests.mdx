@@ -1,0 +1,89 @@
+---
+title: Package Manifests
+description: Registry manifests, package manifests, module indexes, resource modules, imports, and selector rules.
+slug: packages/manifests
+order: 3
+---
+
+# Package Manifests
+
+Nenjo packages have three layers:
+
+1. A registry manifest with schema `nenjo.registry.v1`.
+2. One package manifest per versioned dependency unit with schema `nenjo.package.v1`.
+3. One or more package-relative resource modules such as `nenjo.agent.v1`, `nenjo.ability.v1`, `nenjo.context_block.v1`, or `nenjo.knowledge.v1`.
+
+## Registry manifest
+
+`packages.yaml` maps unscoped package names to package manifests:
+
+```yaml
+schema: nenjo.registry.v1
+packages:
+  knowledge: nenjo/knowledge/package.yaml
+  context: nenjo/context/package.yaml
+  nenji: nenjo/nenji/package.yaml
+```
+
+For repo-backed registries, do not author `@scope/name` keys. The registry source supplies the scope.
+
+## Package manifest
+
+```yaml
+schema: nenjo.package.v1
+name: nenji
+version: "0.1.0"
+
+dependencies:
+  context: "^0.1.0"
+  knowledge: "^0.1.0"
+
+modules:
+  - nenji/agent.yaml
+```
+
+Package manifests define identity, version, dependencies, and root module entrypoints. Module paths are package-relative.
+
+## Module indexes
+
+Directory modules require an explicit `index.yml` or `index.yaml`:
+
+```yaml
+schema: nenjo.module_index.v1
+modules:
+  - build_agent.yaml
+  - build_workflow.yaml
+```
+
+The resolver never imports a directory by implicit file listing.
+
+## Wrapper-level imports
+
+Resource manifests declare local runtime imports at the wrapper level, outside the pure resource manifest body:
+
+```yaml
+schema: nenjo.agent.v1
+imports:
+  abilities:
+    - ./capabilities/build/
+  domains:
+    - ./domains/creator.yaml
+  context:
+    - ./context/methodology.yml
+
+manifest:
+  name: Nenji
+```
+
+Imports describe local runtime composition. Cross-package dependencies belong in `nenjo.package.v1` dependencies.
+
+## Selector rules
+
+The `pkg.*` prompt namespace is only for package-installed context blocks and package knowledge:
+
+```jinja
+{{ pkg.nenjo_ai.packages.context.operations.write_discipline }}
+{{ pkg.nenjo_ai.packages.knowledge.core.resources.routines }}
+```
+
+Installed agents, abilities, domains, routines, MCP servers, and script tools are runtime resources and are not referenced as `pkg.*` prompt variables.

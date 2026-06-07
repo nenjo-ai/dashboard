@@ -6,24 +6,23 @@ order: 2
 
 Nenjo is built from a set of resources that compose together. Each one has a simple job: hold context, define behavior, grant a capability, switch modes, run a process, or preserve knowledge.
 
-You do not need all of them on day one. Most useful setups begin with a project and an agent, then add routines, abilities, domains, memory, and documents as the work becomes more important or more repeatable.
+You do not need all of them on day one. Most useful setups begin with a project and an agent, then add routines, abilities, domains, memory, and Library knowledge as the work becomes more important or more repeatable.
 
 ## Projects
 
-Projects are the main boundary for work in Nenjo. A project keeps tasks, documents, settings, execution history, repository connections, and project-specific memory together.
+Projects are the main boundary for work in Nenjo. A project keeps tasks, settings, execution history, repository connections, and project-specific memory together.
 
-Think of a project as a working environment, not just a folder. It gives agents a place to understand what they are working on, which documents matter, what has already happened, and how future executions should be scoped.
+Think of a project as a working environment, not just a folder. It gives agents a place to understand what they are working on, what has already happened, and how future executions should be scoped.
 
-The important layer is project knowledge. Projects can contain structured documents that form a local knowledge graph:
+Project source material belongs in the Library. A project can reference Library knowledge, but the project resource should stay focused on work state:
 
-- **Domain** documents explain the problem space.
-- **Entity** documents define important objects and data models.
-- **Policy** documents capture rules, constraints, and decision criteria.
-- **Taxonomy** documents classify concepts.
-- **Reference** documents store facts, glossaries, and lookup material.
-- **Guide** documents explain patterns and usage.
+- Tasks and dependencies
+- Project context and metadata
+- Repository connection and worktrees
+- Execution history
+- Project-scoped memory
 
-When those documents are connected, agents can reason from shared project context instead of relying only on the current chat. For code-backed projects, a repository connection can also give executions an isolated workspace where agents inspect, change, test, and report on real files.
+For code-backed projects, a repository connection can give executions an isolated workspace where agents inspect, change, test, and report on real files.
 
 ---
 
@@ -49,7 +48,6 @@ An agent can be conversational, task-focused, scheduled, evaluative, or part of 
 | `chat` | Conversational interaction with a user |
 | `task` | Execution of a project task with full context |
 | `gate` | Evaluation of evidence against acceptance criteria |
-| `cron` | Scheduled/recurring execution |
 | `heartbeat` | Periodic autonomous checks |
 
 Start with a clear role and the smallest useful capability set. Add tools, scopes, domains, and memory focus deliberately as the agent's responsibility grows.
@@ -101,6 +99,22 @@ Use a routine when the work has a process: draft then review, fan out to several
 
 ---
 
+## Library
+
+The Library is the platform source-material surface. It stores explicit knowledge and exposes it to agents through knowledge packs, metadata search, graph traversal, and full-document reads.
+
+Use Library knowledge for:
+
+- Product and architecture references
+- Policies and procedures
+- Domain glossaries and taxonomies
+- Research notes
+- Source-backed guidance agents should cite
+
+Library knowledge is not memory. Memory stores learned preferences, corrections, and project-specific facts. Library knowledge is explicit source material that should be searched and read before an agent makes source-backed claims.
+
+---
+
 ## Memory
 
 Nenjo provides a **scoped memory system** for agents with three scopes:
@@ -108,7 +122,7 @@ Nenjo provides a **scoped memory system** for agents with three scopes:
 | Scope | What It Stores | Typical Use |
 |-------|---------------|-------------|
 | `core_focus` | Long-term, cross-project knowledge | Personality, methodology, core principles |
-| `project_focus` | Knowledge specific to one project | Task history, decisions, documents |
+| `project_focus` | Learned context specific to one project | Task history, decisions, feedback |
 | `shared_focus` | Knowledge shared across projects | Reusable patterns, team conventions |
 
 **Best practice:** Start simple with only `project_focus`. Expand to `core_focus` and `shared_focus` as the agent's responsibilities grow.
@@ -117,7 +131,7 @@ Nenjo provides a **scoped memory system** for agents with three scopes:
 
 ## Context Blocks
 
-Context blocks are **reusable prompt-context assets** referenced by path-like template names. They allow common prompt patterns to be defined once and reused across many agents.
+Context blocks are **reusable prompt-context assets** referenced by stable template names. They allow common prompt patterns to be defined once and reused across many agents.
 
 **Use cases:**
 - System instructions shared across agent types
@@ -125,7 +139,7 @@ Context blocks are **reusable prompt-context assets** referenced by path-like te
 - Standard output formats
 - Reusable guidance snippets
 
-**Example reference:** `context:standard/instructions/security`
+**Example references:** `{{ context.coding.git_worktree }}` or `{{ pkg.nenjo_ai.packages.context.tools.tool_usage }}`
 
 ---
 
@@ -137,14 +151,15 @@ Template variables connect **static prompt design** with **live execution state*
 | Variable | Description |
 |----------|-------------|
 | `{{ project }}` | Current project context |
-| `{{ pkg.nenjo.knowledge }}` | Installed package knowledge index |
+| `{{ lib.<pack_slug> }}` | Library knowledge pack index |
+| `{{ pkg.nenjo_ai.packages.knowledge.core }}` | Installed package knowledge index |
 | `{{ task }}` | Current task context |
 | `{{ task.acceptance_criteria }}` | Task acceptance criteria |
 | `{{ chat.message }}` | User message in chat mode |
 | `{{ routine }}` | Current routine context |
 | `{{ routine.execution_id }}` | Current routine execution run |
-| `{{ available_agents }}` | Agents available for delegation or routing |
 | `{{ memories.project }}` | Learned project-specific memory |
+| `{{ artifacts.project }}` | Saved project artifacts |
 
 ---
 
@@ -177,9 +192,11 @@ These building blocks compose into a complete system:
 Nenjo Workspace
 ├── Projects
 │   ├── Tasks & executions
-│   ├── Documents / knowledge graph
 │   ├── Repository context
 │   └── Project-scoped memory
+│
+├── Library
+│   └── Source material and knowledge graphs
 │
 ├── Agents
 │   ├── Prompt configuration

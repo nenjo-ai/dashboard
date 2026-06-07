@@ -20,9 +20,9 @@ Nenjo uses the same runtime concepts in two ways. You can embed the SDK directly
 
 | Area | What it owns |
 |------|--------------|
-| SDK | Provider construction, manifest loading, agent runners, routine runners, prompt context, memory, and turn loop events |
+| SDK | Provider construction, manifest loading, agent runners, routine runners, prompt context, memory, knowledge packs, and turn loop events |
 | Manifests | Typed resource definitions for agents, models, routines, projects, councils, domains, MCP servers, abilities, and context blocks |
-| Crates | Separate packages for models, tools, events, event bus, encrypted envelopes, platform contracts, sessions, worker, and CLI |
+| Crates | Separate packages for tool contracts, knowledge, models, events, event bus, encrypted envelopes, platform contracts, harness runtime, worker, and CLI |
 | Worker | The long-running harness behind `nenjo run` that connects local execution to the platform |
 | Worker config | The `.nenjo` directory, API key, model keys, tool settings, reliability, capabilities, and local state paths |
 

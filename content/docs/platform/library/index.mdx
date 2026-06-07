@@ -1,0 +1,74 @@
+---
+title: Library
+description: Platform source material, knowledge packs, document metadata, graph relationships, and agent retrieval.
+slug: platform/library
+order: 2
+---
+
+# Library
+
+The **Library** is Nenjo's source-material surface. It stores explicit knowledge and exposes it to agents through knowledge pack indexes, metadata search, graph traversal, and full-document reads.
+
+Use the Library for material agents should be able to find, cite, and reason from:
+
+- Architecture and product references
+- Policies, procedures, and compliance rules
+- Domain glossaries and taxonomies
+- Research notes and source-backed guidance
+- Project-relevant references that should stay explicit
+
+Library knowledge is separate from project settings, memory, artifacts, and packages.
+
+## What belongs where
+
+| Need | Use |
+|------|-----|
+| Source material, policy, docs, references | Library |
+| Learned preferences, corrections, recurring facts | Memory |
+| Saved generated outputs or workspace files | Artifacts |
+| Work items, dependencies, acceptance criteria | Project tasks |
+| Short project orientation and metadata | Project settings |
+| Versioned installable resource bundles | Packages |
+
+## Agent retrieval flow
+
+Library variables render compact indexes, not full source content. When an agent needs Library material, it should:
+
+1. Use `list_knowledge_packs` or a rendered `{{ lib.<pack_slug> }}` index to find available packs.
+2. Use `search_knowledge` to find candidate documents.
+3. Use `list_knowledge_neighbors` to follow outgoing edges from the most relevant documents.
+4. Use `read_knowledge_doc` for the selected full documents.
+5. Answer from the documents actually read.
+
+This keeps prompts small and prevents agents from answering source-backed questions from summaries alone.
+
+## Graph and globe views
+
+The Library UI is not only a document list. Use the visual views when the structure of the knowledge matters:
+
+| View | Use it for |
+|------|------------|
+| Globe | Seeing the whole pack at once: clusters, isolated documents, dense areas, and high-value hubs |
+| Graph | Inspecting the local neighborhood around one document and checking its outgoing relationships |
+| Document list | Searching, filtering, editing metadata, and opening source content |
+
+The globe helps humans spot missing structure before agents hit it at runtime. If an important policy, guide, or reference is isolated, an agent that starts from a nearby seed document will not naturally traverse to it. Add a meaningful outgoing edge from the seed material that should lead there.
+
+> Screenshot placeholder: Library pack globe with clusters, isolated documents, and a selected hub document.
+
+## Write surface
+
+Library maintenance uses the `library:write` scope and the active write-enabled mode. Agents should not treat package-installed knowledge as mutable. User-managed Library documents can be created, updated, and deleted; Library packs should be archived with pack updates when possible rather than silently removed.
+
+## Prompt example
+
+```jinja
+Knowledge index:
+{{ lib.product_docs }}
+
+When the user asks for a policy, architecture, or reference-backed answer,
+search the Library, read the selected source docs, and cite the document titles
+or selectors used.
+```
+
+See [Knowledge Packs](/docs/platform/library/knowledge-packs) for the retrieval model and [Authoring Library Knowledge](/docs/platform/library/authoring) for document shape.

@@ -1,62 +1,57 @@
 ---
-title: Documents
-description: Project documents, metadata, relationships, and how agents use project knowledge.
+title: Project Knowledge
+description: How projects should reference Library source material without turning the project into a document store.
 slug: platform/projects/documents
 order: 4
 ---
 
-# Documents
+# Project Knowledge
 
-Project documents are explicit knowledge for a project. They can hold requirements, policies, domain explanations, data definitions, glossaries, implementation notes, and other reference material agents should use.
+Nenjo's current source-material surface is the **Library**, not a project-owned document table. A project can use Library knowledge, but the project resource itself should stay focused on work: tasks, settings, repository context, executions, and project-scoped memory.
 
-The Documents tab lets you upload files, edit text documents, preview Markdown, classify documents, tag them, write summaries, and connect documents with typed relationships.
+Use this page as a bridge if you are coming from the older "project documents" mental model.
 
-## Document metadata
+## Where source material belongs
 
-| Field | Purpose |
-|-------|---------|
-| Filename | Original uploaded file name |
-| Path | Dot-separated logical path used to organize the document tree |
-| Title | Human-readable document title |
-| Kind | `guide`, `reference`, `taxonomy`, `domain`, `entity`, or `policy` |
-| Authority | `canonical`, `supporting`, `reference`, `draft`, or `deprecated` |
-| Summary | Short explanation shown to agents and humans |
-| Tags | Search and grouping hints |
-| Status | Free-form lifecycle/status value |
+Put source material in the Library when it is:
 
-Metadata is not encrypted. It is used to list documents, build the document tree, search, route worker sync, and render `{{ project.documents }}` context.
+- Product or architecture reference material
+- Policies, procedures, or compliance rules
+- Domain glossaries, taxonomies, or classification guides
+- Research notes or source-backed guidance
+- Project-relevant documentation agents should search and read before answering
 
-## Document content
+Library items are exposed as knowledge packs with document metadata, graph relationships, search, neighbor traversal, and full-content reads.
 
-Uploaded files are stored in object storage and tracked in the project document table.
+## What belongs in project settings
 
-For text-like files created or updated through the dashboard, document content is encrypted with the organization content key before it is sent to the backend. The server stores the encrypted payload reference and metadata needed to retrieve and decrypt it on trusted devices.
+Use project context and metadata for compact orientation:
 
-Document metadata remains visible platform metadata. Binary and non-text uploads may not follow the same client-side text encryption path, so treat the document metadata and file handling model as distinct.
+- Goals and non-goals
+- Repository conventions
+- Product area or environment labels
+- Default assumptions for project work
+- Short references to Library packs that should be consulted
 
-## Document kinds
+Do not put long policies, full architecture docs, source material, or generated outputs into project context. Use Library knowledge for source material, memory for learned facts, and artifacts for saved outputs.
 
-Use the kind field to make the project knowledge layer easier for agents to understand:
+## Prompt pattern
 
-| Kind | Good use |
-|------|----------|
-| Domain | Problem space, business area, or product area |
-| Entity | Important objects, schemas, concepts, or data models |
-| Policy | Rules, constraints, standards, and decision criteria |
-| Taxonomy | Classification systems and controlled vocabularies |
-| Reference | Facts, lookup material, glossaries, and API notes |
-| Guide | How-to guidance, workflows, and explanatory material |
+Use `{{ project }}` for workspace context and `{{ lib.<pack_slug> }}` for Library knowledge discovery.
 
-## Relationships
+```jinja
+Project:
+{{ project }}
 
-Documents can link to other documents with these edge types:
+Knowledge index:
+{{ lib.product_docs }}
 
-`part_of`, `defines`, `governs`, `classifies`, `references`, `depends_on`, `extends`, and `related_to`.
+Before answering policy or architecture questions, search the knowledge pack,
+read the most relevant document, and cite the document title or selector used.
+```
 
-These edges turn a pile of files into a navigable project knowledge graph. Keep relationships simple and meaningful. A few clear links are more useful than every document pointing at every other document.
+Knowledge indexes are discovery hints. They are not full source material. Agents should use `search_knowledge`, `list_knowledge_neighbors`, and `read_knowledge_doc` before making source-backed claims.
 
-## Agent context
+## Practical rule
 
-Workers sync project document metadata into the local workspace. Agents can receive a compact XML listing through `{{ project.documents }}` that includes document names, paths, kinds, authority, status, tags, size, and summaries.
-
-Use `{{ project.documents }}` for knowledge-heavy project work. Do not inject it into every prompt by default if the task does not need the document graph.
+If the content is a task, use project tasks. If it is learned context, use memory. If it is a saved output, use artifacts. If it is source material that should be searchable and citable, use the Library.

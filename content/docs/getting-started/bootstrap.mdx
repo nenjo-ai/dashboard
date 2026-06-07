@@ -6,7 +6,7 @@ order: 2
 
 Bootstrap is what you do after onboarding. Onboarding makes the workspace usable; bootstrapping gives it shape.
 
-Use Nenji when you know the work you want to support but do not yet know which Nenjo resources should exist. Nenji can ask clarifying questions, propose a workspace plan, and help create projects, agents, routines, abilities, domains, councils, and knowledge documents through the platform.
+Use Nenji when you know the work you want to support but do not yet know which Nenjo resources should exist. Nenji can ask clarifying questions, propose a workspace plan, and help create projects, agents, routines, abilities, domains, councils, and Library knowledge through the platform.
 
 ## How to Prompt Nenji
 
@@ -30,7 +30,7 @@ First, ask me the minimum questions you need. Then propose:
 - the first agents
 - any useful abilities or domains
 - the first routine
-- the project knowledge documents we should create
+- the Library knowledge packs and documents we should create
 - the scopes, models, workers, and MCP servers we may need
 ```
 
@@ -41,7 +41,7 @@ Create a project plan for [project name].
 
 The project is about [describe the work]. It should support [tasks or outcomes].
 
-Recommend the initial project description, knowledge documents, task structure, repository connection needs, and memory focus for agents working in this project.
+Recommend the initial project description, Library knowledge references, task structure, repository connection needs, and memory focus for agents working in this project.
 ```
 
 ### Design the First Agents
@@ -61,13 +61,17 @@ For each agent, propose:
 - minimum platform scopes
 ```
 
-### Build Project Knowledge
+### Build Library Knowledge
 
 ```text
-Help me create the initial knowledge graph for [project name].
+Help me create the initial Library knowledge graph for [project or workspace name].
 
-Recommend a small set of Domain, Entity, Policy, Taxonomy, Reference, and Guide documents. For each document, explain why it matters and draft a useful starting outline.
+Recommend a small set of Domain, Entity, Policy, Taxonomy, Reference, and Guide documents. For each document, explain why it matters, draft a useful starting outline, and suggest the outgoing edges that should make the graph easy for agents to traverse.
 ```
+
+After creating the first documents, use the Library globe to check the pack shape and the graph view to inspect each important document's outgoing relationships.
+
+> Screenshot placeholder: Bootstrap-created Library pack shown in the globe view with the first policy, taxonomy, and guide nodes connected.
 
 ### Turn a Process Into a Routine
 
@@ -86,7 +90,7 @@ I need Nenjo to support this capability:
 
 [describe capability]
 
-Help me decide whether this should be an agent, ability, domain, routine, council, or project document. Explain the tradeoffs and recommend the simplest useful design.
+Help me decide whether this should be an agent, ability, domain, routine, council, task, context block, or Library document. Explain the tradeoffs and recommend the simplest useful design.
 ```
 
 ### Prepare a Code-Backed Project
@@ -96,7 +100,7 @@ Help me bootstrap a code-backed project for this repository:
 
 [repository or project description]
 
-Recommend the project setup, initial agents, code-review or implementation routines, required knowledge documents, worker requirements, and the minimum scopes needed for safe operation.
+Recommend the project setup, initial agents, code-review or implementation routines, required Library knowledge, worker requirements, and the minimum scopes needed for safe operation.
 ```
 
 ### Review an Existing Workspace
@@ -104,7 +108,7 @@ Recommend the project setup, initial agents, code-review or implementation routi
 ```text
 Review my current Nenjo workspace.
 
-Look for agents that are too broad, missing scopes, missing knowledge documents, routines that need gates, abilities that should be domains, and domains that need clearer activation rules. Give me a prioritized cleanup plan.
+Look for agents that are too broad, missing scopes, missing Library knowledge, routines that need gates, abilities that should be domains, and domains that need clearer activation rules. Give me a prioritized cleanup plan.
 ```
 
 ## What to Expect

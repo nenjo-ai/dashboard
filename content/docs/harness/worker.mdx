@@ -69,6 +69,8 @@ Handlers do not write to the event bus directly. They send typed responses throu
 
 The harness builds one provider snapshot from the cached manifests. When manifest updates arrive, the harness can rebuild the manifest view and swap the provider without rebuilding the entire process.
 
+Dashboard package, plugin, and skill installs use that same manifest update path. A running worker can receive the updated package resources, rebuild its provider snapshot, and expose newly installed resources without a process restart.
+
 At runtime the provider is responsible for:
 
 - Resolving agents and routines by ID or name
@@ -83,7 +85,7 @@ The worker keeps durable local state under `.nenjo`.
 
 | Directory | Purpose |
 |-----------|---------|
-| `.nenjo/workspace` | Project working directories, synced repositories, and synced project documents |
+| `.nenjo/workspace` | Project working directories, synced repositories, and task worktrees |
 | `.nenjo/state` | Worker memory, sessions, session content, and crypto state |
 | `.nenjo/manifests` | Cached platform resource manifests and bootstrap transport/auth data |
 
@@ -91,7 +93,7 @@ This local state lets the worker restore domain sessions, reconcile recoverable 
 
 ## Tools
 
-Every agent starts with the base local tools: shell, file read/write/edit/delete, git operations, content search, glob search, and built-in Nenjo knowledge tools.
+Agents can receive local tools such as shell, file read/write/edit/delete, git operations, content search, glob search, and generic knowledge tools depending on worker config, scopes, and runtime assembly.
 
 Additional tools are added from:
 

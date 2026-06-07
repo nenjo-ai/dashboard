@@ -19,18 +19,19 @@ Nenjo stores three edge conditions:
 | `on_pass` | Follow this edge when the previous step passed. |
 | `on_fail` | Follow this edge when the previous step failed. |
 
-In the editor, normal steps have one output handle and default to `always`. Gate and cron nodes have pass and fail handles, which map to `on_pass` and `on_fail`.
+In the editor, normal steps have one output handle and default to `always`. Gate nodes have pass and fail handles, which map to `on_pass` and `on_fail`.
 
 ## Pass and fail results
 
-Agent, gate, council, and cron steps all produce a result. That result includes whether the step passed, the output text, and structured verdict data when the agent used the verdict tool.
+Agent, gate, and council steps all produce a result. That result includes whether the step passed, the output text, and structured verdict data when the agent used the verdict tool.
 
 Routing uses the pass/fail value:
 
 - A passing gate follows an `on_pass` edge when one exists.
 - A failing gate follows an `on_fail` edge when one exists.
-- A cron step can follow pass or fail routes the same way.
 - A normal `always` edge can be used when the next step does not depend on the verdict.
+
+Agent steps can return pass or fail verdicts, but an agent-step failure stops the routine. Use a gate step when a fail result should route to another step.
 
 ## What happens when no edge matches
 

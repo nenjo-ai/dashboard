@@ -1,0 +1,70 @@
+---
+title: Knowledge Packs
+description: How Library and package knowledge packs expose searchable, graph-connected source material to agents.
+slug: platform/library/knowledge-packs
+order: 2
+---
+
+# Knowledge Packs
+
+A **knowledge pack** is a searchable set of source documents. Each document has metadata for discovery and a body that is read only after the agent selects it.
+
+Knowledge packs can come from:
+
+- User-managed Library packs
+- Package-installed knowledge
+- Local or SDK-provided packs in embedded runtimes
+
+## Core fields
+
+| Field | Purpose |
+|-------|---------|
+| Selector | Stable agent-visible document key |
+| Title | Human-readable document title |
+| Summary | Search and routing hint |
+| Kind | Author-defined document category |
+| Tags | Sparse search facets |
+| Source path | Pack-local source location |
+| Related edges | Graph links to other selectors |
+
+`kind` is not a global platform enum. It is author-provided metadata. A pack can use kinds such as `orientation`, `design`, `resource`, `build`, `classification`, `reference`, `policy`, or its own domain-specific values.
+
+## Selectors
+
+Document selectors are stable keys, not file paths. Prefer dot-separated names:
+
+```text
+resources.agents
+design.workflow_review
+reference.platform_scopes
+```
+
+Library pack prompt variables use `lib.<pack_slug>`. Package-installed knowledge uses the package namespace, for example:
+
+```jinja
+{{ lib.product_docs }}
+{{ pkg.nenjo_ai.packages.knowledge.core }}
+{{ pkg.nenjo_ai.packages.knowledge.core.resources.agents }}
+```
+
+Rendered variables are indexes. They do not replace `read_knowledge_doc`.
+
+## Graph relationships
+
+Relationships help agents traverse from a seed document to related source material. Use a few meaningful outbound edges instead of linking everything to everything.
+
+Common edge labels include:
+
+`part_of`, `defines`, `governs`, `classifies`, `references`, `depends_on`, `extends`, and `related_to`.
+
+If a document should be reachable from a seed page, the seed page must point outward to it.
+
+The traversal direction matters. `list_knowledge_neighbors` is used from the current document outward, so an edge from `resources.routines` to `reference.platform_scopes` makes platform-scope details discoverable while reading about routines. The reverse edge is useful only when an agent starts from the scope reference and needs to find routine behavior.
+
+Use the graph view to check one document's outgoing edges and the globe view to check the pack-level shape. The graph view answers "what will an agent see next from here?" The globe answers "does this pack have the right hubs and connected areas?"
+
+> Screenshot placeholder: Knowledge document graph view showing a selected document, its outbound edges, and edge labels.
+
+## Good retrieval behavior
+
+For source-backed answers, agents should not stop at search summaries. They should read the selected document body, traverse outgoing neighbors when a rule depends on another doc, and state which document title or selector grounded the answer.

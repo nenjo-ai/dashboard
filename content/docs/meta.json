@@ -10,11 +10,14 @@
     "getting-started/bootstrap",
     "---Platform---",
     "platform/organizations",
+    "platform/library",
     "platform/projects",
     "platform/scopes",
     "platform/agents",
+    "platform/councils",
     "routines",
-    "---Harness---",
-    "harness"
+    "---Developer---",
+    "harness",
+    "packages"
   ]
 }

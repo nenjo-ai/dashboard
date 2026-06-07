@@ -41,9 +41,8 @@ The same agent can be used in several runtime situations:
 | Runtime | What changes |
 |---------|--------------|
 | Chat | The chat template receives the current user message |
-| Task | The task template receives task, project, document, git, and routine context when available |
-| Gate | The gate template receives criteria and previous output to evaluate |
-| Cron | The cron template runs from a scheduled routine step |
+| Task | The task template receives task, project, git, and routine context when available |
+| Gate | The gate template receives previous output and should combine it with task acceptance criteria or step instructions |
 | Heartbeat | The heartbeat template receives previous and next run timing |
 | Council | A council can ask an agent to contribute as a member or leader |
 
@@ -61,6 +60,8 @@ Assignments add more surface area:
 
 Keep those three ideas separate: scopes decide which Nenjo operations are allowed, abilities describe specialist behavior, and MCP servers provide external tool endpoints.
 
+Context blocks and Library knowledge are also separate. Context blocks are reusable prompt guidance. Library knowledge is source material an agent should search and read before making source-backed claims.
+
 ## Designing agents
 
 A useful agent usually has:
@@ -69,7 +70,7 @@ A useful agent usually has:
 - A model assignment that fits the cost and reasoning needs
 - A stable system prompt for role and boundaries
 - A developer prompt for working style and project conventions
-- Focused templates for chat, tasks, gates, cron runs, and heartbeats
+- Focused templates for chat, tasks, gates, and heartbeats
 - The smallest set of scopes and MCP servers needed
 - Abilities only for specialist work the agent should be able to call
 - Domains only for explicit mode changes a user should choose
