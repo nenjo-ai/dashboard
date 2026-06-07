@@ -52,6 +52,10 @@ import { Select } from "@/components/ui/Select";
 import { Label } from "@/components/ui/Label";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
 import {
+  PackageInstallProgressBar,
+  type PackageInstallProgress,
+} from "@/components/packages/PackageInstallProgressBar";
+import {
   buildCurrentOrgContentKeyBootstrap,
   buildRecoveryBundle,
   buildDeviceEnrollmentPayload,
@@ -178,10 +182,16 @@ function StepIndicator({
   );
 }
 
+interface StepSecureWorkspaceContinueOptions {
+  onPackageInstallProgress: (progress: PackageInstallProgress) => void;
+}
+
 function StepSecureWorkspace({
   onContinue,
 }: {
-  onContinue: () => void | Promise<void>;
+  onContinue: (
+    options: StepSecureWorkspaceContinueOptions,
+  ) => void | Promise<void>;
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -192,6 +202,10 @@ function StepSecureWorkspace({
   const [confirmWordA, setConfirmWordA] = useState("");
   const [confirmWordB, setConfirmWordB] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [recoveryCommitted, setRecoveryCommitted] = useState(false);
+  const [installingPackages, setInstallingPackages] = useState(false);
+  const [installProgress, setInstallProgress] =
+    useState<PackageInstallProgress | null>(null);
 
   const phraseWords = recoveryPhrase.split(" ").filter(Boolean);
   const promptIndexes = [2, 7] as const;
@@ -244,6 +258,9 @@ function StepSecureWorkspace({
       setConfirmWordB("");
       setCopied(false);
       setBackupAcknowledged(false);
+      setRecoveryCommitted(false);
+      setInstallingPackages(false);
+      setInstallProgress(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to secure this workspace.");
     } finally {
@@ -263,6 +280,28 @@ function StepSecureWorkspace({
       setError("Could not copy the recovery phrase to your clipboard.");
     }
   }, [recoveryPhrase]);
+
+  const installRequiredPackages = useCallback(async () => {
+    setError(null);
+    setInstallingPackages(true);
+    setInstallProgress({
+      phase: "preparing Nenjo packages",
+      progressPercent: 0,
+    });
+    try {
+      await onContinue({
+        onPackageInstallProgress: (progress) => setInstallProgress(progress),
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to install the default Nenjo packages.",
+      );
+      setInstallingPackages(false);
+      setInstallProgress(null);
+    }
+  }, [onContinue]);
 
   const handleContinue = useCallback(async () => {
     if (!recoveryBundle || !confirmed || !copied || !backupAcknowledged) return;
@@ -296,13 +335,26 @@ function StepSecureWorkspace({
         throw new Error("This browser does not have local access to shared org content yet.");
       }
       sessionStorage.removeItem(RECOVERY_DRAFT_SESSION_KEY);
-      await onContinue();
+      setRecoveryPhrase("");
+      setRecoveryBundle(null);
+      setConfirmWordA("");
+      setConfirmWordB("");
+      setCopied(false);
+      setBackupAcknowledged(false);
+      setRecoveryCommitted(true);
+      await installRequiredPackages();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to store the recovery bundle.");
     } finally {
       setSubmitting(false);
     }
-  }, [backupAcknowledged, confirmed, copied, onContinue, recoveryBundle]);
+  }, [
+    backupAcknowledged,
+    confirmed,
+    copied,
+    installRequiredPackages,
+    recoveryBundle,
+  ]);
 
   return (
     <div className="space-y-5 md:space-y-6">
@@ -328,7 +380,30 @@ function StepSecureWorkspace({
         </div>
       ) : null}
 
-      {!loading && recoveryPhrase ? (
+      {installingPackages ? (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800">
+          <p className="text-sm font-medium text-gray-800 dark:text-gray-100">
+            Installing Nenjo packages
+          </p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Setting up the default agent and workspace resources.
+          </p>
+          {installProgress ? (
+            <PackageInstallProgressBar
+              progress={installProgress}
+              className="mt-4"
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {recoveryCommitted && !installingPackages ? (
+        <Button onClick={() => void installRequiredPackages()} className="w-full">
+          Retry Package Setup
+        </Button>
+      ) : null}
+
+      {!loading && recoveryPhrase && !recoveryCommitted && !installingPackages ? (
         <>
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
             <p className="text-sm text-amber-700 dark:text-amber-400">
@@ -1736,10 +1811,12 @@ export default function OnboardingContent() {
 
         {onboardingMode === "fresh" && currentStep === 2 && (
           <StepSecureWorkspace
-            onContinue={async () => {
+            onContinue={async ({ onPackageInstallProgress }) => {
               const orgId = selectedOrgId ?? currentUser?.org_id ?? null;
               if (!orgId || officialPackagesInstalledForOrg.current !== orgId) {
-                await installOfficialNenjoPackages();
+                await installOfficialNenjoPackages({
+                  onProgress: onPackageInstallProgress,
+                });
                 if (orgId) officialPackagesInstalledForOrg.current = orgId;
               }
               setCurrentStep(3);

@@ -1,10 +1,12 @@
 import type { Metadata, Viewport } from 'next'
+import { Suspense } from 'react'
 import Script from 'next/script'
 import { ClerkProvider } from '@clerk/nextjs'
 import { ThemeProvider } from '@/lib/theme'
 import { PwaInstallController } from '@/components/pwa/PwaInstallController'
 import { PwaProvider } from '@/components/pwa/PwaProvider'
 import { ToastProvider } from '@/components/ui/Toast'
+import TermlyCMP from '@/components/TermlyCMP'
 import { Analytics } from "@vercel/analytics/next"
 import './globals.css'
 
@@ -122,12 +124,9 @@ export default function RootLayout({
             {children}
             <PwaInstallController />
             <ToastProvider />
-            <Script
-              id="termly-cmp"
-              src="https://app.termly.io/embed.min.js"
-              data-website-uuid={WEBSITE_UUID}
-              strategy="afterInteractive"
-            />
+            <Suspense fallback={null}>
+              <TermlyCMP websiteUUID={WEBSITE_UUID} />
+            </Suspense>
             <Analytics />
           </ThemeProvider>
         </PwaProvider>

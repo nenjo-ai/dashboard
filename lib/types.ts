@@ -1218,7 +1218,7 @@ export interface PackageInstall {
   root_resource_id: string | null;
   requested_ref: string;
   resolved_commit_sha: string;
-  status: "installed" | "failed" | "archived";
+  status: "installing" | "installed" | "failed" | "archived";
   current_lock_id: string | null;
   metadata: Record<string, unknown>;
   created_by: string | null;
@@ -1243,10 +1243,34 @@ export interface PackageInstallResource {
   updated_at: string;
 }
 
+export interface PackageInstallJob {
+  id: string;
+  org_id: string;
+  package_install_id: string;
+  operation: "install" | "update";
+  status: "queued" | "running" | "succeeded" | "failed";
+  ref_override: string | null;
+  phase: string;
+  progress_percent: number;
+  error: string | null;
+  claimed_by: string | null;
+  claim_expires_at: string | null;
+  attempts: number;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+}
+
+export interface PackageInstallProgress {
+  phase: string;
+  progressPercent: number;
+}
+
 export interface PackageInstallDetail {
   install: PackageInstall;
   resources: PackageInstallResource[];
   lock: Record<string, unknown> | null;
+  job: PackageInstallJob | null;
 }
 
 export interface PackageCatalogResponse {

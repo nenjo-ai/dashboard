@@ -412,6 +412,7 @@ export default function LandingPage() {
         <div className="lp-footer-links">
           <a href="mailto:hello@nenjo.ai">hello@nenjo.ai</a>
           <a href="https://nenjo.ai/privacy">Privacy</a>
+          <a href="https://nenjo.ai/cookies">Cookies</a>
           <a href="https://nenjo.ai/terms">Terms</a>
         </div>
       </footer>
