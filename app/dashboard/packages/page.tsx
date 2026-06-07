@@ -114,6 +114,9 @@ interface MarketplacePackage {
   source_path: string;
 }
 
+const CLAUDE_PLUGIN_MANIFEST_PATH = ".claude-plugin/plugin.json";
+const CLAUDE_MARKETPLACE_MANIFEST_PATH = ".claude-plugin/marketplace.json";
+
 interface ClaudeMarketplaceManifest {
   plugins?: Array<{
     name?: unknown;
@@ -131,6 +134,16 @@ interface ClaudeMarketplaceManifest {
 }
 
 type ClaudeMarketplacePlugin = NonNullable<ClaudeMarketplaceManifest["plugins"]>[number];
+
+interface ClaudePluginManifest {
+  name?: unknown;
+  slug?: unknown;
+  title?: unknown;
+  display_name?: unknown;
+  displayName?: unknown;
+  version?: unknown;
+  description?: unknown;
+}
 
 interface NenjoPackagesManifest {
   packages?:
@@ -324,6 +337,19 @@ function joinRelativePath(rootPath: string, childPath: string): string {
   return root === "." ? child : `${root}/${child}`;
 }
 
+function isClaudePluginManifestPath(path: string): boolean {
+  return normalizeCatalogPath(path).endsWith(CLAUDE_PLUGIN_MANIFEST_PATH);
+}
+
+function claudePluginRootPathFromManifestPath(path: string): string {
+  const normalized = normalizeCatalogPath(path);
+  if (normalized === CLAUDE_PLUGIN_MANIFEST_PATH) return ".";
+  const suffix = `/${CLAUDE_PLUGIN_MANIFEST_PATH}`;
+  return normalized.endsWith(suffix)
+    ? normalizePluginRootPath(normalized.slice(0, -suffix.length))
+    : normalizePluginRootPath(normalized);
+}
+
 function marketplacePluginPath(plugin: ClaudeMarketplacePlugin): string {
   const candidates = [
     plugin.source,
@@ -385,6 +411,58 @@ function marketplacePluginSourceInfo(
       resolvedCommitSha ??
       (usesFallbackRepo ? fallback.resolvedCommitSha : null),
     rootPath: normalizePluginRootPath(marketplacePluginPath(plugin)),
+  };
+}
+
+function marketplacePackageFromClaudePluginManifest(
+  source: PackageSource,
+  info: MarketplaceGitHubInfo,
+  manifestPath: string,
+  manifest: ClaudePluginManifest,
+): MarketplacePackage {
+  const normalizedManifestPath =
+    normalizeCatalogPath(manifestPath) || CLAUDE_PLUGIN_MANIFEST_PATH;
+  const rootPath = claudePluginRootPathFromManifestPath(normalizedManifestPath);
+  const name =
+    firstTextValue(manifest.name, manifest.slug, manifest.title) ||
+    rootPath.split("/").filter(Boolean).pop() ||
+    source.name ||
+    "plugin";
+  const displayName =
+    firstTextValue(
+      manifest.display_name,
+      manifest.displayName,
+      manifest.title,
+      manifest.name,
+    ) ?? name;
+  const version = textValue(manifest.version);
+
+  return {
+    id: `${source.id}:plugin:${normalizedManifestPath}`,
+    kind: "plugin",
+    name,
+    display_name: displayName,
+    description: textValue(manifest.description),
+    latest_version: version,
+    synced_at: null,
+    source_path: normalizedManifestPath,
+    metadata: {
+      adapter: "claude_plugin",
+      source: {
+        provider: "github",
+        owner: info.owner,
+        repo: info.repo,
+        path: rootPath,
+        package: name,
+        manifest_path: normalizedManifestPath,
+        marketplace_path: normalizedManifestPath,
+      },
+      version: {
+        ref: info.ref,
+        resolved_commit_sha: info.resolvedCommitSha,
+        package_version: version,
+      },
+    },
   };
 }
 
@@ -549,7 +627,7 @@ function packageSupportsSelector(kind: MarketplacePackageKind): boolean {
 }
 
 function packageKindFromPath(path: string): MarketplacePackageKind {
-  if (path.endsWith(".claude-plugin/plugin.json")) return "plugin";
+  if (path.endsWith(CLAUDE_PLUGIN_MANIFEST_PATH)) return "plugin";
   if (
     path.endsWith("/SKILL.md") ||
     path === "SKILL.md" ||
@@ -876,6 +954,19 @@ async function fetchMarketplacePackages(
         },
       };
     }));
+  }
+  if (
+    source.adapter === "claude_marketplace" &&
+    isClaudePluginManifestPath(info.marketplacePath)
+  ) {
+    return [
+      marketplacePackageFromClaudePluginManifest(
+        source,
+        info,
+        info.marketplacePath,
+        manifest as ClaudePluginManifest,
+      ),
+    ];
   }
   return (manifest.plugins ?? []).map((plugin, index) => {
     const pluginSource = marketplacePluginSourceInfo(plugin, info);
@@ -1479,7 +1570,7 @@ export default function KnowledgePage() {
       const manifestPath =
         sourceManifestPath.trim() ||
         (sourceAdapter === "claude_marketplace"
-          ? ".claude-plugin/marketplace.json"
+          ? CLAUDE_PLUGIN_MANIFEST_PATH
           : "packages.yaml");
       const created = await createPackageSource({
         name: sourceName.trim() || `${owner}/${repo}`,
@@ -1525,11 +1616,13 @@ export default function KnowledgePage() {
         adapter === "claude_marketplace" &&
         (!trimmed || trimmed === "packages.yaml")
       ) {
-        return ".claude-plugin/marketplace.json";
+        return CLAUDE_PLUGIN_MANIFEST_PATH;
       }
       if (
         adapter === "nenjo_packages" &&
-        (!trimmed || trimmed === ".claude-plugin/marketplace.json")
+        (!trimmed ||
+          trimmed === CLAUDE_PLUGIN_MANIFEST_PATH ||
+          trimmed === CLAUDE_MARKETPLACE_MANIFEST_PATH)
       ) {
         return "packages.yaml";
       }
@@ -2259,7 +2352,7 @@ function packageInstallSourceBadge(
   source: PackageSource | undefined,
 ): string | null {
   if (!source) return null;
-  if (source.adapter === "claude_marketplace") return "Claude marketplace";
+  if (source.adapter === "claude_marketplace") return "Claude plugins";
   if (source.adapter === "codex_plugin") return "Codex plugin";
   return source.name;
 }
@@ -2661,7 +2754,7 @@ async function fetchPluginDocumentationReview(
   const candidates = [
     "README.md",
     "readme.md",
-    ".claude-plugin/plugin.json",
+    CLAUDE_PLUGIN_MANIFEST_PATH,
     "plugin.json",
   ].map((path) => joinRelativePath(rootPath, path));
   const fetchRef = sourceFetchRef(info);
@@ -4827,7 +4920,7 @@ function SourcesTab(props: {
         <div className="flex items-center gap-2">
           <GitBranch className="h-4 w-4 text-gray-500" />
           <h2 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
-            Import Public Packages/Marketplaces
+            Import Public Packages
           </h2>
         </div>
         <div className="mt-4 space-y-3">
@@ -4840,8 +4933,7 @@ function SourcesTab(props: {
             }
           >
             <option value="nenjo_packages">Nenjo packages</option>
-            <option value="claude_marketplace">Claude marketplace</option>
-            <option value="codex_plugin">Codex plugin</option>
+            <option value="claude_marketplace">Claude plugins</option>
           </Select>
           <Input
             value={props.sourceName}
@@ -4865,7 +4957,11 @@ function SourcesTab(props: {
             onChange={(event) =>
               props.onSourceManifestPathChange(event.target.value)
             }
-            placeholder="Package or marketplace manifest path"
+            placeholder={
+              props.sourceAdapter === "claude_marketplace"
+                ? CLAUDE_PLUGIN_MANIFEST_PATH
+                : "packages.yaml"
+            }
           />
           <Button
             size="sm"

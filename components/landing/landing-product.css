@@ -1567,6 +1567,135 @@ html{scroll-behavior:smooth}
   line-height: 1.65;
 }
 
+.nenjo-light .lp-pricing-hero,
+.nenjo-light .lp-pricing-grid {
+  position: relative;
+  z-index: 1;
+  width: min(1220px, calc(100% - 40px));
+  margin: 0 auto;
+}
+
+.nenjo-light .lp-pricing-hero {
+  padding: clamp(132px, 13vw, 168px) 0 clamp(38px, 7vw, 72px);
+}
+
+.nenjo-light .lp-pricing-hero h1 {
+  max-width: 880px;
+  font-family: var(--f-disp);
+  font-size: clamp(54px, 7vw, 96px);
+  font-weight: 600;
+  line-height: 0.96;
+  letter-spacing: 0;
+}
+
+.nenjo-light .lp-pricing-hero p {
+  max-width: 720px;
+  margin-top: 24px;
+  color: var(--ink-dim);
+  font-size: clamp(17px, 2vw, 22px);
+  line-height: 1.52;
+}
+
+.nenjo-light .lp-pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 0 0 clamp(72px, 10vw, 118px);
+}
+
+.nenjo-light .lp-price-card {
+  display: flex;
+  min-height: 560px;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: clamp(24px, 3vw, 34px);
+  background: rgba(255, 250, 240, 0.64);
+  box-shadow: 0 22px 70px rgba(43, 36, 23, 0.08);
+}
+
+.nenjo-light .lp-price-card.featured {
+  border-color: var(--line-strong);
+  background:
+    linear-gradient(145deg, rgba(220, 235, 226, 0.82), rgba(255, 250, 240, 0.78)),
+    var(--paper-soft);
+}
+
+.nenjo-light .lp-price-card.quiet {
+  background:
+    linear-gradient(145deg, rgba(220, 231, 243, 0.72), rgba(255, 250, 240, 0.7)),
+    var(--paper-soft);
+}
+
+.nenjo-light .lp-price-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.nenjo-light .lp-price-card svg {
+  color: var(--accent-deep);
+}
+
+.nenjo-light .lp-price-label {
+  display: block;
+  color: var(--accent-deep);
+  font-family: var(--f-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.nenjo-light .lp-price-card h2 {
+  margin-top: 14px;
+  color: var(--ink);
+  font-family: var(--f-disp);
+  font-size: clamp(38px, 4.2vw, 58px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.nenjo-light .lp-price-note {
+  margin-top: 18px;
+  color: var(--ink-dim);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.nenjo-light .lp-price-card ul {
+  display: grid;
+  gap: 12px;
+  margin: 30px 0 34px;
+  padding: 0;
+  list-style: none;
+}
+
+.nenjo-light .lp-price-card li {
+  display: flex;
+  gap: 11px;
+  color: var(--ink-dim);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.nenjo-light .lp-price-card li::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  border: 1px solid var(--accent-deep);
+  border-radius: 50%;
+  background: rgba(184, 132, 26, 0.2);
+}
+
+.nenjo-light .lp-price-card .lp-button {
+  width: 100%;
+  margin-top: auto;
+}
+
 .nenjo-light .lp-band {
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(320px, 1fr);
@@ -1765,7 +1894,8 @@ html{scroll-behavior:smooth}
   .nenjo-light .lp-card-grid,
   .nenjo-light .lp-builder-grid,
   .nenjo-light .lp-split-grid,
-  .nenjo-light .lp-steps {
+  .nenjo-light .lp-steps,
+  .nenjo-light .lp-pricing-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -1836,12 +1966,22 @@ html{scroll-behavior:smooth}
   .nenjo-light .lp-control-plane,
   .nenjo-light .lp-how,
   .nenjo-light .lp-cta,
-  .nenjo-light .lp-footer {
+  .nenjo-light .lp-footer,
+  .nenjo-light .lp-pricing-hero,
+  .nenjo-light .lp-pricing-grid {
     width: min(100% - 28px, 1180px);
   }
 
   .nenjo-light .lp-hero h1 {
     font-size: clamp(48px, 17vw, 72px);
+  }
+
+  .nenjo-light .lp-pricing-hero h1 {
+    font-size: clamp(46px, 15vw, 68px);
+  }
+
+  .nenjo-light .lp-price-card {
+    min-height: auto;
   }
 
   .nenjo-light .lp-terminal {
