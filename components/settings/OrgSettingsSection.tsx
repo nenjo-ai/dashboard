@@ -409,12 +409,12 @@ function InvitesPanel({
                 Create a scoped invite and copy the acceptance link immediately.
               </p>
             </div>
-            <Button
-              variant={inviteExpanded ? "secondary" : "primary"}
-              onClick={() => setInviteExpanded((open) => !open)}
-            >
-              {inviteExpanded ? "Close" : "Invite member"}
-            </Button>
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <Button variant="primary" disabled>
+                Invite member
+              </Button>
+              <p className="theme-text-muted text-xs">Coming soon</p>
+            </div>
           </div>
 
           {inviteExpanded && (

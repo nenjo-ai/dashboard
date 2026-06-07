@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 import {
   ArrowRight,
+  BadgeDollarSign,
   Boxes,
   Braces,
   GitBranch,
@@ -34,7 +35,7 @@ const packages = [
   {
     icon: RefreshCcw,
     title: "Live updates",
-    body: "Hot-swap packages and manifests while workers keep running. Update behavior without restarts, dropped tasks, or vendor-bound dashboards.",
+    body: "Hot-swap packages and manifests while workers keep running. Update behavior without restarts or dropped tasks all from your desktop or phone.",
   },
 ];
 
@@ -59,7 +60,7 @@ const builders = [
     body: "Embed agents directly in your app with the SDK, then reuse the same packages across users, projects, and environments.",
   },
   {
-    title: "AI product builders",
+    title: "Personal AI Assistants",
     body: "Run standalone workers for long-lived assistants, multi-step routines, and capability-scoped agent systems on your own infrastructure.",
   },
   {
@@ -171,6 +172,10 @@ export default function LandingPage() {
         </Link>
         <div className="lp-nav-current" aria-live="polite">{currentSection}</div>
         <div className="lp-nav-actions">
+          <Link className="lp-nav-ghost" href="/pricing">
+            <BadgeDollarSign size={16} />
+            Pricing
+          </Link>
           <a className="lp-nav-ghost" href="https://github.com/nenjo-ai/nenjo" target="_blank" rel="noreferrer">
             <Github size={16} />
             Star
@@ -191,7 +196,7 @@ export default function LandingPage() {
           </div>
           <h1>The modular agentic control plane.</h1>
           <p className="lp-hero-lede">
-            Build, deploy, and evolve AI workers across your own apps and infrastructure with versioned packages for knowledge and runtime configuration.
+            Build, deploy, and evolve autonomous agents across your own apps and infrastructure with versioned packages for knowledge and runtime configuration.
           </p>
           <div className="lp-actions">
             <a className="lp-button primary" href="https://github.com/nenjo-ai/nenjo" target="_blank" rel="noreferrer">
@@ -204,6 +209,9 @@ export default function LandingPage() {
             </Link>
             <Link className="lp-link" href="/docs">
               Read the docs <ArrowRight size={16} />
+            </Link>
+            <Link className="lp-link" href="/pricing">
+              View pricing <ArrowRight size={16} />
             </Link>
           </div>
           <div className="lp-hero-points">
@@ -410,6 +418,7 @@ export default function LandingPage() {
           <p>Open source runtime. Managed control plane.</p>
         </div>
         <div className="lp-footer-links">
+          <Link href="/pricing">Pricing</Link>
           <a href="mailto:hello@nenjo.ai">hello@nenjo.ai</a>
           <a href="https://nenjo.ai/privacy">Privacy</a>
           <a href="https://nenjo.ai/cookies">Cookies</a>
