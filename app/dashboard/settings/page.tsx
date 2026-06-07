@@ -275,17 +275,6 @@ function SettingsContent() {
               )}
             </SettingsSection>
 
-            <SettingsSection
-              title="Privacy"
-              description="Manage cookie and tracking consent preferences for this browser."
-            >
-              <a
-                href="#"
-                className="termly-display-preferences theme-text inline-flex h-10 items-center border border-black/10 px-4 text-sm font-medium transition-colors hover:bg-black/[0.03] dark:border-white/10 dark:hover:bg-white/[0.04]"
-              >
-                Consent Preferences
-              </a>
-            </SettingsSection>
           </div>
         )}
 
