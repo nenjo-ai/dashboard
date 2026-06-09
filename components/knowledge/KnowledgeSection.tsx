@@ -70,6 +70,7 @@ interface NewKnowledgeItemForm {
 interface TreeNode {
   name: string;
   path: string;
+  key: string;
   children: TreeNode[];
   item?: KnowledgeItem;
 }
@@ -116,7 +117,7 @@ function buildItemTree(items: KnowledgeItem[]): TreeNode[] {
       const folderPath = folderSegments.slice(0, i + 1).join("/");
       let folder = parent.find((node) => node.path === folderPath && !node.item);
       if (!folder) {
-        folder = { name: seg, path: folderPath, children: [] };
+        folder = { name: seg, path: folderPath, key: `folder:${folderPath}`, children: [] };
         parent.push(folder);
       }
       parent = folder.children;
@@ -125,6 +126,7 @@ function buildItemTree(items: KnowledgeItem[]): TreeNode[] {
     parent.push({
       name: leafName,
       path: [...folderSegments, leafName].join("/"),
+      key: `item:${item.id}`,
       children: [],
       item: item,
     });
@@ -168,7 +170,7 @@ function ItemTreeNode({
         <div className="relative">
           {guides.map((guideDepth) => (
             <span
-              key={`${node.path}-guide-${guideDepth}`}
+              key={`${node.key}-guide-${guideDepth}`}
               className="pointer-events-none absolute bottom-0 top-0 w-px bg-gray-200 dark:bg-gray-700"
               style={{ left: `${guideDepth * 16 + 15}px` }}
             />
@@ -202,7 +204,7 @@ function ItemTreeNode({
           <div>
             {node.children.map((child) => (
               <ItemTreeNode
-                key={child.path}
+                key={child.key}
                 node={child}
                 depth={depth + 1}
                 selectedItemId={selectedItemId}
@@ -224,7 +226,7 @@ function ItemTreeNode({
     <div className="relative">
       {guides.map((guideDepth) => (
         <span
-          key={`${node.path}-guide-${guideDepth}`}
+          key={`${node.key}-guide-${guideDepth}`}
           className="pointer-events-none absolute bottom-0 top-0 w-px bg-gray-200 dark:bg-gray-700"
           style={{ left: `${guideDepth * 16 + 15}px` }}
         />
@@ -319,27 +321,18 @@ export function KnowledgeSection({ packRef, readOnly = false }: KnowledgeSection
       setGraphEdges([]);
       return;
     }
-    let cancelled = false;
-    setIsLoadingGraphEdges(true);
-    Promise.all(items.map((item) => fetchKnowledgeItemEdges(packRef, item.slug).catch(() => [])))
-      .then((edgeSets) => {
-        if (cancelled) return;
-        const seen = new Set<string>();
-        const nextEdges: KnowledgeItemEdge[] = [];
-        for (const edge of edgeSets.flat()) {
-          if (seen.has(edge.id)) continue;
-          seen.add(edge.id);
-          nextEdges.push(edge);
-        }
-        setGraphEdges(nextEdges);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoadingGraphEdges(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [items, packRef]);
+    const seen = new Set<string>();
+    const nextEdges: KnowledgeItemEdge[] = [];
+    for (const item of items) {
+      for (const edge of item.edges ?? []) {
+        if (seen.has(edge.id)) continue;
+        seen.add(edge.id);
+        nextEdges.push(edge);
+      }
+    }
+    setGraphEdges(nextEdges);
+    setIsLoadingGraphEdges(false);
+  }, [items]);
 
   useEffect(() => {
     if (!items || items.length === 0) {
@@ -762,7 +755,7 @@ export function KnowledgeSection({ packRef, readOnly = false }: KnowledgeSection
                 <div className="space-y-0.5">
                   {tree.map((node) => (
                     <ItemTreeNode
-                      key={node.path}
+                      key={node.key}
                       node={node}
                       depth={0}
                       selectedItemId={selectedItemId}
