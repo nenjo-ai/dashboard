@@ -956,6 +956,7 @@ export interface KnowledgeItem {
   id: string;
   org_id: string;
   pack_id: string;
+  pack_slug?: string;
   slug: string;
   filename: string;
   path: string | null;
@@ -966,6 +967,7 @@ export interface KnowledgeItem {
   content_type: string;
   created_at: string;
   updated_at: string;
+  edges: KnowledgeItemEdge[];
 }
 
 export interface KnowledgeItemEdge {
