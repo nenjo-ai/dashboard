@@ -1099,32 +1099,33 @@ export interface AgentMcpAssignment {
 
 export interface ContextBlock {
   id: string;
+  org_id: string;
+  slug: string;
   name: string;
   path: string;
-  display_name: string | null;
   description: string | null;
-  template?: string;
-  is_system: boolean;
-  source_block_id: string | null;
-  source_type?: "native" | "package";
+  source_type?: string;
   read_only?: boolean;
   metadata?: Record<string, unknown>;
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  template?: string;
+}
+
+export function isContextBlockLocked(block: Pick<ContextBlock, "read_only" | "source_type">): boolean {
+  return Boolean(block.read_only || block.source_type === "package");
 }
 
 export interface CreateContextBlockRequest {
   name: string;
   path?: string;
-  display_name?: string;
   description?: string;
   template?: string;
 }
 
 export interface UpdateContextBlockRequest {
   name?: string;
-  display_name?: string;
   description?: string;
 }
 

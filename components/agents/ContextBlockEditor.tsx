@@ -13,7 +13,7 @@ import { PromptReferenceTabs } from "./PromptReferenceTabs";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
 import { Button } from "@/components/ui/Button";
 import { sourceManagedMetadata } from "@/lib/sourceManaged";
-import type { ContextBlock } from "@/lib/types";
+import { isContextBlockLocked, type ContextBlock } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Shared hook for editor logic
@@ -22,7 +22,6 @@ import type { ContextBlock } from "@/lib/types";
 function useBlockEditor(block: ContextBlock, onSaved: () => void) {
   const [template, setTemplate] = useState(block.template ?? "");
   const [name, setName] = useState(block.name);
-  const [displayName, setDisplayName] = useState(block.display_name ?? "");
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorCol, setCursorCol] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -33,7 +32,6 @@ function useBlockEditor(block: ContextBlock, onSaved: () => void) {
   useEffect(() => {
     setTemplate(block.template ?? "");
     setName(block.name);
-    setDisplayName(block.display_name ?? "");
   }, [block]);
 
   useEffect(() => {
@@ -62,7 +60,6 @@ function useBlockEditor(block: ContextBlock, onSaved: () => void) {
     try {
       await updateContextBlock(block.id, {
         name: name.trim() !== block.name ? name.trim() : undefined,
-        display_name: displayName.trim() || undefined,
       });
       await updateContextBlockContent(block.id, template);
       setSaved(true);
@@ -73,7 +70,7 @@ function useBlockEditor(block: ContextBlock, onSaved: () => void) {
     } finally {
       setSaving(false);
     }
-  }, [block.id, block.name, template, name, displayName, onSaved]);
+  }, [block.id, block.name, template, name, onSaved]);
 
   const handleInsertVariable = useCallback((text: string) => {
     editorRef.current?.insertAtCursor(text);
@@ -89,8 +86,6 @@ function useBlockEditor(block: ContextBlock, onSaved: () => void) {
     setTemplate,
     name,
     setName,
-    displayName,
-    setDisplayName,
     cursorLine,
     cursorCol,
     saving,
@@ -164,17 +159,17 @@ export function ContextBlockEditor({ block, onClose, onSaved }: ContextBlockEdit
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="truncate text-base font-semibold text-gray-900 dark:text-gray-100">
-                  {block.display_name || block.name}
+                  {block.name}
                 </h2>
                 <code className="theme-surface-muted theme-text-muted shrink-0 rounded px-1.5 py-0.5 text-xs font-mono">
                   {variableRef(block)}
                 </code>
                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                  block.is_system
+                  isContextBlockLocked(block)
                     ? "bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-300"
                     : "theme-surface-muted theme-text-muted"
                 }`}>
-                  {block.is_system ? "System" : "Custom"}
+                  {isContextBlockLocked(block) ? "Managed" : "Custom"}
                 </span>
               </div>
               {block.description && (
@@ -202,7 +197,7 @@ export function ContextBlockEditor({ block, onClose, onSaved }: ContextBlockEdit
             <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
               Template
             </h4>
-            {block.source_block_id ? (
+            {block.read_only ? (
               <>
                 <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
                   Edit the wrapper template for this context block. Use template variables to inject dynamic data.
@@ -237,7 +232,7 @@ export function ContextBlockEditor({ block, onClose, onSaved }: ContextBlockEdit
                 ref={editorRef}
                 value={template}
                 onChange={setTemplate}
-                placeholder={block.source_block_id
+                placeholder={block.read_only
                   ? '<available_agents>\n{{ agents }}\n</available_agents>'
                   : 'Write your context content here...\nUse {{ variable }} syntax for dynamic values.'
                 }
@@ -353,7 +348,7 @@ function ReadOnlyContextBlockPanel({ block }: { block: ContextBlock }) {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="theme-text text-sm font-semibold">
-                {block.display_name || block.name}
+                {block.name}
               </h2>
               <span className="theme-surface-muted-strong theme-text rounded-full px-2 py-0.5 text-[10px] font-medium">
                 Source managed
@@ -446,8 +441,6 @@ function EditableContextBlockEditorInline({ block, onSaved, onDelete }: ContextB
     setTemplate,
     name,
     setName,
-    displayName,
-    setDisplayName,
     cursorLine,
     cursorCol,
     saving,
@@ -488,24 +481,17 @@ function EditableContextBlockEditorInline({ block, onSaved, onDelete }: ContextB
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <input
             type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder={block.name}
-            className="min-w-0 flex-1 truncate border-0 bg-transparent text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-400 focus:ring-0 dark:text-gray-100 dark:placeholder:text-gray-500"
-          />
-          <input
-            type="text"
             value={name}
             onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"))}
             className="theme-surface-muted theme-text-muted w-36 shrink-0 rounded px-1.5 py-0.5 text-xs font-mono outline-none focus:ring-1 focus:ring-teal-400"
-            readOnly={!!block.source_block_id}
+            readOnly={!!block.read_only}
           />
           <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-            block.is_system
+            isContextBlockLocked(block)
               ? "bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-300"
               : "theme-surface-muted theme-text-muted"
           }`}>
-            {block.is_system ? "System" : "Custom"}
+            {isContextBlockLocked(block) ? "Managed" : "Custom"}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -553,7 +539,7 @@ function EditableContextBlockEditorInline({ block, onSaved, onDelete }: ContextB
               ref={editorRef}
               value={template}
               onChange={setTemplate}
-              placeholder={block.source_block_id
+              placeholder={block.read_only
                 ? '<available_agents>\n{{ agents }}\n</available_agents>'
                 : 'Write your context content here...\nUse {{ variable }} syntax for dynamic values.'
               }

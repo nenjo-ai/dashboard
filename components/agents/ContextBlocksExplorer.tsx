@@ -30,7 +30,7 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Label } from "@/components/ui/Label";
 import JSZip from "jszip";
-import type { ContextBlock } from "@/lib/types";
+import { isContextBlockLocked, type ContextBlock } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Tree structure types
@@ -173,7 +173,7 @@ function DraggableFile({
   onClick: () => void;
   depth: number;
 }) {
-  const canDrag = !block.is_system;
+  const canDrag = !isContextBlockLocked(block);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: block.id,
     disabled: !canDrag,
@@ -209,8 +209,8 @@ function DraggableFile({
           d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5"
         />
       </svg>
-      <span className="truncate text-xs">{block.display_name || block.name}</span>
-      {block.is_system && (
+      <span className="truncate text-xs">{block.name}</span>
+      {isContextBlockLocked(block) && (
         <svg
           className="h-3 w-3 shrink-0 text-gray-300 dark:text-gray-600"
           fill="none"
@@ -516,14 +516,12 @@ function contextBlockUrlKeys(block: ContextBlock): string[] {
   const dottedPath = block.path
     ? `${block.path.replace(/\//g, ".")}.${block.name}`
     : block.name;
-  const slug = (block as ContextBlock & { slug?: string }).slug;
   return [
     block.id,
     block.name,
-    block.display_name,
+    block.slug,
     pathName,
     dottedPath,
-    slug,
   ].filter((value): value is string => Boolean(value && value.trim()));
 }
 
@@ -844,7 +842,7 @@ export function ContextBlocksExplorer() {
               block={currentSelectedBlock}
               onSaved={() => mutate()}
               onDelete={
-                currentSelectedBlock.is_system
+                isContextBlockLocked(currentSelectedBlock)
                   ? undefined
                   : () => setConfirmDeleteBlock(currentSelectedBlock)
               }
@@ -868,7 +866,7 @@ export function ContextBlocksExplorer() {
       <DragOverlay>
         {draggingBlock && (
           <div className="rounded-md border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700 shadow-lg dark:border-teal-800 dark:bg-teal-900/50 dark:text-teal-300">
-            {draggingBlock.display_name || draggingBlock.name}
+            {draggingBlock.name}
           </div>
         )}
       </DragOverlay>
@@ -895,7 +893,7 @@ export function ContextBlocksExplorer() {
         onClose={() => setConfirmDeleteBlock(null)}
         onConfirm={handleDeleteBlock}
         title="Delete Context Block"
-        message={`Delete context block "${confirmDeleteBlock?.display_name || confirmDeleteBlock?.name}"?`}
+        message={`Delete context block "${confirmDeleteBlock?.name}"?`}
         confirmLabel="Delete"
         variant="danger"
         loading={!!deletingId}
@@ -1029,7 +1027,7 @@ function CreateContextBlockModal({
 }) {
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
-  const [displayName, setDisplayName] = useState("");
+
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -1041,13 +1039,11 @@ function CreateContextBlockModal({
       await createContextBlock({
         name: name.trim(),
         path: path || undefined,
-        display_name: displayName.trim() || undefined,
         description: description.trim() || undefined,
         template: "",
       });
       setName("");
       setPath("");
-      setDisplayName("");
       setDescription("");
       onSaved();
     } catch {
@@ -1094,15 +1090,6 @@ function CreateContextBlockModal({
               {"{{ " + pathToDotted(path, name || "name") + " }}"}
             </code>
           </p>
-        </div>
-        <div>
-          <Label htmlFor="cb-display">Display Name</Label>
-          <Input
-            id="cb-display"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="Coding Standards"
-          />
         </div>
         <div>
           <Label htmlFor="cb-desc">Description</Label>
