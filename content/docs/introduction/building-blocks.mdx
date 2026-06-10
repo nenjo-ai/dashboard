@@ -174,7 +174,7 @@ Each scope adds a corresponding set of platform tools to an agent, ability, doma
 - `abilities:read` / `abilities:write` — Read or mutate abilities
 - `domains:read` / `domains:write` — Read or mutate domains and domain sessions
 - `projects:read` / `projects:write` — Read or mutate projects, tasks, dependencies, executions, and project-scoped state
-- `library:read` / `library:write` — Read or mutate library knowledge packs, documents, content, and relationships
+- `library:write` — Mutate library knowledge packs, documents, content, and relationships. Agent knowledge reads use composite `nenjo_knowledge` tools when packs are available locally.
 - `routines:read` / `routines:write` — Read or mutate routines
 - `councils:read` / `councils:write` — Read or mutate councils
 - `context_blocks:read` / `context_blocks:write` — Read or mutate reusable prompt-context assets

@@ -30,8 +30,7 @@ These scopes add built-in platform tools to an agent when the worker builds its 
 | `domains:write` | `create_domain`, `update_domain`, `update_domain_prompt`, `delete_domain` |
 | `projects:read` | `list_projects`, `get_project`, `list_project_tasks`, `get_project_task`, `list_project_execution_runs`, `get_project_execution_run` |
 | `projects:write` | `create_project`, `update_project`, `delete_project`, `create_project_tasks`, `update_project_task`, `delete_project_task`, `start_project_execution`, `pause_project_execution`, `resume_project_execution` |
-| `library:read` | Allows reading library knowledge packs and documents through API/admin surfaces. Knowledge traversal tools such as `list_knowledge_packs`, `read_knowledge_doc`, `search_knowledge`, and `list_knowledge_neighbors` are exposed dynamically when knowledge packs are available. |
-| `library:write` | `create_knowledge_doc`, `update_knowledge_doc`, `delete_knowledge_doc` |
+| `library:write` | `create_knowledge_pack`, `update_knowledge_pack`, `create_knowledge_doc`, `update_knowledge_doc`, `delete_knowledge_doc` |
 | `routines:read` | `list_routines`, `get_routine` |
 | `routines:write` | `create_routine`, `update_routine`, `delete_routine` |
 | `models:read` | `list_models`, `get_model` |
@@ -58,7 +57,7 @@ That is why there are no separate runtime tool scopes such as `tasks:write` in t
 
 ## Library Scope Covers Knowledge
 
-`library:read` and `library:write` cover organization-level library knowledge:
+`library:write` covers organization-level library knowledge mutations:
 
 - Knowledge packs
 - Knowledge documents
@@ -110,7 +109,7 @@ In normal design work, an agent can recommend the minimum scopes needed. The use
 
 | Use case | Suggested scopes |
 |----------|------------------|
-| Read-only platform guide | `agents:read`, `projects:read`, `library:read`, `routines:read`, `domains:read`, `abilities:read`, `models:read`, `context_blocks:read`, `mcp_servers:read` |
+| Read-only platform guide | `agents:read`, `projects:read`, `routines:read`, `domains:read`, `abilities:read`, `models:read`, `context_blocks:read`, `mcp_servers:read` |
 | Project work manager | `projects:write`, `routines:read`, `agents:read`, `models:read` |
 | Workflow builder | `routines:write`, `councils:read`, `agents:read`, `projects:read`, `context_blocks:read` |
 | Council builder | `councils:write`, `agents:read`, `projects:read`, `routines:read`, `context_blocks:read` |
