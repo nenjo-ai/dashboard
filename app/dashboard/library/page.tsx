@@ -36,7 +36,7 @@ export default function KnowledgePage() {
   const [deletingPack, setDeletingPack] = useState(false);
 
   const platformPacks = useMemo(
-    () => (packs ?? []).filter((pack) => pack.status !== "archived" && pack.source_type !== "package"),
+    () => (packs ?? []).filter((pack) => pack.source_type !== "package"),
     [packs],
   );
   const selectedPack = platformPacks.find((pack) => pack.id === selectedPackId) ?? null;

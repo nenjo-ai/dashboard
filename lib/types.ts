@@ -932,7 +932,6 @@ export interface KnowledgePack {
   slug: string;
   name: string;
   description: string | null;
-  status: "active" | "archived";
   source_type: "uploaded" | "github" | "package";
   read_only: boolean;
   is_system: boolean;

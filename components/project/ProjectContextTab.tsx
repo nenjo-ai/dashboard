@@ -458,9 +458,9 @@ function LibraryReferenceList({
   onInsertVariable: (text: string) => void;
 }) {
   const { packs, isLoading, isError } = useKnowledgePacks();
-  const activePacks = (packs ?? [])
-    .filter((pack) => pack.status === "active")
-    .sort((left, right) => left.name.localeCompare(right.name));
+  const activePacks = (packs ?? []).sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
 
   if (isLoading) {
     return (

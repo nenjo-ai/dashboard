@@ -273,9 +273,9 @@ export function LibraryReferenceList({
   onInsertVariable: (text: string) => void;
 }) {
   const { packs, isLoading, isError } = useKnowledgePacks();
-  const activePacks = (packs ?? [])
-    .filter((pack) => pack.status === "active")
-    .sort((left, right) => left.name.localeCompare(right.name));
+  const activePacks = (packs ?? []).sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
 
   if (isLoading) return <div className="p-2 text-xs text-gray-500 dark:text-gray-400">Loading library...</div>;
   if (isError) return <div className="p-2 text-xs text-red-600 dark:text-red-400">Failed to load library packs.</div>;
