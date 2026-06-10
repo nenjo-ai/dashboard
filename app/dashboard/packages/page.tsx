@@ -1414,7 +1414,7 @@ export default function KnowledgePage() {
   const activePacks = useMemo(
     () =>
       (packs ?? []).filter((pack) => {
-        if (pack.status === "archived" || pack.source_type !== "package")
+        if (pack.source_type !== "package")
           return false;
         const sourcePath = metadataText(pack.metadata, [
           "install",

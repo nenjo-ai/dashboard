@@ -1496,7 +1496,7 @@ export async function updateKnowledgePack(
   data: Partial<
     Pick<
       import("./types").KnowledgePack,
-      "name" | "slug" | "description" | "status"
+      "name" | "slug" | "description"
     >
   >,
 ): Promise<import("./types").KnowledgePack> {

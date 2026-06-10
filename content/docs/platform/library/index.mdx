@@ -58,7 +58,7 @@ The globe helps humans spot missing structure before agents hit it at runtime. I
 
 ## Write surface
 
-Library maintenance uses the `library:write` scope and the active write-enabled mode. Agents should not treat package-installed knowledge as mutable. User-managed Library documents can be created, updated, and deleted; Library packs should be archived with pack updates when possible rather than silently removed.
+Library maintenance uses the `library:write` scope and the active write-enabled mode. Agents should not treat package-installed knowledge as mutable. User-managed Library documents can be created, updated, and deleted. Library pack deletion removes pack metadata, documents, edges, and object storage completely.
 
 ## Prompt example
 
