@@ -1035,7 +1035,6 @@ export const MCP_RESOURCE_SCOPES = [
   "domains:write",
   "projects:read",
   "projects:write",
-  "library:read",
   "library:write",
   "routines:read",
   "routines:write",

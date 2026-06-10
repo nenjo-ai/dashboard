@@ -12,7 +12,7 @@ const SCOPE_GROUPS = [
   { label: "Abilities", scopes: ["abilities:read", "abilities:write"] },
   { label: "Domains", scopes: ["domains:read", "domains:write"] },
   { label: "Projects", scopes: ["projects:read", "projects:write"] },
-  { label: "Library", scopes: ["library:read", "library:write"] },
+  { label: "Library", scopes: ["library:write"] },
   { label: "Routines", scopes: ["routines:read", "routines:write"] },
   { label: "Councils", scopes: ["councils:read", "councils:write"] },
   { label: "Context Blocks", scopes: ["context_blocks:read", "context_blocks:write"] },
