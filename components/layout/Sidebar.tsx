@@ -9,6 +9,7 @@ import { useAuth, useUser } from "@clerk/nextjs";
 import useSWR from "swr";
 import { catalogFetcher, catalogSWROptions, projectsUrl } from "@/lib/api";
 import type { Project } from "@/lib/types";
+import { clearLocalSecretVaultSession, lockLocalSecretVault } from "@/lib/cryptoContent";
 import { CreateProjectModal } from "@/components/dashboard/CreateProjectModal";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
 import { Bot, GitBranch, LibraryBig, Package } from "lucide-react";
@@ -483,6 +484,8 @@ function UserProfile({ collapsed = false }: { collapsed?: boolean }) {
 
   const handleLogout = useCallback(async () => {
     setMenuOpen(false);
+    lockLocalSecretVault();
+    await clearLocalSecretVaultSession();
     await signOut({ redirectUrl: "/" });
   }, [signOut]);
 

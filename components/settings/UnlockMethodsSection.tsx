@@ -1,0 +1,190 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { useUser } from "@clerk/nextjs";
+import useSWR from "swr";
+import { KeyRound, LockKeyhole, Trash2 } from "lucide-react";
+import {
+  listUnlockCredentials,
+  revokeUnlockCredential,
+  unlockCredentialsUrl,
+} from "@/lib/api";
+import type { UnlockCredential } from "@/lib/types";
+import {
+  hasPasswordUnlockMethod,
+  listLocalPasskeyUnlockMethods,
+  removeLocalPasskeyUnlock,
+  removePasswordUnlockMethod,
+} from "@/lib/cryptoContent";
+import { UnlockMethodSetup } from "@/components/auth/UnlockMethodSetup";
+import { Button } from "@/components/ui/Button";
+import { toast } from "@/lib/toast";
+import { shouldShowUnlockMethodSetup } from "@/lib/unlockMethodVisibility.mjs";
+
+function methodLabel(credential: UnlockCredential): string {
+  return credential.label || credential.credential_id;
+}
+
+export function UnlockMethodsSection() {
+  const { user } = useUser();
+  const accountId = user?.id ?? null;
+  const { data, mutate, isLoading } = useSWR(unlockCredentialsUrl(), () => listUnlockCredentials());
+  const [hasPassword, setHasPassword] = useState(false);
+  const [localPasskeyIds, setLocalPasskeyIds] = useState<Set<string>>(new Set());
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [removingPassword, setRemovingPassword] = useState(false);
+
+  const refreshLocal = useCallback(async () => {
+    const [passwordConfigured, localPasskeys] = await Promise.all([
+      hasPasswordUnlockMethod(accountId),
+      listLocalPasskeyUnlockMethods(accountId),
+    ]);
+    setHasPassword(passwordConfigured);
+    setLocalPasskeyIds(new Set(localPasskeys.map((item) => item.credential_id)));
+  }, [accountId]);
+
+  useEffect(() => {
+    void refreshLocal();
+  }, [refreshLocal]);
+
+  const handleSetupComplete = async () => {
+    await Promise.all([refreshLocal(), mutate()]);
+    toast.success("Unlock method updated.");
+  };
+
+  const handleRevoke = async (credential: UnlockCredential) => {
+    setRevokingId(credential.id);
+    try {
+      await revokeUnlockCredential(credential.id);
+      await removeLocalPasskeyUnlock(credential.credential_id);
+      await Promise.all([refreshLocal(), mutate()]);
+      toast.success("Device unlock removed.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to remove device unlock.");
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
+  const handleRemovePassword = async () => {
+    setRemovingPassword(true);
+    try {
+      await removePasswordUnlockMethod();
+      await refreshLocal();
+      toast.success("Passphrase unlock removed.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to remove passphrase unlock.");
+    } finally {
+      setRemovingPassword(false);
+    }
+  };
+
+  const credentials = data ?? [];
+  const canAddUnlockMethod = shouldShowUnlockMethodSetup({
+    localPasskeyCount: localPasskeyIds.size,
+    hasPassword,
+  });
+
+  return (
+    <section className="theme-border theme-surface overflow-hidden rounded-2xl border p-5">
+      <div className="mb-5">
+        <h2 className="theme-text text-base font-semibold">Workspace Unlock</h2>
+        <p className="theme-text-muted mt-1 text-sm leading-6">
+          Manage local unlock methods for this browser&apos;s encrypted vault.
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        {canAddUnlockMethod ? (
+          <UnlockMethodSetup
+            compact
+            allowSkip={false}
+            showDeviceUnlock
+            showPasswordUnlock
+            onComplete={() => void handleSetupComplete()}
+          />
+        ) : null}
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="theme-border rounded-2xl border px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <LockKeyhole className="h-4 w-4 text-gray-500" />
+                  <p className="theme-text text-sm font-medium">Passphrase Unlock</p>
+                </div>
+                <p className="theme-text-muted mt-1 text-xs">
+                  {hasPassword
+                    ? "Configured locally on this browser."
+                    : "No local passphrase unlock is configured yet."}
+                </p>
+              </div>
+              {hasPassword ? (
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  disabled={removingPassword}
+                  onClick={() => void handleRemovePassword()}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {removingPassword ? "Removing..." : "Remove"}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="theme-border rounded-2xl border px-4 py-4">
+            <div className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4 text-gray-500" />
+              <p className="theme-text text-sm font-medium">Device Unlock Records</p>
+            </div>
+            <p className="theme-text-muted mt-1 text-xs">
+              {localPasskeyIds.size > 0
+                ? `${localPasskeyIds.size} device unlock record${localPasskeyIds.size === 1 ? "" : "s"} on this browser.`
+                : "No local device unlock record is configured yet."}
+            </p>
+          </div>
+        </div>
+
+        <div className="theme-border overflow-hidden rounded-2xl border">
+          {isLoading ? (
+            <div className="theme-surface-muted h-20 animate-pulse" />
+          ) : credentials.length === 0 ? (
+            <div className="px-4 py-5 text-sm text-gray-500 dark:text-gray-400">
+              No device unlock records registered yet.
+            </div>
+          ) : (
+            <div className="divide-y divide-black/5 dark:divide-white/8">
+              {credentials.map((credential) => {
+                const isLocal = localPasskeyIds.has(credential.credential_id);
+                return (
+                  <div key={credential.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+                    <div className="min-w-0">
+                      <p className="theme-text truncate text-sm font-medium">
+                        {methodLabel(credential)}
+                      </p>
+                      <p className="theme-text-muted mt-1 text-xs">
+                        {isLocal ? "Available on this browser" : "Registered, but no local unlock record on this browser"}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      size="sm"
+                      disabled={revokingId === credential.id}
+                      onClick={() => void handleRevoke(credential)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {revokingId === credential.id ? "Removing..." : "Remove"}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}

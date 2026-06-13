@@ -27,7 +27,6 @@ import type {
   UpdateDomainRequest,
   AgentDomainAssignment,
   DomainSession,
-  PersistedChatMessage,
   ChatMessagePage,
   ChatSession,
   PromptContextVariableGroup,
@@ -2130,6 +2129,22 @@ export function currentOrgContentKeyRequestUrl(deviceId: string): string {
   return `${API_V1}/content-encryption/org-content-key/request/${deviceId}`;
 }
 
+export function unlockCredentialsUrl(): string {
+  return `${API_V1}/content-encryption/unlock-credentials`;
+}
+
+export function unlockCredentialUrl(id: string): string {
+  return `${API_V1}/content-encryption/unlock-credentials/${id}`;
+}
+
+export function passkeyRegistrationOptionsUrl(): string {
+  return `${API_V1}/content-encryption/unlock-credentials/passkey/registration-options`;
+}
+
+export function passkeyRegistrationUrl(): string {
+  return `${API_V1}/content-encryption/unlock-credentials/passkey/registration`;
+}
+
 export function workerEnrollmentDetailUrl(apiKeyId: string): string {
   return `${API_V1}/workers/enrollment/${apiKeyId}`;
 }
@@ -2299,6 +2314,33 @@ export async function fetchCurrentOrgContentKeyAccessRequest(
   return fetcher<import("./types").OrgContentKeyAccessRequestStatus>(
     currentOrgContentKeyRequestUrl(deviceId),
   );
+}
+
+export async function listUnlockCredentials(): Promise<
+  import("./types").UnlockCredential[]
+> {
+  return fetcher<import("./types").UnlockCredential[]>(unlockCredentialsUrl());
+}
+
+export async function revokeUnlockCredential(id: string): Promise<void> {
+  await authFetch(unlockCredentialUrl(id), { method: "DELETE" });
+}
+
+export async function fetchPasskeyRegistrationOptions(): Promise<
+  import("./types").PasskeyOptions
+> {
+  const res = await authFetch(passkeyRegistrationOptionsUrl(), { method: "POST" });
+  return res.json() as Promise<import("./types").PasskeyOptions>;
+}
+
+export async function registerPasskeyUnlockCredential(
+  body: import("./types").RegisterPasskeyRequest,
+): Promise<import("./types").UnlockCredential> {
+  const res = await authFetch(passkeyRegistrationUrl(), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<import("./types").UnlockCredential>;
 }
 
 export async function createWorkerEnrollment(
@@ -3196,27 +3238,6 @@ export async function fetchChatMessages(
       session_id: opts?.session_id,
     }),
   );
-}
-
-export async function createChatMessage(body: {
-  project_id?: string | null;
-  agent_id?: string | null;
-  target_type?: "agent" | "council";
-  target_id?: string;
-  sender: string;
-  content: string;
-  session_id: string;
-  idempotency_key?: string;
-}): Promise<PersistedChatMessage> {
-  const projectId = normalizeOptionalProjectId(body.project_id);
-  const res = await authFetch(chatMessagesUrl(), {
-    method: "POST",
-    body: JSON.stringify({
-      ...body,
-      project_id: projectId,
-    }),
-  });
-  return res.json() as Promise<PersistedChatMessage>;
 }
 
 export async function deleteChatMessages(
