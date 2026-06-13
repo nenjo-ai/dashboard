@@ -50,6 +50,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Label } from "@/components/ui/Label";
+import { UnlockMethodSetup } from "@/components/auth/UnlockMethodSetup";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
 import {
   PackageInstallProgressBar,
@@ -188,10 +189,12 @@ interface StepSecureWorkspaceContinueOptions {
 
 function StepSecureWorkspace({
   onContinue,
+  onFinished,
 }: {
   onContinue: (
     options: StepSecureWorkspaceContinueOptions,
   ) => void | Promise<void>;
+  onFinished: () => void;
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -204,6 +207,7 @@ function StepSecureWorkspace({
   const [submitting, setSubmitting] = useState(false);
   const [recoveryCommitted, setRecoveryCommitted] = useState(false);
   const [installingPackages, setInstallingPackages] = useState(false);
+  const [packageSetupComplete, setPackageSetupComplete] = useState(false);
   const [installProgress, setInstallProgress] =
     useState<PackageInstallProgress | null>(null);
 
@@ -261,6 +265,7 @@ function StepSecureWorkspace({
       setRecoveryCommitted(false);
       setInstallingPackages(false);
       setInstallProgress(null);
+      setPackageSetupComplete(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to secure this workspace.");
     } finally {
@@ -292,6 +297,9 @@ function StepSecureWorkspace({
       await onContinue({
         onPackageInstallProgress: (progress) => setInstallProgress(progress),
       });
+      setPackageSetupComplete(true);
+      setInstallingPackages(false);
+      setInstallProgress(null);
     } catch (err) {
       setError(
         err instanceof Error
@@ -397,10 +405,14 @@ function StepSecureWorkspace({
         </div>
       ) : null}
 
-      {recoveryCommitted && !installingPackages ? (
+      {recoveryCommitted && !installingPackages && !packageSetupComplete ? (
         <Button onClick={() => void installRequiredPackages()} className="w-full">
           Retry Package Setup
         </Button>
+      ) : null}
+
+      {recoveryCommitted && !installingPackages && packageSetupComplete ? (
+        <UnlockMethodSetup onComplete={onFinished} allowSkip />
       ) : null}
 
       {!loading && recoveryPhrase && !recoveryCommitted && !installingPackages ? (
@@ -1745,7 +1757,7 @@ export default function OnboardingContent() {
           : currentStep === 3
             ? "max-w-sm"
             : currentStep === 2
-              ? "max-w-lg"
+              ? "max-w-2xl"
               : "max-w-sm";
 
   const loadingSpinner = (
@@ -1819,6 +1831,8 @@ export default function OnboardingContent() {
                 });
                 if (orgId) officialPackagesInstalledForOrg.current = orgId;
               }
+            }}
+            onFinished={() => {
               setCurrentStep(3);
             }}
           />

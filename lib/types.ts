@@ -327,7 +327,7 @@ export interface ChatMessageOutbound {
 export interface ChatStreamRequest {
   id: string;
   message: string;
-  encrypted_message?: EncryptedPayload;
+  encrypted_message: EncryptedPayload;
   command?: string;
   session_id: string;
   domain_session_id?: string;
@@ -494,6 +494,40 @@ export interface BootstrapCurrentOrgContentKeyRequest {
   device_id: string;
   wrapped_ock: WrappedOrgContentKey;
   recovery_wrapped_ock: WrappedOrgContentKey;
+}
+
+export interface UnlockCredential {
+  id: string;
+  credential_id: string;
+  credential_type: string;
+  transports: string[];
+  aaguid?: string | null;
+  backup_eligible?: boolean | null;
+  backup_state?: boolean | null;
+  sign_count: number;
+  label?: string | null;
+  created_at: string;
+  last_used_at?: string | null;
+}
+
+export interface PasskeyOptions {
+  user_id: string;
+  user_name: string;
+  user_display_name: string;
+  existing_credential_ids: string[];
+}
+
+export interface RegisterPasskeyRequest {
+  credential_id: string;
+  public_key: Record<string, unknown>;
+  credential_type: "public-key";
+  transports: string[];
+  aaguid?: string | null;
+  backup_eligible?: boolean | null;
+  backup_state?: boolean | null;
+  sign_count?: number | null;
+  label?: string | null;
+  client_response: Record<string, unknown>;
 }
 
 export type WorkerEnrollmentState = "pending" | "active" | "revoked";

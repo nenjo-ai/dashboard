@@ -15,6 +15,7 @@ import { TopBar } from "@/components/layout/TopBar";
 import { ApiKeysSection } from "@/components/settings/ApiKeysSection";
 import { ContentEncryptionSection } from "@/components/settings/ContentEncryptionSection";
 import { OrgSettingsSection } from "@/components/settings/OrgSettingsSection";
+import { UnlockMethodsSection } from "@/components/settings/UnlockMethodsSection";
 import { usePwa } from "@/components/pwa/PwaProvider";
 import { PageContent } from "@/components/ui/PageContent";
 import { Tabs } from "@/components/ui/Tabs";
@@ -287,7 +288,12 @@ function SettingsContent() {
           </div>
         )}
 
-        {activeTab === "devices" && <ContentEncryptionSection mode="devices" />}
+        {activeTab === "devices" && (
+          <div className="space-y-6">
+            <UnlockMethodsSection />
+            <ContentEncryptionSection mode="devices" />
+          </div>
+        )}
 
         {activeTab === "keys" && (
           <div className="space-y-6">

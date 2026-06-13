@@ -2139,7 +2139,7 @@ export function usePlannerChat(
       const encryptedMessage = await encryptContentPayload({
         accountId: userId,
         objectId: crypto.randomUUID(),
-        objectType: "agent_prompt",
+        objectType: "chat.message",
         plaintext: trimmed,
       });
       if (!encryptedMessage) {

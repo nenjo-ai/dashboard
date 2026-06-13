@@ -19,16 +19,68 @@ const ENCRYPTED_ACK_ENTRY = "encrypted-ack";
 const ENCRYPTED_ACCOUNT_SIGNING_KEY_ENTRY = "encrypted-account-signing-key";
 const ENCRYPTED_DEVICE_IDENTITY_ENTRY = "encrypted-device-identity";
 const ENCRYPTED_RECOVERY_BUNDLE_ENTRY = "encrypted-recovery-bundle";
+const VAULT_CONFIG_ENTRY = "unlock-vault-config";
+const PASSWORD_UNLOCK_ENTRY = "unlock-method:password";
+const PASSKEY_UNLOCK_PREFIX = "unlock-method:passkey:";
+const VAULT_SESSION_WRAP_KEY_ENTRY = "vault-session-wrap-key";
+const VAULT_SESSION_ENTRY = "vault-session";
 const AES_ALGORITHM = "AES-GCM";
 const SIGNING_ALGORITHM = "Ed25519";
 const PAYLOAD_ALGORITHM = "aes-256-gcm";
 const WRAP_ALGORITHM = "x25519-hkdf-sha256-aes-256-gcm";
 const HKDF_INFO = new TextEncoder().encode("nenjo-worker-ack-wrap-v1");
 const RECOVERY_PBKDF2_ITERATIONS = 600_000;
+const UNLOCK_PBKDF2_ITERATIONS = 650_000;
+const VAULT_SESSION_DURATION_MS = 30 * 60 * 1000;
 
 type StoredEncryptedAck = {
+  version?: number;
+  wrap?: "device" | "vault";
+  account_id?: string;
   nonce: string;
   ciphertext: string;
+};
+
+type VaultConfig = {
+  version: 1;
+  enabled: true;
+  account_id?: string;
+  created_at: string;
+};
+
+type LocalPasswordUnlockRecord = {
+  version: 1;
+  type: "password";
+  account_id?: string;
+  kdf: "pbkdf2-sha256";
+  iterations: number;
+  salt: string;
+  nonce: string;
+  ciphertext: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type LocalVaultSessionRecord = {
+  version: 1;
+  account_id: string;
+  nonce: string;
+  ciphertext: string;
+  created_at: string;
+  expires_at: string;
+};
+
+export type LocalPasskeyUnlockRecord = {
+  version: 1;
+  type: "passkey-prf";
+  account_id?: string;
+  credential_id: string;
+  label: string | null;
+  salt: string;
+  nonce: string;
+  ciphertext: string;
+  created_at: string;
+  updated_at: string;
 };
 
 type StoredEncryptedAccountSigningKey = {
@@ -46,11 +98,16 @@ type StoredEncryptedDeviceIdentity = {
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 let wrapKeyPromise: Promise<CryptoKey> | null = null;
+let vaultSessionWrapKeyPromise: Promise<CryptoKey> | null = null;
 let ackSessionCache: string | null = null;
 const orgContentKeySessionCache = new Map<string, string>();
 let accountSigningKeyPromise: Promise<CryptoKeyPair | null> | null = null;
 let accountSigningPublicKeyCache: string | null = null;
 let deviceIdentityPromise: Promise<{ deviceId: string; keyPair: CryptoKeyPair; publicKey: string } | null> | null = null;
+let vaultKeyRawSession: Uint8Array | null = null;
+let vaultKeyPromise: Promise<CryptoKey> | null = null;
+let vaultSessionAccountId: string | null = null;
+let ackSessionAccountId: string | null = null;
 
 function generateVerificationCode(): string {
   const value = crypto.getRandomValues(new Uint32Array(1))[0] ?? 0;
@@ -137,6 +194,16 @@ function idbDelete(db: IDBDatabase, key: string): Promise<void> {
   });
 }
 
+function idbGetAllKeys(db: IDBDatabase): Promise<IDBValidKey[]> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const store = tx.objectStore(STORE_NAME);
+    const request = store.getAllKeys();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("IndexedDB key read failed."));
+  });
+}
+
 async function getOrCreateDeviceWrapKey(): Promise<CryptoKey> {
   if (!wrapKeyPromise) {
     wrapKeyPromise = (async () => {
@@ -154,6 +221,89 @@ async function getOrCreateDeviceWrapKey(): Promise<CryptoKey> {
     })();
   }
   return wrapKeyPromise;
+}
+
+async function getOrCreateVaultSessionWrapKey(): Promise<CryptoKey> {
+  if (!vaultSessionWrapKeyPromise) {
+    vaultSessionWrapKeyPromise = (async () => {
+      const db = await openDb();
+      const existing = await idbGet<CryptoKey>(db, VAULT_SESSION_WRAP_KEY_ENTRY);
+      if (existing) return existing;
+
+      const generated = await crypto.subtle.generateKey(
+        { name: AES_ALGORITHM, length: 256 },
+        false,
+        ["encrypt", "decrypt"],
+      );
+      await idbPut(db, VAULT_SESSION_WRAP_KEY_ENTRY, generated);
+      return generated;
+    })();
+  }
+  return vaultSessionWrapKeyPromise;
+}
+
+async function importAesKey(rawKey: Uint8Array, usages: KeyUsage[]): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    "raw",
+    asBufferSource(rawKey),
+    { name: AES_ALGORITHM, length: 256 },
+    false,
+    usages,
+  );
+}
+
+async function isVaultEnabled(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  const db = await openDb();
+  const config = await idbGet<VaultConfig>(db, VAULT_CONFIG_ENTRY);
+  return config?.enabled === true;
+}
+
+function recordMatchesAccount(recordAccountId: string | undefined, accountId?: string | null): boolean {
+  return !accountId || !recordAccountId || recordAccountId === accountId;
+}
+
+async function requireVaultAccount(accountId: string): Promise<void> {
+  const db = await openDb();
+  const config = await idbGet<VaultConfig>(db, VAULT_CONFIG_ENTRY);
+  if (config?.account_id && config.account_id !== accountId) {
+    throw new Error("This browser's local vault belongs to a different signed-in account.");
+  }
+  if (vaultSessionAccountId && vaultSessionAccountId !== accountId) {
+    lockLocalSecretVault();
+    throw new Error("This browser's local vault session belongs to a different signed-in account.");
+  }
+  vaultSessionAccountId = accountId;
+}
+
+async function getVaultKey(): Promise<CryptoKey | null> {
+  if (!vaultKeyRawSession) return null;
+  if (!vaultKeyPromise) {
+    vaultKeyPromise = importAesKey(vaultKeyRawSession, ["encrypt", "decrypt"]);
+  }
+  return vaultKeyPromise;
+}
+
+async function requireVaultKey(): Promise<CryptoKey> {
+  const key = await getVaultKey();
+  if (!key) {
+    throw new Error("Encrypted workspace vault is locked. Unlock it before using local secrets.");
+  }
+  return key;
+}
+
+async function storageWrapKeyForEncrypt(): Promise<{ key: CryptoKey; wrap: "device" | "vault" }> {
+  if (await isVaultEnabled()) {
+    return { key: await requireVaultKey(), wrap: "vault" };
+  }
+  return { key: await getOrCreateDeviceWrapKey(), wrap: "device" };
+}
+
+async function storageWrapKeyForDecrypt(record: StoredEncryptedAck): Promise<CryptoKey> {
+  if (record.version === 2 && record.wrap === "vault") {
+    return requireVaultKey();
+  }
+  return getOrCreateDeviceWrapKey();
 }
 
 async function importAck(rawKey: Uint8Array): Promise<CryptoKey> {
@@ -175,7 +325,7 @@ function normalizePayloadScope(scope?: string | null): "user" | "org" {
 }
 
 async function encryptAckForStorage(base64Key: string): Promise<StoredEncryptedAck> {
-  const wrapKey = await getOrCreateDeviceWrapKey();
+  const { key: wrapKey, wrap } = await storageWrapKeyForEncrypt();
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt(
     {
@@ -187,6 +337,9 @@ async function encryptAckForStorage(base64Key: string): Promise<StoredEncryptedA
   );
 
   return {
+    version: wrap === "vault" ? 2 : undefined,
+    wrap,
+    account_id: vaultSessionAccountId ?? undefined,
     nonce: bytesToBase64(nonce),
     ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
   };
@@ -197,7 +350,7 @@ function orgContentKeyStorageEntry(orgId: string, keyVersion: number): string {
 }
 
 async function decryptStoredAck(record: StoredEncryptedAck): Promise<string> {
-  const wrapKey = await getOrCreateDeviceWrapKey();
+  const wrapKey = await storageWrapKeyForDecrypt(record);
   const plaintext = await crypto.subtle.decrypt(
     {
       name: AES_ALGORITHM,
@@ -210,7 +363,7 @@ async function decryptStoredAck(record: StoredEncryptedAck): Promise<string> {
 }
 
 async function encryptBytesForStorage(bytes: Uint8Array): Promise<StoredEncryptedAck> {
-  const wrapKey = await getOrCreateDeviceWrapKey();
+  const { key: wrapKey, wrap } = await storageWrapKeyForEncrypt();
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt(
     {
@@ -222,13 +375,16 @@ async function encryptBytesForStorage(bytes: Uint8Array): Promise<StoredEncrypte
   );
 
   return {
+    version: wrap === "vault" ? 2 : undefined,
+    wrap,
+    account_id: vaultSessionAccountId ?? undefined,
     nonce: bytesToBase64(nonce),
     ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
   };
 }
 
 async function decryptBytesFromStorage(record: StoredEncryptedAck): Promise<Uint8Array> {
-  const wrapKey = await getOrCreateDeviceWrapKey();
+  const wrapKey = await storageWrapKeyForDecrypt(record);
   const plaintext = await crypto.subtle.decrypt(
     {
       name: AES_ALGORITHM,
@@ -240,23 +396,420 @@ async function decryptBytesFromStorage(record: StoredEncryptedAck): Promise<Uint
   return new Uint8Array(plaintext);
 }
 
+async function derivePasswordUnlockKey(params: {
+  password: string;
+  salt: Uint8Array;
+  iterations: number;
+}): Promise<CryptoKey> {
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    asBufferSource(new TextEncoder().encode(params.password)),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      salt: asBufferSource(params.salt),
+      iterations: params.iterations,
+    },
+    baseKey,
+    { name: AES_ALGORITHM, length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+async function encryptVaultRawKey(rawVaultKey: Uint8Array, wrappingKey: CryptoKey): Promise<{
+  nonce: string;
+  ciphertext: string;
+}> {
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: AES_ALGORITHM, iv: nonce },
+    wrappingKey,
+    asBufferSource(rawVaultKey),
+  );
+  return {
+    nonce: bytesToBase64(nonce),
+    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+  };
+}
+
+async function decryptVaultRawKey(params: {
+  nonce: string;
+  ciphertext: string;
+  wrappingKey: CryptoKey;
+}): Promise<Uint8Array> {
+  const plaintext = await crypto.subtle.decrypt(
+    {
+      name: AES_ALGORITHM,
+      iv: asBufferSource(base64ToBytes(params.nonce)),
+    },
+    params.wrappingKey,
+    asBufferSource(base64ToBytes(params.ciphertext)),
+  );
+  return new Uint8Array(plaintext);
+}
+
+async function setVaultRawKey(rawKey: Uint8Array): Promise<void> {
+  vaultKeyRawSession = new Uint8Array(rawKey);
+  vaultKeyPromise = importAesKey(vaultKeyRawSession, ["encrypt", "decrypt"]);
+}
+
+async function saveVaultUnlockSession(accountId: string): Promise<void> {
+  if (!vaultKeyRawSession) return;
+  vaultSessionAccountId = accountId;
+  const wrapKey = await getOrCreateVaultSessionWrapKey();
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: AES_ALGORITHM, iv: nonce },
+    wrapKey,
+    asBufferSource(vaultKeyRawSession),
+  );
+  const now = Date.now();
+  const db = await openDb();
+  await idbPut(db, VAULT_SESSION_ENTRY, {
+    version: 1,
+    account_id: accountId,
+    nonce: bytesToBase64(nonce),
+    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+    created_at: new Date(now).toISOString(),
+    expires_at: new Date(now + VAULT_SESSION_DURATION_MS).toISOString(),
+  } satisfies LocalVaultSessionRecord);
+}
+
+export async function restoreLocalSecretVaultSession(accountId: string): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  if (vaultKeyRawSession) {
+    if (vaultSessionAccountId && vaultSessionAccountId !== accountId) return false;
+    vaultSessionAccountId = accountId;
+    return true;
+  }
+
+  const db = await openDb();
+  const record = await idbGet<LocalVaultSessionRecord>(db, VAULT_SESSION_ENTRY);
+  if (!record) return false;
+  if (record.account_id !== accountId || Date.parse(record.expires_at) <= Date.now()) {
+    await idbDelete(db, VAULT_SESSION_ENTRY);
+    return false;
+  }
+
+  try {
+    const wrapKey = await getOrCreateVaultSessionWrapKey();
+    const plaintext = await crypto.subtle.decrypt(
+      {
+        name: AES_ALGORITHM,
+        iv: asBufferSource(base64ToBytes(record.nonce)),
+      },
+      wrapKey,
+      asBufferSource(base64ToBytes(record.ciphertext)),
+    );
+    await setVaultRawKey(new Uint8Array(plaintext));
+    vaultSessionAccountId = accountId;
+    return true;
+  } catch {
+    await idbDelete(db, VAULT_SESSION_ENTRY);
+    return false;
+  }
+}
+
+export async function clearLocalSecretVaultSession(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const db = await openDb();
+  await idbDelete(db, VAULT_SESSION_ENTRY);
+}
+
+export function bindLocalSecretVaultSession(accountId: string): boolean {
+  const mismatchedVaultAccount =
+    vaultSessionAccountId !== null && vaultSessionAccountId !== accountId;
+  const mismatchedAckAccount =
+    ackSessionAccountId !== null && ackSessionAccountId !== accountId;
+
+  if (mismatchedVaultAccount || mismatchedAckAccount) {
+    lockLocalSecretVault();
+    return false;
+  }
+
+  vaultSessionAccountId = accountId;
+  return true;
+}
+
+async function getOrCreateVaultRawKey(accountId: string): Promise<Uint8Array> {
+  await requireVaultAccount(accountId);
+  if (vaultKeyRawSession) return vaultKeyRawSession;
+  if (await isVaultEnabled()) {
+    throw new Error("Encrypted workspace vault is locked. Unlock it before adding an unlock method.");
+  }
+  const rawKey = crypto.getRandomValues(new Uint8Array(32));
+  await setVaultRawKey(rawKey);
+  return rawKey;
+}
+
+async function derivePrfUnlockKey(prfOutput: Uint8Array): Promise<CryptoKey> {
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    asBufferSource(prfOutput),
+    "HKDF",
+    false,
+    ["deriveKey"],
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: new TextEncoder().encode("nenjo-passkey-prf-v1"),
+      info: new TextEncoder().encode("nenjo-local-vault-unlock"),
+    },
+    baseKey,
+    { name: AES_ALGORITHM, length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+async function rewriteEncryptedRecordWithVault(db: IDBDatabase, key: string, accountId: string): Promise<void> {
+  const stored = await idbGet<StoredEncryptedAck & Record<string, unknown>>(db, key);
+  if (!stored?.nonce || !stored.ciphertext || stored.wrap === "vault") return;
+  const plaintext = await decryptBytesFromStorage(stored);
+  const encrypted = await encryptBytesForStorage(plaintext);
+  await idbPut(db, key, {
+    ...stored,
+    account_id: typeof stored.account_id === "string" ? stored.account_id : accountId,
+    nonce: encrypted.nonce,
+    ciphertext: encrypted.ciphertext,
+    version: encrypted.version,
+    wrap: encrypted.wrap,
+  });
+}
+
+async function migrateLocalSecretsToVault(accountId: string): Promise<void> {
+  const db = await openDb();
+  const existing = await idbGet<VaultConfig>(db, VAULT_CONFIG_ENTRY);
+  if (existing?.account_id && existing.account_id !== accountId) {
+    throw new Error("This browser's local vault belongs to a different signed-in account.");
+  }
+  await idbPut(db, VAULT_CONFIG_ENTRY, {
+    version: 1,
+    enabled: true,
+    account_id: existing?.account_id ?? accountId,
+    created_at: new Date().toISOString(),
+  } satisfies VaultConfig);
+  const keys = await idbGetAllKeys(db);
+  await Promise.all(
+    keys
+      .filter((key): key is string => typeof key === "string")
+      .filter((key) =>
+        key === ENCRYPTED_ACK_ENTRY ||
+        key === ENCRYPTED_ACCOUNT_SIGNING_KEY_ENTRY ||
+        key === ENCRYPTED_DEVICE_IDENTITY_ENTRY ||
+        key.startsWith("encrypted-ock:"),
+      )
+      .map((key) => rewriteEncryptedRecordWithVault(db, key, accountId)),
+  );
+}
+
+export function lockLocalSecretVault(): void {
+  vaultKeyRawSession = null;
+  vaultKeyPromise = null;
+  vaultSessionAccountId = null;
+  ackSessionCache = null;
+  ackSessionAccountId = null;
+  orgContentKeySessionCache.clear();
+  accountSigningKeyPromise = null;
+  accountSigningPublicKeyCache = null;
+  deviceIdentityPromise = null;
+  void clearLocalSecretVaultSession();
+}
+
+export async function hasLocalSecretVault(): Promise<boolean> {
+  return isVaultEnabled();
+}
+
+export async function hasPasswordUnlockMethod(accountId?: string | null): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  const db = await openDb();
+  const record = await idbGet<LocalPasswordUnlockRecord>(db, PASSWORD_UNLOCK_ENTRY);
+  return record !== undefined && recordMatchesAccount(record.account_id, accountId);
+}
+
+export async function listLocalPasskeyUnlockMethods(accountId?: string | null): Promise<LocalPasskeyUnlockRecord[]> {
+  if (typeof window === "undefined") return [];
+  const db = await openDb();
+  const keys = await idbGetAllKeys(db);
+  const records = await Promise.all(
+    keys
+      .filter((key): key is string => typeof key === "string" && key.startsWith(PASSKEY_UNLOCK_PREFIX))
+      .map((key) => idbGet<LocalPasskeyUnlockRecord>(db, key)),
+  );
+  return records.filter(
+    (record): record is LocalPasskeyUnlockRecord =>
+      record?.type === "passkey-prf" && recordMatchesAccount(record.account_id, accountId),
+  );
+}
+
+export async function setupPasskeyUnlock(params: {
+  accountId: string;
+  credentialId: string;
+  label?: string | null;
+  salt: Uint8Array;
+  prfOutput: Uint8Array;
+}): Promise<void> {
+  const rawVaultKey = await getOrCreateVaultRawKey(params.accountId);
+  await migrateLocalSecretsToVault(params.accountId);
+  const db = await openDb();
+  const entryKey = `${PASSKEY_UNLOCK_PREFIX}${params.credentialId}`;
+  const existing = await idbGet<LocalPasskeyUnlockRecord>(db, entryKey);
+  const wrappingKey = await derivePrfUnlockKey(params.prfOutput);
+  const encrypted = await encryptVaultRawKey(rawVaultKey, wrappingKey);
+  const now = new Date().toISOString();
+  await idbPut(db, entryKey, {
+    version: 1,
+    type: "passkey-prf",
+    account_id: params.accountId,
+    credential_id: params.credentialId,
+    label: params.label ?? null,
+    salt: bytesToBase64(params.salt),
+    nonce: encrypted.nonce,
+    ciphertext: encrypted.ciphertext,
+    created_at: existing?.created_at ?? now,
+    updated_at: now,
+  } satisfies LocalPasskeyUnlockRecord);
+}
+
+export async function unlockWithPasskeyPrf(params: {
+  credentialId: string;
+  prfOutput: Uint8Array;
+  accountId: string;
+}): Promise<void> {
+  const db = await openDb();
+  const record = await idbGet<LocalPasskeyUnlockRecord>(
+    db,
+    `${PASSKEY_UNLOCK_PREFIX}${params.credentialId}`,
+  );
+  if (!record) {
+    throw new Error("No local passkey unlock record exists for that credential.");
+  }
+  if (!recordMatchesAccount(record.account_id, params.accountId)) {
+    throw new Error("This device unlock method belongs to a different signed-in account.");
+  }
+  const wrappingKey = await derivePrfUnlockKey(params.prfOutput);
+  const rawVaultKey = await decryptVaultRawKey({
+    nonce: record.nonce,
+    ciphertext: record.ciphertext,
+    wrappingKey,
+  });
+  await setVaultRawKey(rawVaultKey);
+  await saveVaultUnlockSession(params.accountId);
+}
+
+export async function removeLocalPasskeyUnlock(credentialId: string): Promise<void> {
+  if (typeof window === "undefined") return;
+  const db = await openDb();
+  await idbDelete(db, `${PASSKEY_UNLOCK_PREFIX}${credentialId}`);
+}
+
+export async function removePasswordUnlockMethod(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const db = await openDb();
+  await idbDelete(db, PASSWORD_UNLOCK_ENTRY);
+}
+
+export async function setupPasswordUnlock(password: string, accountId: string): Promise<void> {
+  const normalized = password.trim();
+  if (normalized.length < 12) {
+    throw new Error("Use a password or passphrase with at least 12 characters.");
+  }
+  const rawVaultKey = await getOrCreateVaultRawKey(accountId);
+  await migrateLocalSecretsToVault(accountId);
+  const db = await openDb();
+  const existing = await idbGet<LocalPasswordUnlockRecord>(db, PASSWORD_UNLOCK_ENTRY);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const wrappingKey = await derivePasswordUnlockKey({
+    password: normalized,
+    salt,
+    iterations: UNLOCK_PBKDF2_ITERATIONS,
+  });
+  const encrypted = await encryptVaultRawKey(rawVaultKey, wrappingKey);
+  const now = new Date().toISOString();
+  await idbPut(db, PASSWORD_UNLOCK_ENTRY, {
+    version: 1,
+    type: "password",
+    account_id: accountId,
+    kdf: "pbkdf2-sha256",
+    iterations: UNLOCK_PBKDF2_ITERATIONS,
+    salt: bytesToBase64(salt),
+    nonce: encrypted.nonce,
+    ciphertext: encrypted.ciphertext,
+    created_at: existing?.created_at ?? now,
+    updated_at: now,
+  } satisfies LocalPasswordUnlockRecord);
+}
+
+export async function unlockWithPassword(password: string, accountId: string): Promise<void> {
+  const db = await openDb();
+  const record = await idbGet<LocalPasswordUnlockRecord>(db, PASSWORD_UNLOCK_ENTRY);
+  if (!record) {
+    throw new Error("No passphrase unlock method is configured on this browser.");
+  }
+  if (!recordMatchesAccount(record.account_id, accountId)) {
+    throw new Error("This passphrase unlock method belongs to a different signed-in account.");
+  }
+  const wrappingKey = await derivePasswordUnlockKey({
+    password: password.trim(),
+    salt: base64ToBytes(record.salt),
+    iterations: record.iterations,
+  });
+  const rawVaultKey = await decryptVaultRawKey({
+    nonce: record.nonce,
+    ciphertext: record.ciphertext,
+    wrappingKey,
+  });
+  await setVaultRawKey(rawVaultKey);
+  await saveVaultUnlockSession(accountId);
+}
+
 export async function loadStoredAccountContentKey(): Promise<string | null> {
   if (typeof window === "undefined") return null;
-  if (ackSessionCache) return ackSessionCache;
+  if (ackSessionCache) {
+    if (
+      ackSessionAccountId !== null &&
+      vaultSessionAccountId !== null &&
+      ackSessionAccountId !== vaultSessionAccountId
+    ) {
+      ackSessionCache = null;
+      ackSessionAccountId = null;
+      return null;
+    }
+    return ackSessionCache;
+  }
 
   const legacy = window.localStorage.getItem(LEGACY_ACCOUNT_CONTENT_KEY_STORAGE_KEY);
   if (legacy) {
     await setStoredAccountContentKey(legacy);
     window.localStorage.removeItem(LEGACY_ACCOUNT_CONTENT_KEY_STORAGE_KEY);
     ackSessionCache = legacy;
+    ackSessionAccountId = vaultSessionAccountId;
     return legacy;
   }
 
   const db = await openDb();
   const stored = await idbGet<StoredEncryptedAck>(db, ENCRYPTED_ACK_ENTRY);
   if (!stored) return null;
+  if (!recordMatchesAccount(stored.account_id, vaultSessionAccountId)) {
+    return null;
+  }
   const decrypted = await decryptStoredAck(stored);
+  if (vaultSessionAccountId && !stored.account_id) {
+    await idbPut(db, ENCRYPTED_ACK_ENTRY, {
+      ...stored,
+      account_id: vaultSessionAccountId,
+    });
+  }
   ackSessionCache = decrypted;
+  ackSessionAccountId = vaultSessionAccountId;
   return decrypted;
 }
 
@@ -270,6 +823,7 @@ export async function setStoredAccountContentKey(base64Key: string): Promise<voi
   const encrypted = await encryptAckForStorage(base64Key);
   await idbPut(db, ENCRYPTED_ACK_ENTRY, encrypted);
   ackSessionCache = base64Key;
+  ackSessionAccountId = vaultSessionAccountId;
 }
 
 export async function loadStoredOrgContentKey(
@@ -346,6 +900,7 @@ export async function ensureAccountContentKey(): Promise<string> {
 
 export function clearAccountContentKeySessionCache(): void {
   ackSessionCache = null;
+  ackSessionAccountId = null;
 }
 
 export async function warmAccountContentKey(): Promise<boolean> {

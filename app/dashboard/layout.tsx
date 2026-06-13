@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
+import { LocalVaultUnlockGate } from "@/components/auth/LocalVaultUnlockGate";
 import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { PageTransition } from "@/components/ui/motion";
 import { fetchBootstrapStatus, fetchCurrentUser, setAuthTokenGetter } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { loadStoredAccountContentKey } from "@/lib/cryptoContent";
+import { bindLocalSecretVaultSession, loadStoredAccountContentKey } from "@/lib/cryptoContent";
 import { MobileMenuProvider } from "@/lib/MobileMenuContext";
 import { OrgProvider } from "@/lib/org-context";
 
@@ -115,9 +116,13 @@ function DashboardLayoutWithClerk({
 
     void (async () => {
       try {
-        const [me, localAck, bootstrap] = await Promise.all([
-          fetchCurrentUser(),
-          loadStoredAccountContentKey(),
+        const me = await fetchCurrentUser();
+        const accountId = me.clerk_id ?? me.user_id ?? null;
+        const accountMatches = accountId
+          ? bindLocalSecretVaultSession(accountId)
+          : true;
+        const [localAck, bootstrap] = await Promise.all([
+          accountMatches ? loadStoredAccountContentKey() : Promise.resolve(null),
           fetchBootstrapStatus().catch(() => null),
         ]);
         if (cancelled) return;
@@ -219,11 +224,13 @@ function DashboardLayoutWithClerk({
         <div className={mainPadding}>
           <main className={cn("min-h-screen bg-[#f5f7fb] dark:bg-[#05070b] md:bg-transparent md:dark:bg-transparent", showMobileNav && "pb-[calc(5.25rem+env(safe-area-inset-bottom,0px))] md:pb-0")}>
             <MobileMenuProvider onMenuClick={() => {}}>
-              {isMobileViewport ? (
-                children
-              ) : (
-                <PageTransition pageKey={pathname}>{children}</PageTransition>
-              )}
+              <LocalVaultUnlockGate>
+                {isMobileViewport ? (
+                  children
+                ) : (
+                  <PageTransition pageKey={pathname}>{children}</PageTransition>
+                )}
+              </LocalVaultUnlockGate>
             </MobileMenuProvider>
           </main>
         </div>
