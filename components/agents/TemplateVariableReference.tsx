@@ -96,7 +96,7 @@ export function TemplateVariableReference({
         : b.name;
       variables.push({
         name: dottedName,
-        description: b.description || b.display_name || `${b.name} context block`,
+        description: b.description || `${b.name} context block`,
       });
     }
 
