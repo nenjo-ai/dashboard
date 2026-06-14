@@ -111,6 +111,28 @@ const DEFAULT_NENJI_IDENTITY = {
   color: NENJI_SEED_COLOR,
 };
 const NENJI_AGENT_SLUG = "nenji";
+const LOCKED_LOCAL_VAULT_MESSAGE =
+  "Encrypted workspace vault is locked. Unlock it before using local secrets.";
+
+async function loadOnboardingLocalAccountContentKey(): Promise<{
+  key: string | null;
+  lockedVault: boolean;
+}> {
+  try {
+    return {
+      key: await loadStoredAccountContentKey(),
+      lockedVault: false,
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message === LOCKED_LOCAL_VAULT_MESSAGE) {
+      return {
+        key: null,
+        lockedVault: true,
+      };
+    }
+    throw err;
+  }
+}
 
 function findNenjiAgent(agents: AgentDefinition[]): AgentDefinition | undefined {
   return agents.find(
@@ -1705,9 +1727,9 @@ export default function OnboardingContent() {
 
     (async () => {
       try {
-        const [me, localAck, bootstrap] = await Promise.all([
+        const [me, localAckState, bootstrap] = await Promise.all([
           fetchCurrentUser(),
-          loadStoredAccountContentKey(),
+          loadOnboardingLocalAccountContentKey(),
           fetchBootstrapStatus().catch(() => null),
         ]);
         if (cancelled || redirected.current) return;
@@ -1718,8 +1740,10 @@ export default function OnboardingContent() {
           Boolean(bootstrap?.has_recovery_bundle) ||
           (bootstrap?.trusted_device_count ?? 0) > 0;
 
-        if (hasOrg && hasExistingWorkspace) {
-          if (localAck) {
+        const hasSignedInAccount = Boolean(me.user_id || me.clerk_id);
+
+        if (hasSignedInAccount && hasOrg && hasExistingWorkspace) {
+          if (localAckState.key || localAckState.lockedVault) {
             redirected.current = true;
             router.replace("/dashboard");
             return;

@@ -306,6 +306,8 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   status?: MessageStatus;
+  runTrace?: import("./agentRunTrace/types").RunTrace;
+  runEnvelopeId?: string;
   /** Server-generated UUID set when the backend confirms persistence. */
   persistedId?: string;
 }
@@ -616,6 +618,39 @@ export interface NotificationMetadata {
 export interface ChatMessagePage {
   messages: PersistedChatMessage[];
   has_more: boolean;
+}
+
+export interface QuotaUsageLimit {
+  used_bytes: number;
+  limit_bytes: number;
+}
+
+export interface QuotaResourceCount {
+  count: number;
+  limit: number;
+}
+
+export interface QuotaStatus {
+  tier: string;
+  storage: {
+    s3: QuotaUsageLimit;
+    db: QuotaUsageLimit;
+  };
+  resources: {
+    members: QuotaResourceCount;
+    runtimes: QuotaResourceCount;
+    agents: QuotaResourceCount;
+    routines: QuotaResourceCount;
+    projects: QuotaResourceCount;
+    models: QuotaResourceCount;
+    mcp_servers: QuotaResourceCount;
+  };
+  retention: {
+    chat_messages: number;
+    notifications: number;
+    activity_rows: number;
+    execution_runs: number;
+  };
 }
 
 // ---------------------------------------------------------------------------

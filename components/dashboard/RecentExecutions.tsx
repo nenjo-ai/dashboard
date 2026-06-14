@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/Badge";
 import { ExecutionRowSkeleton } from "@/components/ui/Skeleton";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { formatToolCallSignature, normalizeToolCallArgs } from "@/lib/toolCallDisplay";
+import { executionTasksToRunTrace } from "@/lib/agentRunTrace/adapters/executionHistory";
+import { AgentRunTrace } from "@/components/agent-run-trace/AgentRunTrace";
 
 interface RecentExecutionsProps {
   executions: ExecutionDetails[] | undefined;
@@ -405,23 +407,11 @@ function ExecutionRow({ exec }: { exec: ExecutionDetails }) {
               {isCron ? "No step events recorded." : "No tasks in this execution."}
             </p>
           ) : (
-            <div className="divide-y divide-gray-100 dark:divide-gray-700/50">
-              {tasks.map((task) =>
-                task.id === null ? (
-                  // Taskless cron run: render step events directly
-                  <div key="cron-run" className="py-1.5">
-                    <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
-                      {task.title}
-                    </span>
-                    {task.steps.map((step, i) => (
-                      <StepDetail key={`${step.step_name}:${step.event_type}:${i}`} step={step} />
-                    ))}
-                  </div>
-                ) : (
-                  <TaskDetail key={task.id} task={task} />
-                ),
-              )}
-            </div>
+            <AgentRunTrace
+              trace={executionTasksToRunTrace(exec, tasks)}
+              mode="history"
+              density="compact"
+            />
           )}
         </div>
       )}

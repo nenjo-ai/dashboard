@@ -41,6 +41,8 @@ type StoredEncryptedAck = {
   ciphertext: string;
 };
 
+export type LocalEncryptedStoragePayload = StoredEncryptedAck;
+
 type VaultConfig = {
   version: 1;
   enabled: true;
@@ -394,6 +396,17 @@ async function decryptBytesFromStorage(record: StoredEncryptedAck): Promise<Uint
     asBufferSource(base64ToBytes(record.ciphertext)),
   );
   return new Uint8Array(plaintext);
+}
+
+export async function encryptLocalJsonForStorage(value: unknown): Promise<LocalEncryptedStoragePayload> {
+  return encryptBytesForStorage(new TextEncoder().encode(JSON.stringify(value)));
+}
+
+export async function decryptLocalJsonFromStorage<T>(
+  record: LocalEncryptedStoragePayload,
+): Promise<T> {
+  const bytes = await decryptBytesFromStorage(record);
+  return JSON.parse(new TextDecoder().decode(bytes)) as T;
 }
 
 async function derivePasswordUnlockKey(params: {

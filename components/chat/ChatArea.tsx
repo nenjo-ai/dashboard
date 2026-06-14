@@ -1,7 +1,16 @@
 "use client";
 
 import { cn } from "@/lib/cn";
-import { Children, isValidElement, useState, useRef, useEffect, useMemo, useCallback, memo } from "react";
+import {
+  Children,
+  isValidElement,
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+  memo,
+} from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -15,12 +24,7 @@ import type {
   PackageInstallDetail,
   PackageInstallResource,
 } from "@/lib/types";
-import {
-  useAgent,
-  useAgents,
-  useAgentDomains,
-  useProjects,
-} from "@/lib/hooks";
+import { useAgent, useAgents, useAgentDomains, useProjects } from "@/lib/hooks";
 import {
   allChatSessionsUrl,
   createChatSession,
@@ -37,9 +41,14 @@ import { PendingDomainPill } from "@/components/project/PendingDomainPill";
 import { Button } from "@/components/ui/Button";
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
 import { motion, AnimatePresence } from "motion/react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { MobileInputBar } from "./MobileInputBar";
 import { MobileEmptyState } from "./MobileEmptyState";
 import { PendingCommandPill } from "./PendingCommandPill";
+import { AgentRunTrace } from "@/components/agent-run-trace/AgentRunTrace";
+import { loadEnvelopeEvents } from "@/lib/agentRunTrace/envelopeStore";
+import { reduceRunTraceEvents } from "@/lib/agentRunTrace/reducer";
+import type { RunTrace } from "@/lib/agentRunTrace/types";
 
 interface ChatAreaProps {
   projectId: string | null;
@@ -73,7 +82,8 @@ type ChatCommandOption = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const UUID_RE =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const NEW_SESSION_COMMAND = "/new-session";
 const CHAT_COMMANDS: ChatCommandOption[] = [
   {
@@ -100,7 +110,10 @@ function metadataText(
 function packageCommandOption(
   resource: PackageInstallResource,
 ): ChatCommandOption | null {
-  if (resource.install_state !== "installed" || resource.resource_type !== "command") {
+  if (
+    resource.install_state !== "installed" ||
+    resource.resource_type !== "command"
+  ) {
     return null;
   }
   const command = metadataText(resource.metadata, ["runtime", "command"]);
@@ -265,7 +278,9 @@ function ChatCommandDropdown({
             <span
               className={cn(
                 "block truncate text-xs",
-                index === selectedIndex ? "text-deep-space-blue-100" : "text-gray-500 dark:text-gray-400",
+                index === selectedIndex
+                  ? "text-deep-space-blue-100"
+                  : "text-gray-500 dark:text-gray-400",
               )}
             >
               {command.description}
@@ -296,14 +311,19 @@ function formatCodeLanguageLabel(language: string | null): string | null {
     .join(" ");
 }
 
-function extractMermaidChart(text: string): { chart: string | null; before: string; after: string } {
+function extractMermaidChart(text: string): {
+  chart: string | null;
+  before: string;
+  after: string;
+} {
   const fencedMatch = text.match(/```mermaid\s*([\s\S]*?)```/i);
   if (fencedMatch) {
     const chart = fencedMatch[1]?.trim() ?? "";
     const [fullMatch] = fencedMatch;
     const startIndex = text.indexOf(fullMatch);
     const before = startIndex >= 0 ? text.slice(0, startIndex).trim() : "";
-    const after = startIndex >= 0 ? text.slice(startIndex + fullMatch.length).trim() : "";
+    const after =
+      startIndex >= 0 ? text.slice(startIndex + fullMatch.length).trim() : "";
     return { chart: chart || null, before, after };
   }
 
@@ -318,7 +338,10 @@ function extractMermaidChart(text: string): { chart: string | null; before: stri
     return { chart: null, before: text, after: "" };
   }
 
-  const isMermaid = /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|quadrantChart|requirementDiagram|gitGraph|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment)\b/.test(normalized);
+  const isMermaid =
+    /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|quadrantChart|requirementDiagram|gitGraph|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment)\b/.test(
+      normalized,
+    );
 
   return {
     chart: isMermaid ? normalized.trim() : null,
@@ -368,12 +391,18 @@ function readSeenAssistantMap(sessionId: string | null): Map<string, string> {
   }
 }
 
-function writeSeenAssistantMap(sessionId: string | null, seenMap: Map<string, string>): void {
+function writeSeenAssistantMap(
+  sessionId: string | null,
+  seenMap: Map<string, string>,
+): void {
   const key = getSeenAssistantStorageKey(sessionId);
   if (!key || typeof window === "undefined") return;
 
   try {
-    window.localStorage.setItem(key, JSON.stringify(Object.fromEntries(seenMap)));
+    window.localStorage.setItem(
+      key,
+      JSON.stringify(Object.fromEntries(seenMap)),
+    );
   } catch {
     // ignore
   }
@@ -393,7 +422,8 @@ function useAnimatedStreamText(text: string, enabled: boolean, delayMs = 72) {
       return;
     }
 
-    const shouldRestart = !previousEnabledRef.current || !text.startsWith(visibleText);
+    const shouldRestart =
+      !previousEnabledRef.current || !text.startsWith(visibleText);
     const baseLength = shouldRestart ? 0 : visibleLength;
     if (baseLength === text.length) {
       previousEnabledRef.current = true;
@@ -467,8 +497,20 @@ const MessageStatusIndicator = memo(function MessageStatusIndicator({
         className="inline-flex items-center gap-1.5 text-[11px] font-medium text-deep-space-blue-200"
       >
         Sending
-        <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" strokeDasharray="20 12" strokeLinecap="round" />
+        <svg
+          className="h-3.5 w-3.5 animate-spin"
+          viewBox="0 0 16 16"
+          fill="none"
+        >
+          <circle
+            cx="8"
+            cy="8"
+            r="6"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeDasharray="20 12"
+            strokeLinecap="round"
+          />
         </svg>
       </motion.span>
     );
@@ -485,11 +527,30 @@ const MessageStatusIndicator = memo(function MessageStatusIndicator({
         className="inline-flex items-center gap-1.5 text-[11px] font-medium text-deep-space-blue-200"
       >
         <svg className="h-3.5 w-3.5" viewBox="0 0 20 16" fill="none">
-          <path d="M4 8.5l4 4 7-8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-check-draw" />
+          <path
+            d="M4 8.5l4 4 7-8"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="animate-check-draw"
+          />
         </svg>
         Sent
-        <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" strokeDasharray="20 12" strokeLinecap="round" />
+        <svg
+          className="h-3.5 w-3.5 animate-spin"
+          viewBox="0 0 16 16"
+          fill="none"
+        >
+          <circle
+            cx="8"
+            cy="8"
+            r="6"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeDasharray="20 12"
+            strokeLinecap="round"
+          />
         </svg>
       </motion.span>
     );
@@ -535,8 +596,22 @@ const MessageStatusIndicator = memo(function MessageStatusIndicator({
       className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-300"
     >
       <svg className="h-3.5 w-3.5" viewBox="0 0 20 16" fill="none">
-        <path d="M2 8.5l3 3 5-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-check-draw" />
-        <path d="M7 8.5l3 3 5-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-check-draw-delayed" />
+        <path
+          d="M2 8.5l3 3 5-6"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="animate-check-draw"
+        />
+        <path
+          d="M7 8.5l3 3 5-6"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="animate-check-draw-delayed"
+        />
       </svg>
       Delivered
     </motion.span>
@@ -562,23 +637,66 @@ const MessageBubble = memo(function MessageBubble({
   animateStream?: boolean;
 }) {
   const isUser = message.role === "user";
-  const displayContent = compact ? shortenUuids(message.content) : message.content;
-  const streamedContent = useAnimatedStreamText(displayContent, animateStream, 28);
-  const mermaidContent = !isUser ? extractMermaidChart(displayContent) : { chart: null, before: displayContent, after: "" };
+  const displayContent = compact
+    ? shortenUuids(message.content)
+    : message.content;
+  const streamedContent = useAnimatedStreamText(
+    displayContent,
+    animateStream,
+    28,
+  );
+  const mermaidContent = !isUser
+    ? extractMermaidChart(displayContent)
+    : { chart: null, before: displayContent, after: "" };
+  const [activityOpen, setActivityOpen] = useState(
+    message.runTrace?.phase === "failed",
+  );
+  const [envelopeTrace, setEnvelopeTrace] = useState<RunTrace | undefined>();
+  const [activityLoadFailed, setActivityLoadFailed] = useState(false);
+  const activityTrace = message.runTrace ?? envelopeTrace;
+  const hasActivity = Boolean(message.runTrace ?? message.runEnvelopeId);
+
+  useEffect(() => {
+    if (!activityOpen || message.runTrace || !message.runEnvelopeId) return;
+    let cancelled = false;
+    void loadEnvelopeEvents(message.runEnvelopeId)
+      .then((events) => {
+        if (cancelled) return;
+        const trace = reduceRunTraceEvents(undefined, events);
+        setEnvelopeTrace(trace);
+        setActivityLoadFailed(events.length === 0 || !trace);
+      })
+      .catch(() => {
+        if (!cancelled) setActivityLoadFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activityOpen, message.runEnvelopeId, message.runTrace]);
 
   return (
-    <div className={cn(
-      "group flex items-start gap-3",
-      isUser ? "flex-row-reverse md:flex-row" : "flex-row",
-    )}>
+    <div
+      className={cn(
+        "group flex items-start gap-3",
+        isUser ? "flex-row-reverse md:flex-row" : "flex-row",
+      )}
+    >
       {/* Avatar — hidden on mobile */}
       <div className="hidden md:block">
         {isUser ? (
           <UserAvatar imageUrl={userImageUrl} initials={userInitials} />
         ) : activeAgent ? (
-          <RoleIdenticon roleId={activeAgent.id} color={activeAgent.color} size={32} className="shrink-0" name={activeAgent.name} />
+          <RoleIdenticon
+            roleId={activeAgent.id}
+            color={activeAgent.color}
+            size={32}
+            className="shrink-0"
+            name={activeAgent.name}
+          />
         ) : (
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vivid-tangerine-100 text-xs font-bold text-vivid-tangerine-700">AI</div>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vivid-tangerine-100 text-xs font-bold text-vivid-tangerine-700">
+            AI
+          </div>
         )}
       </div>
       <div
@@ -599,25 +717,34 @@ const MessageBubble = memo(function MessageBubble({
                   remarkPlugins={[remarkGfm]}
                   components={{
                     pre({ children }) {
-                      const child = Children.count(children) === 1 ? Children.only(children) : null;
+                      const child =
+                        Children.count(children) === 1
+                          ? Children.only(children)
+                          : null;
                       if (
-                        child
-                        && typeof child === "object"
-                        && "type" in child
-                        && (child as React.ReactElement).type === MermaidDiagram
+                        child &&
+                        typeof child === "object" &&
+                        "type" in child &&
+                        (child as React.ReactElement).type === MermaidDiagram
                       ) {
                         return <>{children}</>;
                       }
-                      const className = isValidElement<{ className?: string }>(child) ? child.props.className : undefined;
-                      const language = formatCodeLanguageLabel(getCodeLanguage(className));
-                      const rawText = isValidElement<{ children?: React.ReactNode }>(child)
+                      const className = isValidElement<{ className?: string }>(
+                        child,
+                      )
+                        ? child.props.className
+                        : undefined;
+                      const language = formatCodeLanguageLabel(
+                        getCodeLanguage(className),
+                      );
+                      const rawText = isValidElement<{
+                        children?: React.ReactNode;
+                      }>(child)
                         ? String(child.props.children ?? "").replace(/\n$/, "")
                         : String(children ?? "").replace(/\n$/, "");
 
                       return (
-                        <div
-                          className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900"
-                        >
+                        <div className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900">
                           {language ? (
                             <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-slate-200 dark:text-slate-500">
                               {language}
@@ -626,7 +753,10 @@ const MessageBubble = memo(function MessageBubble({
                           <pre className="m-0 overflow-x-auto bg-slate-950 p-4 text-left text-slate-50 dark:bg-slate-50 dark:text-slate-900">
                             <code
                               className="block whitespace-pre font-mono text-[13px] leading-6 text-slate-50 dark:text-slate-900"
-                              style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace' }}
+                              style={{
+                                fontFamily:
+                                  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+                              }}
                             >
                               {rawText}
                             </code>
@@ -643,7 +773,11 @@ const MessageBubble = memo(function MessageBubble({
                       }
 
                       if (className) {
-                        return <code className={className} {...props}>{children}</code>;
+                        return (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        );
                       }
                       return (
                         <code className="font-mono text-[0.85em]" {...props}>
@@ -653,7 +787,9 @@ const MessageBubble = memo(function MessageBubble({
                     },
                   }}
                 >
-                  {mermaidContent.chart ? mermaidContent.before : streamedContent}
+                  {mermaidContent.chart
+                    ? mermaidContent.before
+                    : streamedContent}
                 </ReactMarkdown>
               </div>
             ) : null}
@@ -668,25 +804,34 @@ const MessageBubble = memo(function MessageBubble({
                   remarkPlugins={[remarkGfm]}
                   components={{
                     pre({ children }) {
-                      const child = Children.count(children) === 1 ? Children.only(children) : null;
+                      const child =
+                        Children.count(children) === 1
+                          ? Children.only(children)
+                          : null;
                       if (
-                        child
-                        && typeof child === "object"
-                        && "type" in child
-                        && (child as React.ReactElement).type === MermaidDiagram
+                        child &&
+                        typeof child === "object" &&
+                        "type" in child &&
+                        (child as React.ReactElement).type === MermaidDiagram
                       ) {
                         return <>{children}</>;
                       }
-                      const className = isValidElement<{ className?: string }>(child) ? child.props.className : undefined;
-                      const language = formatCodeLanguageLabel(getCodeLanguage(className));
-                      const rawText = isValidElement<{ children?: React.ReactNode }>(child)
+                      const className = isValidElement<{ className?: string }>(
+                        child,
+                      )
+                        ? child.props.className
+                        : undefined;
+                      const language = formatCodeLanguageLabel(
+                        getCodeLanguage(className),
+                      );
+                      const rawText = isValidElement<{
+                        children?: React.ReactNode;
+                      }>(child)
                         ? String(child.props.children ?? "").replace(/\n$/, "")
                         : String(children ?? "").replace(/\n$/, "");
 
                       return (
-                        <div
-                          className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900"
-                        >
+                        <div className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900">
                           {language ? (
                             <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-slate-200 dark:text-slate-500">
                               {language}
@@ -695,7 +840,10 @@ const MessageBubble = memo(function MessageBubble({
                           <pre className="m-0 overflow-x-auto bg-slate-950 p-4 text-left text-slate-50 dark:bg-slate-50 dark:text-slate-900">
                             <code
                               className="block whitespace-pre font-mono text-[13px] leading-6 text-slate-50 dark:text-slate-900"
-                              style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace' }}
+                              style={{
+                                fontFamily:
+                                  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+                              }}
                             >
                               {rawText}
                             </code>
@@ -712,7 +860,11 @@ const MessageBubble = memo(function MessageBubble({
                       }
 
                       if (className) {
-                        return <code className={className} {...props}>{children}</code>;
+                        return (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        );
                       }
                       return (
                         <code className="font-mono text-[0.85em]" {...props}>
@@ -726,14 +878,58 @@ const MessageBubble = memo(function MessageBubble({
                 </ReactMarkdown>
               </div>
             ) : null}
+            {hasActivity && (
+              <div className="not-prose border-t border-gray-200/70 pt-2 dark:border-gray-700/70">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivityLoadFailed(false);
+                    setActivityOpen((value) => !value);
+                  }}
+                  className="flex min-h-8 w-full items-center gap-2 text-left text-xs font-medium text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  aria-expanded={activityOpen}
+                >
+                  {activityOpen ? (
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                  )}
+                  <span className="min-w-0 flex-1">Activity</span>
+                  <span className="shrink-0 text-[10px] uppercase tracking-normal text-gray-400">
+                    {activityOpen ? "Hide" : "Show"}
+                  </span>
+                </button>
+                {activityOpen && activityTrace && (
+                  <AgentRunTrace
+                    trace={activityTrace}
+                    mode="history"
+                    density={compact ? "compact" : "regular"}
+                    embedded
+                  />
+                )}
+                {activityOpen && !activityTrace && activityLoadFailed && (
+                  <p className="px-1 py-2 text-xs text-gray-400 dark:text-gray-500">
+                    Activity unavailable on this device.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
         <div className="mt-1 flex items-center gap-1.5">
           <span
-            className={cn("text-[10px]", isUser ? "text-gray-400 md:text-deep-space-blue-200" : "text-gray-400")}
+            className={cn(
+              "text-[10px]",
+              isUser
+                ? "text-gray-400 md:text-deep-space-blue-200"
+                : "text-gray-400",
+            )}
             suppressHydrationWarning
           >
-            {new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            {new Date(message.timestamp).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
           </span>
           {isUser && (
             <AnimatePresence mode="wait">
@@ -747,8 +943,18 @@ const MessageBubble = memo(function MessageBubble({
               className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-flag-red-500 dark:hover:text-flag-red-400"
               title="Delete message"
             >
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244 2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244 2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
+                />
               </svg>
             </button>
           )}
@@ -758,31 +964,59 @@ const MessageBubble = memo(function MessageBubble({
   );
 });
 
-type ToolEntry = { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string; children?: ToolEntry[] };
+type ToolEntry = {
+  name: string;
+  args: string;
+  textPreview?: string;
+  status?: "running" | "completed" | "failed";
+  outputPreview?: string;
+  errorPreview?: string;
+  children?: ToolEntry[];
+};
 
-function ToolCallLine({ tool, compact = false }: { tool: ToolEntry; compact?: boolean }) {
+function ToolCallLine({
+  tool,
+  compact = false,
+}: {
+  tool: ToolEntry;
+  compact?: boolean;
+}) {
   const signature = formatToolCallSignature(tool.name, tool.args);
-  const statusLabel = tool.status === "completed" ? "done" : tool.status === "failed" ? "failed" : null;
+  const statusLabel =
+    tool.status === "completed"
+      ? "done"
+      : tool.status === "failed"
+        ? "failed"
+        : null;
   return (
-    <div className={cn("flex items-start gap-2", compact ? "text-[10px]" : "text-[11px]")}>
-      <span className={cn(
-        "mt-[5px] inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-        tool.status === "failed"
-          ? "bg-flag-red-400"
-          : tool.status === "completed"
-            ? "bg-emerald-400"
-            : "animate-pulse bg-deep-space-blue-400",
-      )} />
+    <div
+      className={cn(
+        "flex items-start gap-2",
+        compact ? "text-[10px]" : "text-[11px]",
+      )}
+    >
+      <span
+        className={cn(
+          "mt-[5px] inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+          tool.status === "failed"
+            ? "bg-flag-red-400"
+            : tool.status === "completed"
+              ? "bg-emerald-400"
+              : "animate-pulse bg-deep-space-blue-400",
+        )}
+      />
       <div className="min-w-0 flex-1">
         <div className="rounded-md border border-gray-200/80 bg-gray-50 px-2 py-1.5 font-mono leading-relaxed text-gray-600 shadow-sm dark:border-gray-700/80 dark:bg-gray-900/45 dark:text-gray-300">
           <span className="whitespace-pre-wrap break-words">{signature}</span>
           {statusLabel && (
-            <span className={cn(
-              "ml-2 font-sans text-[10px] font-medium",
-              tool.status === "failed"
-                ? "text-flag-red-500/80 dark:text-flag-red-400/80"
-                : "text-emerald-500/80 dark:text-emerald-400/80",
-            )}>
+            <span
+              className={cn(
+                "ml-2 font-sans text-[10px] font-medium",
+                tool.status === "failed"
+                  ? "text-flag-red-500/80 dark:text-flag-red-400/80"
+                  : "text-emerald-500/80 dark:text-emerald-400/80",
+              )}
+            >
               {statusLabel}
             </span>
           )}
@@ -804,12 +1038,22 @@ const TypingIndicator = memo(function TypingIndicator({
   mobile?: boolean;
 }) {
   const hasTools = tools && tools.length > 0;
-  const textPreview = preview?.trim() || tools?.find((tool) => tool.textPreview?.trim())?.textPreview?.trim();
-  const streamedPreview = useAnimatedStreamText(textPreview ?? "", !!textPreview, 26);
+  const textPreview =
+    preview?.trim() ||
+    tools?.find((tool) => tool.textPreview?.trim())?.textPreview?.trim();
+  const streamedPreview = useAnimatedStreamText(
+    textPreview ?? "",
+    !!textPreview,
+    26,
+  );
 
   const renderedPreview = textPreview ? streamedPreview : "";
   const previewLeadLength = textPreview ? Math.min(textPreview.length, 18) : 0;
-  const showTools = hasTools && (!textPreview || streamedPreview === textPreview || streamedPreview.length >= previewLeadLength);
+  const showTools =
+    hasTools &&
+    (!textPreview ||
+      streamedPreview === textPreview ||
+      streamedPreview.length >= previewLeadLength);
   return (
     <div
       className={cn(
@@ -818,9 +1062,18 @@ const TypingIndicator = memo(function TypingIndicator({
       )}
     >
       {activeAgent ? (
-        <RoleIdenticon roleId={activeAgent.id} color={activeAgent.color} size={32} className="shrink-0" animate={true} name={activeAgent.name} />
+        <RoleIdenticon
+          roleId={activeAgent.id}
+          color={activeAgent.color}
+          size={32}
+          className="shrink-0"
+          animate={true}
+          name={activeAgent.name}
+        />
       ) : (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vivid-tangerine-100 text-xs font-bold text-vivid-tangerine-700">AI</div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vivid-tangerine-100 text-xs font-bold text-vivid-tangerine-700">
+          AI
+        </div>
       )}
       <div
         className={cn(
@@ -831,11 +1084,15 @@ const TypingIndicator = memo(function TypingIndicator({
         {textPreview ? (
           <div className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-gray-600 dark:text-gray-300">
             {renderedPreview}
-            <span className="ml-1 animate-blink-cursor text-base leading-none text-deep-space-blue-500 dark:text-deep-space-blue-400">&#9612;</span>
+            <span className="ml-1 animate-blink-cursor text-base leading-none text-deep-space-blue-500 dark:text-deep-space-blue-400">
+              &#9612;
+            </span>
           </div>
         ) : (
           <div className="flex items-center font-mono text-xs text-gray-400">
-            <span className="animate-blink-cursor text-base leading-none text-deep-space-blue-500 dark:text-deep-space-blue-400">&#9612;</span>
+            <span className="animate-blink-cursor text-base leading-none text-deep-space-blue-500 dark:text-deep-space-blue-400">
+              &#9612;
+            </span>
           </div>
         )}
         {showTools && (
@@ -861,7 +1118,10 @@ const TypingIndicator = memo(function TypingIndicator({
                               initial={{ opacity: 0, x: -6 }}
                               animate={{ opacity: 1, x: 0 }}
                               exit={{ opacity: 0, x: -4 }}
-                              transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+                              transition={{
+                                duration: 0.34,
+                                ease: [0.22, 1, 0.36, 1],
+                              }}
                               className="leading-tight"
                             >
                               <ToolCallLine tool={child} compact />
@@ -904,7 +1164,16 @@ function displayProjectName(projectName: string | null | undefined): string {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, onNavigateToSession, onSessionCreated, variant = "desktop", onSwitchAgent }: ChatAreaProps) {
+export function ChatArea({
+  projectId,
+  agentId,
+  targetType = "agent",
+  sessionId,
+  onNavigateToSession,
+  onSessionCreated,
+  variant = "desktop",
+  onSwitchAgent,
+}: ChatAreaProps) {
   const isMobile = variant === "mobile";
   const isAgentTarget = targetType === "agent";
   const { user } = useUser();
@@ -918,7 +1187,8 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   const [showAgentDropdown, setShowAgentDropdown] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
   const [selectedDropdownIndex, setSelectedDropdownIndex] = useState(0);
-  const [selectedMentionAgent, setSelectedMentionAgent] = useState<AgentDefinition | null>(null);
+  const [selectedMentionAgent, setSelectedMentionAgent] =
+    useState<AgentDefinition | null>(null);
   const [sessionPickerIndex, setSessionPickerIndex] = useState(0);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
 
@@ -926,13 +1196,16 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   const [domainFilter, setDomainFilter] = useState("");
   const [selectedDomainIndex, setSelectedDomainIndex] = useState(0);
   const [pendingDomain, setPendingDomain] = useState<Domain | null>(null);
-  const [pendingCommand, setPendingCommand] = useState<ChatCommandOption | null>(null);
+  const [pendingCommand, setPendingCommand] =
+    useState<ChatCommandOption | null>(null);
   const [showCommandDropdown, setShowCommandDropdown] = useState(false);
   const [commandFilter, setCommandFilter] = useState("");
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
 
   const { agents: allAgents } = useAgents();
-  const { agent: activeAgentDetail } = useAgent(isAgentTarget ? agentId : undefined);
+  const { agent: activeAgentDetail } = useAgent(
+    isAgentTarget ? agentId : undefined,
+  );
   const { agentDomains } = useAgentDomains(isAgentTarget ? agentId : undefined);
   const { projects } = useProjects();
   const { data: packageInstalls } = useSWR<PackageInstall[]>(
@@ -941,7 +1214,10 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     { revalidateOnFocus: true, dedupingInterval: 5000 },
   );
   const activePackageInstalls = useMemo(
-    () => (packageInstalls ?? []).filter((install) => install.status === "installed"),
+    () =>
+      (packageInstalls ?? []).filter(
+        (install) => install.status === "installed",
+      ),
     [packageInstalls],
   );
   const packageInstallDetailKey = useMemo(() => {
@@ -968,12 +1244,18 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     { revalidateOnFocus: true, dedupingInterval: 5000 },
   );
   const chatCommands = useMemo(
-    () => [...CHAT_COMMANDS, ...installedPackageCommands(packageInstallDetails)],
+    () => [
+      ...CHAT_COMMANDS,
+      ...installedPackageCommands(packageInstallDetails),
+    ],
     [packageInstallDetails],
   );
   useEffect(() => {
     if (!pendingCommand) return;
-    if (chatCommands.some((command) => command.command === pendingCommand.command)) return;
+    if (
+      chatCommands.some((command) => command.command === pendingCommand.command)
+    )
+      return;
     setPendingCommand(null);
   }, [chatCommands, pendingCommand]);
 
@@ -981,13 +1263,17 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   const userProjects = useMemo<ChatProjectOption[]>(() => {
     const list: ChatProjectOption[] = [{ id: null, name: "General" }];
     if (projects) {
-      list.push(...projects.map((project) => ({ id: project.id, name: project.name })));
+      list.push(
+        ...projects.map((project) => ({ id: project.id, name: project.name })),
+      );
     }
     return list;
   }, [projects]);
 
   // All sessions (for the session picker after @mention agent selection)
-  const { data: allSessions, mutate: mutateSessions } = useSWR<ChatSessionExtended[]>(
+  const { data: allSessions, mutate: mutateSessions } = useSWR<
+    ChatSessionExtended[]
+  >(
     selectedMentionAgent
       ? allChatSessionsUrl(isMobile ? 50 : 200, 0, "chat")
       : null,
@@ -1003,7 +1289,9 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   const filteredAgents = useMemo(() => {
     if (!mentionFilter) return availableAgents;
     const lower = mentionFilter.toLowerCase();
-    return availableAgents.filter((a: AgentDefinition) => a.name.toLowerCase().includes(lower));
+    return availableAgents.filter((a: AgentDefinition) =>
+      a.name.toLowerCase().includes(lower),
+    );
   }, [availableAgents, mentionFilter]);
 
   // Sessions for the selected @mention agent, sorted by most recent
@@ -1012,24 +1300,51 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     return allSessions.filter((s) => s.agent_id === selectedMentionAgent.id);
   }, [selectedMentionAgent, allSessions]);
 
-
   const activeAgent = useMemo(
-    () => activeAgentDetail ?? (isAgentTarget ? allAgents?.find((a: AgentDefinition) => a.id === agentId) : undefined),
+    () =>
+      activeAgentDetail ??
+      (isAgentTarget
+        ? allAgents?.find((a: AgentDefinition) => a.id === agentId)
+        : undefined),
     [activeAgentDetail, allAgents, agentId, isAgentTarget],
   );
 
-  useEffect(() => { setSelectedDropdownIndex(0); }, [filteredAgents]);
+  useEffect(() => {
+    setSelectedDropdownIndex(0);
+  }, [filteredAgents]);
 
   const {
-    messages, sendMessage, deleteMessage, isTyping, activeTools, livePreview, isLoadingHistory,
-    hasMore, isLoadingMore, loadMore,
-    activeDomainSession, isDomainPending, enterDomain, exitDomain, cancelResponse,
+    messages,
+    sendMessage,
+    deleteMessage,
+    isTyping,
+    activeTools,
+    livePreview,
+    activeRunTrace,
+    isLoadingHistory,
+    hasMore,
+    isLoadingMore,
+    loadMore,
+    activeDomainSession,
+    isDomainPending,
+    enterDomain,
+    exitDomain,
+    cancelResponse,
   } = usePlannerChat(projectId, agentId, sessionId ?? undefined, targetType);
   const hasActiveTools = activeTools.length > 0;
+  const visibleRunTrace =
+    activeRunTrace &&
+    !["completed", "failed", "cancelled"].includes(activeRunTrace.phase)
+      ? activeRunTrace
+      : undefined;
+  const hasActiveRunTrace = !!visibleRunTrace;
 
   // Domains
   const agentDomainsList: Domain[] = useMemo(
-    () => (agentDomains ?? []).filter((rm) => rm.enabled && rm.domain).map((rm) => rm.domain!),
+    () =>
+      (agentDomains ?? [])
+        .filter((rm) => rm.enabled && rm.domain)
+        .map((rm) => rm.domain!),
     [agentDomains],
   );
   // Only show domains assigned to the current agent
@@ -1049,7 +1364,9 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     );
   }, [showDomainDropdown, domainFilter, availableDomains]);
 
-  useEffect(() => { setSelectedDomainIndex(0); }, [filteredDomains]);
+  useEffect(() => {
+    setSelectedDomainIndex(0);
+  }, [filteredDomains]);
 
   const filteredCommands = useMemo(() => {
     if (!showCommandDropdown) return [];
@@ -1061,7 +1378,9 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     );
   }, [showCommandDropdown, commandFilter, chatCommands]);
 
-  useEffect(() => { setSelectedCommandIndex(0); }, [filteredCommands]);
+  useEffect(() => {
+    setSelectedCommandIndex(0);
+  }, [filteredCommands]);
 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1072,12 +1391,16 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   const hasInitializedAssistantRef = useRef(false);
   const historyReadyRef = useRef(false);
   const pendingSessionScrollRef = useRef(false);
-  const [streamingAssistantId, setStreamingAssistantId] = useState<string | null>(null);
+  const [streamingAssistantId, setStreamingAssistantId] = useState<
+    string | null
+  >(null);
   const [showScrollToLatest, setShowScrollToLatest] = useState(false);
 
   // Track message count for animation stagger logic
   const prevMessageCountRef = useRef(0);
-  useEffect(() => { prevMessageCountRef.current = messages.length; }, [messages.length]);
+  useEffect(() => {
+    prevMessageCountRef.current = messages.length;
+  }, [messages.length]);
 
   useEffect(() => {
     lastAssistantContentRef.current = new Map();
@@ -1146,25 +1469,46 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   // Auto-scroll
   const skipAutoScrollRef = useRef(false);
   useEffect(() => {
-    if (skipAutoScrollRef.current) { skipAutoScrollRef.current = false; return; }
+    if (skipAutoScrollRef.current) {
+      skipAutoScrollRef.current = false;
+      return;
+    }
     if (scrollRef.current) {
       const el = scrollRef.current;
-      el.scrollTop = el.scrollHeight;
+      const behavior: ScrollBehavior =
+        hasActiveRunTrace || isTyping || hasActiveTools ? "smooth" : "auto";
+      requestAnimationFrame(() => {
+        el.scrollTo({ top: el.scrollHeight, behavior });
+      });
       setShowScrollToLatest(false);
     }
-  }, [messages, isTyping, activeTools, livePreview]);
+  }, [
+    messages,
+    isTyping,
+    activeTools,
+    livePreview,
+    visibleRunTrace,
+    hasActiveRunTrace,
+    hasActiveTools,
+  ]);
 
   useEffect(() => {
-    const assistantMessages = messages.filter((message) => message.role === "assistant");
+    const assistantMessages = messages.filter(
+      (message) => message.role === "assistant",
+    );
 
     if (!hasInitializedAssistantRef.current) {
-      lastAssistantContentRef.current = new Map(assistantMessages.map((message) => [message.id, message.content]));
+      lastAssistantContentRef.current = new Map(
+        assistantMessages.map((message) => [message.id, message.content]),
+      );
       hasInitializedAssistantRef.current = true;
       return;
     }
 
     if (!historyReadyRef.current) {
-      lastAssistantContentRef.current = new Map(assistantMessages.map((message) => [message.id, message.content]));
+      lastAssistantContentRef.current = new Map(
+        assistantMessages.map((message) => [message.id, message.content]),
+      );
       setStreamingAssistantId(null);
       return;
     }
@@ -1181,7 +1525,10 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
       ) {
         latestChangedId = message.id;
         seenAssistantContentRef.current.set(message.id, message.content);
-        seenAssistantContentRef.current.set(getSeenAssistantContentKey(message.content), message.id);
+        seenAssistantContentRef.current.set(
+          getSeenAssistantContentKey(message.content),
+          message.id,
+        );
       } else if (
         previousContent === undefined &&
         assistantMessages[assistantMessages.length - 1]?.id === message.id &&
@@ -1189,7 +1536,10 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
       ) {
         latestChangedId = message.id;
         seenAssistantContentRef.current.set(message.id, message.content);
-        seenAssistantContentRef.current.set(getSeenAssistantContentKey(message.content), message.id);
+        seenAssistantContentRef.current.set(
+          getSeenAssistantContentKey(message.content),
+          message.id,
+        );
       }
       lastAssistantContentRef.current.set(message.id, message.content);
     }
@@ -1209,17 +1559,29 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   useEffect(() => {
     if (isLoadingHistory) return;
     historyReadyRef.current = true;
-    const assistantMessages = messages.filter((message) => message.role === "assistant");
-    lastAssistantContentRef.current = new Map(assistantMessages.map((message) => [message.id, message.content]));
+    const assistantMessages = messages.filter(
+      (message) => message.role === "assistant",
+    );
+    lastAssistantContentRef.current = new Map(
+      assistantMessages.map((message) => [message.id, message.content]),
+    );
     for (const message of assistantMessages) {
       seenAssistantContentRef.current.set(message.id, message.content);
-      seenAssistantContentRef.current.set(getSeenAssistantContentKey(message.content), message.id);
+      seenAssistantContentRef.current.set(
+        getSeenAssistantContentKey(message.content),
+        message.id,
+      );
     }
     writeSeenAssistantMap(sessionId, seenAssistantContentRef.current);
   }, [isLoadingHistory, messages, sessionId]);
 
   useEffect(() => {
-    if (!pendingSessionScrollRef.current || isLoadingHistory || !scrollRef.current) return;
+    if (
+      !pendingSessionScrollRef.current ||
+      isLoadingHistory ||
+      !scrollRef.current
+    )
+      return;
 
     const timeoutId = window.setTimeout(() => {
       const el = scrollRef.current;
@@ -1245,7 +1607,8 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
       loadMore().then(() => {
         requestAnimationFrame(() => {
           if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight - prevHeight;
+            scrollRef.current.scrollTop =
+              scrollRef.current.scrollHeight - prevHeight;
           }
         });
       });
@@ -1254,7 +1617,10 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
 
   const scrollToLatest = useCallback(() => {
     if (!scrollRef.current) return;
-    scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    scrollRef.current.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
     setShowScrollToLatest(false);
   }, []);
 
@@ -1332,7 +1698,12 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
       }
     }
 
-    if (value.startsWith("#") && !activeDomainSession && !pendingDomain && !pendingCommand) {
+    if (
+      value.startsWith("#") &&
+      !activeDomainSession &&
+      !pendingDomain &&
+      !pendingCommand
+    ) {
       const domainText = value.slice(1);
       if (!/\s/.test(domainText)) {
         setShowDomainDropdown(true);
@@ -1346,19 +1717,16 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     setDomainFilter("");
   };
 
-  const handleDomainSelect = useCallback(
-    (domain: Domain) => {
-      setPendingDomain(domain);
-      setPendingCommand(null);
-      setInput("");
-      setShowDomainDropdown(false);
-      setDomainFilter("");
-      setShowCommandDropdown(false);
-      setCommandFilter("");
-      inputRef.current?.focus();
-    },
-    [],
-  );
+  const handleDomainSelect = useCallback((domain: Domain) => {
+    setPendingDomain(domain);
+    setPendingCommand(null);
+    setInput("");
+    setShowDomainDropdown(false);
+    setDomainFilter("");
+    setShowCommandDropdown(false);
+    setCommandFilter("");
+    inputRef.current?.focus();
+  }, []);
 
   // Step 1: user selects an agent from @mention dropdown → always show session picker
   const handleAgentSelect = useCallback((agent: AgentDefinition) => {
@@ -1374,10 +1742,13 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   }, []);
 
   // Step 2: user selects a session from the session picker → navigate
-  const handleSessionSelect = useCallback((session: ChatSessionExtended) => {
-    closeMentionFlow();
-    onNavigateToSession?.(session.id);
-  }, [closeMentionFlow, onNavigateToSession]);
+  const handleSessionSelect = useCallback(
+    (session: ChatSessionExtended) => {
+      closeMentionFlow();
+      onNavigateToSession?.(session.id);
+    },
+    [closeMentionFlow, onNavigateToSession],
+  );
 
   // Step 2 → Step 3: user picks "+ New chat" → show project picker
   const handleNewChatFromMention = useCallback(() => {
@@ -1386,33 +1757,44 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   }, []);
 
   // Step 3: user selects a project → create session and navigate
-  const handleProjectSelect = useCallback(async (project: ChatProjectOption) => {
-    if (!selectedMentionAgent || isCreatingChat) return;
-    setIsCreatingChat(true);
-    try {
-      // Count existing sessions for auto-naming
-      const existingCount = mentionAgentSessions.filter(
-        (s) => s.project_id === project.id,
-      ).length;
-      const agentName = selectedMentionAgent.name;
-      const title = `${agentName.charAt(0).toUpperCase() + agentName.slice(1)} #${existingCount + 1}`;
+  const handleProjectSelect = useCallback(
+    async (project: ChatProjectOption) => {
+      if (!selectedMentionAgent || isCreatingChat) return;
+      setIsCreatingChat(true);
+      try {
+        // Count existing sessions for auto-naming
+        const existingCount = mentionAgentSessions.filter(
+          (s) => s.project_id === project.id,
+        ).length;
+        const agentName = selectedMentionAgent.name;
+        const title = `${agentName.charAt(0).toUpperCase() + agentName.slice(1)} #${existingCount + 1}`;
 
-      const newSession = await createChatSession({
-        ...(project.id ? { project_id: project.id } : {}),
-        agent_id: selectedMentionAgent.id,
-        title,
-      });
+        const newSession = await createChatSession({
+          ...(project.id ? { project_id: project.id } : {}),
+          agent_id: selectedMentionAgent.id,
+          title,
+        });
 
-      closeMentionFlow();
-      await mutateSessions();
-      await onSessionCreated?.();
-      onNavigateToSession?.(newSession.id);
-    } catch (err) {
-      console.error("Failed to create chat:", err);
-    } finally {
-      setIsCreatingChat(false);
-    }
-  }, [selectedMentionAgent, isCreatingChat, mentionAgentSessions, closeMentionFlow, mutateSessions, onSessionCreated, onNavigateToSession]);
+        closeMentionFlow();
+        await mutateSessions();
+        await onSessionCreated?.();
+        onNavigateToSession?.(newSession.id);
+      } catch (err) {
+        console.error("Failed to create chat:", err);
+      } finally {
+        setIsCreatingChat(false);
+      }
+    },
+    [
+      selectedMentionAgent,
+      isCreatingChat,
+      mentionAgentSessions,
+      closeMentionFlow,
+      mutateSessions,
+      onSessionCreated,
+      onNavigateToSession,
+    ],
+  );
 
   const resetInputHeight = useCallback(() => {
     if (inputRef.current) {
@@ -1437,7 +1819,14 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     } finally {
       setIsCreatingChat(false);
     }
-  }, [agentId, isCreatingChat, mutateSessions, onNavigateToSession, onSessionCreated, projectId]);
+  }, [
+    agentId,
+    isCreatingChat,
+    mutateSessions,
+    onNavigateToSession,
+    onSessionCreated,
+    projectId,
+  ]);
 
   const handleCommandSelect = useCallback(
     async (command: ChatCommandOption) => {
@@ -1535,7 +1924,11 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
       return;
     }
 
-    if (text.startsWith("#") && !activeDomainSession && availableDomains.length > 0) {
+    if (
+      text.startsWith("#") &&
+      !activeDomainSession &&
+      availableDomains.length > 0
+    ) {
       const matchedDomain = [...availableDomains]
         .sort((a, b) => b.command.length - a.command.length)
         .find((m) => {
@@ -1550,7 +1943,12 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
         }
         setInput("");
         resetInputHeight();
-        enterDomain(matchedDomain.id, matchedDomain.command, agentId, userMessage);
+        enterDomain(
+          matchedDomain.id,
+          matchedDomain.command,
+          agentId,
+          userMessage,
+        );
         return;
       }
     }
@@ -1577,13 +1975,21 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (pendingCommand && !input.trim() && (e.key === "Backspace" || e.key === "Escape")) {
+    if (
+      pendingCommand &&
+      !input.trim() &&
+      (e.key === "Backspace" || e.key === "Escape")
+    ) {
       e.preventDefault();
       setPendingCommand(null);
       return;
     }
 
-    if (pendingDomain && !input.trim() && (e.key === "Backspace" || e.key === "Escape")) {
+    if (
+      pendingDomain &&
+      !input.trim() &&
+      (e.key === "Backspace" || e.key === "Escape")
+    ) {
       e.preventDefault();
       setPendingDomain(null);
       return;
@@ -1591,15 +1997,39 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
 
     // Local slash command keyboard nav
     if (showCommandDropdown && filteredCommands.length > 0) {
-      if (e.key === "Escape") { e.preventDefault(); setShowCommandDropdown(false); return; }
-      if (e.key === "ArrowDown") { e.preventDefault(); setSelectedCommandIndex((prev) => prev < filteredCommands.length - 1 ? prev + 1 : 0); return; }
-      if (e.key === "ArrowUp") { e.preventDefault(); setSelectedCommandIndex((prev) => prev > 0 ? prev - 1 : filteredCommands.length - 1); return; }
-      if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); void handleCommandSelect(filteredCommands[selectedCommandIndex]); return; }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowCommandDropdown(false);
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedCommandIndex((prev) =>
+          prev < filteredCommands.length - 1 ? prev + 1 : 0,
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedCommandIndex((prev) =>
+          prev > 0 ? prev - 1 : filteredCommands.length - 1,
+        );
+        return;
+      }
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        void handleCommandSelect(filteredCommands[selectedCommandIndex]);
+        return;
+      }
     }
 
     // Domain dropdown keyboard nav
     if (showDomainDropdown && activeDomainSession) {
-      if (e.key === "Escape") { e.preventDefault(); setShowDomainDropdown(false); return; }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowDomainDropdown(false);
+        return;
+      }
       if (e.key === "Tab" || e.key === "Enter") {
         e.preventDefault();
         setInput("");
@@ -1611,32 +2041,93 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     }
 
     // Domain dropdown keyboard nav
-    if (showDomainDropdown && filteredDomains.length > 0 && !activeDomainSession) {
-      if (e.key === "Escape") { e.preventDefault(); setShowDomainDropdown(false); return; }
-      if (e.key === "ArrowDown") { e.preventDefault(); setSelectedDomainIndex((prev) => prev < filteredDomains.length - 1 ? prev + 1 : 0); return; }
-      if (e.key === "ArrowUp") { e.preventDefault(); setSelectedDomainIndex((prev) => prev > 0 ? prev - 1 : filteredDomains.length - 1); return; }
-      if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); handleDomainSelect(filteredDomains[selectedDomainIndex]); return; }
+    if (
+      showDomainDropdown &&
+      filteredDomains.length > 0 &&
+      !activeDomainSession
+    ) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowDomainDropdown(false);
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedDomainIndex((prev) =>
+          prev < filteredDomains.length - 1 ? prev + 1 : 0,
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedDomainIndex((prev) =>
+          prev > 0 ? prev - 1 : filteredDomains.length - 1,
+        );
+        return;
+      }
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        handleDomainSelect(filteredDomains[selectedDomainIndex]);
+        return;
+      }
     }
 
     // Step 3: Project picker keyboard nav
     if (selectedMentionAgent && mentionStep === "project") {
       const totalItems = userProjects.length;
       if (totalItems > 0) {
-        if (e.key === "Escape") { e.preventDefault(); setMentionStep("session"); setSessionPickerIndex(0); return; }
-        if (e.key === "ArrowDown") { e.preventDefault(); setSessionPickerIndex((prev) => prev < totalItems - 1 ? prev + 1 : 0); return; }
-        if (e.key === "ArrowUp") { e.preventDefault(); setSessionPickerIndex((prev) => prev > 0 ? prev - 1 : totalItems - 1); return; }
-        if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); handleProjectSelect(userProjects[sessionPickerIndex]); return; }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setMentionStep("session");
+          setSessionPickerIndex(0);
+          return;
+        }
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setSessionPickerIndex((prev) =>
+            prev < totalItems - 1 ? prev + 1 : 0,
+          );
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setSessionPickerIndex((prev) =>
+            prev > 0 ? prev - 1 : totalItems - 1,
+          );
+          return;
+        }
+        if (e.key === "Tab" || e.key === "Enter") {
+          e.preventDefault();
+          handleProjectSelect(userProjects[sessionPickerIndex]);
+          return;
+        }
       } else {
-        if (e.key === "Escape") { e.preventDefault(); closeMentionFlow(); return; }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeMentionFlow();
+          return;
+        }
       }
     }
 
     // Step 2: Session picker keyboard nav (index 0 = "+ New chat", rest = sessions)
     if (selectedMentionAgent && mentionStep === "session") {
       const totalItems = mentionAgentSessions.length + 1; // +1 for "New chat"
-      if (e.key === "Escape") { e.preventDefault(); closeMentionFlow(); return; }
-      if (e.key === "ArrowDown") { e.preventDefault(); setSessionPickerIndex((prev) => prev < totalItems - 1 ? prev + 1 : 0); return; }
-      if (e.key === "ArrowUp") { e.preventDefault(); setSessionPickerIndex((prev) => prev > 0 ? prev - 1 : totalItems - 1); return; }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeMentionFlow();
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSessionPickerIndex((prev) => (prev < totalItems - 1 ? prev + 1 : 0));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSessionPickerIndex((prev) => (prev > 0 ? prev - 1 : totalItems - 1));
+        return;
+      }
       if (e.key === "Tab" || e.key === "Enter") {
         e.preventDefault();
         if (sessionPickerIndex === 0) {
@@ -1650,23 +2141,51 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
 
     // Step 1: Agent dropdown keyboard nav
     if (showAgentDropdown && !selectedMentionAgent) {
-      if (e.key === "Escape") { e.preventDefault(); closeMentionFlow(); return; }
-      if (e.key === "ArrowDown") { e.preventDefault(); setSelectedDropdownIndex((prev) => prev < filteredAgents.length - 1 ? prev + 1 : 0); return; }
-      if (e.key === "ArrowUp") { e.preventDefault(); setSelectedDropdownIndex((prev) => prev > 0 ? prev - 1 : filteredAgents.length - 1); return; }
-      if ((e.key === "Tab" || e.key === "Enter") && filteredAgents.length > 0) { e.preventDefault(); handleAgentSelect(filteredAgents[selectedDropdownIndex]); return; }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeMentionFlow();
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedDropdownIndex((prev) =>
+          prev < filteredAgents.length - 1 ? prev + 1 : 0,
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedDropdownIndex((prev) =>
+          prev > 0 ? prev - 1 : filteredAgents.length - 1,
+        );
+        return;
+      }
+      if ((e.key === "Tab" || e.key === "Enter") && filteredAgents.length > 0) {
+        e.preventDefault();
+        handleAgentSelect(filteredAgents[selectedDropdownIndex]);
+        return;
+      }
     }
 
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
   };
 
   const placeholder = activeAgent
-    ? (isMobile ? "What's next?" : `Message @${activeAgent.name}... (type @ to switch agent)`)
+    ? isMobile
+      ? "What's next?"
+      : `Message @${activeAgent.name}... (type @ to switch agent)`
     : "What's next?";
 
   // Mobile: handle agent switch — delegates to ChatView-level handler
-  const handleSwitchAgent = useCallback((agent: AgentDefinition) => {
-    onSwitchAgent?.(agent);
-  }, [onSwitchAgent]);
+  const handleSwitchAgent = useCallback(
+    (agent: AgentDefinition) => {
+      onSwitchAgent?.(agent);
+    },
+    [onSwitchAgent],
+  );
 
   // Mobile: handle enter domain via MobileEmptyState
   const handleEnterDomainFromChip = useCallback((domain: Domain) => {
@@ -1684,7 +2203,9 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
         <div className="flex items-center justify-center py-12">
           <div className="flex items-center gap-1.5 font-mono text-xs text-gray-400">
             <span className="tracking-wider">loading</span>
-            <span className="animate-blink-cursor text-base leading-none text-deep-space-blue-500 dark:text-deep-space-blue-400">&#9612;</span>
+            <span className="animate-blink-cursor text-base leading-none text-deep-space-blue-500 dark:text-deep-space-blue-400">
+              &#9612;
+            </span>
           </div>
         </div>
       );
@@ -1706,7 +2227,9 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
         <>
           {isLoadingMore && (
             <div className="flex justify-center py-2">
-              <span className="text-xs text-gray-400">Loading older messages...</span>
+              <span className="text-xs text-gray-400">
+                Loading older messages...
+              </span>
             </div>
           )}
           {messages.map((msg) => (
@@ -1718,16 +2241,41 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
                 userInitials={userInitials}
                 onDelete={msg.id !== "welcome" ? deleteMessage : undefined}
                 compact
-                animateStream={msg.role === "assistant" && msg.id === streamingAssistantId}
+                animateStream={
+                  msg.role === "assistant" && msg.id === streamingAssistantId
+                }
               />
             </div>
           ))}
-          {(isTyping || hasActiveTools) && (
-            <div>
-              <TypingIndicator activeAgent={activeAgent} tools={activeTools} preview={livePreview} mobile />
-            </div>
+          {(hasActiveRunTrace || isTyping || hasActiveTools) && (
+            <motion.div
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+            >
+              {visibleRunTrace ? (
+                <AgentRunTrace
+                  trace={visibleRunTrace}
+                  activeAgent={activeAgent}
+                  mobile
+                />
+              ) : (
+                <TypingIndicator
+                  activeAgent={activeAgent}
+                  tools={activeTools}
+                  preview={livePreview}
+                  mobile
+                />
+              )}
+            </motion.div>
           )}
-          <div className="h-1 shrink-0" />
+          <div
+            className={cn(
+              "shrink-0",
+              hasActiveRunTrace || isTyping || hasActiveTools ? "h-20" : "h-1",
+            )}
+          />
         </>
       );
     }
@@ -1736,12 +2284,16 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
       <>
         {isLoadingMore && (
           <div className="flex justify-center py-2">
-            <span className="text-xs text-gray-400">Loading older messages...</span>
+            <span className="text-xs text-gray-400">
+              Loading older messages...
+            </span>
           </div>
         )}
         <AnimatePresence mode="popLayout">
           {messages.map((msg, i) => {
-            const isBulkLoad = prevMessageCountRef.current === 0 || (messages.length > 2 && i < messages.length - 2);
+            const isBulkLoad =
+              prevMessageCountRef.current === 0 ||
+              (messages.length > 2 && i < messages.length - 2);
             const staggerDelay = isBulkLoad ? Math.min(i * 0.03, 0.3) : 0;
             return (
               <motion.div
@@ -1749,33 +2301,57 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2, ease: "easeOut", delay: staggerDelay }}
+                transition={{
+                  duration: 0.2,
+                  ease: "easeOut",
+                  delay: staggerDelay,
+                }}
               >
                 <MessageBubble
                   message={msg}
-                  activeAgent={msg.role === "assistant" ? activeAgent : undefined}
+                  activeAgent={
+                    msg.role === "assistant" ? activeAgent : undefined
+                  }
                   userImageUrl={userImageUrl}
                   userInitials={userInitials}
                   onDelete={msg.id !== "welcome" ? deleteMessage : undefined}
                   compact={false}
-                  animateStream={msg.role === "assistant" && msg.id === streamingAssistantId}
+                  animateStream={
+                    msg.role === "assistant" && msg.id === streamingAssistantId
+                  }
                 />
               </motion.div>
             );
           })}
-          {(isTyping || hasActiveTools) && (
+          {(hasActiveRunTrace || isTyping || hasActiveTools) && (
             <motion.div
               key="typing"
-              initial={{ opacity: 0, y: 12 }}
+              initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.15, ease: "easeOut" }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
             >
-              <TypingIndicator activeAgent={activeAgent} tools={activeTools} preview={livePreview} />
+              {visibleRunTrace ? (
+                <AgentRunTrace
+                  trace={visibleRunTrace}
+                  activeAgent={activeAgent}
+                />
+              ) : (
+                <TypingIndicator
+                  activeAgent={activeAgent}
+                  tools={activeTools}
+                  preview={livePreview}
+                />
+              )}
             </motion.div>
           )}
         </AnimatePresence>
-        <div className="h-1 shrink-0" />
+        <div
+          className={cn(
+            "shrink-0",
+            hasActiveRunTrace || isTyping || hasActiveTools ? "h-16" : "h-1",
+          )}
+        />
       </>
     );
   }, [
@@ -1792,6 +2368,8 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     deleteMessage,
     streamingAssistantId,
     isTyping,
+    hasActiveRunTrace,
+    visibleRunTrace,
     hasActiveTools,
     activeTools,
     livePreview,
@@ -1801,7 +2379,9 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   const inDomain = !!activeDomainSession && !!agentColor;
 
   // Track domain border animation phase: null → "enter" → "idle" → "exit" → null
-  const [borderPhase, setBorderPhase] = useState<"enter" | "idle" | "exit" | null>(null);
+  const [borderPhase, setBorderPhase] = useState<
+    "enter" | "idle" | "exit" | null
+  >(null);
   const prevInDomainRef = useRef(false);
 
   useEffect(() => {
@@ -1824,7 +2404,9 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
     prevInDomainRef.current = inDomain;
   }, [inDomain, isMobile]);
 
-  useEffect(() => { prevInDomainRef.current = inDomain; });
+  useEffect(() => {
+    prevInDomainRef.current = inDomain;
+  });
 
   // Delayed flag for domain banner — appears after border entry settles, exits timed with border exit
   const [showDomainBanner, setShowDomainBanner] = useState(false);
@@ -1839,23 +2421,30 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
   }, [inDomain]);
 
   return (
-    <div className={cn("relative flex h-full flex-col overflow-hidden", isMobile ? "rounded-none" : "rounded-lg")}>
+    <div
+      className={cn(
+        "relative flex h-full flex-col overflow-hidden",
+        isMobile ? "rounded-none" : "rounded-lg",
+      )}
+    >
       {/* Conic-gradient border with animated position — entry, idle pulse at top, exit (desktop only) */}
       {!isMobile && borderPhase && agentColor && (
         <div
           className="pointer-events-none absolute inset-0 z-10 rounded-lg"
           style={{
-            padding: '2px',
+            padding: "2px",
             background: `conic-gradient(from var(--border-angle, 45deg), transparent 30%, ${agentColor}60 45%, ${agentColor} 50%, ${agentColor}60 55%, transparent 70%)`,
-            mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-            maskComposite: 'exclude',
-            WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-            WebkitMaskComposite: 'xor',
-            animation: borderPhase === "enter"
-              ? 'domain-border-enter 2.25s ease-in-out forwards'
-              : borderPhase === "exit"
-              ? 'domain-border-exit 1s ease-in forwards'
-              : 'domain-border-idle 6s linear infinite',
+            mask: "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+            maskComposite: "exclude",
+            WebkitMask:
+              "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+            WebkitMaskComposite: "xor",
+            animation:
+              borderPhase === "enter"
+                ? "domain-border-enter 2.25s ease-in-out forwards"
+                : borderPhase === "exit"
+                  ? "domain-border-exit 1s ease-in forwards"
+                  : "domain-border-idle 6s linear infinite",
           }}
         />
       )}
@@ -1868,7 +2457,14 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
           "flex-1 overflow-y-auto overflow-x-hidden overscroll-contain space-y-4",
           isMobile ? "px-4 pt-1" : "p-4",
         )}
-        style={isMobile ? { paddingBottom: "calc(var(--mobile-composer-height, 108px) + env(safe-area-inset-bottom, 0px) + 0.2rem)" } : undefined}
+        style={
+          isMobile
+            ? {
+                paddingBottom:
+                  "calc(var(--mobile-composer-height, 108px) + env(safe-area-inset-bottom, 0px) + 0.2rem)",
+              }
+            : undefined
+        }
       >
         {messageContent}
       </div>
@@ -1890,8 +2486,18 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
             )}
             title="Jump to latest"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 10.5 12 15l4.5-4.5" />
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2.2}
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M7.5 10.5 12 15l4.5-4.5"
+              />
             </svg>
           </motion.button>
         )}
@@ -1906,56 +2512,74 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
               <ChatCommandDropdown
                 commands={filteredCommands}
                 selectedIndex={selectedCommandIndex}
-                onSelect={(command) => { void handleCommandSelect(command); }}
+                onSelect={(command) => {
+                  void handleCommandSelect(command);
+                }}
                 onClose={() => setShowCommandDropdown(false)}
                 anchorRef={inputRef}
               />
             </div>
           )}
-          {showDomainDropdown && (filteredDomains.length > 0 || activeDomainSession) && (
-            <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-50 px-4 pb-2">
-              <DomainSlashCommandDropdown
-                domains={filteredDomains}
-                selectedIndex={selectedDomainIndex}
-                onSelect={handleDomainSelect}
-                onClose={() => setShowDomainDropdown(false)}
-                anchorRef={inputRef}
-                accentColor={agentColor}
-                exitMode={!!activeDomainSession}
-                onExitDomain={() => {
-                  setInput("");
-                  resetInputHeight();
-                  setShowDomainDropdown(false);
-                  exitDomain();
-                }}
-              />
-            </div>
-          )}
-          {showAgentDropdown && !selectedMentionAgent && filteredAgents.length > 0 && (
-            <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-[100] px-4 pb-2">
-              <div
-                ref={dropdownRef}
-                className="theme-border w-full max-h-48 overflow-y-auto rounded-[1.35rem] border bg-white shadow-[0_20px_50px_rgba(15,23,42,0.24)] dark:bg-gray-900"
-              >
-                {filteredAgents.map((agent: AgentDefinition, index: number) => (
-                  <button
-                    key={agent.id}
-                    type="button"
-                    onMouseDown={(e) => { e.preventDefault(); handleAgentSelect(agent); }}
-                    className={cn(
-                      "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
-                      index === selectedDropdownIndex
-                        ? "theme-surface-muted"
-                        : "hover:[background:var(--app-hover)]",
-                    )}
-                  >
-                    <RoleIdenticon roleId={agent.id} color={agent.color} size={20} className="shrink-0" name={agent.name} />
-                    <span className="font-medium text-gray-900 dark:text-gray-100">@{agent.name}</span>
-                  </button>
-                ))}
+          {showDomainDropdown &&
+            (filteredDomains.length > 0 || activeDomainSession) && (
+              <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-50 px-4 pb-2">
+                <DomainSlashCommandDropdown
+                  domains={filteredDomains}
+                  selectedIndex={selectedDomainIndex}
+                  onSelect={handleDomainSelect}
+                  onClose={() => setShowDomainDropdown(false)}
+                  anchorRef={inputRef}
+                  accentColor={agentColor}
+                  exitMode={!!activeDomainSession}
+                  onExitDomain={() => {
+                    setInput("");
+                    resetInputHeight();
+                    setShowDomainDropdown(false);
+                    exitDomain();
+                  }}
+                />
               </div>
-            </div>
-          )}
+            )}
+          {showAgentDropdown &&
+            !selectedMentionAgent &&
+            filteredAgents.length > 0 && (
+              <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-[100] px-4 pb-2">
+                <div
+                  ref={dropdownRef}
+                  className="theme-border w-full max-h-48 overflow-y-auto rounded-[1.35rem] border bg-white shadow-[0_20px_50px_rgba(15,23,42,0.24)] dark:bg-gray-900"
+                >
+                  {filteredAgents.map(
+                    (agent: AgentDefinition, index: number) => (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleAgentSelect(agent);
+                        }}
+                        className={cn(
+                          "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
+                          index === selectedDropdownIndex
+                            ? "theme-surface-muted"
+                            : "hover:[background:var(--app-hover)]",
+                        )}
+                      >
+                        <RoleIdenticon
+                          roleId={agent.id}
+                          color={agent.color}
+                          size={20}
+                          className="shrink-0"
+                          name={agent.name}
+                        />
+                        <span className="font-medium text-gray-900 dark:text-gray-100">
+                          @{agent.name}
+                        </span>
+                      </button>
+                    ),
+                  )}
+                </div>
+              </div>
+            )}
           {selectedMentionAgent && (
             <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-[100] px-4 pb-2">
               <div
@@ -1963,23 +2587,54 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
                 className="theme-border w-full max-h-72 overflow-y-auto rounded-[1.35rem] border bg-white shadow-[0_20px_50px_rgba(15,23,42,0.24)] dark:bg-gray-900"
               >
                 <div className="theme-border sticky top-0 flex items-center gap-2 border-b bg-gray-50 px-3 py-2 dark:bg-gray-800">
-                  <RoleIdenticon roleId={selectedMentionAgent.id} color={selectedMentionAgent.color} size={18} className="shrink-0" name={selectedMentionAgent.name} />
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">@{selectedMentionAgent.name}</span>
-                  <span className="text-xs text-gray-400">— {mentionStep === "project" ? "pick a project" : "pick a session"}</span>
+                  <RoleIdenticon
+                    roleId={selectedMentionAgent.id}
+                    color={selectedMentionAgent.color}
+                    size={18}
+                    className="shrink-0"
+                    name={selectedMentionAgent.name}
+                  />
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    @{selectedMentionAgent.name}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    —{" "}
+                    {mentionStep === "project"
+                      ? "pick a project"
+                      : "pick a session"}
+                  </span>
                   <button
                     type="button"
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      if (mentionStep === "project") { setMentionStep("session"); setSessionPickerIndex(0); }
-                      else { closeMentionFlow(); }
+                      if (mentionStep === "project") {
+                        setMentionStep("session");
+                        setSessionPickerIndex(0);
+                      } else {
+                        closeMentionFlow();
+                      }
                     }}
                     className="ml-auto text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
                   >
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <svg
+                      className="h-3.5 w-3.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={2}
+                      stroke="currentColor"
+                    >
                       {mentionStep === "project" ? (
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M15.75 19.5L8.25 12l7.5-7.5"
+                        />
                       ) : (
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M6 18L18 6M6 6l12 12"
+                        />
                       )}
                     </svg>
                   </button>
@@ -1988,53 +2643,114 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
                   <>
                     <button
                       type="button"
-                      onMouseDown={(e) => { e.preventDefault(); handleNewChatFromMention(); }}
-                      className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors", sessionPickerIndex === 0 ? "bg-gray-100 dark:bg-gray-800" : "hover:[background:var(--app-hover)]")}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleNewChatFromMention();
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
+                        sessionPickerIndex === 0
+                          ? "bg-gray-100 dark:bg-gray-800"
+                          : "hover:[background:var(--app-hover)]",
+                      )}
                     >
-                      <svg className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                      <svg
+                        className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={2}
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M12 4.5v15m7.5-7.5h-15"
+                        />
                       </svg>
-                      <span className="font-medium text-gray-900 dark:text-gray-100">New chat</span>
+                      <span className="font-medium text-gray-900 dark:text-gray-100">
+                        New chat
+                      </span>
                     </button>
                     {mentionAgentSessions.map((session, index) => (
                       <button
                         key={session.id}
                         type="button"
-                        onMouseDown={(e) => { e.preventDefault(); handleSessionSelect(session); }}
-                        className={cn("flex w-full flex-col px-3 py-2 text-left transition-colors", index + 1 === sessionPickerIndex ? "bg-gray-100 dark:bg-gray-800" : "hover:[background:var(--app-hover)]")}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleSessionSelect(session);
+                        }}
+                        className={cn(
+                          "flex w-full flex-col px-3 py-2 text-left transition-colors",
+                          index + 1 === sessionPickerIndex
+                            ? "bg-gray-100 dark:bg-gray-800"
+                            : "hover:[background:var(--app-hover)]",
+                        )}
                       >
-                        <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{session.title}</span>
+                        <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                          {session.title}
+                        </span>
                         <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
-                          <span className="truncate">{displayProjectName(session.project_name)}</span>
+                          <span className="truncate">
+                            {displayProjectName(session.project_name)}
+                          </span>
                           <span>·</span>
-                          <span className="shrink-0">{timeAgo(session.updated_at)}</span>
+                          <span className="shrink-0">
+                            {timeAgo(session.updated_at)}
+                          </span>
                         </span>
                       </button>
                     ))}
                     {mentionAgentSessions.length === 0 && (
-                      <div className="px-3 py-2 text-center text-[11px] text-gray-400">No existing sessions</div>
+                      <div className="px-3 py-2 text-center text-[11px] text-gray-400">
+                        No existing sessions
+                      </div>
                     )}
                   </>
                 ) : (
                   <>
                     {userProjects.length === 0 ? (
-                      <div className="px-3 py-4 text-center text-xs text-gray-400">No projects available</div>
+                      <div className="px-3 py-4 text-center text-xs text-gray-400">
+                        No projects available
+                      </div>
                     ) : (
                       userProjects.map((project, index) => (
                         <button
                           key={project.id ?? "general"}
                           type="button"
-                          onMouseDown={(e) => { e.preventDefault(); handleProjectSelect(project); }}
-                          className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors", index === sessionPickerIndex ? "bg-gray-100 dark:bg-gray-800" : "hover:[background:var(--app-hover)]")}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleProjectSelect(project);
+                          }}
+                          className={cn(
+                            "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
+                            index === sessionPickerIndex
+                              ? "bg-gray-100 dark:bg-gray-800"
+                              : "hover:[background:var(--app-hover)]",
+                          )}
                         >
-                          <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold", index === sessionPickerIndex ? "bg-deep-space-blue-500 text-white" : "theme-surface-muted theme-text-muted")}>
-                            {project.id === null ? "G" : project.name.charAt(0).toUpperCase()}
+                          <span
+                            className={cn(
+                              "flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold",
+                              index === sessionPickerIndex
+                                ? "bg-deep-space-blue-500 text-white"
+                                : "theme-surface-muted theme-text-muted",
+                            )}
+                          >
+                            {project.id === null
+                              ? "G"
+                              : project.name.charAt(0).toUpperCase()}
                           </span>
-                          <span className="truncate font-medium text-gray-900 dark:text-gray-100">{project.name}</span>
+                          <span className="truncate font-medium text-gray-900 dark:text-gray-100">
+                            {project.name}
+                          </span>
                         </button>
                       ))
                     )}
-                    {isCreatingChat && <div className="px-3 py-2 text-center text-xs text-gray-400">Creating chat...</div>}
+                    {isCreatingChat && (
+                      <div className="px-3 py-2 text-center text-xs text-gray-400">
+                        Creating chat...
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -2060,7 +2776,13 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
             inputRef={inputRef}
             inDomain={inDomain}
             onExitDomain={exitDomain}
-            activeDomainLabel={activeDomainSession ? availableDomains.find((m) => m.id === activeDomainSession.domain_id)?.command : undefined}
+            activeDomainLabel={
+              activeDomainSession
+                ? availableDomains.find(
+                    (m) => m.id === activeDomainSession.domain_id,
+                  )?.command
+                : undefined
+            }
             pendingDomain={pendingDomain}
             onClearPendingDomain={() => setPendingDomain(null)}
             pendingCommand={pendingCommand}
@@ -2070,364 +2792,520 @@ export function ChatArea({ projectId, agentId, targetType = "agent", sessionId, 
       )}
 
       {/* Desktop Input */}
-      {!isMobile && <div className="theme-border theme-surface relative z-[90] border-t p-3">
-        <div className="relative">
-          {showCommandDropdown && filteredCommands.length > 0 && (
-            <ChatCommandDropdown
-              commands={filteredCommands}
-              selectedIndex={selectedCommandIndex}
-              onSelect={(command) => { void handleCommandSelect(command); }}
-              onClose={() => setShowCommandDropdown(false)}
-              anchorRef={inputRef}
-            />
-          )}
-
-          {showDomainDropdown && (filteredDomains.length > 0 || activeDomainSession) && (
-              <DomainSlashCommandDropdown
-                domains={filteredDomains}
-                selectedIndex={selectedDomainIndex}
-                onSelect={handleDomainSelect}
-                onClose={() => setShowDomainDropdown(false)}
-                anchorRef={inputRef}
-                accentColor={agentColor}
-                exitMode={!!activeDomainSession}
-                onExitDomain={() => {
-                  setInput("");
-                  resetInputHeight();
-                  setShowDomainDropdown(false);
-                  exitDomain();
+      {!isMobile && (
+        <div className="theme-border theme-surface relative z-[90] border-t p-3">
+          <div className="relative">
+            {showCommandDropdown && filteredCommands.length > 0 && (
+              <ChatCommandDropdown
+                commands={filteredCommands}
+                selectedIndex={selectedCommandIndex}
+                onSelect={(command) => {
+                  void handleCommandSelect(command);
                 }}
+                onClose={() => setShowCommandDropdown(false)}
+                anchorRef={inputRef}
               />
-          )}
+            )}
 
-          {/* @mention navigation: Step 2 (session picker) or Step 3 (project picker) */}
-          {selectedMentionAgent && (
-            <div
-              ref={dropdownRef}
-              className="theme-border absolute bottom-full left-0 mb-1 z-[100] w-80 max-h-72 overflow-y-auto rounded-lg border bg-white shadow-xl dark:bg-gray-900"
-            >
-              {/* Header showing selected agent */}
-              <div className="theme-border sticky top-0 flex items-center gap-2 border-b bg-gray-50 px-3 py-2 dark:bg-gray-800">
-                <RoleIdenticon roleId={selectedMentionAgent.id} color={selectedMentionAgent.color} size={18} className="shrink-0" name={selectedMentionAgent.name} />
-                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                  @{selectedMentionAgent.name}
-                </span>
-                <span className="text-xs text-gray-400">
-                  — {mentionStep === "project" ? "pick a project" : "pick a session"}
-                </span>
-                <button
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    if (mentionStep === "project") {
-                      setMentionStep("session");
-                      setSessionPickerIndex(0);
-                    } else {
-                      closeMentionFlow();
-                    }
+            {showDomainDropdown &&
+              (filteredDomains.length > 0 || activeDomainSession) && (
+                <DomainSlashCommandDropdown
+                  domains={filteredDomains}
+                  selectedIndex={selectedDomainIndex}
+                  onSelect={handleDomainSelect}
+                  onClose={() => setShowDomainDropdown(false)}
+                  anchorRef={inputRef}
+                  accentColor={agentColor}
+                  exitMode={!!activeDomainSession}
+                  onExitDomain={() => {
+                    setInput("");
+                    resetInputHeight();
+                    setShowDomainDropdown(false);
+                    exitDomain();
                   }}
-                  className="ml-auto text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                  title={mentionStep === "project" ? "Back to sessions" : "Close"}
-                >
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    {mentionStep === "project" ? (
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-                    ) : (
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    )}
-                  </svg>
-                </button>
-              </div>
+                />
+              )}
 
-              {mentionStep === "session" ? (
-                <>
-                  {/* "+ New chat" row — always first */}
+            {/* @mention navigation: Step 2 (session picker) or Step 3 (project picker) */}
+            {selectedMentionAgent && (
+              <div
+                ref={dropdownRef}
+                className="theme-border absolute bottom-full left-0 mb-1 z-[100] w-80 max-h-72 overflow-y-auto rounded-lg border bg-white shadow-xl dark:bg-gray-900"
+              >
+                {/* Header showing selected agent */}
+                <div className="theme-border sticky top-0 flex items-center gap-2 border-b bg-gray-50 px-3 py-2 dark:bg-gray-800">
+                  <RoleIdenticon
+                    roleId={selectedMentionAgent.id}
+                    color={selectedMentionAgent.color}
+                    size={18}
+                    className="shrink-0"
+                    name={selectedMentionAgent.name}
+                  />
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    @{selectedMentionAgent.name}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    —{" "}
+                    {mentionStep === "project"
+                      ? "pick a project"
+                      : "pick a session"}
+                  </span>
                   <button
                     type="button"
-                    onMouseDown={(e) => { e.preventDefault(); handleNewChatFromMention(); }}
-                    className={cn(
-                      "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
-                      sessionPickerIndex === 0
-                        ? "bg-gray-100 dark:bg-gray-800"
-                        : "hover:[background:var(--app-hover)]",
-                    )}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      if (mentionStep === "project") {
+                        setMentionStep("session");
+                        setSessionPickerIndex(0);
+                      } else {
+                        closeMentionFlow();
+                      }
+                    }}
+                    className="ml-auto text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                    title={
+                      mentionStep === "project" ? "Back to sessions" : "Close"
+                    }
                   >
-                    <svg className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    <svg
+                      className="h-3.5 w-3.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={2}
+                      stroke="currentColor"
+                    >
+                      {mentionStep === "project" ? (
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M15.75 19.5L8.25 12l7.5-7.5"
+                        />
+                      ) : (
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      )}
                     </svg>
-                    <span className="font-medium text-gray-900 dark:text-gray-100">New chat</span>
                   </button>
+                </div>
 
-                  {/* Existing sessions */}
-                  {mentionAgentSessions.map((session, index) => (
+                {mentionStep === "session" ? (
+                  <>
+                    {/* "+ New chat" row — always first */}
                     <button
-                      key={session.id}
                       type="button"
-                      onMouseDown={(e) => { e.preventDefault(); handleSessionSelect(session); }}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleNewChatFromMention();
+                      }}
                       className={cn(
-                        "flex w-full flex-col px-3 py-2 text-left transition-colors",
-                        index + 1 === sessionPickerIndex
+                        "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
+                        sessionPickerIndex === 0
                           ? "bg-gray-100 dark:bg-gray-800"
                           : "hover:[background:var(--app-hover)]",
                       )}
                     >
-                      <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                        {session.title}
-                      </span>
-                      <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
-                        <span className="truncate">
-                          {displayProjectName(session.project_name)}
-                        </span>
-                        <span>·</span>
-                        <span className="shrink-0">{timeAgo(session.updated_at)}</span>
+                      <svg
+                        className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={2}
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M12 4.5v15m7.5-7.5h-15"
+                        />
+                      </svg>
+                      <span className="font-medium text-gray-900 dark:text-gray-100">
+                        New chat
                       </span>
                     </button>
-                  ))}
 
-                  {mentionAgentSessions.length === 0 && (
-                    <div className="px-3 py-2 text-center text-[11px] text-gray-400">
-                      No existing sessions
-                    </div>
-                  )}
-                </>
-              ) : (
-                /* Step 3: Project picker */
-                <>
-                  {userProjects.length === 0 ? (
-                    <div className="px-3 py-4 text-center text-xs text-gray-400">
-                      No projects available
-                    </div>
-                  ) : (
-                    userProjects.map((project, index) => (
+                    {/* Existing sessions */}
+                    {mentionAgentSessions.map((session, index) => (
                       <button
-                        key={project.id ?? "general"}
+                        key={session.id}
                         type="button"
-                        onMouseDown={(e) => { e.preventDefault(); handleProjectSelect(project); }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleSessionSelect(session);
+                        }}
                         className={cn(
-                          "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
-                          index === sessionPickerIndex
+                          "flex w-full flex-col px-3 py-2 text-left transition-colors",
+                          index + 1 === sessionPickerIndex
                             ? "bg-gray-100 dark:bg-gray-800"
                             : "hover:[background:var(--app-hover)]",
                         )}
                       >
-                        <span className={cn(
-                          "flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold",
-                          index === sessionPickerIndex
-                            ? "bg-deep-space-blue-500 text-white"
-                            : "theme-surface-muted theme-text-muted",
-                        )}>
-                          {project.id === null ? "G" : project.name.charAt(0).toUpperCase()}
+                        <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                          {session.title}
                         </span>
-                        <span className="truncate font-medium text-gray-900 dark:text-gray-100">
-                          {project.name}
+                        <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+                          <span className="truncate">
+                            {displayProjectName(session.project_name)}
+                          </span>
+                          <span>·</span>
+                          <span className="shrink-0">
+                            {timeAgo(session.updated_at)}
+                          </span>
                         </span>
                       </button>
-                    ))
-                  )}
+                    ))}
 
-                  {isCreatingChat && (
-                    <div className="px-3 py-2 text-center text-xs text-gray-400">
-                      Creating chat...
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+                    {mentionAgentSessions.length === 0 && (
+                      <div className="px-3 py-2 text-center text-[11px] text-gray-400">
+                        No existing sessions
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  /* Step 3: Project picker */
+                  <>
+                    {userProjects.length === 0 ? (
+                      <div className="px-3 py-4 text-center text-xs text-gray-400">
+                        No projects available
+                      </div>
+                    ) : (
+                      userProjects.map((project, index) => (
+                        <button
+                          key={project.id ?? "general"}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleProjectSelect(project);
+                          }}
+                          className={cn(
+                            "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
+                            index === sessionPickerIndex
+                              ? "bg-gray-100 dark:bg-gray-800"
+                              : "hover:[background:var(--app-hover)]",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-bold",
+                              index === sessionPickerIndex
+                                ? "bg-deep-space-blue-500 text-white"
+                                : "theme-surface-muted theme-text-muted",
+                            )}
+                          >
+                            {project.id === null
+                              ? "G"
+                              : project.name.charAt(0).toUpperCase()}
+                          </span>
+                          <span className="truncate font-medium text-gray-900 dark:text-gray-100">
+                            {project.name}
+                          </span>
+                        </button>
+                      ))
+                    )}
 
-          {/* Step 1: Agent autocomplete dropdown */}
-          {showAgentDropdown && !selectedMentionAgent && filteredAgents.length > 0 && (
-            <div
-              ref={dropdownRef}
-              className="theme-border absolute bottom-full left-0 mb-1 z-[100] w-64 max-h-48 overflow-y-auto rounded-lg border bg-white shadow-xl dark:bg-gray-900"
-            >
-              {filteredAgents.map((agent: AgentDefinition, index: number) => (
-                <button
-                  key={agent.id}
-                  type="button"
-                  onMouseDown={(e) => { e.preventDefault(); handleAgentSelect(agent); }}
-                  className={cn(
-                    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
-                    index === selectedDropdownIndex
-                      ? "theme-surface-muted"
-                      : "hover:[background:var(--app-hover)]",
-                  )}
-                >
-                  <RoleIdenticon roleId={agent.id} color={agent.color} size={20} className="shrink-0" name={agent.name} />
-                  <span className="font-medium text-gray-900 dark:text-gray-100">@{agent.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          <AnimatePresence>
-            {!isMobile && showDomainBanner && activeDomainSession && activeAgent && (() => {
-              const activeDomain = availableDomains.find((m) => m.id === activeDomainSession.domain_id);
-              return (
-                <motion.div
-                  key="domain-banner"
-                  initial={{ opacity: 0, y: 8, height: 0 }}
-                  animate={{ opacity: 1, y: 0, height: "auto" }}
-                  exit={{ opacity: 0, y: 8, height: 0, transition: { duration: 1, ease: "easeIn" } }}
-                  transition={{
-                    duration: 0.5,
-                    ease: [0.22, 1, 0.36, 1],
-                  }}
-                  className="mb-2 overflow-hidden"
-                >
-                  <div
-                    className="flex items-center justify-between rounded-lg px-3 py-2"
-                    style={agentColor ? {
-                      background: `linear-gradient(90deg, ${agentColor}08 0%, ${agentColor}15 50%, ${agentColor}08 100%)`,
-                    } : undefined}
-                  >
-                    <span
-                      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
-                      style={agentColor ? { backgroundColor: `${agentColor}20`, color: agentColor } : undefined}
-                    >
-                      {activeDomain?.command ?? "#domain"} · {activeDomain?.display_name ?? "Domain"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={exitDomain}
-                      className="rounded-full p-1 text-gray-400 transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
-                      title="Exit domain"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                </motion.div>
-              );
-            })()}
-          </AnimatePresence>
-
-          <div className="flex items-end gap-2">
-            <div className="relative flex-1">
-              {/* Domain input border animation */}
-              {borderPhase && agentColor && (
-                <div
-                  className="pointer-events-none absolute inset-0 z-10 rounded-lg"
-                  style={{
-                    padding: '1px',
-                    background: borderPhase === "exit"
-                      ? `linear-gradient(90deg, transparent 0%, ${agentColor} var(--input-idle-spread, 30%), ${agentColor} calc(var(--input-border-pos, 100%) - var(--input-idle-spread, 30%)), transparent var(--input-border-pos, 100%))`
-                      : `linear-gradient(90deg, transparent 0%, ${agentColor} var(--input-idle-spread, 0%), ${agentColor} calc(var(--input-border-pos, 0%) - var(--input-idle-spread, 0%)), transparent var(--input-border-pos, 0%))`,
-                    mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                    maskComposite: 'exclude',
-                    WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                    WebkitMaskComposite: 'xor',
-                    animation: borderPhase === "exit"
-                      ? 'input-border-exit 2.25s ease-in forwards'
-                      : 'input-border-enter 2.25s ease-in-out forwards, input-border-idle 6s linear 2.25s infinite',
-                  }}
-                />
-              )}
-              <div
-                className={cn(
-                  "theme-surface flex min-h-10 w-full items-end gap-2 rounded-lg px-2 py-1.5",
-                  borderPhase
-                    ? "border border-transparent"
-                    : "theme-border border focus-within:border-deep-space-blue-500 focus-within:ring-1 focus-within:ring-deep-space-blue-500",
-                  isDomainPending && "opacity-60",
+                    {isCreatingChat && (
+                      <div className="px-3 py-2 text-center text-xs text-gray-400">
+                        Creating chat...
+                      </div>
+                    )}
+                  </>
                 )}
-              >
-                {pendingDomain && (
-                  <PendingDomainPill
-                    domain={pendingDomain}
-                    onClear={() => setPendingDomain(null)}
-                    accentColor={agentColor}
-                    className="mb-0.5"
-                  />
-                )}
-                {pendingCommand && (
-                  <PendingCommandPill
-                    command={pendingCommand}
-                    onClear={() => setPendingCommand(null)}
-                    accentColor={agentColor}
-                    className="mb-0.5"
-                  />
-                )}
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={handleInputChange}
-                  onKeyDown={handleKeyDown}
-                  placeholder={
-                    isDomainPending
-                      ? "Activating domain..."
-                      : pendingDomain
-                        ? "Describe what to do in this domain..."
-                        : pendingCommand
-                          ? `Arguments for ${pendingCommand.command}...`
-                        : placeholder
-                  }
-                  disabled={isDomainPending}
-                  rows={1}
-                  className="min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-0.5 text-sm placeholder:text-gray-400 focus:outline-hidden focus:ring-0 dark:text-gray-100 dark:placeholder:text-gray-500"
-                  style={{ maxHeight: 200 }}
-                />
               </div>
-              {isDomainPending && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <svg className="h-4 w-4 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
+            )}
+
+            {/* Step 1: Agent autocomplete dropdown */}
+            {showAgentDropdown &&
+              !selectedMentionAgent &&
+              filteredAgents.length > 0 && (
+                <div
+                  ref={dropdownRef}
+                  className="theme-border absolute bottom-full left-0 mb-1 z-[100] w-64 max-h-48 overflow-y-auto rounded-lg border bg-white shadow-xl dark:bg-gray-900"
+                >
+                  {filteredAgents.map(
+                    (agent: AgentDefinition, index: number) => (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleAgentSelect(agent);
+                        }}
+                        className={cn(
+                          "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
+                          index === selectedDropdownIndex
+                            ? "theme-surface-muted"
+                            : "hover:[background:var(--app-hover)]",
+                        )}
+                      >
+                        <RoleIdenticon
+                          roleId={agent.id}
+                          color={agent.color}
+                          size={20}
+                          className="shrink-0"
+                          name={agent.name}
+                        />
+                        <span className="font-medium text-gray-900 dark:text-gray-100">
+                          @{agent.name}
+                        </span>
+                      </button>
+                    ),
+                  )}
                 </div>
               )}
-            </div>
-            {(isTyping || hasActiveTools) && (
-              <button
-                onMouseDown={handleCancelHoldStart}
-                onMouseUp={handleCancelHoldEnd}
-                onMouseLeave={handleCancelHoldEnd}
-                onTouchStart={handleCancelHoldStart}
-                onTouchEnd={handleCancelHoldEnd}
-                className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-flag-red-100 hover:bg-flag-red-200 text-flag-red-600 dark:bg-flag-red-900/40 dark:hover:bg-flag-red-800/50 dark:text-flag-red-400 transition-colors"
-                title="Hold for 1 second to cancel"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="6" y="6" width="12" height="12" rx="2" />
-                </svg>
-                {!holdProgress && (
-                  <span className="absolute inset-0 rounded-lg border-2 border-flag-red-400 dark:border-flag-red-500 animate-cancel-pulse" />
+
+            <AnimatePresence>
+              {!isMobile &&
+                showDomainBanner &&
+                activeDomainSession &&
+                activeAgent &&
+                (() => {
+                  const activeDomain = availableDomains.find(
+                    (m) => m.id === activeDomainSession.domain_id,
+                  );
+                  return (
+                    <motion.div
+                      key="domain-banner"
+                      initial={{ opacity: 0, y: 8, height: 0 }}
+                      animate={{ opacity: 1, y: 0, height: "auto" }}
+                      exit={{
+                        opacity: 0,
+                        y: 8,
+                        height: 0,
+                        transition: { duration: 1, ease: "easeIn" },
+                      }}
+                      transition={{
+                        duration: 0.5,
+                        ease: [0.22, 1, 0.36, 1],
+                      }}
+                      className="mb-2 overflow-hidden"
+                    >
+                      <div
+                        className="flex items-center justify-between rounded-lg px-3 py-2"
+                        style={
+                          agentColor
+                            ? {
+                                background: `linear-gradient(90deg, ${agentColor}08 0%, ${agentColor}15 50%, ${agentColor}08 100%)`,
+                              }
+                            : undefined
+                        }
+                      >
+                        <span
+                          className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
+                          style={
+                            agentColor
+                              ? {
+                                  backgroundColor: `${agentColor}20`,
+                                  color: agentColor,
+                                }
+                              : undefined
+                          }
+                        >
+                          {activeDomain?.command ?? "#domain"} ·{" "}
+                          {activeDomain?.display_name ?? "Domain"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={exitDomain}
+                          className="rounded-full p-1 text-gray-400 transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
+                          title="Exit domain"
+                        >
+                          <svg
+                            className="h-3.5 w-3.5"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={2}
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                })()}
+            </AnimatePresence>
+
+            <div className="flex items-end gap-2">
+              <div className="relative flex-1">
+                {/* Domain input border animation */}
+                {borderPhase && agentColor && (
+                  <div
+                    className="pointer-events-none absolute inset-0 z-10 rounded-lg"
+                    style={{
+                      padding: "1px",
+                      background:
+                        borderPhase === "exit"
+                          ? `linear-gradient(90deg, transparent 0%, ${agentColor} var(--input-idle-spread, 30%), ${agentColor} calc(var(--input-border-pos, 100%) - var(--input-idle-spread, 30%)), transparent var(--input-border-pos, 100%))`
+                          : `linear-gradient(90deg, transparent 0%, ${agentColor} var(--input-idle-spread, 0%), ${agentColor} calc(var(--input-border-pos, 0%) - var(--input-idle-spread, 0%)), transparent var(--input-border-pos, 0%))`,
+                      mask: "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+                      maskComposite: "exclude",
+                      WebkitMask:
+                        "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+                      WebkitMaskComposite: "xor",
+                      animation:
+                        borderPhase === "exit"
+                          ? "input-border-exit 2.25s ease-in forwards"
+                          : "input-border-enter 2.25s ease-in-out forwards, input-border-idle 6s linear 2.25s infinite",
+                    }}
+                  />
                 )}
-                {holdProgress && (
-                  <svg className="absolute inset-0 -rotate-90" viewBox="0 0 40 40">
-                    <circle cx="20" cy="20" r="16" fill="none" className="stroke-flag-red-500 dark:stroke-flag-red-400" strokeWidth="3" strokeDasharray="100" strokeDashoffset="100" strokeLinecap="round" style={{ animation: "hold-arc 1s linear forwards" }} />
+                <div
+                  className={cn(
+                    "theme-surface flex min-h-10 w-full items-end gap-2 rounded-lg px-2 py-1.5",
+                    borderPhase
+                      ? "border border-transparent"
+                      : "theme-border border focus-within:border-deep-space-blue-500 focus-within:ring-1 focus-within:ring-deep-space-blue-500",
+                    isDomainPending && "opacity-60",
+                  )}
+                >
+                  {pendingDomain && (
+                    <PendingDomainPill
+                      domain={pendingDomain}
+                      onClear={() => setPendingDomain(null)}
+                      accentColor={agentColor}
+                      className="mb-0.5"
+                    />
+                  )}
+                  {pendingCommand && (
+                    <PendingCommandPill
+                      command={pendingCommand}
+                      onClear={() => setPendingCommand(null)}
+                      accentColor={agentColor}
+                      className="mb-0.5"
+                    />
+                  )}
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    onChange={handleInputChange}
+                    onKeyDown={handleKeyDown}
+                    placeholder={
+                      isDomainPending
+                        ? "Activating domain..."
+                        : pendingDomain
+                          ? "Describe what to do in this domain..."
+                          : pendingCommand
+                            ? `Arguments for ${pendingCommand.command}...`
+                            : placeholder
+                    }
+                    disabled={isDomainPending}
+                    rows={1}
+                    className="min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-0.5 text-sm placeholder:text-gray-400 focus:outline-hidden focus:ring-0 dark:text-gray-100 dark:placeholder:text-gray-500"
+                    style={{ maxHeight: 200 }}
+                  />
+                </div>
+                {isDomainPending && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <svg
+                      className="h-4 w-4 animate-spin text-gray-400"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                      />
+                    </svg>
+                  </div>
+                )}
+              </div>
+              {(hasActiveRunTrace || isTyping || hasActiveTools) && (
+                <button
+                  onMouseDown={handleCancelHoldStart}
+                  onMouseUp={handleCancelHoldEnd}
+                  onMouseLeave={handleCancelHoldEnd}
+                  onTouchStart={handleCancelHoldStart}
+                  onTouchEnd={handleCancelHoldEnd}
+                  className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-flag-red-100 hover:bg-flag-red-200 text-flag-red-600 dark:bg-flag-red-900/40 dark:hover:bg-flag-red-800/50 dark:text-flag-red-400 transition-colors"
+                  title="Hold for 1 second to cancel"
+                >
+                  <svg
+                    className="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <rect x="6" y="6" width="12" height="12" rx="2" />
                   </svg>
-                )}
-              </button>
-            )}
-            <Button
-              onClick={handleSend}
-              disabled={!input.trim() && !pendingCommand}
-              size="md"
-              className="!bg-deep-space-blue-500 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-              </svg>
-            </Button>
-          </div>
-          <AnimatePresence>
-            {(isTyping || hasActiveTools) && (
-              <motion.p
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="text-center text-xs text-gray-400 dark:text-gray-500"
+                  {!holdProgress && (
+                    <span className="absolute inset-0 rounded-lg border-2 border-flag-red-400 dark:border-flag-red-500 animate-cancel-pulse" />
+                  )}
+                  {holdProgress && (
+                    <svg
+                      className="absolute inset-0 -rotate-90"
+                      viewBox="0 0 40 40"
+                    >
+                      <circle
+                        cx="20"
+                        cy="20"
+                        r="16"
+                        fill="none"
+                        className="stroke-flag-red-500 dark:stroke-flag-red-400"
+                        strokeWidth="3"
+                        strokeDasharray="100"
+                        strokeDashoffset="100"
+                        strokeLinecap="round"
+                        style={{ animation: "hold-arc 1s linear forwards" }}
+                      />
+                    </svg>
+                  )}
+                </button>
+              )}
+              <Button
+                onClick={handleSend}
+                disabled={!input.trim() && !pendingCommand}
+                size="md"
+                className="!bg-deep-space-blue-500 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
               >
-                Press <kbd className="theme-border theme-surface-muted rounded border px-1 py-0.5 text-[10px] font-medium">Esc</kbd>{" "}
-                <kbd className="theme-border theme-surface-muted rounded border px-1 py-0.5 text-[10px] font-medium">Esc</kbd>{" "}
-                to interrupt
-              </motion.p>
-            )}
-          </AnimatePresence>
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2}
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
+                  />
+                </svg>
+              </Button>
+            </div>
+            <AnimatePresence>
+              {(hasActiveRunTrace || isTyping || hasActiveTools) && (
+                <motion.p
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="text-center text-xs text-gray-400 dark:text-gray-500"
+                >
+                  Press{" "}
+                  <kbd className="theme-border theme-surface-muted rounded border px-1 py-0.5 text-[10px] font-medium">
+                    Esc
+                  </kbd>{" "}
+                  <kbd className="theme-border theme-surface-muted rounded border px-1 py-0.5 text-[10px] font-medium">
+                    Esc
+                  </kbd>{" "}
+                  to interrupt
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
-      </div>}
+      )}
     </div>
   );
 }
