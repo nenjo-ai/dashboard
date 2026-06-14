@@ -1,0 +1,76 @@
+---
+title: Authoring Library Knowledge
+description: How to create human-readable Library documents that agents can search, traverse, and cite.
+slug: platform/pages/library/authoring
+order: 3
+---
+
+# Authoring Library Knowledge
+
+Good Library documents are written for people first and structured enough for agents to retrieve correctly.
+
+## Minimum document shape
+
+Each document should have:
+
+- A clear title
+- A short summary that says when the document is relevant
+- A stable selector or path-like ref
+- A kind and a few useful tags
+- Enough content to answer the question without relying on chat history
+- A small number of meaningful related-document edges
+
+## Useful document kinds
+
+| Kind | Use for |
+|------|---------|
+| `orientation` | Broad mental model and product boundaries |
+| `design` | Tradeoffs and recommendations |
+| `resource` | Concrete resource behavior and fields |
+| `build` | Construction steps, manifests, or variables |
+| `classification` | Decision tables and routing rules |
+| `reference` | Stable facts, glossary terms, and lookup material |
+| `policy` | Required rules and governance constraints |
+| `entity` | Important objects, schemas, or domain concepts |
+
+Kinds are pack conventions. Keep them stable inside a pack so agents can combine kind, tags, summary, and graph relationships.
+
+## Writing guidance
+
+Write the body as a source of truth, not as a prompt. Avoid instructions like "you are an agent" unless the document is explicitly about prompt behavior. Use examples where they help a human understand the rule.
+
+Good Library content:
+
+- Names the audience and scope
+- Defines terms before using them heavily
+- Separates rules from examples
+- Explains what does not belong in the document
+- Links to dependencies instead of copying them
+
+## Edge authoring
+
+Write edges from the document an agent is likely to find first toward the material it should inspect next. A good outgoing edge means "if you are reading this, this other document may be required to answer correctly."
+
+Prefer purposeful relationships:
+
+- A resource page `depends_on` the policy that governs it
+- A guide `references` the glossary or taxonomy it uses
+- A taxonomy `classifies` the entities it organizes
+- A design note `extends` or `governs` a lower-level implementation guide
+
+Do not add edges only to make the globe look dense. Dense graphs are harder for humans to audit and harder for agents to traverse selectively.
+
+> Screenshot placeholder: Library document editor relationship panel with a small set of labeled outgoing edges.
+
+## What not to store
+
+Do not use Library documents for:
+
+- Task definitions
+- One-off chat context
+- Generated outputs
+- Learned user preferences
+- Package manifests
+- Secrets or credentials
+
+Use tasks, memory, artifacts, packages, or encrypted project settings for those surfaces.

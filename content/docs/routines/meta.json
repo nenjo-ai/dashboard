@@ -1,4 +1,0 @@
-{
-  "title": "Routines",
-  "pages": ["index", "step-types", "edges-and-conditions", "dag-validation", "executions", "cron-and-scheduling"]
-}

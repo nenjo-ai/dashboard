@@ -1,0 +1,56 @@
+---
+title: Projects
+description: Create and manage project workspaces — tasks, context, executions, and repository connections — in the dashboard.
+slug: platform/pages/projects
+order: 6
+---
+
+The **Projects** area is where you create and open [projects](/docs/building-blocks/foundations/projects) — the containers that scope the runtime, memory, and context for a unit of work. The list view shows every project in the organization; **New Project** creates one.
+
+## Resources it contains and manages
+
+| Resource | What it manages |
+|----------|-----------------|
+| Projects | Work containers (name, slug, description, connected repository URL + branch, custom metadata) |
+| Tasks | Work items, dependencies, status, priority, assignments inside a project |
+| Project context | Description and metadata visible to agents operating in the project |
+
+## Inside a project
+
+Opening a project gives you tabbed views over its work state:
+
+| Tab | What you manage |
+|-----|-----------------|
+| Tasks | Work items, dependencies, status, and priority |
+| Context | The project description, context, and metadata agents see |
+| Execution | Execution runs for the project and their progress |
+| Settings | Repository connection, target branch, custom metadata, and other project configuration |
+
+Source material doesn't live in a project — it lives in the [Library](/docs/platform/pages/library) and is referenced from here. For code-backed work, connect a repository in **Settings** to give executions an isolated workspace. For the underlying model, see [Projects](/docs/building-blocks/foundations/projects).
+
+## Connecting a repository
+
+In a project's **Settings** tab (or the repository section of the project header), connect a git repository so agents can inspect, edit, commit, and push code within isolated worktrees for the project:
+
+1. Enter the repository URL (HTTPS or SSH form, e.g. `https://github.com/owner/repo.git` or `git@github.com:owner/repo.git`).
+2. Optionally set the target branch (defaults to `main`).
+3. Click **Save & Sync** (or **Connect** / **Sync**).
+
+The platform stores the URL + branch and triggers a sync on approved harness workers. Workers with the `repo` capability clone (or update) the repository into the project's workspace. Agents see the state via Git template variables and worktree tools scoped to the project.
+
+Sync status is shown with a badge (`syncing`, `synced`, or `error` with details on failure). Re-saving the URL or branch re-triggers a sync.
+
+To change repositories, first disconnect the current one (this removes the synced copy and all worktrees on connected harnesses; project tasks, context, and history remain).
+
+### Private repositories
+
+The dashboard and platform never store or transmit credentials. All git operations (clone, fetch, push) happen on your harness runtime.
+
+For private repositories the harness must already have access:
+
+- Run the worker (`nenjo run`) in an environment where `git` has credentials (e.g. SSH keys, system credential manager, or a pre-configured global `~/.gitconfig`).
+- For GitHub private repos, the easiest option is to supply a `GITHUB_TOKEN` (classic PAT or fine-grained token with `repo` scope) as an environment variable when starting the worker. When `GITHUB_TOKEN` is present, the worker automatically writes an isolated `.nenjo/gitconfig` and `git-credential-helper.sh` used only for its git operations.
+
+See the [Worker](./../../harness/worker) and [Worker Config](./../../harness/worker-config) harness documentation for `GITHUB_TOKEN` handling, the `[git]` config section (author/committer identity, optional signing), and the `repo` capability.
+
+Public repositories work with no extra setup beyond network access from the harness.

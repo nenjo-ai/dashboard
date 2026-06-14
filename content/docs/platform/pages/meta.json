@@ -1,0 +1,15 @@
+{
+  "title": "Pages",
+  "pages": [
+    "dashboard",
+    "chat",
+    "agents",
+    "councils",
+    "routines",
+    "projects",
+    "activity",
+    "library",
+    "packages",
+    "settings"
+  ]
+}

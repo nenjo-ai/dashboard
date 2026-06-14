@@ -1,0 +1,41 @@
+---
+title: Scopes
+description: Fine-grained, least-privilege permissions that grant agents the platform MCP tools for a resource family.
+slug: building-blocks/foundations/scopes
+order: 5
+---
+
+Scopes are how an agent gets access to platform resources. The platform exposes its operations as **MCP tools**, and a scope grants the specific tools for one resource family. Assigning `agents:read` to an agent, for example, gives it the `list_agents` and `get_agent` tools — and nothing else.
+
+This follows a least-privilege model: an agent, ability, domain, API key, or organization member receives only the platform tools it actually needs.
+
+## How scopes map to tools
+
+Each scope adds a fixed group of platform MCP tools. **Write scopes imply read access** for the same family, so `agents:write` includes the read tools plus the mutating ones.
+
+| Scope | Grants these tools |
+|-------|--------------------|
+| `agents:read` / `agents:write` | `list_agents`, `get_agent` / `configure_agent` |
+| `abilities:read` / `abilities:write` | `list_abilities`, `get_ability` / `configure_ability` |
+| `domains:read` / `domains:write` | `list_domains`, `get_domain` / `configure_domain` |
+| `projects:read` / `projects:write` | `list_projects`, `get_project`, project task & execution reads / project, task & execution writes |
+| `routines:read` / `routines:write` | Read or mutate routines |
+| `councils:read` / `councils:write` | Read or mutate councils |
+| `context_blocks:read` / `context_blocks:write` | Read or mutate reusable prompt-context assets |
+| `models:read` / `models:write` | Read or mutate model records |
+| `library:write` | `create_knowledge_pack`, `update_knowledge_pack`, `create_knowledge_doc`, `update_knowledge_doc`, `delete_knowledge_doc` |
+| `notify:read` / `notify:write` | Read notification sessions / send org push notifications |
+
+Library has **no read scope** — knowledge reads happen through the composite knowledge tools (`search_knowledge`, `list_knowledge_neighbors`, `read_knowledge_doc`) when a pack is available, so `library:write` only governs authoring. See [Knowledge Graphs](/docs/building-blocks/primitives/knowledge-graphs).
+
+## Where scopes are assigned
+
+Scopes attach to several surfaces, each bounding what that surface can do:
+
+- **[Agents](/docs/building-blocks/primitives/agents)** — the platform tools the agent may call directly.
+- **[Abilities](/docs/building-blocks/primitives/abilities)** and **[domains](/docs/building-blocks/primitives/domains)** — carry their own scopes, so a specialist run or an activated mode can have a tighter or broader tool surface than the calling agent.
+- **API keys** and **organization members** — bound the same way.
+
+## Who assigns them
+
+Platform scopes are assigned by **admin or platform-controlled surfaces**, not by agent-facing creation tools. This boundary matters: an agent (or an ability or domain it authors) **cannot grant or change its own scopes**. Agents may recommend the minimum scopes needed, but assignment is always a user or platform operation.

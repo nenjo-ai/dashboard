@@ -1,0 +1,49 @@
+---
+title: Domains
+description: User-activated modes that additively extend an agent's developer prompt and capability surface for an audited session.
+slug: building-blocks/primitives/domains
+order: 7
+---
+
+Domains are **user-activated execution modes**. A domain changes an agent's behavior for an explicit session and can expose extra abilities, tools, and scopes. They suit work that needs user intent, auditability, or a temporary shift in operating rules.
+
+## Additive, not replacing
+
+The key contrast with [abilities](/docs/building-blocks/primitives/abilities): a domain is **additive**. When active, its `developer_prompt_addon` is **appended** to the agent's existing developer prompt rather than replacing it. The agent stays itself and gains extra guidance and capabilities on top, for the duration of the session.
+
+## What a domain owns
+
+- **`name`** — stable internal name
+- **`description`** — what changes when the domain is active
+- **`command`** — the user activation command, usually `#name` such as `#creator`
+- **`abilities`** — ability refs available in this mode
+- **`mcp_servers`** — MCP server refs available in this mode
+- **`platform_scopes`** — permission refs. Agents must not grant or change these; users or platform-controlled setup assign them.
+- **`prompt_config.developer_prompt_addon`** — extra guidance appended while the session is active
+
+## Runtime behavior
+
+When a user activates a domain:
+
+1. The agent receives the domain's developer prompt addon (appended to its own).
+2. The agent gains the configured mode-specific abilities and tool refs.
+3. A domain **session** is tracked for auditability.
+4. The expanded behavior stays active until the user deactivates it or the session ends.
+
+## Common patterns
+
+- **`#creator`** — write-enabled resource-building mode
+- **Production mode** — deployment-oriented behavior with stricter audit rules
+- **Legal review mode** — specialized review behavior and document-sensitive tools
+- **Debug mode** — additional diagnostic behavior for a session
+
+## Abilities vs. domains
+
+| Aspect | Ability | Domain |
+|--------|---------|--------|
+| Activation | Invoked by the agent as a tool | Activated explicitly by the user |
+| Prompt effect | Replaces the developer prompt for a nested run | Appends to the developer prompt for the session |
+| Scope | Narrow specialist behavior | Broader session mode |
+| Use case | Reusable specialist work | Elevated, sensitive, or strategic modes |
+
+Use a domain when the work is sensitive, elevated, strategic, or should leave a clear audit trail.

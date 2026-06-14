@@ -1,0 +1,42 @@
+---
+title: Workflows
+description: How Nenjo turns primitives into repeatable processes — routines for deterministic, audited shape and councils for collaborative judgment.
+slug: building-blocks/workflows
+order: 1
+---
+
+A single agent handles a single turn. A **workflow** coordinates many agents, steps, and decisions into a repeatable, inspectable process — and records what happened so it can be improved instead of re-improvised every time.
+
+Nenjo has two workflow primitives, and the choice between them comes down to one question:
+
+> **Is the shape of the work part of the product, or part of the reasoning?**
+>
+> - If the steps, order, and checks are a fixed process you want to run the same way every time — that's a **[routine](/docs/building-blocks/workflows/routines)**: a deterministic, audited graph.
+> - If the work needs multiple perspectives, debate, or synthesis decided in the moment — that's a **[council](/docs/building-blocks/workflows/councils)**: structured multi-agent collaboration.
+
+The two compose: a council usually runs as a *single step inside* a routine, giving you a deterministic macro-process with collaborative judgment where it's needed.
+
+## Which tool for which need
+
+A workflow can be built from several primitives, not just these two. Pick by the guarantee you need:
+
+| Need | Reach for |
+|------|-----------|
+| Deterministic step order, joins, retries, or scheduled dispatch | **Routine** |
+| Multiple perspectives, critique, voting, or synthesis | **Council** |
+| Fuzzy intent routing or adaptive planning | [Agent](/docs/building-blocks/primitives/agents) |
+| A narrow, reusable specialist operation | [Ability](/docs/building-blocks/primitives/abilities) |
+| A user-approved operating mode or permission boundary | [Domain](/docs/building-blocks/primitives/domains) |
+| A trackable user/project work item | Task |
+
+## How to choose
+
+Start small and add structure only when a real requirement appears:
+
+1. **Start with a single agent** when the work is fuzzy, conversational, or intent-driven.
+2. **Add an ability** when a narrow, reusable specialist step is enough.
+3. **Promote to a routine** when step order, an audit trail, a retry budget, or scheduled dispatch matters.
+4. **Use a council** when independent perspectives, voting, critique, or synthesis add real signal.
+5. **Combine routine + council** when the macro-process is deterministic but one step needs collaborative judgment.
+
+The rule of thumb: **use a routine when the workflow shape is part of the product contract; use an agent or council when the shape is part of the reasoning.**

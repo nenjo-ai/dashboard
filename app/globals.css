@@ -218,6 +218,12 @@
   text-decoration: none !important;
 }
 
+/* Let the docs body fill the content card instead of the ~65ch prose cap. */
+#nd-page article.prose,
+#nd-page .prose {
+  max-width: none !important;
+}
+
 @media (min-width: 768px) {
   #nd-page {
     margin-block: 16px 40px !important;
@@ -242,15 +248,28 @@
 @media (min-width: 1280px) {
   #nd-docs-layout {
     --nenjo-docs-sidebar-width: 268px;
-    --nenjo-docs-page-width: 880px;
     --nenjo-docs-toc-width: 268px;
     --nenjo-docs-gap: 32px;
+    /* Minimum even margin on each side; scales with the viewport but is capped. */
+    --nenjo-docs-gutter: clamp(24px, 3vw, 112px);
+    /* Content fills the row between the side rails and gutters, up to a
+       readable max. Below the max it fills (so margins equal the gutter); once
+       it hits the max the shell centers and the equal margins simply grow.
+       Either way left and right margins stay symmetric. */
+    --nenjo-docs-page-width: clamp(
+      600px,
+      calc(
+        100vw - var(--nenjo-docs-sidebar-width) - var(--nenjo-docs-toc-width) -
+          (var(--nenjo-docs-gap) * 2) - (var(--nenjo-docs-gutter) * 2)
+      ),
+      1080px
+    );
     --nenjo-docs-shell-width: calc(
       var(--nenjo-docs-sidebar-width) + var(--nenjo-docs-page-width) +
         var(--nenjo-docs-toc-width) + (var(--nenjo-docs-gap) * 2)
     );
     --nenjo-docs-shell-left: max(
-      24px,
+      var(--nenjo-docs-gutter),
       calc((100vw - var(--nenjo-docs-shell-width)) / 2)
     );
     --fd-layout-width: var(--nenjo-docs-shell-width);
@@ -304,14 +323,6 @@
 }
 
 @media (min-width: 1280px) and (max-width: 1519px) {
-  #nd-docs-layout {
-    --nenjo-docs-page-width: min(
-      760px,
-      calc(100vw - var(--nenjo-docs-sidebar-width) - var(--nenjo-docs-toc-width) - 96px)
-    );
-    --nenjo-docs-gap: 24px;
-  }
-
   #nd-page {
     padding-inline: 32px !important;
   }
@@ -881,3 +892,4 @@ body {
     padding: 24px;
   }
 }
+

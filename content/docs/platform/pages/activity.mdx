@@ -1,0 +1,25 @@
+---
+title: Activity
+description: Monitor runtime — execution runs and their steps, plus the organization-wide activity feed.
+slug: platform/pages/activity
+order: 7
+---
+
+Two dashboard surfaces let you see what your agents and workers are actually doing.
+
+## Resources it contains and manages
+
+| Resource | What it manages |
+|----------|-----------------|
+| Execution runs | Chat, task, gate, and heartbeat executions. Full step traces, decisions, status, timing, and outputs (protected content inside stays encrypted) |
+| Activity entries | Organization-wide event feed: resource mutations, run lifecycle events, system notifications. Used for audit and team visibility |
+
+## Executions
+
+The **Executions** view lists runtime runs — chat, task, gate, and heartbeat executions — with their status and progress. Open a run to inspect its steps, the path it took, gate decisions, and output. Because routines record every step transition and decision, an execution is a full, inspectable trace rather than an opaque result.
+
+## Activity
+
+The **Activity** view is the organization-wide feed of what has happened across the workspace — resource changes, runs, and notable events — so the whole team can see the workspace's history at a glance.
+
+Both views read operational metadata (status, timing, run records) that the platform keeps in plaintext to route work and show progress; the protected content inside a run stays encrypted. See [Security](/docs/platform/security) for what is and isn't encrypted.

@@ -1,0 +1,87 @@
+---
+title: Settings
+description: Personal and organization settings — runtime/harness availability, trusted devices, and API keys.
+slug: platform/pages/settings
+order: 9
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+
+**Settings** is where you configure your account and manage your **organization** — the shared workspace boundary in Nenjo.
+
+An **organization** is the shared workspace boundary in Nenjo. It contains the people, permissions, and resources a team uses together — projects, agents, routines, models, [Library knowledge](/docs/platform/pages/library), and the workers that run the work.
+
+Every user belongs to at least one organization. For solo use it feels like a personal workspace; as people join, the same boundary becomes the team workspace.
+
+The main [Dashboard](/docs/platform/pages/dashboard) provides the at-a-glance overview of the workspace (stat cards, token usage, and recent activity).
+
+## What belongs to an organization
+
+| Area | What it holds |
+|------|---------------|
+| Members | The users in the workspace, their roles, and their [scopes](/docs/building-blocks/foundations/scopes) |
+| Resources | [Projects](/docs/building-blocks/foundations/projects), [agents](/docs/building-blocks/primitives/agents), [workflows](/docs/building-blocks/workflows), [models](/docs/building-blocks/foundations/models-and-tools), and [Library knowledge](/docs/platform/pages/library) |
+| Packages | Installed [packages](/docs/platform/pages/packages) and registries shared across the org |
+| Workers | Approved harnesses that run Nenjo work for the organization |
+| API keys | Credentials workers and integrations use to connect |
+| Security material | Trusted devices, recovery state, content-key grants, and pending access requests |
+
+The resources above are the same [building blocks](/docs/building-blocks) documented elsewhere — the organization is simply the boundary that owns them and decides who can use them.
+
+## Members and roles
+
+Roles set the default permission shape; explicit [scopes](/docs/building-blocks/foundations/scopes) refine it per member.
+
+| Role | Access |
+|------|--------|
+| **Owner** | Full administrative control of the organization |
+| **Admin** | Broad management of members, resources, and workers |
+| **Member** | Day-to-day project and agent collaboration |
+| **Viewer** | Read-focused access |
+
+## A dedicated event bus
+
+Each organization has its **own dedicated message bus**. Everything the platform and your workers exchange — chat, task dispatch, schedules, repository events, and resource updates — flows over that org-scoped bus, keeping one organization's traffic isolated from another's.
+
+A worker connects to the bus with an organization **API key**. The key authenticates the worker to its organization; without a valid key for that org, a worker cannot subscribe to its traffic.
+
+## Approving devices and workers
+
+Membership and an API key are not enough on their own — access is **admin-gated**:
+
+- **Trusted devices** — a browser or client must be set up with local encryption material and, for shared content, granted access to the organization content key. A device without that access can request it; an owner or admin approves by wrapping the org key for that device.
+- **Workers (your harness)** — a worker must be explicitly **enrolled and approved** before it can run work. Onboarding creates a worker API key, starts the worker, then an admin approves it so it can receive the scoped credentials and wrapped keys it needs.
+
+This is why simply holding an API key doesn't grant plaintext access: an unapproved device or harness can connect, but it cannot decrypt protected content until an admin grants it.
+
+The **Settings** page (particularly the Org, Runtime, Devices, and Keys tabs) is the primary control surface for the organization and your personal preferences.
+
+## Resources it contains and manages
+
+| Resource | What it manages |
+|----------|-----------------|
+| Account / General | User-level prefs (theme, etc.) |
+| Org profile & members | Organization identity, membership, roles, invites, scopes |
+| Runtime / Workers | Connected and approved harness workers, their capabilities |
+| Devices | Trusted device records and org-content-key grants/approvals |
+| API Keys | Organization API keys for workers and integrations |
+
+| Tab | What you control |
+|-----|------------------|
+| General | Account preferences — appearance, notifications |
+| Org | Organization profile, members, roles, and invites |
+| Runtime | Harness availability — which workers are connected and what capabilities they handle |
+| Devices | Your [trusted devices](/docs/platform/security#trusted-devices) and their content-key access |
+| Keys | API keys used by workers and integrations |
+
+A few of these tabs are the control surface for the security model:
+
+- **Keys** is where you mint the API key a worker uses to connect to the org [event bus](#a-dedicated-event-bus).
+- **Runtime** shows which approved harnesses are online and what work they accept.
+- **Devices** is where trusted devices are reviewed and where access requests are approved.
+
+For how these pieces protect your workspace, see [Security](/docs/platform/security).
+
+<Callout>
+  Sensitive content is encrypted on trusted clients before it reaches the platform — the server stores ciphertext and the metadata it needs to route work. See [Security](/docs/platform/security) for the encryption scopes and boundaries.
+</Callout>

@@ -1,0 +1,54 @@
+---
+title: Memory
+description: Nenjo's scoped memory system — core, project, and shared focus — plus artifacts for saved outputs that persist across runs.
+slug: building-blocks/primitives/memory
+order: 5
+---
+
+Memory is **learned context** that persists across runs. Where knowledge graphs hold explicit source material and context blocks hold static guidance, memory captures what an agent has learned: preferences, corrections, decisions, and recurring patterns.
+
+## The three scopes
+
+| Scope | What it stores | Typical use |
+|-------|---------------|-------------|
+| `core_focus` | Long-term, cross-project knowledge | Personality, methodology, core principles |
+| `project_focus` | Context specific to one project | Task history, decisions, feedback |
+| `shared_focus` | Knowledge shared across projects | Reusable patterns, team conventions |
+
+An agent's **memory profile** selects which scopes it draws from. The identity and memory profile stay stable across runtime modes — only the injected variables change.
+
+## Referencing memory in prompts
+
+Memory is available through [template variables](/docs/building-blocks/primitives/template-variables):
+
+```jinja
+{{ memories.core }}
+{{ memories.project }}
+{{ memories.shared }}
+{{ memory_profile.project_focus }}
+```
+
+## Artifacts
+
+**Artifacts** are saved generated outputs or workspace deliverables — distinct from memory, knowledge graphs, and package source material. Where memory is *learned* context, an artifact is a *produced* output an agent keeps so later work can see it.
+
+Artifacts are indexed into prompts through their own [template variables](/docs/building-blocks/primitives/template-variables):
+
+```jinja
+{{ artifacts }}
+{{ artifacts.project }}
+{{ artifacts.workspace }}
+```
+
+Use them when a prompt needs to see saved outputs or deliverables from previous work — for example a substantial intermediate design that may be reused. Do not treat artifacts as source-of-truth knowledge, and do not treat them as learned memory.
+
+## Best practice
+
+Start simple with only `project_focus`. Expand to `core_focus` and `shared_focus` as an agent's responsibilities grow across projects.
+
+Keep the boundaries clear:
+
+- **Memory** — learned, evolving context.
+- **[Knowledge graphs](/docs/building-blocks/primitives/knowledge-graphs)** — explicit source material to search and cite.
+- **[Context blocks](/docs/building-blocks/primitives/context-blocks)** — static reusable guidance.
+- **Artifacts** — saved generated outputs and workspace files.

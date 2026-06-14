@@ -2350,6 +2350,10 @@ export function routineUrl(routineId: string): string {
   return `${API_V1}/routines/${routineId}`;
 }
 
+export function configureRoutineUrl(): string {
+  return `${API_V1}/routines/configure`;
+}
+
 export function routineStepsUrl(routineId: string): string {
   return `${API_V1}/routines/${routineId}/steps`;
 }
@@ -2364,6 +2368,45 @@ export function routineEdgesUrl(routineId: string): string {
 
 export function routineEdgeUrl(routineId: string, edgeId: string): string {
   return `${API_V1}/routines/${routineId}/edges/${edgeId}`;
+}
+
+function hasOwn<T extends object, K extends PropertyKey>(
+  value: T,
+  key: K,
+): value is T & Record<K, unknown> {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function routineConfigureMetadata(
+  data: import("./types").CreateRoutineRequest | import("./types").UpdateRoutineRequest,
+): import("./types").ConfigureRoutineMetadataRequest {
+  const metadata: import("./types").ConfigureRoutineMetadataRequest = {};
+  if (hasOwn(data, "name")) metadata.name = data.name;
+  if (hasOwn(data, "description")) metadata.description = data.description;
+  if (hasOwn(data, "project_id")) metadata.project_id = data.project_id;
+  if (hasOwn(data, "trigger")) metadata.trigger = data.trigger;
+  if (hasOwn(data, "is_active")) metadata.is_active = data.is_active;
+  if (hasOwn(data, "max_retries")) metadata.max_retries = data.max_retries;
+  return metadata;
+}
+
+function routineConfigureBase(
+  data: import("./types").CreateRoutineRequest | import("./types").UpdateRoutineRequest,
+): Pick<
+  import("./types").ConfigureRoutineRequest,
+  "metadata" | "runtime_metadata" | "encrypted_payload"
+> {
+  const body: Pick<
+    import("./types").ConfigureRoutineRequest,
+    "metadata" | "runtime_metadata" | "encrypted_payload"
+  > = {
+    metadata: routineConfigureMetadata(data),
+  };
+  if (hasOwn(data, "metadata")) body.runtime_metadata = data.metadata;
+  if (hasOwn(data, "encrypted_payload")) {
+    body.encrypted_payload = data.encrypted_payload;
+  }
+  return body;
 }
 
 export async function fetchRoutines(): Promise<
@@ -2381,9 +2424,13 @@ export async function fetchRoutine(
 export async function createRoutine(
   data: import("./types").CreateRoutineRequest,
 ): Promise<import("./types").Routine> {
-  const res = await authFetch(routinesUrl(), {
+  const body: import("./types").ConfigureRoutineRequest = {
+    ...routineConfigureBase(data),
+    id: data.id,
+  };
+  const res = await authFetch(configureRoutineUrl(), {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify(body),
   });
   invalidateRoutinesCatalogCache();
   return res.json();
@@ -2393,9 +2440,13 @@ export async function updateRoutine(
   routineId: string,
   data: import("./types").UpdateRoutineRequest,
 ): Promise<import("./types").Routine> {
-  const res = await authFetch(routineUrl(routineId), {
-    method: "PATCH",
-    body: JSON.stringify(data),
+  const body: import("./types").ConfigureRoutineRequest = {
+    ...routineConfigureBase(data),
+    routine: routineId,
+  };
+  const res = await authFetch(configureRoutineUrl(), {
+    method: "POST",
+    body: JSON.stringify(body),
   });
   invalidateRoutinesCatalogCache();
   return res.json();
@@ -2405,9 +2456,18 @@ export async function saveRoutineGraph(
   routineId: string,
   data: import("./types").SaveRoutineGraphRequest,
 ): Promise<import("./types").RoutineDetail> {
-  const res = await authFetch(`${routineUrl(routineId)}/graph`, {
-    method: "PATCH",
-    body: JSON.stringify(data),
+  const body: import("./types").ConfigureRoutineRequest = {
+    ...routineConfigureBase(data),
+    routine: routineId,
+    graph: {
+      entry_steps: data.entry_steps,
+      steps: data.steps,
+      edges: data.edges,
+    },
+  };
+  const res = await authFetch(configureRoutineUrl(), {
+    method: "POST",
+    body: JSON.stringify(body),
   });
   invalidateRoutinesCatalogCache();
   return res.json();

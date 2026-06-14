@@ -1,0 +1,52 @@
+---
+title: Building Blocks
+description: The composable resources that make up Nenjo, grouped into primitives, workflows, and foundations.
+slug: building-blocks
+order: 1
+---
+
+Nenjo is built from a small set of resources that compose together. Each one has a simple job: shape what an agent knows, define what it does, orchestrate several agents into a process, or provide the container everything runs inside.
+
+These resources fall into three families:
+
+- **[Primitives](/docs/building-blocks/primitives)** — the units you compose. Context material (template variables, context blocks, knowledge graphs, memory) and the behavioral units that use it (abilities, domains, agents).
+- **[Workflows](/docs/building-blocks/workflows)** — how primitives orchestrate into repeatable processes (routines and councils).
+- **[Foundations](/docs/building-blocks/foundations)** — the containers and platform resources everything runs inside (projects, packages, models and tools, scopes).
+
+## The composition ladder
+
+The primitives stack from raw material up to the unit that assembles them, and workflows orchestrate from there:
+
+1. **Context primitives** — template variables, context blocks, knowledge graphs, and memory supply what an agent should know.
+2. **Behavioral primitives** — abilities and domains add focused capabilities and user-activated modes.
+3. **Agents** — assemble context and capabilities into a behavioral unit with a role.
+4. **Workflows** — routines and councils orchestrate multiple agents into repeatable, inspectable processes.
+
+You do not need all of them on day one. Most useful setups begin with a project and an agent, then add context, knowledge, abilities, domains, routines, and councils as the work becomes more important or more repeatable.
+
+## How they fit together
+
+```
+Nenjo Workspace
+│
+├─ Foundations
+│   ├─ Projects ............ scope runtime, memory, and context for a unit of work
+│   ├─ Packages ............ versioned containers that bundle and share primitives
+│   ├─ Models & Tools ...... LLM configs, MCP servers, script tools
+│   └─ Scopes .............. least-privilege permissions
+│
+├─ Primitives
+│   ├─ Template Variables .. live execution state injected at runtime
+│   ├─ Context Blocks ...... reusable prompt-context assets
+│   ├─ Knowledge Graphs .... source documents linked by typed relationships
+│   ├─ Memory .............. scoped, learned context
+│   ├─ Abilities ........... agent-invoked specialist tools
+│   ├─ Domains ............. user-activated modes
+│   └─ Agents .............. assemble the above into a behavioral role
+│
+└─ Workflows
+    ├─ Routines ............ workflow graphs of steps, gates, agents, and terminals
+    └─ Councils ............ structured multi-agent collaboration
+```
+
+Start with [Primitives](/docs/building-blocks/primitives) for the resource-by-resource view.

@@ -1,0 +1,79 @@
+---
+title: Councils
+description: Councils are structured multi-agent collaboration groups — a leader, distinct members, and a delegation strategy — usually run as one step inside a routine.
+slug: building-blocks/workflows/councils
+order: 3
+---
+
+A council is a structured group of agents that collaborate on work a single agent pass can't do well: work that needs multiple perspectives, decomposition, synthesis, critique, or a deliberate decision.
+
+A council has three parts:
+
+- **A leader** — coordinates the collaboration and usually synthesizes the final output.
+- **Members** — one or more additional agents, each with a distinct role.
+- **A delegation strategy** — how the leader distributes work among members.
+
+<Mermaid chart={`
+flowchart TD
+  L[leader] --> M1[member: proposer]
+  L --> M2[member: critic]
+  M1 --> L
+  M2 --> L
+  L --> O([synthesized output])
+`} />
+
+## When to use a council
+
+Reach for a council when the work needs one or more of:
+
+- Multiple specialist perspectives
+- Parallel subtasking
+- Adversarial review or critique
+- Explicit synthesis of different outputs
+- Voting or comparative judgment
+
+**Don't** use a council when a single strong agent — with one or two abilities — would be simpler and clearer. A council of near-identical agents adds cost without adding signal.
+
+## Delegation strategies
+
+The strategy defines how the leader involves members. Choose it deliberately based on the shape of the work:
+
+| Strategy | How it works | Best when |
+|----------|--------------|-----------|
+| **Dynamic** | Leader decides at runtime who to involve | The work shape is unpredictable |
+| **Broadcast** | Every member gets the same task independently; leader synthesizes | You want independent views without cross-contamination |
+| **Decompose** | Leader splits the work into distinct subtasks, one per member | The work is naturally separable |
+| **Round robin** | Members work in sequence, each building on the last | Staged refinement is valuable |
+| **Vote** | Members respond independently; leader chooses or summarizes | Selecting between clear alternatives |
+
+## Designing members
+
+Good members are **deliberately distinct**. Each should have a different role or lens, the tools or context it needs, and a clear reason to exist in the council. Keep councils small — **3–5 members** is plenty — and make the leader's synthesis role explicit.
+
+## Councils run inside routines
+
+A council is almost always used as a **single step inside a [routine](/docs/building-blocks/workflows/routines)**, not as a standalone unit. The routine provides the deterministic macro-process; the council step provides collaborative judgment at the point it's needed.
+
+<Mermaid chart={`
+flowchart LR
+  A[agent: draft] --> C[council: review]
+  C --> G{gate: approve}
+  G -->|on_pass| D([terminal])
+  G -->|on_fail| A
+`} />
+
+At runtime, the leader receives the task and context, distributes work per the delegation strategy, members execute in parallel or sequence, and the leader synthesizes (or selects from votes). The result flows to the next step in the routine.
+
+## Common patterns
+
+- **Code review council** — one member writes, another reviews, the leader synthesizes.
+- **Adversarial review council** — one member proposes, another critiques, the leader decides.
+- **Risk assessment council** — domain experts each evaluate a different risk dimension.
+- **Strategic planning council** — the leader decomposes the problem, specialists contribute, the leader synthesizes.
+
+## Best practices
+
+- Keep councils small and every member's role distinct.
+- Choose the delegation strategy deliberately — it's the council's control flow.
+- Use a council inside a routine rather than as top-level execution.
+- Prefer a single agent plus an ability when that would already be enough.

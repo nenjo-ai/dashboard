@@ -1503,7 +1503,7 @@ export interface RoutineCronTaskPayload {
 export interface CreateRoutineRequest {
   id?: string;
   name: string;
-  description?: string;
+  description?: string | null;
   project_id?: string | null;
   trigger?: RoutineTrigger;
   is_active?: boolean;
@@ -1514,7 +1514,7 @@ export interface CreateRoutineRequest {
 
 export interface UpdateRoutineRequest {
   name?: string;
-  description?: string;
+  description?: string | null;
   project_id?: string | null;
   trigger?: RoutineTrigger;
   is_active?: boolean;
@@ -1580,6 +1580,28 @@ export interface SaveRoutineGraphRequest extends UpdateRoutineRequest {
   entry_steps: string[];
   steps: SaveRoutineGraphStepRequest[];
   edges: SaveRoutineGraphEdgeRequest[];
+}
+
+export interface ConfigureRoutineMetadataRequest {
+  name?: string;
+  description?: string | null;
+  project_id?: string | null;
+  trigger?: RoutineTrigger;
+  is_active?: boolean;
+  max_retries?: number;
+}
+
+export interface ConfigureRoutineRequest {
+  id?: string;
+  routine?: string;
+  metadata?: ConfigureRoutineMetadataRequest;
+  runtime_metadata?: Record<string, unknown>;
+  encrypted_payload?: EncryptedPayload | null;
+  graph?: {
+    entry_steps: string[];
+    steps: SaveRoutineGraphStepRequest[];
+    edges: SaveRoutineGraphEdgeRequest[];
+  };
 }
 
 export type DelegationStrategy =

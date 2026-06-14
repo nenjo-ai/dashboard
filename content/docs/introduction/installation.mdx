@@ -1,0 +1,90 @@
+---
+title: Installation
+description: Install the Nenjo harness and the nenpm package manager with the CLI installer, or run the worker with Docker.
+slug: introduction/installation
+order: 4
+---
+
+Nenjo's [hybrid model](/docs/) means the dashboard is hosted for you, but the agent **harness** runs on your own machine or infrastructure. Installing Nenjo means getting that harness — the `nenjo` worker and the `nenpm` package manager — onto your system. There are two ways to do it: the CLI installer for a local machine, or Docker for servers and containers.
+
+## CLI installer
+
+The quickest way to install on macOS or Linux:
+
+```bash
+curl -fsSL https://nenjo.ai/install | bash
+```
+
+This installs three binaries into `~/.nenjo/bin` by default:
+
+| Binary | Purpose |
+|--------|---------|
+| `nenjo` | The agent worker — `nenjo run` starts the harness and connects to the platform |
+| `nenpm` | The [package manager](/docs/building-blocks/foundations/packages) for installing packages and Claude plugins |
+| `nenjoup` | The updater that keeps the binary bundle current |
+
+### Staying up to date
+
+Both CLIs update through the bundled `nenjoup` updater:
+
+```bash
+nenjo update
+nenpm update
+```
+
+Nenjo passively notices when an update is available. Set `NENJO_NO_UPDATE_CHECK=1` to suppress those notices.
+
+### Running the worker
+
+Once installed, start the harness:
+
+```bash
+nenjo run
+```
+
+It reads `NENJO_API_KEY` from your environment or `~/.nenjo/config.toml`, connects to the platform, and begins processing chat, tasks, schedules, and repository events. See the [Harness](/docs/harness) docs for configuration.
+
+## Docker
+
+For servers and containerized deployments, the worker image is published to GitHub Container Registry and runs `nenjo run` by default:
+
+```bash
+docker run --rm \
+  -e NENJO_API_KEY="$NENJO_API_KEY" \
+  -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+  -v nenjo-data:/home/nenjo/.nenjo \
+  ghcr.io/nenjo-ai/nenjo-worker:latest
+```
+
+Persist `/home/nenjo/.nenjo` to keep worker config, manifests, package installs, memory, crypto state, and session state across restarts.
+
+To let the worker operate on a specific workspace, mount a host checkout and set the capabilities it should handle:
+
+```bash
+docker run --rm \
+  -e NENJO_API_KEY="$NENJO_API_KEY" \
+  -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+  -e NENJO_CAPABILITIES=chat,task,repo \
+  -v nenjo-data:/home/nenjo/.nenjo \
+  -v "$PWD:/home/nenjo/.nenjo/workspace" \
+  ghcr.io/nenjo-ai/nenjo-worker:latest
+```
+
+### Image variants
+
+| Image | Use |
+|-------|-----|
+| `ghcr.io/nenjo-ai/nenjo-worker:<version>` / `latest` | Production baseline — `git`, `git-lfs`, shell utilities, `rg`, `curl`, `wget`, `jq`, Python, TLS certificates |
+| `ghcr.io/nenjo-ai/nenjo-worker:<version>-dev` / `dev` | Larger toolbox — compilers, Rust, Node/npm, GitHub CLI, Docker CLI, editors, and debugging utilities |
+
+Use a versioned tag for pinned deployments:
+
+```bash
+docker pull ghcr.io/nenjo-ai/nenjo-worker:v0.12.0
+```
+
+Update containers by pulling a new image and replacing the container — **not** with `nenjo update`. The images set `NENJO_NO_UPDATE_CHECK=1` so logs don't suggest self-updating an immutable image.
+
+## Next steps
+
+With the harness installed, continue to [Onboarding](/docs/getting-started/onboarding) to connect it to your workspace, then [Bootstrap](/docs/getting-started/bootstrap) your first project and agent.

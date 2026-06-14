@@ -1,116 +1,111 @@
 ---
 title: Bootstrap
-description: Use Nenji prompts to turn a newly onboarded workspace into useful projects, agents, routines, and knowledge.
+description: Prompt Nenji to understand Nenjo and build out your workspace — explainer questions in read mode, workflow prompts in #creator mode.
 order: 2
 ---
 
-Bootstrap is what you do after onboarding. Onboarding makes the workspace usable; bootstrapping gives it shape.
+Bootstrap is what you do after onboarding. Onboarding makes the workspace usable; bootstrapping gives it shape. You do it by talking to **[Nenji](/docs/introduction/nenji)**, the built-in guide, in two kinds of prompts: **explainer questions** when you want to understand or inspect, and **workflow prompts** when you want to design and build.
 
-Use Nenji when you know the work you want to support but do not yet know which Nenjo resources should exist. Nenji can ask clarifying questions, propose a workspace plan, and help create projects, agents, routines, abilities, domains, councils, and Library knowledge through the platform.
+## Nenji has two modes
 
-## How to Prompt Nenji
+The mode decides whether Nenji can change anything:
 
-Strong bootstrap prompts usually include:
+- **Base mode (read-only)** — Nenji explains, inspects, designs, reviews, and debugs. It will happily draft a plan, but it never mutates your workspace. Use it for **explainer questions**.
+- **`#creator` mode (write-enabled)** — type `#creator` at the start of a message to let Nenji actually build. It routes the work to focused builder abilities (agents, abilities, domains, context blocks, Library knowledge, councils, routines, and project work), reads current state first, and verifies every change by reading it back. Use it for **workflow prompts**.
 
-- The kind of work your team does
-- The first project or workflow you want to support
-- The roles or agents you expect to need
-- Any required tools, models, repositories, approval steps, or compliance constraints
-- Whether Nenji should ask questions first or propose a draft plan
+A good rhythm is: ask in base mode until you like the plan, then re-send with `#creator` to build it.
 
-## Prompt Examples
+## Explainer questions
 
-### Create a Workspace Plan
+Use these in base mode to understand Nenjo or inspect what you already have. No prompt prefix needed.
 
-```text
-Help me bootstrap a Nenjo workspace for a team that [describe the team or domain].
-
-First, ask me the minimum questions you need. Then propose:
-- the first project
-- the first agents
-- any useful abilities or domains
-- the first routine
-- the Library knowledge packs and documents we should create
-- the scopes, models, workers, and MCP servers we may need
-```
-
-### Set Up a Project
+**Understand a concept:**
 
 ```text
-Create a project plan for [project name].
-
-The project is about [describe the work]. It should support [tasks or outcomes].
-
-Recommend the initial project description, Library knowledge references, task structure, repository connection needs, and memory focus for agents working in this project.
+Explain the difference between an ability and a domain, and give me one concrete example of when I'd use each.
 ```
-
-### Design the First Agents
 
 ```text
-Design the first agents for this workspace.
-
-The work includes [describe work]. I want agents that are narrow enough to trust but broad enough to be useful.
-
-For each agent, propose:
-- name and role
-- model needs
-- prompt focus
-- memory focus
-- required abilities
-- required domains
-- minimum platform scopes
+How do routines handle failure? Walk me through what happens when an agent step fails versus when a gate fails.
 ```
-
-### Build Library Knowledge
 
 ```text
-Help me create the initial Library knowledge graph for [project or workspace name].
-
-Recommend a small set of Domain, Entity, Policy, Taxonomy, Reference, and Guide documents. For each document, explain why it matters, draft a useful starting outline, and suggest the outgoing edges that should make the graph easy for agents to traverse.
+How does knowledge retrieval actually work for my agents — how do they find and read the right documents?
 ```
 
-After creating the first documents, use the Library globe to check the pack shape and the graph view to inspect each important document's outgoing relationships.
-
-> Screenshot placeholder: Bootstrap-created Library pack shown in the globe view with the first policy, taxonomy, and guide nodes connected.
-
-### Turn a Process Into a Routine
-
-```text
-Turn this process into a Nenjo routine:
-
-[paste process]
-
-Recommend the routine trigger, steps, agents, gates, council steps if useful, success path, failure path, and what should be recorded for review.
-```
-
-### Choose the Right Resource Type
+**Decide what to build:**
 
 ```text
 I need Nenjo to support this capability:
 
-[describe capability]
+[describe the capability]
 
-Help me decide whether this should be an agent, ability, domain, routine, council, task, context block, or Library document. Explain the tradeoffs and recommend the simplest useful design.
+Should it be an agent, ability, domain, routine, council, or task? Explain the tradeoffs and recommend the simplest design.
 ```
 
-### Prepare a Code-Backed Project
+**Inspect and review your workspace:**
 
 ```text
-Help me bootstrap a code-backed project for this repository:
-
-[repository or project description]
-
-Recommend the project setup, initial agents, code-review or implementation routines, required Library knowledge, worker requirements, and the minimum scopes needed for safe operation.
+Inspect my workspace and explain what each agent is responsible for, which tools and scopes it has, and where any look too broad.
 ```
-
-### Review an Existing Workspace
 
 ```text
-Review my current Nenjo workspace.
-
-Look for agents that are too broad, missing scopes, missing Library knowledge, routines that need gates, abilities that should be domains, and domains that need clearer activation rules. Give me a prioritized cleanup plan.
+Review my "[routine name]" routine. Explain what it does step by step, where it could fail, and whether it's missing any gates.
 ```
 
-## What to Expect
+## Workflow prompts
 
-For small bootstraps, Nenji may propose concrete resources immediately. For larger workspaces, it should start with a plan, then help you turn that plan into platform resources once you approve the shape.
+Use these with `#creator` to design and build. Nenji will usually propose the shape first, then build once you approve.
+
+**Build a routine from a process** — the most common workflow prompt:
+
+```text
+#creator turn this process into a routine:
+
+[paste the process — the steps, who does what, and where approval is needed]
+
+Design the trigger, steps, agents, gates, and success/failure paths first. Show me the graph, then build it once I approve.
+```
+
+**Create a focused agent:**
+
+```text
+#creator create a focused [role] agent for this project. It should [describe its one responsibility]. Keep its scopes and tools minimal, and tell me exactly what you assigned.
+```
+
+**Set up a council for collaborative work:**
+
+```text
+#creator set up a council that reviews [what] before it ships — a proposer, a critic, and a leader that synthesizes. Recommend the delegation strategy and explain why.
+```
+
+**Scaffold project work:**
+
+```text
+#creator scaffold a project for [describe the work], with an initial set of tasks and the first agent to run them.
+```
+
+**Create Library knowledge:**
+
+```text
+#creator create the initial Library knowledge for [domain] — a small set of linked documents my agents can search and cite. Propose the documents and their relationships before creating them.
+```
+
+**Bootstrap the whole workspace:**
+
+```text
+#creator help me bootstrap this workspace for [team or domain].
+
+Ask me the minimum questions you need first. Then propose the first project, the first agents, a starter routine, and the Library knowledge to seed — and build it once I approve the shape.
+```
+
+## Tips for better prompts
+
+- Describe the **work**, not the resource — let Nenji choose the right primitive.
+- Name your **constraints**: required tools, models, repositories, approval steps, or compliance rules.
+- Say whether Nenji should **ask questions first** or **propose a draft** immediately.
+- Ask for the **smallest useful version** — you can always grow a resource later.
+
+## What to expect
+
+In base mode Nenji answers, inspects, or hands you a design. In `#creator` mode it makes the smallest correct set of changes, uses the narrowest builder ability for each resource, and reports back the stable slugs and refs it created so you can find and revise them later. For larger bootstraps it will start with a plan and build only once you approve the shape.

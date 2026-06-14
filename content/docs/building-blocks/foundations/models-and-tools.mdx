@@ -1,0 +1,45 @@
+---
+title: Models & Tools
+description: The LLMs and external or script-backed tools agents act through, configured once and assigned where needed.
+slug: building-blocks/foundations/models-and-tools
+order: 4
+---
+
+Agents act through models and tools. Each is configured once as a platform resource and assigned to the agents, abilities, or domains that need it.
+
+## Models
+
+Models are LLM configuration records referenced by agents to determine which model runs a given role. They are managed under the `models:read` / `models:write` [scopes](/docs/building-blocks/foundations/scopes) and referenced in prompts via `{{ agent.model }}`.
+
+Assign a model per agent based on the role's needs — capability for hard reasoning work, speed and cost for high-volume routine steps.
+
+**Supported providers:**
+
+| Provider | Notes |
+|----------|-------|
+| Anthropic | Claude models |
+| OpenAI | GPT models |
+| Gemini | Google models |
+| OpenRouter | Aggregated access to many models |
+| Ollama | Local / self-hosted models |
+| OpenAI-compatible | Any endpoint speaking the OpenAI API, with a custom base URL |
+
+The harness also wraps providers for resilience: a **reliability** layer adds retries and fallback between providers, and a **router** layer can direct different work to different models. This means an agent's assigned model can transparently fall back or route without changing the agent itself.
+
+## MCP servers
+
+MCP (Model Context Protocol) servers are **external tool integrations**. They are assigned to agents, abilities, or domains by slug or ref, giving a resource access to tools that live outside Nenjo.
+
+## Script tools
+
+Script tools are **native or package script-backed tools**, also assigned by slug or ref. Packages can ship script tools so an installed capability arrives with the tooling it needs.
+
+## Assignment discipline
+
+Both MCP servers and script tools are part of a resource's capability surface:
+
+- **[Agents](/docs/building-blocks/primitives/agents)** assign both for general use.
+- **[Abilities](/docs/building-blocks/primitives/abilities)** carry their own MCP servers for a bounded specialist run.
+- **[Domains](/docs/building-blocks/primitives/domains)** add them while a mode is active.
+
+Assign the smallest useful set, then expand as a resource's responsibilities grow.

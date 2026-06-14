@@ -1,0 +1,49 @@
+---
+title: Agents
+description: The dashboard hub for building agents and the behavioral resources around them — domains, abilities, context blocks, MCP servers, and models.
+slug: platform/pages/agents
+order: 3
+---
+
+The **Agents** area is the build hub for everything behavioral. It's where you create and edit [agents](/docs/building-blocks/primitives/agents) and the resources they draw on.
+
+## Resources it contains and manages
+
+| Resource | What it manages |
+|----------|-----------------|
+| Agents | Core agent definitions (prompts, model assignment, heartbeat, scopes, attached abilities/domains/MCP) |
+| Domains | User-activated modes that reconfigure an agent's behavior for a session |
+| Abilities | Specialist sub-agents exposed as tools |
+| Context blocks | Reusable prompt fragments and template variables |
+| MCP servers | External tool servers registered for use by agents |
+| Models | LLM configuration records (provider, model id, params) used for resolution |
+
+It's organized into tabs:
+
+| Tab | What you manage |
+|-----|-----------------|
+| Agents | Agent definitions — role, prompts, assignments |
+| Domains | [User-activated modes](/docs/building-blocks/primitives/domains) |
+| Abilities | [Specialist sub-agent tools](/docs/building-blocks/primitives/abilities) |
+| Context | [Reusable prompt context blocks](/docs/building-blocks/primitives/context-blocks) |
+| MCP | [External tool integrations](/docs/building-blocks/foundations/models-and-tools) |
+| Models | [LLM configuration records](/docs/building-blocks/foundations/models-and-tools) |
+
+## The agent builder
+
+Opening an agent gives you a focused editor, tab by tab:
+
+| Tab | What you set |
+|-----|--------------|
+| Prompts | The system (soul) and developer prompts, plus runtime templates |
+| Preview | See the composed prompt with context and variables resolved |
+| Abilities | Assign specialist abilities the agent can invoke |
+| Domains | Assign the user-activated modes available to the agent |
+| MCP | Attach external tool servers |
+| Heartbeat | Configure a recurring autonomous schedule |
+| Scopes | Review the platform permissions the agent holds |
+| Settings | Name, description, model assignment, and metadata |
+
+Changes you save here [sync to your connected harness live](/docs/platform/live-sync) — no restart needed.
+
+For the concepts behind each of these, see [Primitives](/docs/building-blocks/primitives). This page is about where to find and edit them in the dashboard.
