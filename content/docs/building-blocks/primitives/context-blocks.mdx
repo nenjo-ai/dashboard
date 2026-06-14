@@ -1,0 +1,49 @@
+---
+title: Context Blocks
+description: Reusable prompt-context assets referenced by stable template names and shared across agents, abilities, and domains.
+slug: building-blocks/primitives/context-blocks
+order: 3
+---
+
+Context blocks are **reusable prompt-context assets** referenced by stable template names. They let you define a common prompt pattern once and reuse it everywhere instead of duplicating guidance across agents.
+
+A context block is referenced, never pasted: include its selector in a prompt or template and the runtime resolves the current content at execution time.
+
+## What to use them for
+
+- System instructions shared across agent types
+- Standard output formats and response conventions
+- Reusable tool-use guidance and operating discipline
+- Any guidance snippet that should stay consistent across many resources
+
+## References
+
+A context block resolves to a **dotted key derived from its path and name** (slashes in the path become dots):
+
+```jinja
+{{ coding.git_worktree }}                              {# path "coding", name "git_worktree" #}
+{{ methodology }}                                      {# no path, name "methodology" #}
+{{ pkg.nenjo_ai.packages.context.tools.tool_usage }}   {# package-installed block #}
+```
+
+- **Workspace-authored blocks** resolve at `<path>.<name>`, or just `<name>` when they have no path.
+- **Package-installed blocks** resolve under `pkg.*` because their path is namespaced under the package. The `pkg.*` namespace is only for package-installed context blocks and package knowledge — see [Packages](/docs/building-blocks/foundations/packages).
+
+Every block also gets a convenience **`context.<name>`** alias (the name only, no path):
+
+```jinja
+{{ context.git_worktree }}
+{{ context.methodology }}
+```
+
+The `context.<name>` alias is name-only, so it is unambiguous only when that name is unique across your blocks. When two blocks share a name, reference them by their full path-dotted key instead.
+
+## Choosing context blocks vs. neighbors
+
+| Use a context block when… | Otherwise… |
+|---|---|
+| Guidance is static and reused across resources | Use [memory](/docs/building-blocks/primitives/memory) for learned, evolving context |
+| You want one source of truth for prompt patterns | Use [knowledge graphs](/docs/building-blocks/primitives/knowledge-graphs) for source material to search and cite |
+| The content shapes behavior | Use [template variables](/docs/building-blocks/primitives/template-variables) for live runtime state |
+
+Context blocks are also the recommended home for runtime template framing — a one-line agent template that includes a reusable runtime context block keeps task, gate, and heartbeat framing consistent across agents.

@@ -1,0 +1,52 @@
+---
+title: Live Sync
+description: How changes authored in the dashboard — agents, routines, packages, Library, and more — are automatically applied to connected harnesses with no restart required.
+slug: platform/live-sync
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+
+The platform and your harness communicate over the organization's dedicated event bus. Because approved workers maintain a live subscription to that bus, configuration and resource changes you make (or that Nenji makes on your behalf) in the dashboard are published as events and applied by the harness in place.
+
+No restart, no manual pull, no separate deploy step. The dashboard is the authoring surface; live sync is how those edits become active on your workers.
+
+## What syncs live
+
+| Area | Examples of live updates |
+|------|--------------------------|
+| Agents | Prompt changes, ability/domain assignments, model selection, heartbeat schedules, scopes |
+| Routines & Councils | Graph edits (steps, edges, conditions), schedule updates, council membership and strategies, dispatch targets |
+| Packages | Install, update, or removal of packages — resolved resources (new agents, abilities, knowledge, etc.) become available without a worker restart |
+| Library | Knowledge pack, document, and graph edge changes that affect `search_knowledge`, `read_knowledge_doc`, and rendered `{{ lib.* }}` indexes |
+| Projects | Context, repo connection settings, and other project-scoped runtime configuration |
+| Models & MCP | Model records and MCP server registrations used by agent resolution |
+
+Almost everything you edit through the [Pages](/docs/platform/pages) surfaces is versioned and emitted so that connected, approved harnesses can react without dropping their bus connection.
+
+## How application works on the harness
+
+An enrolled worker connects to its organization's bus using its API key. It receives a stream of resource and package events for the org it is approved for. The worker's local registries (agent loader, routine planner, package index, knowledge index, etc.) apply those events to their in-memory and on-disk state.
+
+Because the worker is already running and holding the necessary wrapped keys (granted at approval time), it can decrypt and act on protected content immediately. The same mechanism that delivers a newly dispatched task also delivers the definition of the routine or agent that will handle it.
+
+## Relationship to the CLI and manifests
+
+- Dashboard-driven package installs and resource edits go through the platform and are pushed to harnesses via live sync.
+- `nenpm` operations performed directly on a harness machine (or in a project that the harness executes) update local lockfiles and manifests. The harness reports the resulting state back through manifests, but the driver is local rather than platform-pushed.
+- Manifests and the worker's local checkout of resources remain the source of truth for what a specific run will use; live sync keeps the platform view and the harness view in agreement for org-scoped authored content.
+
+See [Packages](/docs/platform/pages/packages) and the [Harness packages documentation](/docs/packages) for the two flows.
+
+## Security and approval boundary
+
+Live sync only delivers usable material to **approved** workers for the organization. A harness that presents a valid API key but has not been explicitly approved by an owner or admin can open the bus connection, but it will not receive the org content key wraps or the full set of resource payloads that require decryption. The approval step is what turns "connected" into "trusted to receive and act on work."
+
+All live updates that carry protected content (prompts, Library docs, task payloads, etc.) are still encrypted on the wire for the approved recipient. See [Security](/docs/platform/security) for the full model.
+
+## Why this matters for development
+
+You can iterate rapidly: tweak an agent's prompt in the dashboard, switch back to your local editor or running worker, and the next invocation already sees the change. The same applies to wiring a new routine step, adding a Library policy document, or installing a package that brings in fresh abilities. The harness does not need to be bounced for authored platform configuration to take effect.
+
+<Callout type="info">
+  Live sync applies to configuration and resource definitions. Runtime execution state (in-flight runs, local artifacts, project checkouts managed by the harness) is still owned by the worker itself.
+</Callout>

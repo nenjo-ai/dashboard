@@ -1,0 +1,24 @@
+---
+title: Councils
+description: Create and manage multi-agent councils — a leader, members, and a delegation strategy — in the dashboard.
+slug: platform/pages/councils
+order: 4
+---
+
+The **Councils** area is where you assemble [councils](/docs/building-blocks/workflows/councils) — structured groups of agents that collaborate on work a single agent can't handle alone.
+
+## Resources it contains and manages
+
+| Resource | What it manages |
+|----------|-----------------|
+| Councils | Leader agent, member agents, delegation strategy (dynamic / broadcast / decompose / round-robin / vote). Councils are primarily referenced as steps inside routines rather than executed standalone |
+
+## Building a council
+
+When you create or edit a council you set:
+
+- **Leader** — the agent that coordinates the group and synthesizes the result.
+- **Members** — the additional agents, each with a distinct role. Keep them deliberately different; a council of near-identical agents adds cost without signal.
+- **Delegation strategy** — how the leader distributes work: dynamic, broadcast, decompose, round-robin, or vote.
+
+A council is typically used as a **single step inside a [routine](/docs/platform/pages/routines)** rather than run on its own. For when to use a council, the strategies, and member-design guidance, see [Councils](/docs/building-blocks/workflows/councils).

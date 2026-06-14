@@ -34,6 +34,7 @@ import { toast } from "./toast";
 import {
   clearChatStreamSnapshot,
   type ChatStreamSnapshot,
+  type ChatStreamToolSnapshot,
   loadChatStreamSnapshot,
   notifyChatStreamSnapshot,
   persistChatStreamSnapshot,
@@ -75,6 +76,8 @@ type LifecyclePayload = {
   task_preview?: string;
   result_preview?: string;
 };
+
+type ActiveToolEntry = ChatStreamToolSnapshot;
 
 function isAbilityTool(name: string): boolean {
   return name === "use_ability" || name.startsWith("ability/");
@@ -679,41 +682,9 @@ export function usePlannerChat(
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const workerAckSyncedRef = useRef(false);
-  const [activeTools, setActiveTools] = useState<
-    {
-      name: string;
-      args: string;
-      textPreview?: string;
-      status?: "running" | "completed" | "failed";
-      outputPreview?: string;
-      errorPreview?: string;
-      children?: {
-        name: string;
-        args: string;
-        textPreview?: string;
-        status?: "running" | "completed" | "failed";
-        outputPreview?: string;
-        errorPreview?: string;
-      }[];
-    }[]
-  >(() =>
+  const [activeTools, setActiveTools] = useState<ActiveToolEntry[]>(() =>
     !!agentId && readPendingAgentId() === agentId
-      ? (readPersistedTools() as {
-          name: string;
-          args: string;
-          textPreview?: string;
-          status?: "running" | "completed" | "failed";
-          outputPreview?: string;
-          errorPreview?: string;
-          children?: {
-            name: string;
-            args: string;
-            textPreview?: string;
-            status?: "running" | "completed" | "failed";
-            outputPreview?: string;
-            errorPreview?: string;
-          }[];
-        }[])
+      ? (readPersistedTools() as ActiveToolEntry[])
       : [],
   );
   const [activeDomainSession, setActiveDomainSession] =
@@ -773,13 +744,38 @@ export function usePlannerChat(
   // ── Stable subscriber via ref ──────────────────────────────────────────
   const handleIncomingRef = useRef<(raw: unknown) => void>(() => {});
   const optimisticUserMessageIdRef = useRef<string | null>(null);
+  const currentRequestIdRef = useRef<string | null>(null);
   const awaitingDeliveryRef = useRef(false);
+  const activeToolsRef = useRef<ActiveToolEntry[]>(activeTools);
+  const livePreviewRef = useRef<string | undefined>(livePreview);
 
   const setTypingIfDelivered = useCallback(() => {
     if (!awaitingDeliveryRef.current) {
       setIsTyping(true);
     }
   }, []);
+
+  const persistCurrentStreamSnapshot = useCallback(() => {
+    if (!activeSessionId) return;
+    const requestId =
+      currentRequestIdRef.current ??
+      optimisticUserMessageIdRef.current ??
+      responseIdRef.current;
+    if (!requestId) return;
+    const snapshot: ChatStreamSnapshot = {
+      sessionId: activeSessionId,
+      agentId,
+      requestId,
+      responseId: responseIdRef.current ?? undefined,
+      content: "",
+      activeTools: activeToolsRef.current,
+      livePreview: livePreviewRef.current,
+      activeRunTrace: activeRunTraceRef.current,
+      status: "streaming",
+      updatedAt: Date.now(),
+    };
+    void persistChatStreamSnapshot(snapshot);
+  }, [activeSessionId, agentId]);
 
   const applyStreamSnapshot = useCallback(
     (snapshot: ChatStreamSnapshot | { sessionId: string; clear: true }) => {
@@ -788,19 +784,37 @@ export function usePlannerChat(
       }
 
       if (isClearSnapshot(snapshot)) {
+        currentRequestIdRef.current = null;
         responseIdRef.current = null;
         responsePersistedRef.current = false;
         suppressActiveRunTraceRef.current = true;
+        activeToolsRef.current = [];
+        livePreviewRef.current = undefined;
+        activeRunTraceRef.current = undefined;
         setActiveTools([]);
         setLivePreview(undefined);
         setIsTyping(false);
+        setActiveRunTrace(undefined);
         return;
       }
 
       const responseId = snapshot.responseId ?? snapshot.requestId;
+      currentRequestIdRef.current = snapshot.requestId;
       responseIdRef.current = responseId;
       responsePersistedRef.current = false;
       suppressActiveRunTraceRef.current = false;
+      activeToolsRef.current = snapshot.activeTools ?? [];
+      livePreviewRef.current = snapshot.livePreview;
+      setActiveTools(snapshot.activeTools ?? []);
+      setLivePreview(snapshot.livePreview);
+      const restoredTrace = snapshot.activeRunTrace as RunTrace | undefined;
+      activeRunTraceRef.current = restoredTrace;
+      if (restoredTrace && !isTerminalRunTrace(restoredTrace)) {
+        lastRunTraceRef.current = restoredTrace;
+        setActiveRunTrace(restoredTrace);
+      } else {
+        setActiveRunTrace(undefined);
+      }
       setIsTyping(snapshot.status === "streaming");
       setMessages((prev) => {
         const targetIndex = findLastIndexCompat(
@@ -908,22 +922,7 @@ export function usePlannerChat(
     const sessionChanged =
       previousAgentId !== agentId || previousSessionId !== activeSessionId;
     const pendingAgentId = readPendingAgentId();
-    const persistedActiveTools = readPersistedTools() as {
-      name: string;
-      args: string;
-      textPreview?: string;
-      status?: "running" | "completed" | "failed";
-      outputPreview?: string;
-      errorPreview?: string;
-      children?: {
-        name: string;
-        args: string;
-        textPreview?: string;
-        status?: "running" | "completed" | "failed";
-        outputPreview?: string;
-        errorPreview?: string;
-      }[];
-    }[];
+    const persistedActiveTools = readPersistedTools() as ActiveToolEntry[];
     const persistedLivePreview = readPersistedLivePreview();
 
     // Save current messages to cache for the previous role+session
@@ -944,6 +943,9 @@ export function usePlannerChat(
 
     // Clear the response ref so stray tokens from the old role don't bleed in
     responseIdRef.current = null;
+    currentRequestIdRef.current = null;
+    activeToolsRef.current = isPending ? persistedActiveTools : [];
+    livePreviewRef.current = isPending ? persistedLivePreview : undefined;
     activeRunEnvelopeIdRef.current = undefined;
     suppressActiveRunTraceRef.current = !isPending;
 
@@ -1541,6 +1543,7 @@ export function usePlannerChat(
           } else {
             setActiveRunTrace(undefined);
           }
+          persistCurrentStreamSnapshot();
         });
 
         switch (streamEvent.event_type) {
@@ -1691,6 +1694,7 @@ export function usePlannerChat(
               setActiveTools([]);
               setLivePreview(undefined);
               setIsTyping(false);
+              currentRequestIdRef.current = null;
               activeRunTraceRef.current = undefined;
               activeRunEnvelopeIdRef.current = undefined;
               setActiveRunTrace(undefined);
@@ -1708,6 +1712,7 @@ export function usePlannerChat(
 
           case "Error": {
             optimisticUserMessageIdRef.current = null;
+            currentRequestIdRef.current = null;
             responsePersistedRef.current = false;
             responseIdRef.current = null;
             const { message, payload, encrypted_payload } =
@@ -1933,7 +1938,7 @@ export function usePlannerChat(
       // are no longer sent by the worker. All responses use the
       // agent_response envelope handled above.
     },
-    [activeSessionId],
+    [activeSessionId, persistCurrentStreamSnapshot, setTypingIfDelivered],
   );
 
   // Keep the ref in sync with the latest handleIncoming
@@ -1946,8 +1951,7 @@ export function usePlannerChat(
     void loadChatStreamSnapshot(activeSessionId).then((snapshot) => {
       if (
         !snapshot ||
-        snapshot.status !== "streaming" ||
-        !snapshot.content.trim()
+        snapshot.status !== "streaming"
       ) {
         return;
       }
@@ -2016,11 +2020,15 @@ export function usePlannerChat(
 
   useEffect(() => {
     writePersistedTools(activeTools);
-  }, [activeTools]);
+    activeToolsRef.current = activeTools;
+    persistCurrentStreamSnapshot();
+  }, [activeTools, persistCurrentStreamSnapshot]);
 
   useEffect(() => {
     writePersistedLivePreview(livePreview);
-  }, [livePreview]);
+    livePreviewRef.current = livePreview;
+    persistCurrentStreamSnapshot();
+  }, [livePreview, persistCurrentStreamSnapshot]);
 
   const sendMessage = useCallback(
     async (
@@ -2053,6 +2061,7 @@ export function usePlannerChat(
 
       const failOptimisticMessage = () => {
         optimisticUserMessageIdRef.current = null;
+        currentRequestIdRef.current = null;
         awaitingDeliveryRef.current = false;
         setIsTyping(false);
         pendingFinalTraceTargetRef.current = undefined;
@@ -2117,6 +2126,7 @@ export function usePlannerChat(
       // Pre-allocate a response ID so the final response targets the same message
       responsePersistedRef.current = false;
       responseIdRef.current = generateId();
+      currentRequestIdRef.current = msgId;
       setLivePreview(undefined);
       pendingFinalTraceTargetRef.current = undefined;
       suppressActiveRunTraceRef.current = false;
@@ -2128,17 +2138,25 @@ export function usePlannerChat(
       if (activeSessionId) {
         void persistChatStreamSnapshot({
           sessionId: activeSessionId,
+          agentId,
           requestId: msgId,
           responseId: responseIdRef.current ?? undefined,
           content: "",
+          activeTools: activeToolsRef.current,
+          livePreview: livePreviewRef.current,
+          activeRunTrace: activeRunTraceRef.current,
           status: "streaming",
           updatedAt: Date.now(),
         });
         notifyChatStreamSnapshot({
           sessionId: activeSessionId,
+          agentId,
           requestId: msgId,
           responseId: responseIdRef.current ?? undefined,
           content: "",
+          activeTools: activeToolsRef.current,
+          livePreview: livePreviewRef.current,
+          activeRunTrace: activeRunTraceRef.current,
           status: "streaming",
           updatedAt: Date.now(),
         });
@@ -2227,6 +2245,7 @@ export function usePlannerChat(
           console.error("Failed to stream chat:", err);
           optimisticUserMessageIdRef.current = null;
           responseIdRef.current = null;
+          currentRequestIdRef.current = null;
           setIsTyping(false);
           if (activeSessionId) {
             void clearChatStreamSnapshot(activeSessionId);
@@ -2257,6 +2276,7 @@ export function usePlannerChat(
             setActiveTools([]);
             setLivePreview(undefined);
             setIsTyping(false);
+            currentRequestIdRef.current = null;
             clearTypingUiTimeoutRef.current = null;
           }, 0);
         });
@@ -2470,6 +2490,7 @@ export function usePlannerChat(
 
     // Clear local typing state immediately
     responseIdRef.current = null;
+    currentRequestIdRef.current = null;
     setIsTyping(false);
     pendingFinalTraceTargetRef.current = undefined;
     if (activeRunEnvelopeIdRef.current) {

@@ -903,6 +903,8 @@ function EdgeConfigPanel({
     } else {
       delete nextMetadata.max_attempts;
     }
+    delete nextMetadata.on_exhausted;
+    delete nextMetadata.on_exhausted_step;
     delete nextMetadata.on_exhausted_step_id;
 
     setError(null);

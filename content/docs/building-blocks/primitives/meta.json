@@ -1,0 +1,13 @@
+{
+  "title": "Primitives",
+  "pages": [
+    "index",
+    "template-variables",
+    "context-blocks",
+    "knowledge-graphs",
+    "memory",
+    "abilities",
+    "domains",
+    "agents"
+  ]
+}

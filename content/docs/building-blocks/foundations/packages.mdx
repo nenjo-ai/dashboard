@@ -1,0 +1,85 @@
+---
+title: Packages
+description: Versioned, shareable containers that bundle Nenjo primitives and workflows, installed with the native nenpm CLI like any other dependency.
+slug: building-blocks/foundations/packages
+order: 3
+---
+
+A **package** is a containerized bundle of Nenjo [primitives](/docs/building-blocks/primitives) and [workflows](/docs/building-blocks/workflows) — agents, abilities, domains, context blocks, knowledge, routines, councils, and MCP integrations — much like a plugin. It is a versioned, shareable unit that can be installed, reused, and version-managed across workspaces, so a capability built once can be distributed and depended on like any other software dependency.
+
+## The manifests
+
+- **Registry** — a `nenjo.registry.v1` manifest lists available packages. Repo-backed registries are installed from GitHub and **scoped by the owning org**, for example `@nenjo-ai/knowledge`, `@nenjo-ai/nenji`, and `@nenjo-ai/context`. The scope comes from the GitHub owner, not the manifest.
+- **Package** — a `nenjo.package.v1` manifest declares `name`, `version`, `dependencies`, and the entrypoint `modules` it exposes.
+- **Modules** — package-relative manifest paths (or indexed directories) where resolution starts.
+
+```yaml
+schema: nenjo.package.v1
+name: nenji
+version: "1.0.0"
+
+dependencies:
+  knowledge: "^1.0.0"
+
+modules:
+  - nenji/agent.yaml
+```
+
+### Transitive resolution
+
+A package lists only its **root modules**. The resolver follows each module's local `imports` transitively, so `nenji` only needs to list its agent — the agent pulls in its own capabilities, domains, and context. The installer infers runtime behavior from each resolved manifest's schema (`nenjo.agent.v1`, `nenjo.ability.v1`, `nenjo.context_block.v1`, `nenjo.knowledge.v1`, and so on). Versioned `dependencies` let one package build on another.
+
+## nenpm: the package manager
+
+Nenjo ships a native CLI, **nenpm**, that installs packages like a normal dependency — think `npm` or `cargo` for agentic resources.
+
+Projects declare dependencies in an `nenpm.yml` manifest:
+
+```yaml
+schema: nenjo.dependencies.v1
+
+dependencies:
+  "@nenjo-ai/nenji": "^0.1.0"
+  "@nenjo-ai/coding": "^0.1.0"
+  "@acme/test-agent": "^0.3.0"
+
+registries:
+  - https://registry.nenjo.ai/index.yaml
+```
+
+- **Dependencies** are scoped names with semver ranges.
+- **Registries** are an ordered list — the first one containing a requested package wins. GitHub-backed registries derive the scope from the org; local registries may declare their own.
+- **Overrides** can point a dependency at a local path (`file:../packages`) for development.
+
+Installing resolves the full version graph, writes a lockfile (`nenpm.lock.yml`) with exact versions and integrity hashes, and materializes packages under `.nenjo/packages/<scope>/<name>@<version>`. Reinstalls verify those hashes, so published package contents can't drift without a version bump.
+
+Common commands:
+
+| Command | Does |
+|---------|------|
+| `nenpm init` | Create an `nenpm.yml` in the project |
+| `nenpm add @nenjo-ai/nenji` | Add (and install) a package, registering its registry if needed |
+| `nenpm install` | Resolve and install everything in `nenpm.yml`, writing the lockfile |
+| `nenpm upgrade` | Re-resolve within semver (`--major` to allow new majors) |
+| `nenpm remove @nenjo-ai/nenji` | Drop a dependency |
+| `nenpm list` / `nenpm info <pkg>` | Inspect available or installed packages |
+| `nenpm update` | Update the installed Nenjo CLI tools via the bundled `nenjoup` updater |
+
+## Claude plugins as dependencies
+
+nenpm also installs **Claude plugins** — a directory with a `.claude-plugin/plugin.json` — as if they were packages. Their skills, commands, hooks, and MCP servers are adapted into the Nenjo package model, so a Claude plugin can be added to `nenpm.yml` and resolved alongside native Nenjo packages from the same dependency graph.
+
+## Prompt selectors
+
+Package-installed **context blocks** and **knowledge** are referenced through the `pkg.*` namespace in prompts and templates:
+
+```jinja
+{{ pkg.nenjo_ai.packages.context.memory.remembrance }}
+{{ pkg.nenjo_ai.packages.knowledge.core }}
+```
+
+Other installed resources — agents, abilities, domains, MCP servers, script tools, routines — are resolved as runtime resources through module imports, **not** as `pkg.*` prompt variables.
+
+## The open-source side of the hybrid model
+
+Packages are where Nenjo's open-source layer lives. The official packages — **knowledge**, **Nenji**, and **context** — are published in a public repository and installed into your own harness with nenpm. This is what lets the hosted dashboard stay convenient while the resources that drive your agents remain open, versioned, and yours to run.

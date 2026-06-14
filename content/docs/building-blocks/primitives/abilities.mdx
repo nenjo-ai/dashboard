@@ -1,0 +1,46 @@
+---
+title: Abilities
+description: Reusable specialist sub-agents that inherit the caller's identity and memory but run with their own developer prompt, tools, and scopes.
+slug: building-blocks/primitives/abilities
+order: 6
+---
+
+Abilities are reusable specialist capabilities an agent invokes as tools. They give an agent a narrow, high-signal behavior without turning that behavior into a standalone agent, domain, or routine.
+
+## A nested specialist sub-agent
+
+When an agent calls an ability, the ability runs as a **nested specialist execution** in its own **fresh session**. It does not continue the live conversation — the caller simply hands over the task it wants the ability to do. The ability still keeps *who the agent is* but runs with a focused specialist prompt:
+
+| Inherited from the caller | Replaced by the ability |
+|---------------------------|-------------------------|
+| System prompt (the agent's soul / identity) | Developer prompt — swapped for the ability's specialist guidance |
+| Memory surface | |
+
+In other words, the ability keeps *who the agent is* (system framing and memory) but changes *how it works the problem* (developer prompt). Its only input is the task the caller hands over, and it returns a focused result.
+
+## What an ability owns
+
+- **`name`** — stable internal name
+- **`description`** — what the ability does
+- **`activation_condition`** — tells the caller when to use it
+- **`prompt_config.developer_prompt`** — specialist guidance for the nested run
+- **`mcp_servers`** — MCP server refs available to the ability
+- **`platform_scopes`** — permission refs. Agents must not grant or change these; users or platform-controlled setup assign them.
+
+Because abilities carry their own MCP servers and scopes, a specialist run can have a different (and tightly bounded) tool and permission surface than the calling agent.
+
+## Runtime behavior
+
+1. The ability runs as a nested execution in its own fresh session.
+2. The caller hands over the task it wants the ability to do.
+3. It inherits the caller's system framing (soul) and memory surface.
+4. It replaces developer guidance with its own specialist prompt.
+5. It receives its configured MCP servers and scopes.
+6. It returns control to the caller with a focused result.
+
+## Abilities vs. domains
+
+Both bundle guidance, tools, and scopes — the difference is *who activates them*:
+
+- **Abilities are agent-invoked.** Use one when the agent can safely decide to call a specialist tool.
+- **[Domains](/docs/building-blocks/primitives/domains) are user-activated.** Use one when the user should explicitly opt into the behavior.

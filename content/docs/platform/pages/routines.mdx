@@ -1,0 +1,37 @@
+---
+title: Routines
+description: Build routines visually, schedule them, and dispatch project tasks to them from the dashboard.
+slug: platform/pages/routines
+order: 5
+---
+
+The **Routines** area is where you author and run [routines](/docs/building-blocks/workflows/routines) — the directed graphs that turn a process into a repeatable, audited workflow.
+
+## Resources it contains and manages
+
+| Resource | What it manages |
+|----------|-----------------|
+| Routines (schedules) | Cron-scheduled routines |
+| Routines (tasks) | Routines registered as handlers for project task dispatch |
+| Councils | Multi-agent groups (leader + members + strategy) usable as routine steps |
+
+It's organized into:
+
+| Tab | What it's for |
+|-----|---------------|
+| Schedules | Routines that own a `cron` schedule and run periodically |
+| Tasks | Routines triggered by a project task being dispatched to them |
+| Councils | The [councils](/docs/platform/pages/councils) available as steps inside routines |
+
+## The visual editor
+
+Opening a routine drops you into the graph editor: add steps (agent, gate, council, terminal), wire them with edges, and set each edge's condition (`always`, `on_pass`, `on_fail`). The editor reflects the same rules the runtime enforces — acyclic flow except a bounded gate retry loop, required terminals, and explicit owners per step.
+
+<ThemeImage
+  light="/docs/routine-editor-light.png"
+  dark="/docs/routine-editor-dark.png"
+  alt="The visual routine editor in the Nenjo dashboard"
+  caption="The visual routine editor — add steps, wire edges, and set conditions. Saved changes sync to your harness live."
+/>
+
+Saved changes [sync to your connected harness live](/docs/platform/live-sync). For the graph model — step types, edge conditions, the asymmetric failure semantics, and patterns — see [Routines](/docs/building-blocks/workflows/routines).

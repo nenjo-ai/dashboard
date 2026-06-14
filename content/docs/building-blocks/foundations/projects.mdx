@@ -1,0 +1,24 @@
+---
+title: Projects
+description: The container that scopes the runtime, memory, and context for a unit of work.
+slug: building-blocks/foundations/projects
+order: 2
+---
+
+A **project** is the container for a unit of work. It scopes the runtime, memory, and context an agent operates within, so every execution runs with exactly the state it needs and nothing else.
+
+Think of a project as a working environment, not just a folder. It gives agents a place to understand what they are working on, what has already happened, and how future executions should be scoped:
+
+- Tasks and dependencies
+- Project context and metadata
+- Repository connection and worktrees
+- Execution history
+- Project-scoped memory
+
+## Source material lives elsewhere
+
+A project holds **work state**, not source material. Durable reference content lives in [knowledge graphs](/docs/building-blocks/primitives/knowledge-graphs) (the Library), which a project can reference. Keeping the two separate lets knowledge be shared and reused across projects instead of trapped in one.
+
+## Code-backed projects
+
+For code-backed projects, a repository connection can give executions an isolated workspace where agents inspect, change, test, and report on real files. Repository state is available to prompts through the Git [template variables](/docs/building-blocks/primitives/template-variables) (`{{ git.current_branch }}`, `{{ git.work_dir }}`, and so on).

@@ -1,0 +1,141 @@
+---
+title: Routines
+description: Routines are directed workflow graphs — steps, edges, and a trigger — that run a process the same way every time, with a full audit trail.
+slug: building-blocks/workflows/routines
+order: 2
+---
+
+A routine is a **directed graph** that orchestrates agents, gates, and councils into a deterministic, auditable process. Where a single agent improvises every step, a routine fixes the shape of the work: which steps run, in what order, with what checks, and where it can branch or stop.
+
+A routine is made of three things:
+
+- **Steps** — the units of work (an agent, a gate, a council, or a terminal).
+- **Edges** — directed connections that define flow and dependencies.
+- **A trigger** — what starts the routine (a task, or a schedule).
+
+<Mermaid chart={`
+flowchart LR
+  T([trigger]) --> A[agent: draft]
+  A --> G{gate: review}
+  G -->|on_pass| D([terminal])
+  G -->|on_fail| A
+`} />
+
+## Triggers
+
+| Trigger | Starts when… | Common use |
+|---------|--------------|------------|
+| `task` | A project task is dispatched to the routine | Project work that needs a reusable workflow |
+| `cron` | A schedule on the routine fires | Periodic maintenance, monitoring, reports |
+
+Use `task` for normal user or project work. Use `cron` only when the routine owns its own schedule.
+
+## Step types
+
+| Step | Does | Requires |
+|------|------|----------|
+| `agent` | Runs one assigned agent — the core work | `agent` |
+| `gate` | Evaluates prior output and branches on the result | `agent` + gate criteria in `config` |
+| `council` | Runs one assigned [council](/docs/building-blocks/workflows/councils) for collaborative work | `council` |
+| `terminal` | Successful end of the routine | — |
+| `terminal_fail` | Explicit failed end, after an escalation path | — |
+
+Both `agent` and `gate` steps need an `agent` assigned (a gate needs a model to evaluate its criteria); `council` steps need a `council`.
+
+## Edges and conditions
+
+Edges connect steps and carry a condition that decides whether they activate:
+
+| Condition | Meaning |
+|-----------|---------|
+| `always` | Follow this edge whenever the source step completes |
+| `on_pass` | Follow only when a gate passes |
+| `on_fail` | Follow only when a gate fails |
+
+Gate edges **must** use `on_pass` and/or `on_fail` — never `always`. Other steps use `always`.
+
+## Failure is asymmetric
+
+This is the most important rule to internalize, because it shapes how every routine is designed:
+
+- **An agent step that fails kills the whole routine.** Agent steps are atomic — there is no `on_fail` edge for them. If the work can't complete, the routine fails immediately.
+- **A gate that fails just takes a different path.** Gates are where graceful handling lives: a failed gate follows its `on_fail` edge to rework, escalation, or a `terminal_fail`.
+
+That asymmetry is intentional: critical work is treated as all-or-nothing, while gates own the branching and error handling.
+
+How a step reports its outcome:
+
+- Every **agent step** ends by calling `route_next_steps`, recording its `verdict`, `reasoning`, `output`, and — on pass — the decomposed task for each downstream edge.
+- Every **gate step** ends by calling `pass_verdict`, recording a structured pass/fail verdict with evidence, which drives `on_pass` / `on_fail` routing.
+
+## Bounded rework: the only allowed loop
+
+Routine graphs are otherwise **acyclic**. The single exception is a **bounded gate failure loop** — a gate whose `on_fail` edge points back to an earlier step:
+
+<Mermaid chart={`
+flowchart LR
+  A[agent: implement] --> G{gate: review}
+  G -->|on_pass| D([terminal])
+  G -->|on_fail · bounded by max_attempts| A
+`} />
+
+The gate owns the retry decision. The loop is bounded by `metadata.max_attempts` (default **3**). When the budget is exhausted, the routine fails directly with a structured `retry_exhausted` result — you do **not** add a separate "exhausted" branch. Only gates may create a retry cycle; agent steps never use `on_fail` retry edges.
+
+## Graph rules
+
+A valid routine graph follows a short checklist:
+
+- **Entry steps** — one or more, named in `entry_steps`. Multiple entries start as **parallel** branches.
+- **Reachability** — every step must be reachable from an entry step.
+- **Outgoing edges** — every non-terminal step needs at least one; terminal steps have none.
+- **Joins** — a step with multiple activated incoming edges is an **all-success join**: it runs only after every required upstream branch passes.
+- **Fan-out** — multiple outgoing edges from an agent step are deterministic fan-out; the agent must decompose the work so each downstream branch has a clear task.
+- **Terminals** — every routine must have at least one reachable `terminal` or `terminal_fail`.
+- **Owners** — `agent` and `gate` steps set an `agent`; `council` steps set a `council`. Steps reference each other by stable `slug`.
+
+## Common patterns
+
+**Linear pipeline** — ordered transformations, each step feeding the next.
+
+<Mermaid chart={`
+flowchart LR
+  A[agent: extract] --> B[agent: summarize] --> C([terminal])
+`} />
+
+**Gated pipeline** — work with validation checkpoints and an explicit failure path.
+
+<Mermaid chart={`
+flowchart LR
+  A[agent: implement] --> G{gate: review}
+  G -->|on_pass| D([terminal])
+  G -->|on_fail| F([terminal_fail])
+`} />
+
+**Fan-out / fan-in** — independent branches run in parallel, then join for synthesis.
+
+<Mermaid chart={`
+flowchart TD
+  P[agent: plan] --> W1[agent: worker A]
+  P --> W2[agent: worker B]
+  W1 --> S[agent: synthesize]
+  W2 --> S
+  S --> D([terminal])
+`} />
+
+**Review pipeline** — generate, then send to a council for review before a final gate.
+
+<Mermaid chart={`
+flowchart LR
+  A[agent: generate] --> C[council: review]
+  C --> G{gate: approve}
+  G -->|on_pass| D([terminal])
+  G -->|on_fail| A
+`} />
+
+## Best practices
+
+- Start simple — a linear or gated pipeline before anything elaborate.
+- Give every gate clear acceptance criteria.
+- Always define both a success (`terminal`) and a failure (`terminal_fail`) path.
+- Keep individual steps focused; push complex logic into [abilities](/docs/building-blocks/primitives/abilities) or sub-agents.
+- Use [councils](/docs/building-blocks/workflows/councils) only when multiple perspectives genuinely add signal.

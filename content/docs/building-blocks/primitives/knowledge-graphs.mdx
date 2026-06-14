@@ -1,0 +1,57 @@
+---
+title: Knowledge Graphs
+description: How Nenjo stores explicit source material as graphs of linked documents, and how agents traverse them with metadata-first retrieval.
+slug: building-blocks/primitives/knowledge-graphs
+order: 4
+---
+
+A knowledge pack is a **graph of source documents**. It is how explicit reference material — product docs, policies, glossaries, research — is made available to agents for search and citation, without dumping a corpus into every prompt.
+
+## Documents are nodes with metadata
+
+Each document is a **node** that carries metadata, not just text:
+
+- **`selector`** — a stable dotted name (`orientation.nenjo`, `design.agents`) used to reference the document. Selectors are stable agent-visible refs; source paths are pack-local file paths used by the resolver.
+- **`title`** and **`summary`** — let an agent judge relevance *without reading the full body*.
+- **`kind`** — an author-defined category such as `orientation`, `design`, `resource`, `build`, `classification`, `reference`, `policy`, or `entity`. This is a routing hint, not a closed platform enum; packs may define their own values.
+- **`tags`** — faceted labels like `intent:design`, `resource:agents`, `audience:builder`.
+- **`related`** — typed **outbound edges** to other documents.
+
+## Typed edges make it a graph
+
+The `related` edges are directional and typed, so traversal carries meaning:
+
+| Edge | Meaning |
+|------|---------|
+| `references` | Points to a relevant related document |
+| `part_of` | This document is a component of a larger one |
+| `depends_on` | Understanding this requires the target |
+| `related_to` | General association |
+| `governs` | This document constrains the target |
+| `classifies` | This document categorizes the target |
+| `defines` | This document specifies the target |
+
+Edges are **outbound**. If a concept should be reachable from a seed document, the seed must have an outbound edge to it — otherwise traversal will not find it.
+
+## How agents traverse: metadata-first retrieval
+
+An agent never loads a whole pack. It is seeded with the pack **index** (injected into the prompt via the pack's selector, e.g. `{{ lib.<pack_slug> }}` or `{{ pkg.nenjo_ai.packages.knowledge.core }}`), then narrows down:
+
+1. **Seed** — the rendered pack index or `list_knowledge_packs` provides the entry points.
+2. **Search** — `search_knowledge` finds candidate document selectors by metadata.
+3. **Traverse** — `list_knowledge_neighbors` follows a document's **outbound related edges** to dependencies and exact rules.
+4. **Read** — `read_knowledge_doc` pulls the full body of the selected documents only.
+5. **Answer** — the agent answers only from the documents it actually read, not from summaries.
+
+This is far cheaper and more precise than naive context stuffing: the agent reads summaries and tags first, walks the graph along typed edges, and loads full content lazily.
+
+## Two sources, one model
+
+The same graph structure powers both sources:
+
+- **The Library** — the platform's source-material surface, where your organization authors and edits knowledge packs (referenced as `{{ lib.<pack_slug> }}`). Library items sync into knowledge pack manifests so agents can search, traverse, and read them.
+- **Package knowledge** — packs installed through [packages](/docs/building-blocks/foundations/packages), using the `pkg.<scope>.<repo>.<package>.<pack>` namespace. Package knowledge is read-only source material; agents should not mutate it.
+
+## Knowledge is not memory
+
+[Memory](/docs/building-blocks/primitives/memory) stores learned preferences and project facts. Knowledge graphs store explicit source material that should be searched and read before an agent makes source-backed claims. Treat a pack index as a discovery hint, never as full content.

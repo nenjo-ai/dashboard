@@ -4,11 +4,25 @@ const DB_NAME = "nenjo-chat-streams";
 const STORE_NAME = "snapshots";
 const CHANNEL_NAME = "nenjo-chat-stream";
 
+export type ChatStreamToolSnapshot = {
+  name: string;
+  args: string;
+  textPreview?: string;
+  status?: "running" | "completed" | "failed";
+  outputPreview?: string;
+  errorPreview?: string;
+  children?: ChatStreamToolSnapshot[];
+};
+
 export type ChatStreamSnapshot = {
   sessionId: string;
+  agentId?: string;
   requestId: string;
   responseId?: string;
   content: string;
+  activeTools?: ChatStreamToolSnapshot[];
+  livePreview?: string;
+  activeRunTrace?: unknown;
   status: "streaming" | "done" | "error";
   updatedAt: number;
 };

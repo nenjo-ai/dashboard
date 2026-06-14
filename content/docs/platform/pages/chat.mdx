@@ -1,0 +1,34 @@
+---
+title: Chat
+description: The conversational surface for talking to your agents directly in the dashboard.
+slug: platform/pages/chat
+order: 2
+---
+
+**Chat** is where you talk to your [agents](/docs/building-blocks/primitives/agents) directly. It's the fastest way to use the platform: pick an agent, send a message, and it responds in `chat` runtime mode with its full identity, memory, and assigned tools.
+
+## Resources it contains and manages
+
+| Resource | What it manages |
+|----------|-----------------|
+| Chat sessions | Named conversations scoped to an agent or council (optionally a project). Tracks title, last activity, message count, token estimates, and channel (chat vs notifications) |
+| Messages | Individual encrypted turns (`user` / `assistant`). Each session records its history for context, review, and later retrieval by agents via memory |
+
+## Using chat
+
+- **Choose an agent** to set who you're talking to. Each agent brings its own prompt, memory profile, and capability surface. The current agent is shown in the header (as `@name`) and the composer placeholder hints at the active context.
+- **Messages are private.** Your messages and the agent's responses are encrypted on your device before they reach the platform — the server only stores ciphertext and routing metadata. See [Security](/docs/platform/security).
+
+### Special input commands
+
+The composer recognizes three special prefixes that open pickers, switch context, or invoke behaviors. These are handled client-side before the message is sent and work on both desktop and mobile.
+
+| Prefix | What it does | How it works |
+|--------|--------------|--------------|
+| `@` | Agent switch / @-mention navigation | Typing `@` (or mid-message) opens a filtered agent picker. Selecting an agent advances to a session picker showing recent chats with that agent plus a "+ New chat" option (optionally scoped to a project or "General"). This lets you fluidly jump between agents and sessions without leaving the chat view or manually creating sessions elsewhere. The flow supports keyboard navigation and filtering; leftover `@text` is cleaned up on completion or escape. |
+| `#` | Domain activation | When the current agent has assigned [domains](/docs/building-blocks/primitives/domains), typing `#` shows a domain picker (by `command` e.g. `#creator` and display name). Selecting a domain (or typing `#command [message]`) creates a domain session and sends the (optional) follow-on message under that mode. The domain's developer prompt addon is appended, extra abilities/scopes may apply, and the activation is recorded for audit. While a domain is active, special exit commands (`#exit`, `#done`, `#finish`) or the UI exit the mode cleanly. Domains can also be pre-selected via pill before typing the message. |
+| `/` | Slash commands | Typing `/` opens the command palette. Always includes the built-in `/new-session` ("Create a fresh chat with this agent and project."). Installed packages contribute additional commands (skills/commands/hooks adapted from Claude plugins or native packages). Selecting a package command usually sets a pending pill in the composer; type any arguments and send—the full invocation (e.g. `/my-command args`) is sent together with `commandInvocation` metadata. Direct typing of a known command also matches and invokes. `/new-session` bypasses the normal send path. |
+
+These prefixes make chat a high-bandwidth control surface for ad-hoc work, context switching, and package capabilities. See the [Domains](/docs/building-blocks/primitives/domains) and [Agents](/docs/building-blocks/primitives/agents) primitives for the underlying models, and [Packages](/docs/platform/pages/packages) for how commands are contributed.
+
+Chat is best for exploration, quick questions, and driving [Nenji](/docs/introduction/nenji) to inspect or build your workspace. For repeatable, multi-step work, reach for a [routine](/docs/platform/pages/routines).
