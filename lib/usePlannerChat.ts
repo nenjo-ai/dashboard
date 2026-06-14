@@ -18,6 +18,7 @@ import {
   updateChatSession,
   archiveChatSession,
   deleteChatSession,
+  fetchQuotaStatus,
   notifyChatSessionDelete,
 } from "./api";
 import { consumeSseStream } from "./chatStream";
@@ -37,7 +38,19 @@ import {
   notifyChatStreamSnapshot,
   persistChatStreamSnapshot,
 } from "./chatStreamDurability";
+import { chatStreamEventToLifecycleEvent } from "./agentRunTrace/adapters/chatStream";
+import {
+  appendEnvelopeEvent,
+  deleteEnvelopeForMessage,
+  deleteEnvelopesForSession,
+  getEnvelopeLinksForMessages,
+  linkEnvelopeToMessage,
+  markEnvelopeOrphaned,
+  runEnvelopeGc,
+} from "./agentRunTrace/envelopeStore";
+import { reduceRunTrace } from "./agentRunTrace/reducer";
 import { normalizeToolCallArgs } from "./toolCallDisplay";
+import type { AgentLifecycleEvent, RunTrace } from "./agentRunTrace/types";
 import type {
   ChatMessage,
   ChatSession,
@@ -51,11 +64,26 @@ type NormalizedStreamEvent = {
   data: Record<string, unknown>;
 };
 
+type LifecyclePayload = {
+  message?: string;
+  delta?: string;
+  details?: unknown;
+  tool_args?: unknown;
+  text_preview?: string;
+  output_preview?: string;
+  error_preview?: string;
+  task_preview?: string;
+  result_preview?: string;
+};
+
 function isAbilityTool(name: string): boolean {
   return name === "use_ability" || name.startsWith("ability/");
 }
 
-function hookToolDisplayName(hook: string | undefined, hookEvent: string | undefined): string {
+function hookToolDisplayName(
+  hook: string | undefined,
+  hookEvent: string | undefined,
+): string {
   const label = hook?.trim() || "hook";
   const event = hookEvent?.trim();
   return event ? `hook/${label}:${event}` : `hook/${label}`;
@@ -165,15 +193,20 @@ function normalizeSseAgentEvent(event: {
   }
 
   const eventTypeMap: Record<string, string> = {
-    tool_calls: "ToolCalls",
-    tool_completed: "ToolCompleted",
-    ability_activated: "AbilityActivated",
-    ability_completed: "AbilityCompleted",
-    hook_activated: "HookActivated",
     hook_started: "HookStarted",
     hook_completed: "HookCompleted",
-    delegation_started: "DelegationStarted",
-    delegation_completed: "DelegationCompleted",
+    run_started: "RunStarted",
+    run_completed: "RunCompleted",
+    run_failed: "RunFailed",
+    run_cancelled: "RunCancelled",
+    model_request_started: "ModelRequestStarted",
+    assistant_text_delta: "AssistantTextDelta",
+    model_request_completed: "ModelRequestCompleted",
+    tool_call_started: "ToolCallStarted",
+    tool_output_delta: "ToolOutputDelta",
+    tool_call_completed: "ToolCallCompleted",
+    async_operation_event: "AsyncOperationEvent",
+    async_operation_transcript: "AsyncOperationTranscript",
     done: "Done",
     error: "Error",
     domain_entered: "DomainEntered",
@@ -238,6 +271,8 @@ function mergeLoadedMessages(
         id: localMatch.id,
         persistedId: loadedKey,
         status: "cancelled" as const,
+        runEnvelopeId: loadedMessage.runEnvelopeId ?? localMatch.runEnvelopeId,
+        runTrace: loadedMessage.runTrace ?? localMatch.runTrace,
       };
     }
     if (localMatch) {
@@ -246,6 +281,8 @@ function mergeLoadedMessages(
         id: localMatch.id,
         persistedId: loadedKey,
         status: loadedMessage.status ?? localMatch.status,
+        runEnvelopeId: loadedMessage.runEnvelopeId ?? localMatch.runEnvelopeId,
+        runTrace: loadedMessage.runTrace ?? localMatch.runTrace,
       };
     }
     return loadedMessage;
@@ -270,9 +307,40 @@ function mergeLoadedMessages(
     seen.add(key);
   }
 
-  return merged.sort(
+  return compactDuplicateChatMessages(merged).sort(
     (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
   );
+}
+
+async function hydrateRunEnvelopeLinks(
+  messages: ChatMessage[],
+): Promise<ChatMessage[]> {
+  const messageIds = messages.map(
+    (message) => message.persistedId ?? message.id,
+  );
+  const links = await getEnvelopeLinksForMessages(messageIds);
+  if (links.size === 0) return messages;
+  return messages.map((message) => {
+    const key = message.persistedId ?? message.id;
+    const link = links.get(key);
+    return link ? { ...message, runEnvelopeId: link.envelopeId } : message;
+  });
+}
+
+async function gcSessionRunEnvelopes(
+  sessionId: string,
+  orgId?: string | null,
+): Promise<void> {
+  if (!orgId) return;
+  try {
+    const quota = await fetchQuotaStatus(orgId);
+    await runEnvelopeGc({
+      sessionId,
+      keepRecent: quota.retention.chat_messages,
+    });
+  } catch (error) {
+    console.warn("Failed to run agent envelope GC", error);
+  }
 }
 
 function isRecentMatch(
@@ -292,6 +360,61 @@ function isLikelySameAssistantContent(
   if (existing === incoming) return true;
   if (!existing || !incoming) return false;
   return incoming.startsWith(existing) || existing.startsWith(incoming);
+}
+
+function chatMessageIdentityMatches(
+  existing: ChatMessage,
+  incoming: ChatMessage,
+): boolean {
+  if (existing.id === incoming.id) return true;
+  if (incoming.persistedId) {
+    return (
+      existing.id === incoming.persistedId ||
+      existing.persistedId === incoming.persistedId
+    );
+  }
+  if (existing.persistedId) {
+    return existing.persistedId === incoming.id;
+  }
+  return false;
+}
+
+function mergeChatMessageIdentity(
+  existing: ChatMessage,
+  incoming: ChatMessage,
+): ChatMessage {
+  return {
+    ...existing,
+    ...incoming,
+    id: existing.id,
+    persistedId:
+      incoming.persistedId ??
+      existing.persistedId ??
+      (existing.id !== incoming.id ? incoming.id : undefined),
+    content: incoming.content || existing.content,
+    timestamp: incoming.timestamp || existing.timestamp,
+    status: incoming.status ?? existing.status,
+    runEnvelopeId: incoming.runEnvelopeId ?? existing.runEnvelopeId,
+    runTrace: incoming.runTrace ?? existing.runTrace,
+  };
+}
+
+function compactDuplicateChatMessages(messages: ChatMessage[]): ChatMessage[] {
+  const compacted: ChatMessage[] = [];
+  for (const message of messages) {
+    const duplicateIndex = compacted.findIndex((existing) =>
+      chatMessageIdentityMatches(existing, message),
+    );
+    if (duplicateIndex === -1) {
+      compacted.push(message);
+      continue;
+    }
+    compacted[duplicateIndex] = mergeChatMessageIdentity(
+      compacted[duplicateIndex],
+      message,
+    );
+  }
+  return compacted;
 }
 
 function normalizeResolvedAssistantContent(content: string): string {
@@ -326,9 +449,13 @@ function isEncryptedUserMessagePlaceholder(content: string): boolean {
 }
 
 async function resolvePersistedMessageContent(
-  message: Pick<PersistedChatMessage, "content" | "metadata" | "encrypted_payload">,
+  message: Pick<
+    PersistedChatMessage,
+    "content" | "metadata" | "encrypted_payload"
+  >,
 ): Promise<string> {
-  const encryptedPayload = message.encrypted_payload ?? message.metadata?.encrypted_payload;
+  const encryptedPayload =
+    message.encrypted_payload ?? message.metadata?.encrypted_payload;
   if (!encryptedPayload) {
     return normalizeResolvedAssistantContent(message.content);
   }
@@ -441,15 +568,100 @@ async function resolveEncryptedPayloadJson<T extends Record<string, unknown>>(
   return undefined;
 }
 
+async function resolveLifecycleEventPayload(
+  event: NormalizedStreamEvent,
+): Promise<AgentLifecycleEvent | undefined> {
+  const lifecycleEvent = chatStreamEventToLifecycleEvent(event);
+  if (!lifecycleEvent) return undefined;
+  const data = event.data as Record<string, unknown> & {
+    payload?: LifecyclePayload;
+    encrypted_payload?: EncryptedPayload;
+  };
+  const encryptedPayload = await resolveEncryptedPayloadJson<LifecyclePayload>(
+    data.encrypted_payload,
+  );
+  const payload = encryptedPayload ?? data.payload ?? {};
+  const withPayloadData = {
+    ...data,
+    message:
+      typeof payload.message === "string"
+        ? payload.message
+        : typeof data.message === "string"
+          ? data.message
+          : undefined,
+    delta: typeof payload.delta === "string" ? payload.delta : data.delta,
+    tool_args:
+      payload.tool_args !== undefined ? payload.tool_args : data.tool_args,
+    details: payload.details !== undefined ? payload.details : data.details,
+    args_summary:
+      payload.tool_args !== undefined
+        ? normalizeToolCallArgs(payload.tool_args)
+        : data.args_summary,
+    text_preview:
+      typeof payload.text_preview === "string"
+        ? payload.text_preview
+        : data.text_preview,
+    output_preview:
+      typeof payload.output_preview === "string"
+        ? payload.output_preview
+        : data.output_preview,
+    error_preview:
+      typeof payload.error_preview === "string"
+        ? payload.error_preview
+        : data.error_preview,
+    task_preview:
+      typeof payload.task_preview === "string"
+        ? payload.task_preview
+        : data.task_preview,
+    result_preview:
+      typeof payload.result_preview === "string"
+        ? payload.result_preview
+        : data.result_preview,
+  };
+  delete withPayloadData.payload;
+  delete withPayloadData.encrypted_payload;
+  return {
+    event_type: lifecycleEvent.event_type,
+    data: withPayloadData,
+  } as AgentLifecycleEvent;
+}
+
+function lifecycleRunId(event: AgentLifecycleEvent): string | undefined {
+  return "run_id" in event.data ? event.data.run_id : undefined;
+}
+
+function lifecycleSessionId(event: AgentLifecycleEvent): string | undefined {
+  return "session_id" in event.data ? event.data.session_id : undefined;
+}
+
+function isTerminalRunTrace(trace: RunTrace | undefined): boolean {
+  return (
+    trace?.phase === "completed" ||
+    trace?.phase === "failed" ||
+    trace?.phase === "cancelled"
+  );
+}
+
 export function usePlannerChat(
   projectId: string | null | undefined,
   agentId?: string,
   initialSessionId?: string,
   targetType: "agent" | "council" = "agent",
 ) {
-  const { userId } = useCurrentUser();
+  const { currentUser, userId } = useCurrentUser();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [livePreview, setLivePreview] = useState<string | undefined>(undefined);
+  const [activeRunTrace, setActiveRunTrace] = useState<RunTrace | undefined>();
+  const activeRunTraceRef = useRef<RunTrace | undefined>(undefined);
+  const lastRunTraceRef = useRef<RunTrace | undefined>(undefined);
+  const activeRunEnvelopeIdRef = useRef<string | undefined>(undefined);
+  const lastRunEnvelopeIdRef = useRef<string | undefined>(undefined);
+  const finalizedRunEnvelopeIdsRef = useRef<Set<string>>(new Set());
+  const suppressActiveRunTraceRef = useRef(false);
+  const pendingFinalTraceTargetRef = useRef<
+    { id?: string; content: string } | undefined
+  >(undefined);
+  const lifecycleQueueRef = useRef(Promise.resolve());
   const status = "connected";
   const isAgentTarget = targetType === "agent";
 
@@ -578,6 +790,7 @@ export function usePlannerChat(
       if (isClearSnapshot(snapshot)) {
         responseIdRef.current = null;
         responsePersistedRef.current = false;
+        suppressActiveRunTraceRef.current = true;
         setActiveTools([]);
         setLivePreview(undefined);
         setIsTyping(false);
@@ -587,6 +800,7 @@ export function usePlannerChat(
       const responseId = snapshot.responseId ?? snapshot.requestId;
       responseIdRef.current = responseId;
       responsePersistedRef.current = false;
+      suppressActiveRunTraceRef.current = false;
       setIsTyping(snapshot.status === "streaming");
       setMessages((prev) => {
         const targetIndex = findLastIndexCompat(
@@ -598,15 +812,17 @@ export function usePlannerChat(
         );
 
         if (targetIndex >= 0) {
-          return prev.map((message, index) =>
-            index === targetIndex
-              ? {
-                  ...message,
-                  id: responseId,
-                  content: snapshot.content,
-                  timestamp: new Date(snapshot.updatedAt).toISOString(),
-                }
-              : message,
+          return compactDuplicateChatMessages(
+            prev.map((message, index) =>
+              index === targetIndex
+                ? {
+                    ...message,
+                    id: responseId,
+                    content: snapshot.content,
+                    timestamp: new Date(snapshot.updatedAt).toISOString(),
+                  }
+                : message,
+            ),
           );
         }
 
@@ -614,7 +830,7 @@ export function usePlannerChat(
           return prev;
         }
 
-        return [
+        return compactDuplicateChatMessages([
           ...prev,
           {
             id: responseId,
@@ -622,7 +838,7 @@ export function usePlannerChat(
             content: snapshot.content,
             timestamp: new Date(snapshot.updatedAt).toISOString(),
           },
-        ];
+        ]);
       });
     },
     [activeSessionId],
@@ -713,7 +929,7 @@ export function usePlannerChat(
     // Save current messages to cache for the previous role+session
     if (previousAgentId) {
       agentCacheRef.current.set(cacheKey(previousAgentId, previousSessionId), {
-        messages: messages,
+        messages: compactDuplicateChatMessages(messages),
         hasMore: hasMore,
       });
     }
@@ -728,6 +944,8 @@ export function usePlannerChat(
 
     // Clear the response ref so stray tokens from the old role don't bleed in
     responseIdRef.current = null;
+    activeRunEnvelopeIdRef.current = undefined;
+    suppressActiveRunTraceRef.current = !isPending;
 
     // Clear stale domain session only when the role or chat session actually changes.
     if (sessionChanged) {
@@ -747,7 +965,7 @@ export function usePlannerChat(
       cacheKey(agentId, activeSessionId),
     );
     if (cached) {
-      setMessages(cached.messages);
+      setMessages(compactDuplicateChatMessages(cached.messages));
       setHasMore(cached.hasMore);
       return;
     }
@@ -763,9 +981,14 @@ export function usePlannerChat(
 
     const fetchId = ++historyFetchIdRef.current;
 
-    fetchChatMessages(projectId, agentId, {
-      session_id: activeSessionId,
-    }, targetType)
+    fetchChatMessages(
+      projectId,
+      agentId,
+      {
+        session_id: activeSessionId,
+      },
+      targetType,
+    )
       .then(async (page) => {
         if (fetchId !== historyFetchIdRef.current) return;
         const storedAck = await loadStoredAccountContentKey().catch(() => null);
@@ -777,9 +1000,16 @@ export function usePlannerChat(
             .map((message) => ({
               id: message.id,
               content: message.content,
-              hasEncryptedPayload: Boolean(message.encrypted_payload ?? message.metadata?.encrypted_payload),
-              objectId: (message.encrypted_payload ?? message.metadata?.encrypted_payload)?.object_id,
-              objectType: (message.encrypted_payload ?? message.metadata?.encrypted_payload)?.object_type,
+              hasEncryptedPayload: Boolean(
+                message.encrypted_payload ??
+                message.metadata?.encrypted_payload,
+              ),
+              objectId: (
+                message.encrypted_payload ?? message.metadata?.encrypted_payload
+              )?.object_id,
+              objectType: (
+                message.encrypted_payload ?? message.metadata?.encrypted_payload
+              )?.object_type,
             })),
           hasAck: Boolean(storedAck),
         });
@@ -797,8 +1027,11 @@ export function usePlannerChat(
               timestamp: m.created_at,
             })),
           );
-          setMessages(loaded);
+          setMessages(
+            compactDuplicateChatMessages(await hydrateRunEnvelopeLinks(loaded)),
+          );
           setHasMore(page.has_more);
+          void gcSessionRunEnvelopes(activeSessionId, currentUser?.org_id);
         }
       })
       .catch((err) => {
@@ -811,7 +1044,7 @@ export function usePlannerChat(
         if (fetchId !== historyFetchIdRef.current) return;
         setIsLoadingHistory(false);
       });
-  }, [projectId, agentId, activeSessionId]);
+  }, [projectId, agentId, activeSessionId, currentUser?.org_id, targetType]);
 
   useEffect(() => {
     if (!activeSessionId || isLoadingHistory) return;
@@ -925,10 +1158,15 @@ export function usePlannerChat(
     setIsLoadingMore(true);
     try {
       if (!activeSessionId) return;
-      const page = await fetchChatMessages(projectId, agentId, {
-        before: oldest.timestamp,
-        session_id: activeSessionId,
-      }, targetType);
+      const page = await fetchChatMessages(
+        projectId,
+        agentId,
+        {
+          before: oldest.timestamp,
+          session_id: activeSessionId,
+        },
+        targetType,
+      );
       const storedAck = await loadStoredAccountContentKey().catch(() => null);
       console.warn("Chat history pagination fetch", {
         sessionId: activeSessionId,
@@ -938,9 +1176,15 @@ export function usePlannerChat(
           .map((message) => ({
             id: message.id,
             content: message.content,
-            hasEncryptedPayload: Boolean(message.encrypted_payload ?? message.metadata?.encrypted_payload),
-            objectId: (message.encrypted_payload ?? message.metadata?.encrypted_payload)?.object_id,
-            objectType: (message.encrypted_payload ?? message.metadata?.encrypted_payload)?.object_type,
+            hasEncryptedPayload: Boolean(
+              message.encrypted_payload ?? message.metadata?.encrypted_payload,
+            ),
+            objectId: (
+              message.encrypted_payload ?? message.metadata?.encrypted_payload
+            )?.object_id,
+            objectType: (
+              message.encrypted_payload ?? message.metadata?.encrypted_payload
+            )?.object_type,
           })),
         hasAck: Boolean(storedAck),
       });
@@ -948,20 +1192,34 @@ export function usePlannerChat(
         const older: ChatMessage[] = await Promise.all(
           page.messages.reverse().map(async (m) => ({
             id: m.id,
+            persistedId: m.id,
             role: m.sender,
             content: await resolvePersistedMessageContent(m),
             timestamp: m.created_at,
           })),
         );
-        setMessages((prev) => [...older, ...prev]);
+        const olderWithEnvelopes = await hydrateRunEnvelopeLinks(older);
+        setMessages((prev) =>
+          compactDuplicateChatMessages([...olderWithEnvelopes, ...prev]),
+        );
       }
       setHasMore(page.has_more);
+      void gcSessionRunEnvelopes(activeSessionId, currentUser?.org_id);
     } catch (err) {
       console.error("Failed to load older messages:", err);
     } finally {
       setIsLoadingMore(false);
     }
-  }, [projectId, agentId, activeSessionId, hasMore, isLoadingMore, messages]);
+  }, [
+    projectId,
+    agentId,
+    activeSessionId,
+    currentUser?.org_id,
+    hasMore,
+    isLoadingMore,
+    messages,
+    targetType,
+  ]);
 
   const handleIncoming = useCallback(
     (raw: unknown) => {
@@ -997,6 +1255,24 @@ export function usePlannerChat(
             metadata: msg.metadata ?? null,
             encrypted_payload: msg.encrypted_payload ?? null,
           });
+          const persistedRunEnvelopeId =
+            msg.sender === "assistant"
+              ? (activeRunEnvelopeIdRef.current ?? lastRunEnvelopeIdRef.current)
+              : undefined;
+          if (persistedRunEnvelopeId && activeSessionId) {
+            void linkEnvelopeToMessage({
+              sessionId: activeSessionId,
+              messageId: msg.id,
+              messageCreatedAt: msg.created_at,
+              envelopeId: persistedRunEnvelopeId,
+              finalContent: resolvedContent,
+            }).catch((error) => {
+              console.warn(
+                "Failed to link persisted assistant message to run envelope",
+                error,
+              );
+            });
+          }
 
           setMessages((prev) => {
             const role = msg.sender as "user" | "assistant";
@@ -1008,21 +1284,25 @@ export function usePlannerChat(
                 optimisticUserMessageIdRef.current = null;
                 awaitingDeliveryRef.current = false;
                 setTypingIfDelivered();
-                return prev.map((m, i) =>
-                  i === optimisticIdx
-                    ? {
-                        ...m,
-                        persistedId: msg.id,
-                        content: isEncryptedUserMessagePlaceholder(
-                          resolvedContent,
-                        )
-                          ? m.content
-                          : resolvedContent,
-                        timestamp: msg.created_at,
-                        status:
-                          m.status === "cancelled" ? "cancelled" : "delivered",
-                      }
-                    : m,
+                return compactDuplicateChatMessages(
+                  prev.map((m, i) =>
+                    i === optimisticIdx
+                      ? {
+                          ...m,
+                          persistedId: msg.id,
+                          content: isEncryptedUserMessagePlaceholder(
+                            resolvedContent,
+                          )
+                            ? m.content
+                            : resolvedContent,
+                          timestamp: msg.created_at,
+                          status:
+                            m.status === "cancelled"
+                              ? "cancelled"
+                              : "delivered",
+                        }
+                      : m,
+                  ),
                 );
               }
             }
@@ -1031,15 +1311,19 @@ export function usePlannerChat(
                 (m) => m.id === responseIdRef.current,
               );
               if (responseIdx >= 0) {
-                return prev.map((m, i) =>
-                  i === responseIdx
-                    ? {
-                        ...m,
-                        persistedId: msg.id,
-                        content: resolvedContent,
-                        timestamp: msg.created_at,
-                      }
-                    : m,
+                return compactDuplicateChatMessages(
+                  prev.map((m, i) =>
+                    i === responseIdx
+                      ? {
+                          ...m,
+                          persistedId: msg.id,
+                          content: resolvedContent,
+                          timestamp: msg.created_at,
+                          runEnvelopeId:
+                            persistedRunEnvelopeId ?? m.runEnvelopeId,
+                        }
+                      : m,
+                  ),
                 );
               }
             }
@@ -1053,15 +1337,19 @@ export function usePlannerChat(
                   isRecentMatch(m, msg.created_at),
               );
               if (partialIdx >= 0) {
-                return prev.map((m, i) =>
-                  i === partialIdx
-                    ? {
-                        ...m,
-                        persistedId: msg.id,
-                        content: resolvedContent,
-                        timestamp: msg.created_at,
-                      }
-                    : m,
+                return compactDuplicateChatMessages(
+                  prev.map((m, i) =>
+                    i === partialIdx
+                      ? {
+                          ...m,
+                          persistedId: msg.id,
+                          content: resolvedContent,
+                          timestamp: msg.created_at,
+                          runEnvelopeId:
+                            persistedRunEnvelopeId ?? m.runEnvelopeId,
+                        }
+                      : m,
+                  ),
                 );
               }
             }
@@ -1081,21 +1369,27 @@ export function usePlannerChat(
               ) {
                 optimisticUserMessageIdRef.current = null;
               }
-              return prev.map((m, i) =>
-                i === idx
-                  ? {
-                      ...m,
-                      persistedId: msg.id,
-                      content: resolvedContent,
-                      timestamp: msg.created_at,
-                      status:
-                        role === "user"
-                          ? m.status === "cancelled"
-                            ? "cancelled"
-                            : "delivered"
-                          : m.status,
-                    }
-                  : m,
+              return compactDuplicateChatMessages(
+                prev.map((m, i) =>
+                  i === idx
+                    ? {
+                        ...m,
+                        persistedId: msg.id,
+                        content: resolvedContent,
+                        timestamp: msg.created_at,
+                        runEnvelopeId:
+                          role === "assistant"
+                            ? (persistedRunEnvelopeId ?? m.runEnvelopeId)
+                            : m.runEnvelopeId,
+                        status:
+                          role === "user"
+                            ? m.status === "cancelled"
+                              ? "cancelled"
+                              : "delivered"
+                            : m.status,
+                      }
+                    : m,
+                ),
               );
             }
 
@@ -1106,7 +1400,7 @@ export function usePlannerChat(
               return prev;
             }
 
-            return [
+            return compactDuplicateChatMessages([
               ...prev,
               {
                 id: msg.id,
@@ -1114,8 +1408,10 @@ export function usePlannerChat(
                 role,
                 content: resolvedContent,
                 timestamp: msg.created_at,
+                runEnvelopeId:
+                  role === "assistant" ? persistedRunEnvelopeId : undefined,
               },
-            ];
+            ]);
           });
         })();
         return;
@@ -1177,6 +1473,76 @@ export function usePlannerChat(
           data: Record<string, unknown>;
         };
 
+        lifecycleQueueRef.current = lifecycleQueueRef.current.then(async () => {
+          const lifecycleEvent =
+            await resolveLifecycleEventPayload(streamEvent);
+          if (!lifecycleEvent) return;
+          const eventRunId = lifecycleRunId(lifecycleEvent);
+          const eventSessionId = lifecycleSessionId(lifecycleEvent);
+          const envelopeId =
+            eventRunId ??
+            activeRunEnvelopeIdRef.current ??
+            lastRunEnvelopeIdRef.current;
+          const envelopeSessionId = eventSessionId ?? activeSessionId;
+          if (lifecycleEvent.event_type === "RunStarted") {
+            activeRunEnvelopeIdRef.current = lifecycleEvent.data.run_id;
+            lastRunEnvelopeIdRef.current = lifecycleEvent.data.run_id;
+            suppressActiveRunTraceRef.current = false;
+            finalizedRunEnvelopeIdsRef.current.delete(
+              lifecycleEvent.data.run_id,
+            );
+          }
+          if (envelopeId && envelopeSessionId) {
+            await appendEnvelopeEvent({
+              envelopeId,
+              runId: envelopeId,
+              sessionId: envelopeSessionId,
+              event: lifecycleEvent,
+            }).catch((error) => {
+              console.warn("Failed to append agent run envelope event", error);
+            });
+          }
+          const next = reduceRunTrace(
+            activeRunTraceRef.current,
+            lifecycleEvent,
+          );
+          activeRunTraceRef.current = next;
+          if (next) {
+            lastRunTraceRef.current = next;
+            const pendingTarget = pendingFinalTraceTargetRef.current;
+            if (pendingTarget) {
+              setMessages((prev) => {
+                let attached = false;
+                const updated = prev.map((message) => {
+                  const matches =
+                    message.role === "assistant" &&
+                    ((pendingTarget.id && message.id === pendingTarget.id) ||
+                      message.content === pendingTarget.content);
+                  if (!matches) return message;
+                  attached = true;
+                  return { ...message, runTrace: message.runTrace ?? next };
+                });
+                if (attached) {
+                  pendingFinalTraceTargetRef.current = undefined;
+                }
+                return attached ? compactDuplicateChatMessages(updated) : prev;
+              });
+            }
+          }
+          const isFinalizedRun =
+            envelopeId != null &&
+            finalizedRunEnvelopeIdsRef.current.has(envelopeId);
+          if (
+            !isFinalizedRun &&
+            !suppressActiveRunTraceRef.current &&
+            !isTerminalRunTrace(next)
+          ) {
+            setActiveRunTrace(next);
+          } else {
+            setActiveRunTrace(undefined);
+          }
+        });
+
         switch (streamEvent.event_type) {
           case "Done": {
             optimisticUserMessageIdRef.current = null;
@@ -1194,22 +1560,50 @@ export function usePlannerChat(
               break;
             }
             void (async () => {
+              const finalizingEnvelopeId =
+                activeRunEnvelopeIdRef.current ?? lastRunEnvelopeIdRef.current;
+              if (finalizingEnvelopeId) {
+                finalizedRunEnvelopeIdsRef.current.add(finalizingEnvelopeId);
+              }
+              suppressActiveRunTraceRef.current = true;
               const resolvedFinalOutput = encrypted_payload
                 ? await resolvePersistedMessageContent({
                     content: payload ?? "",
                     metadata: { encrypted_payload },
                   })
                 : (payload ?? "");
+              await lifecycleQueueRef.current;
+              const traceForFinal =
+                activeRunTraceRef.current ?? lastRunTraceRef.current;
+              const envelopeIdForFinal =
+                activeRunEnvelopeIdRef.current ?? lastRunEnvelopeIdRef.current;
               let id = responseIdRef.current;
               if (!id) {
                 id = generateId();
               }
               responseIdRef.current = null;
+              pendingFinalTraceTargetRef.current = {
+                id,
+                content: resolvedFinalOutput,
+              };
+              let linkMessageId = id;
+              let linkMessageTimestamp = new Date().toISOString();
               setMessages((prev) => {
                 const existing = prev.find((m) => m.id === id);
                 if (existing) {
-                  return prev.map((m) =>
-                    m.id === id ? { ...m, content: resolvedFinalOutput } : m,
+                  linkMessageId = existing.persistedId ?? existing.id;
+                  linkMessageTimestamp = existing.timestamp;
+                  return compactDuplicateChatMessages(
+                    prev.map((m) =>
+                      m.id === id
+                        ? {
+                            ...m,
+                            content: resolvedFinalOutput,
+                            runTrace: traceForFinal,
+                            runEnvelopeId: envelopeIdForFinal,
+                          }
+                        : m,
+                    ),
                   );
                 }
                 const partialIdx = findLastIndexCompat(
@@ -1223,10 +1617,20 @@ export function usePlannerChat(
                     ),
                 );
                 if (partialIdx >= 0) {
-                  return prev.map((m, i) =>
-                    i === partialIdx
-                      ? { ...m, content: resolvedFinalOutput }
-                      : m,
+                  const partial = prev[partialIdx];
+                  linkMessageId = partial.persistedId ?? partial.id;
+                  linkMessageTimestamp = partial.timestamp;
+                  return compactDuplicateChatMessages(
+                    prev.map((m, i) =>
+                      i === partialIdx
+                        ? {
+                            ...m,
+                            content: resolvedFinalOutput,
+                            runTrace: traceForFinal,
+                            runEnvelopeId: envelopeIdForFinal,
+                          }
+                        : m,
+                    ),
                   );
                 }
                 const existingPersisted = findLastCompat(
@@ -1235,27 +1639,62 @@ export function usePlannerChat(
                     m.role === "assistant" && m.content === resolvedFinalOutput,
                 );
                 if (existingPersisted) {
-                  return prev;
+                  linkMessageId =
+                    existingPersisted.persistedId ?? existingPersisted.id;
+                  linkMessageTimestamp = existingPersisted.timestamp;
+                  return compactDuplicateChatMessages(
+                    prev.map((m) =>
+                      m.id === existingPersisted.id
+                        ? {
+                            ...m,
+                            runTrace: m.runTrace ?? traceForFinal,
+                            runEnvelopeId:
+                              m.runEnvelopeId ?? envelopeIdForFinal,
+                          }
+                        : m,
+                    ),
+                  );
                 }
-                return [
+                linkMessageTimestamp = new Date().toISOString();
+                return compactDuplicateChatMessages([
                   ...prev,
                   {
                     id: id!,
                     role: "assistant" as const,
                     content: resolvedFinalOutput,
-                    timestamp: new Date().toISOString(),
+                    timestamp: linkMessageTimestamp,
+                    runTrace: traceForFinal,
+                    runEnvelopeId: envelopeIdForFinal,
                   },
-                ];
+                ]);
               });
+              if (envelopeIdForFinal && activeSessionId) {
+                void linkEnvelopeToMessage({
+                  sessionId: activeSessionId,
+                  messageId: linkMessageId,
+                  messageCreatedAt: linkMessageTimestamp,
+                  envelopeId: envelopeIdForFinal,
+                  finalContent: resolvedFinalOutput,
+                }).catch((error) => {
+                  console.warn(
+                    "Failed to link agent run envelope to final message",
+                    error,
+                  );
+                });
+              }
+              if (traceForFinal) {
+                pendingFinalTraceTargetRef.current = undefined;
+              }
               if (clearTypingUiTimeoutRef.current) {
                 clearTimeout(clearTypingUiTimeoutRef.current);
               }
-              clearTypingUiTimeoutRef.current = setTimeout(() => {
-                setActiveTools([]);
-                setLivePreview(undefined);
-                setIsTyping(false);
-                clearTypingUiTimeoutRef.current = null;
-              }, 600);
+              setActiveTools([]);
+              setLivePreview(undefined);
+              setIsTyping(false);
+              activeRunTraceRef.current = undefined;
+              activeRunEnvelopeIdRef.current = undefined;
+              setActiveRunTrace(undefined);
+              clearTypingUiTimeoutRef.current = null;
               if (activeSessionId) {
                 void clearChatStreamSnapshot(activeSessionId);
                 notifyChatStreamSnapshot({
@@ -1307,6 +1746,14 @@ export function usePlannerChat(
               setActiveTools([]);
               setLivePreview(undefined);
               setIsTyping(false);
+              pendingFinalTraceTargetRef.current = undefined;
+              suppressActiveRunTraceRef.current = true;
+              if (activeRunEnvelopeIdRef.current) {
+                void markEnvelopeOrphaned(activeRunEnvelopeIdRef.current);
+              }
+              activeRunTraceRef.current = undefined;
+              activeRunEnvelopeIdRef.current = undefined;
+              setActiveRunTrace(undefined);
               clearTypingUiTimeoutRef.current = null;
             }, 0);
             if (activeSessionId) {
@@ -1346,285 +1793,6 @@ export function usePlannerChat(
             }
 
             setActiveDomainSession(null);
-            break;
-          }
-
-          case "AbilityActivated": {
-            const { ability_tool_name, ability, payload, encrypted_payload } =
-              streamEvent.data as {
-                ability_tool_name: string;
-                ability?: string;
-                payload?: { task_preview?: string };
-                encrypted_payload?: EncryptedPayload;
-              };
-            void (async () => {
-              const encryptedData = await resolveEncryptedPayloadJson<{
-                task_preview?: string;
-              }>(encrypted_payload);
-              const resolvedTaskPreview = encryptedData?.task_preview
-                ? String(encryptedData.task_preview)
-                : payload?.task_preview
-                  ? String(payload.task_preview)
-                  : undefined;
-              setTypingIfDelivered();
-              setLivePreview((prev) =>
-                appendPreview(prev, resolvedTaskPreview),
-              );
-              setActiveTools((prev) => {
-                const existing = prev.find(
-                  (tool) => tool.name === ability_tool_name,
-                );
-                const abilityArgs = normalizeToolCallArgs(
-                  resolvedTaskPreview
-                    ? {
-                        name: ability,
-                        input: resolvedTaskPreview,
-                      }
-                    : undefined,
-                );
-                if (existing) {
-                  return [
-                    {
-                      ...existing,
-                      args: existing.args || abilityArgs,
-                      status: "running",
-                      textPreview: appendPreview(
-                        existing.textPreview,
-                        resolvedTaskPreview,
-                      ),
-                      outputPreview: undefined,
-                      errorPreview: undefined,
-                    },
-                  ];
-                }
-                return [
-                  {
-                    name: ability_tool_name,
-                    args: abilityArgs,
-                    textPreview: resolvedTaskPreview,
-                    status: "running",
-                    children: [],
-                  },
-                ];
-              });
-            })();
-            break;
-          }
-
-          case "AbilityCompleted": {
-            const { ability_tool_name, success, payload, encrypted_payload } =
-              streamEvent.data as {
-                ability_tool_name: string;
-                success: boolean;
-                payload?: { result_preview?: string };
-                encrypted_payload?: EncryptedPayload;
-              };
-            void (async () => {
-              const encryptedData = await resolveEncryptedPayloadJson<{
-                result_preview?: string;
-              }>(encrypted_payload);
-              const resolvedResultPreview = encryptedData?.result_preview
-                ? String(encryptedData.result_preview)
-                : payload?.result_preview
-                  ? String(payload.result_preview)
-                  : undefined;
-              setTypingIfDelivered();
-              setLivePreview((prev) =>
-                appendPreview(prev, resolvedResultPreview),
-              );
-              setActiveTools((prev) =>
-                prev.map((tool) =>
-                  tool.name === ability_tool_name
-                    ? {
-                        ...tool,
-                        status: success ? "completed" : "failed",
-                        textPreview: appendPreview(
-                          tool.textPreview,
-                          resolvedResultPreview,
-                        ),
-                        outputPreview: isAbilityTool(ability_tool_name)
-                          ? undefined
-                          : success
-                            ? resolvedResultPreview
-                            : tool.outputPreview,
-                        errorPreview: isAbilityTool(ability_tool_name)
-                          ? undefined
-                          : success
-                            ? tool.errorPreview
-                            : resolvedResultPreview,
-                      }
-                    : tool,
-                ),
-              );
-            })();
-            break;
-          }
-
-          case "DelegationStarted": {
-            const {
-              delegate_tool_name,
-              target_agent,
-              payload,
-              encrypted_payload,
-            } = streamEvent.data as {
-              delegate_tool_name: string;
-              target_agent: string;
-              payload?: { task_preview?: string };
-              encrypted_payload?: EncryptedPayload;
-            };
-            void (async () => {
-              const encryptedData = await resolveEncryptedPayloadJson<{
-                task_preview?: string;
-              }>(encrypted_payload);
-              const resolvedTaskPreview = encryptedData?.task_preview
-                ? String(encryptedData.task_preview)
-                : payload?.task_preview
-                  ? String(payload.task_preview)
-                  : undefined;
-              const delegationPreview = target_agent
-                ? `Delegating to ${target_agent}${resolvedTaskPreview ? `\n\n${resolvedTaskPreview}` : ""}`
-                : resolvedTaskPreview;
-              setTypingIfDelivered();
-              setLivePreview((prev) => appendPreview(prev, delegationPreview));
-              setActiveTools((prev) => {
-                const existing = prev.find(
-                  (tool) => tool.name === delegate_tool_name,
-                );
-                if (existing) {
-                  return prev.map((tool) =>
-                    tool.name === delegate_tool_name
-                      ? {
-                          ...tool,
-                          args: target_agent || tool.args,
-                          status: "running",
-                          textPreview: appendPreview(
-                            tool.textPreview,
-                            delegationPreview,
-                          ),
-                          outputPreview: undefined,
-                          errorPreview: undefined,
-                        }
-                      : tool,
-                  );
-                }
-                return [
-                  {
-                    name: delegate_tool_name,
-                    args: target_agent || "",
-                    textPreview: delegationPreview,
-                    status: "running",
-                    children: [],
-                  },
-                ];
-              });
-            })();
-            break;
-          }
-
-          case "DelegationCompleted": {
-            const { delegate_tool_name, success, payload, encrypted_payload } =
-              streamEvent.data as {
-                delegate_tool_name: string;
-                success: boolean;
-                payload?: { result_preview?: string };
-                encrypted_payload?: EncryptedPayload;
-              };
-            void (async () => {
-              const encryptedData = await resolveEncryptedPayloadJson<{
-                result_preview?: string;
-              }>(encrypted_payload);
-              const resolvedResultPreview = encryptedData?.result_preview
-                ? String(encryptedData.result_preview)
-                : payload?.result_preview
-                  ? String(payload.result_preview)
-                  : undefined;
-              setTypingIfDelivered();
-              setLivePreview((prev) =>
-                appendPreview(prev, resolvedResultPreview),
-              );
-              setActiveTools((prev) =>
-                prev.map((tool) =>
-                  tool.name === delegate_tool_name
-                    ? {
-                        ...tool,
-                        status: success ? "completed" : "failed",
-                        textPreview: appendPreview(
-                          tool.textPreview,
-                          resolvedResultPreview,
-                        ),
-                        outputPreview: undefined,
-                        errorPreview: undefined,
-                      }
-                    : tool,
-                ),
-              );
-            })();
-            break;
-          }
-
-          case "HookActivated": {
-            const {
-              hook,
-              hook_event,
-              hook_type,
-              source,
-              payload,
-              encrypted_payload,
-            } = streamEvent.data as {
-              hook: string;
-              hook_event: string;
-              hook_type: string;
-              source: string;
-              payload?: {
-                command?: string;
-                command_name?: string;
-                display_name?: string;
-                matcher?: string;
-              };
-              encrypted_payload?: EncryptedPayload;
-            };
-            void (async () => {
-              const encryptedData = await resolveEncryptedPayloadJson<{
-                command?: string;
-                command_name?: string;
-                display_name?: string;
-                matcher?: string;
-              }>(encrypted_payload);
-              const resolvedPayload = encryptedData ?? payload;
-              const hookName = hook || resolvedPayload?.display_name || "hook";
-              const hookToolName = hookToolDisplayName(hookName, hook_event);
-              const hookArgs = normalizeToolCallArgs({
-                event: hook_event,
-                type: hook_type,
-                source,
-                command: resolvedPayload?.command,
-                matcher: resolvedPayload?.matcher,
-              });
-              setTypingIfDelivered();
-              setActiveTools((prev) => {
-                const next = {
-                  name: hookToolName,
-                  args: hookArgs,
-                  status: "completed" as const,
-                  children: [],
-                };
-                const existing = prev.find((tool) => tool.name === hookToolName);
-                if (!existing) {
-                  return [...prev, next];
-                }
-                return prev.map((tool) =>
-                  tool.name === hookToolName
-                    ? {
-                        ...tool,
-                        args: hookArgs || tool.args,
-                        status: "completed" as const,
-                        outputPreview: undefined,
-                        errorPreview: undefined,
-                      }
-                    : tool,
-                );
-              });
-            })();
             break;
           }
 
@@ -1723,7 +1891,9 @@ export function usePlannerChat(
               setTypingIfDelivered();
               setLivePreview((prev) => appendPreview(prev, outputPreview));
               setActiveTools((prev) => {
-                const existing = prev.find((tool) => tool.name === hookToolName);
+                const existing = prev.find(
+                  (tool) => tool.name === hookToolName,
+                );
                 if (!existing) {
                   return [
                     ...prev,
@@ -1750,219 +1920,6 @@ export function usePlannerChat(
                 );
               });
             })();
-            break;
-          }
-
-          case "ToolCalls": {
-            const { tool_calls, parent_tool_name, payload, encrypted_payload } =
-              streamEvent.data as {
-                tool_calls: { tool_name: string; tool_args?: unknown }[];
-                parent_tool_name?: string;
-                payload?: { text_preview?: string };
-                encrypted_payload?: EncryptedPayload;
-              };
-            void (async () => {
-              const encryptedData = await resolveEncryptedPayloadJson<{
-                text_preview?: string;
-                tool_args?: unknown[] | unknown;
-                tool_calls?: { tool_name: string; tool_args?: unknown }[];
-              }>(encrypted_payload);
-              const encryptedCalls = Array.isArray(encryptedData?.tool_calls)
-                ? encryptedData.tool_calls
-                : [];
-              const encryptedArgs = Array.isArray(encryptedData?.tool_args)
-                ? encryptedData.tool_args
-                : [];
-              const resolvedToolCalls = tool_calls.map((call, index) => {
-                const encryptedCall = encryptedCalls.find(
-                  (item) => item.tool_name === call.tool_name,
-                );
-                return {
-                  ...call,
-                  tool_args:
-                    call.tool_args ??
-                    encryptedCall?.tool_args ??
-                    encryptedArgs[index],
-                };
-              });
-              const toolNames = resolvedToolCalls.map((call) => call.tool_name);
-              const resolvedTextPreview = encryptedData?.text_preview
-                ? String(encryptedData.text_preview)
-                : payload?.text_preview
-                  ? String(payload.text_preview)
-                  : undefined;
-              if (parent_tool_name) {
-                const parentArgs = normalizeToolCallArgs(
-                  resolvedToolCalls.find((call) => call.tool_name === parent_tool_name)
-                    ?.tool_args,
-                );
-                const newChildren = resolvedToolCalls
-                  .filter((call) => call.tool_name !== parent_tool_name)
-                  .map((call) => ({
-                    name: call.tool_name,
-                    args: normalizeToolCallArgs(call.tool_args),
-                    textPreview: undefined,
-                    status: "running" as const,
-                  }));
-                if (newChildren.length === 0) {
-                  return;
-                }
-                setTypingIfDelivered();
-                setLivePreview((prev) =>
-                  appendPreview(prev, resolvedTextPreview),
-                );
-                setActiveTools((prev) => {
-                  const existing = prev.find(
-                    (tool) => tool.name === parent_tool_name,
-                  );
-                  const nextTools = !existing
-                    ? [
-                        ...prev,
-                        {
-                          name: parent_tool_name,
-                          args: parentArgs,
-                          textPreview: resolvedTextPreview,
-                          status: "running" as const,
-                          children: newChildren,
-                        },
-                      ]
-                    : prev.map((tool) => {
-                        if (tool.name !== parent_tool_name) return tool;
-                        const children = [...(tool.children ?? [])];
-                        for (const child of newChildren) {
-                          const existingChildIndex = children.findIndex(
-                            (existingChild) =>
-                              existingChild.name === child.name &&
-                              (!existingChild.status ||
-                                existingChild.status === "running"),
-                          );
-                          if (existingChildIndex === -1) {
-                            children.push(child);
-                          } else {
-                            children[existingChildIndex] = {
-                              ...children[existingChildIndex],
-                              ...child,
-                            };
-                          }
-                        }
-                        return {
-                          ...tool,
-                          args: parentArgs || tool.args,
-                          textPreview: appendPreview(
-                            tool.textPreview,
-                            resolvedTextPreview,
-                          ),
-                          children,
-                        };
-                      });
-                  return nextTools;
-                });
-                return;
-              }
-              setTypingIfDelivered();
-              setLivePreview((prev) =>
-                appendPreview(prev, resolvedTextPreview),
-              );
-              setActiveTools((prev) => {
-                const nextTools =
-                  toolNames.length === 1 && isAbilityTool(toolNames[0])
-                    ? [
-                        {
-                          name: toolNames[0],
-                          args: normalizeToolCallArgs(
-                            resolvedToolCalls[0]?.tool_args,
-                          ),
-                          textPreview: resolvedTextPreview,
-                          status: "running" as const,
-                          children: [],
-                        },
-                      ]
-                    : (() => {
-                        const previousPreview =
-                          prev[0]?.textPreview?.trim() ?? "";
-                        const nextPreview = resolvedTextPreview?.trim()
-                          ? previousPreview
-                            ? `${previousPreview}\n\n${resolvedTextPreview.trim()}`
-                            : resolvedTextPreview.trim()
-                          : previousPreview;
-                        return resolvedToolCalls.map((call) => ({
-                          name: call.tool_name,
-                          args: normalizeToolCallArgs(call.tool_args),
-                          textPreview: nextPreview || undefined,
-                          status: "running" as const,
-                          children: [],
-                        }));
-                      })();
-                return nextTools;
-              });
-            })();
-            break;
-          }
-
-          case "ToolCompleted": {
-            const { tool_name, success, parent_tool_name } =
-              streamEvent.data as {
-                tool_name: string;
-                success: boolean;
-                parent_tool_name?: string;
-              };
-            if (parent_tool_name) {
-              if (tool_name === parent_tool_name) {
-                return;
-              }
-              setTypingIfDelivered();
-              setActiveTools((prev) =>
-                prev.map((tool) => {
-                  if (tool.name !== parent_tool_name) return tool;
-                  const children = [...(tool.children ?? [])];
-                  const idx = [...children]
-                    .reverse()
-                    .findIndex(
-                      (child) =>
-                        child.name === tool_name &&
-                        (!child.status || child.status === "running"),
-                    );
-                  if (idx !== -1) {
-                    const realIdx = children.length - 1 - idx;
-                    children[realIdx] = {
-                      ...children[realIdx],
-                      status: success ? "completed" : "failed",
-                      outputPreview: undefined,
-                      errorPreview: undefined,
-                    };
-                  }
-                  return { ...tool, children };
-                }),
-              );
-              break;
-            }
-            if (isAbilityTool(tool_name)) {
-              setTypingIfDelivered();
-              setActiveTools((prev) =>
-                prev.map((tool) =>
-                  tool.name === tool_name
-                    ? {
-                        ...tool,
-                        status: success ? "completed" : "failed",
-                      }
-                    : tool,
-                ),
-              );
-              break;
-            }
-            setTypingIfDelivered();
-            setActiveTools((prev) =>
-              prev.map((tool) =>
-                tool.name === tool_name
-                  ? {
-                      ...tool,
-                      status: success ? "completed" : "failed",
-                      outputPreview: undefined,
-                      errorPreview: undefined,
-                    }
-                  : tool,
-              ),
-            );
             break;
           }
 
@@ -2082,6 +2039,7 @@ export function usePlannerChat(
       if (!trimmed || !activeSessionId) return;
 
       const msgId = generateId();
+      suppressActiveRunTraceRef.current = false;
       const userMsg: ChatMessage = {
         id: msgId,
         role: "user",
@@ -2097,6 +2055,14 @@ export function usePlannerChat(
         optimisticUserMessageIdRef.current = null;
         awaitingDeliveryRef.current = false;
         setIsTyping(false);
+        pendingFinalTraceTargetRef.current = undefined;
+        suppressActiveRunTraceRef.current = true;
+        if (activeRunEnvelopeIdRef.current) {
+          void markEnvelopeOrphaned(activeRunEnvelopeIdRef.current);
+        }
+        activeRunTraceRef.current = undefined;
+        activeRunEnvelopeIdRef.current = undefined;
+        setActiveRunTrace(undefined);
         setMessages((prev) =>
           prev.map((message) =>
             message.id === msgId ? { ...message, status: "failed" } : message,
@@ -2152,6 +2118,11 @@ export function usePlannerChat(
       responsePersistedRef.current = false;
       responseIdRef.current = generateId();
       setLivePreview(undefined);
+      pendingFinalTraceTargetRef.current = undefined;
+      suppressActiveRunTraceRef.current = false;
+      activeRunTraceRef.current = undefined;
+      activeRunEnvelopeIdRef.current = undefined;
+      setActiveRunTrace(undefined);
       setIsTyping(false);
 
       if (activeSessionId) {
@@ -2229,9 +2200,14 @@ export function usePlannerChat(
           const sessionId = activeSessionId;
           const resolvedAgentId = agentId;
           if (!sessionId || !resolvedAgentId) return;
-          const page = await fetchChatMessages(projectId, resolvedAgentId, {
-            session_id: sessionId,
-          }, targetType);
+          const page = await fetchChatMessages(
+            projectId,
+            resolvedAgentId,
+            {
+              session_id: sessionId,
+            },
+            targetType,
+          );
           const loaded: ChatMessage[] = await Promise.all(
             page.messages.reverse().map(async (message) => ({
               id: message.id,
@@ -2242,8 +2218,10 @@ export function usePlannerChat(
               status: message.sender === "user" ? "delivered" : undefined,
             })),
           );
-          setMessages((prev) => mergeLoadedMessages(loaded, prev));
+          const loadedWithEnvelopes = await hydrateRunEnvelopeLinks(loaded);
+          setMessages((prev) => mergeLoadedMessages(loadedWithEnvelopes, prev));
           setHasMore(page.has_more);
+          void gcSessionRunEnvelopes(sessionId, currentUser?.org_id);
         })
         .catch((err) => {
           console.error("Failed to stream chat:", err);
@@ -2283,7 +2261,16 @@ export function usePlannerChat(
           }, 0);
         });
     },
-    [projectId, agentId, activeDomainSession, activeSessionId, userId],
+    [
+      projectId,
+      agentId,
+      activeDomainSession,
+      activeSessionId,
+      currentUser?.org_id,
+      userId,
+      targetType,
+      isAgentTarget,
+    ],
   );
 
   // Enter a domain by command (e.g. "#creator")
@@ -2361,7 +2348,14 @@ export function usePlannerChat(
       );
       console.error("Failed to exit domain:", err);
     }
-  }, [projectId, agentId, activeSessionId, activeDomainSession, domainRestoreKey, isAgentTarget]);
+  }, [
+    projectId,
+    agentId,
+    activeSessionId,
+    activeDomainSession,
+    domainRestoreKey,
+    isAgentTarget,
+  ]);
 
   // Cancel the active domain (discard artifact)
   const cancelDomain = useCallback(async () => {
@@ -2386,7 +2380,14 @@ export function usePlannerChat(
       );
       console.error("Failed to cancel domain:", err);
     }
-  }, [projectId, agentId, activeSessionId, activeDomainSession, domainRestoreKey, isAgentTarget]);
+  }, [
+    projectId,
+    agentId,
+    activeSessionId,
+    activeDomainSession,
+    domainRestoreKey,
+    isAgentTarget,
+  ]);
 
   const deleteMessage = useCallback(
     (messageId: string) => {
@@ -2408,6 +2409,10 @@ export function usePlannerChat(
       // Fall back to messageId itself for messages loaded from the API
       // (which already use the server UUID as their id).
       const deleteId = dbId ?? messageId;
+      void deleteEnvelopeForMessage(deleteId);
+      if (deleteId !== messageId) {
+        void deleteEnvelopeForMessage(messageId);
+      }
       const isUuid =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
           deleteId,
@@ -2430,6 +2435,7 @@ export function usePlannerChat(
       agentCacheRef.current.delete(cacheKey(agentId, activeSessionId));
     }
     if (activeSessionId) {
+      void deleteEnvelopesForSession(activeSessionId);
       archiveChatSession(activeSessionId)
         .then(async () => {
           setSessions((prev) => prev.filter((s) => s.id !== activeSessionId));
@@ -2450,7 +2456,14 @@ export function usePlannerChat(
         })
         .catch((err) => console.error("Failed to archive session:", err));
     }
-  }, [projectId, agentId, activeSessionId, cacheKey, isAgentTarget, targetType]);
+  }, [
+    projectId,
+    agentId,
+    activeSessionId,
+    cacheKey,
+    isAgentTarget,
+    targetType,
+  ]);
 
   const cancelResponse = useCallback(() => {
     if (!isTyping) return;
@@ -2458,6 +2471,13 @@ export function usePlannerChat(
     // Clear local typing state immediately
     responseIdRef.current = null;
     setIsTyping(false);
+    pendingFinalTraceTargetRef.current = undefined;
+    if (activeRunEnvelopeIdRef.current) {
+      void markEnvelopeOrphaned(activeRunEnvelopeIdRef.current);
+    }
+    activeRunTraceRef.current = undefined;
+    activeRunEnvelopeIdRef.current = undefined;
+    setActiveRunTrace(undefined);
     streamAbortRef.current?.abort();
     streamAbortRef.current = null;
     if (activeSessionId) {
@@ -2483,7 +2503,7 @@ export function usePlannerChat(
       // Save current to cache
       if (agentId) {
         agentCacheRef.current.set(cacheKey(agentId, activeSessionId), {
-          messages,
+          messages: compactDuplicateChatMessages(messages),
           hasMore,
         });
       }
@@ -2628,6 +2648,7 @@ export function usePlannerChat(
   return {
     messages,
     livePreview,
+    activeRunTrace,
     sendMessage,
     deleteMessage,
     clearMessages,

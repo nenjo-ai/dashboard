@@ -29,6 +29,7 @@ import type {
   DomainSession,
   ChatMessagePage,
   ChatSession,
+  QuotaStatus,
   PromptContextVariableGroup,
   ChatSessionExtended,
   PushConfigResponse,
@@ -59,10 +60,6 @@ const FETCH_TIMEOUT_MS = 15000;
 const RATE_LIMIT_MAX_ATTEMPTS = 3;
 const RATE_LIMIT_FALLBACK_DELAY_MS = 1000;
 const RATE_LIMIT_MAX_DELAY_MS = 10000;
-const CATALOG_CACHE_VERSION = 2;
-const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
-const CATALOG_CACHE_MAX_BYTES = 512 * 1024;
-const CATALOG_CACHE_PREFIX = "nenjo.catalog-cache";
 const DOCUMENT_CONTENT_CACHE_TTL_MS = 5 * 60 * 1000;
 const PACKAGE_INSTALL_POLL_INTERVAL_MS = 2000;
 const PACKAGE_INSTALL_POLL_TIMEOUT_MS = 5 * 60 * 1000;
@@ -307,24 +304,12 @@ export async function fetcher<T>(url: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-interface CatalogCacheEntry<T> {
-  version: number;
-  orgId: string;
-  url: string;
-  savedAt: number;
-  data: T;
-}
-
 function activeCatalogOrgId(): string | null {
   return _getActiveOrgId?.()?.trim() || null;
 }
 
 function scopedCacheKey(orgId: string, url: string): string {
   return `${orgId}:${url}`;
-}
-
-function catalogStorageKey(orgId: string, url: string): string {
-  return `${CATALOG_CACHE_PREFIX}:${CATALOG_CACHE_VERSION}:${orgId}:${url}`;
 }
 
 function isCatalogUrl(url: string): boolean {
@@ -400,79 +385,9 @@ function clearDocumentContentCache(url?: string): void {
   });
 }
 
-function readCatalogCache<T>(url: string): T | null {
-  if (typeof window === "undefined") return null;
-
-  const orgId = activeCatalogOrgId();
-  if (!orgId) return null;
-
-  try {
-    const raw = window.localStorage.getItem(catalogStorageKey(orgId, url));
-    if (!raw) return null;
-
-    const entry = JSON.parse(raw) as CatalogCacheEntry<T>;
-    const isValid =
-      entry.version === CATALOG_CACHE_VERSION &&
-      entry.orgId === orgId &&
-      entry.url === url &&
-      Date.now() - entry.savedAt <= CATALOG_CACHE_TTL_MS;
-
-    if (!isValid) {
-      window.localStorage.removeItem(catalogStorageKey(orgId, url));
-      return null;
-    }
-
-    return entry.data;
-  } catch {
-    return null;
-  }
-}
-
-function writeCatalogCache<T>(url: string, data: T): void {
-  if (typeof window === "undefined") return;
-
-  const orgId = activeCatalogOrgId();
-  if (!orgId) return;
-
-  try {
-    const entry: CatalogCacheEntry<T> = {
-      version: CATALOG_CACHE_VERSION,
-      orgId,
-      url,
-      savedAt: Date.now(),
-      data,
-    };
-    const serialized = JSON.stringify(entry);
-    if (serialized.length > CATALOG_CACHE_MAX_BYTES) return;
-
-    window.localStorage.setItem(catalogStorageKey(orgId, url), serialized);
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
 function clearCatalogCacheMatching(
   shouldClear: (url: string) => boolean,
 ): void {
-  if (typeof window === "undefined") return;
-
-  const orgId = activeCatalogOrgId();
-  const prefix = orgId
-    ? `${CATALOG_CACHE_PREFIX}:${CATALOG_CACHE_VERSION}:${orgId}:`
-    : `${CATALOG_CACHE_PREFIX}:`;
-
-  try {
-    for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
-      const key = window.localStorage.key(index);
-      if (!key?.startsWith(prefix)) continue;
-      const cachedUrl = key.slice(prefix.length);
-      if (!shouldClear(cachedUrl)) continue;
-      window.localStorage.removeItem(key);
-    }
-  } catch {
-    // Ignore storage failures.
-  }
-
   void mutateSWR((key) => typeof key === "string" && shouldClear(key));
 }
 
@@ -483,18 +398,12 @@ export function clearCatalogCache(url?: string): void {
 }
 
 export async function catalogFetcher<T>(url: string): Promise<T> {
-  const cached = readCatalogCache<T>(url);
-  if (cached) return cached;
-
-  const data = await fetcher<T>(url);
-  writeCatalogCache(url, data);
-  return data;
+  return fetcher<T>(url);
 }
 
 export const catalogSWROptions = {
-  revalidateOnFocus: false,
-  dedupingInterval: CATALOG_CACHE_TTL_MS,
-  keepPreviousData: true,
+  revalidateOnFocus: true,
+  dedupingInterval: 0,
 };
 
 function invalidateProjectCatalogCache(): void {
@@ -1890,6 +1799,14 @@ export function orgMemberUrl(orgId: string, userId: string): string {
 
 export function orgInvitationsUrl(orgId: string): string {
   return `${API_V1}/orgs/${orgId}/invitations`;
+}
+
+export function orgQuotasUrl(orgId: string): string {
+  return `${API_V1}/orgs/${orgId}/quotas`;
+}
+
+export async function fetchQuotaStatus(orgId: string): Promise<QuotaStatus> {
+  return fetcher<QuotaStatus>(orgQuotasUrl(orgId));
 }
 
 export function orgInvitationUrl(orgId: string, invitationId: string): string {
