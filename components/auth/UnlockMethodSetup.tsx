@@ -5,7 +5,6 @@ import { useUser } from "@clerk/nextjs";
 import { KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { cn } from "@/lib/cn";
 import { canUsePasskeyPrf, registerPasskeyUnlock } from "@/lib/localUnlock";
 import { setupPasswordUnlock } from "@/lib/cryptoContent";
 
@@ -30,6 +29,12 @@ export function UnlockMethodSetup({
   const [busy, setBusy] = useState<"passkey" | "password" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completed, setCompleted] = useState<string | null>(null);
+  const normalizedPassword = password.trim();
+  const normalizedConfirmPassword = confirmPassword.trim();
+  const passwordTooShort =
+    normalizedPassword.length > 0 && normalizedPassword.length < 12;
+  const confirmPasswordTooShort =
+    normalizedConfirmPassword.length > 0 && normalizedConfirmPassword.length < 12;
 
   useEffect(() => {
     setPasskeyAvailable(canUsePasskeyPrf());
@@ -59,16 +64,20 @@ export function UnlockMethodSetup({
       setError("Sign in before setting up passphrase unlock.");
       return;
     }
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+    if (normalizedPassword.length < 12 || normalizedConfirmPassword.length < 12) {
+      setError("Use a passphrase with at least 12 characters.");
+      return;
+    }
+    if (normalizedPassword !== normalizedConfirmPassword) {
+      setError("Passphrases do not match.");
       return;
     }
     setBusy("password");
     try {
-      await setupPasswordUnlock(password, accountId);
+      await setupPasswordUnlock(normalizedPassword, accountId);
       setPassword("");
       setConfirmPassword("");
-      setCompleted("Password unlock is ready on this browser.");
+      setCompleted("Passphrase unlock is ready on this browser.");
       onComplete?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to set passphrase unlock.");
@@ -80,13 +89,13 @@ export function UnlockMethodSetup({
   return (
     <section className={compact ? "space-y-4" : "rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800"}>
       <div>
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-deep-space-blue-500" />
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+        <div className="flex items-center gap-3">
+          <ShieldCheck className="h-5 w-5 text-deep-space-blue-500" />
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             Local vault unlock
           </h3>
         </div>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        <p className="mt-2 text-sm leading-6 text-gray-500 dark:text-gray-400">
           Add device unlock or a passphrase for this browser&apos;s encrypted vault.
         </p>
       </div>
@@ -103,60 +112,78 @@ export function UnlockMethodSetup({
         </div>
       ) : null}
 
-      <div className={cn("grid gap-3", showDeviceUnlock && showPasswordUnlock && "md:grid-cols-2")}>
+      <div className="mt-5 space-y-4">
         {showDeviceUnlock ? (
-          <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-            <div className="flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-gray-500" />
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Device unlock</p>
-            </div>
-            <p className="mt-1 min-h-10 text-xs leading-5 text-gray-500 dark:text-gray-400">
-              Uses this device&apos;s passkey, Touch ID, or native unlock prompt when supported.
-            </p>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="mt-3 w-full"
-              disabled={!passkeyAvailable || busy !== null}
-              isLoading={busy === "passkey"}
-              onClick={() => void handlePasskey()}
-            >
-              {passkeyAvailable ? "Set Up Device Unlock" : "Device Unlock Unavailable"}
-            </Button>
-          </div>
-        ) : null}
-
-        {showPasswordUnlock ? (
-          <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-            <div className="flex items-center gap-2">
-              <LockKeyhole className="h-4 w-4 text-gray-500" />
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Passphrase</p>
-            </div>
-            <div className="mt-3 space-y-2">
-              <Input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Passphrase"
-              />
-              <Input
-                type="password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                placeholder="Confirm passphrase"
-              />
+          <div className="rounded-lg border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 shrink-0 text-gray-500" />
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Device unlock</p>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                  Uses this device&apos;s passkey, Touch ID, or native unlock prompt when supported.
+                </p>
+              </div>
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
-                className="w-full"
-                disabled={busy !== null || password.length < 12 || confirmPassword.length < 12}
-                isLoading={busy === "password"}
-                onClick={() => void handlePassword()}
+                className="w-full sm:w-auto sm:min-w-52"
+                disabled={!passkeyAvailable || busy !== null}
+                isLoading={busy === "passkey"}
+                onClick={() => void handlePasskey()}
               >
-                Set Passphrase Unlock
+                {passkeyAvailable ? "Set Up Device Unlock" : "Device Unlock Unavailable"}
               </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {showPasswordUnlock ? (
+          <div className="rounded-lg border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900">
+            <div className="flex items-center gap-2">
+              <LockKeyhole className="h-4 w-4 shrink-0 text-gray-500" />
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Passphrase</p>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+              Keep a local passphrase as a backup unlock method for this browser.
+            </p>
+            <div className="mt-5 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Passphrase"
+                  error={passwordTooShort}
+                />
+                <Input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  placeholder="Confirm passphrase"
+                  error={confirmPasswordTooShort}
+                />
+              </div>
+              {passwordTooShort || confirmPasswordTooShort ? (
+                <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
+                  Use at least 12 characters.
+                </p>
+              ) : null}
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="w-full sm:w-auto sm:min-w-52"
+                  disabled={busy !== null}
+                  isLoading={busy === "password"}
+                  onClick={() => void handlePassword()}
+                >
+                  Set Passphrase Unlock
+                </Button>
+              </div>
             </div>
           </div>
         ) : null}

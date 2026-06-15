@@ -28,7 +28,6 @@ import {
   clearStoredRecoveryBundle,
   clearStoredAccountContentKey,
   ensureAccountSigningKeyPair,
-  generateAccountContentKey,
   importWrappedAccountContentKeyForDevice,
   importWrappedOrgContentKeyFromRecovery,
   loadAccountSigningPublicKey,
@@ -166,11 +165,13 @@ export function ContentEncryptionSection({
 }) {
   const { userId, currentUser } = useCurrentUser();
   const [busyWorkerId, setBusyWorkerId] = useState<string | null>(null);
+  const [approvingDeviceId, setApprovingDeviceId] = useState<string | null>(null);
   const [removingWorkerId, setRemovingWorkerId] = useState<string | null>(null);
   const [removingDeviceId, setRemovingDeviceId] = useState<string | null>(null);
   const [removingPendingDeviceId, setRemovingPendingDeviceId] = useState<string | null>(null);
+  const [deviceApprovalCodes, setDeviceApprovalCodes] = useState<Record<string, string>>({});
   const [autoRegisteringDevice, setAutoRegisteringDevice] = useState(false);
-  const [keyVersion, setKeyVersion] = useState(1);
+  const keyVersion = 1;
   const [ackPreview, setAckPreview] = useState<string | null>(null);
   const [ackLoading, setAckLoading] = useState(true);
   const [signingKeyPreview, setSigningKeyPreview] = useState<string | null>(null);
@@ -376,12 +377,6 @@ export function ContentEncryptionSection({
   const showDevices = mode === "all" || mode === "devices";
   const showWorkers = mode === "all" || mode === "workers";
 
-  const handleGenerateKey = async () => {
-    const next = await generateAccountContentKey();
-    setAckPreview(next);
-    toast.success("Stored an encrypted local account content key on this device.");
-  };
-
   const handleClearKey = async () => {
     await clearStoredAccountContentKey();
     setAckPreview(null);
@@ -504,16 +499,35 @@ export function ContentEncryptionSection({
   };
 
   const handleApproveDevice = async (enrollment: DeviceEnrollmentPayload) => {
-    const wrappedAck = await wrapAccountContentKeyForWorker({
-      workerPublicKey: enrollment.enc_public_key,
-      keyVersion,
-    });
-    await approveDeviceEnrollment(enrollment.device_id, {
-      wrapped_ack: wrappedAck,
-    });
-    setDeviceEnrollments(await listDeviceEnrollments().catch(() => []));
-    setTrustedDevices(await listTrustedDevices().catch(() => []));
-    toast.success("Device approved.");
+    const verificationCode = deviceApprovalCodes[enrollment.device_id]?.trim() ?? "";
+    if (!verificationCode) {
+      toast.error("Enter the verification code shown on the requesting device.");
+      return;
+    }
+
+    setApprovingDeviceId(enrollment.device_id);
+    try {
+      const wrappedAck = await wrapAccountContentKeyForWorker({
+        workerPublicKey: enrollment.enc_public_key,
+        keyVersion,
+      });
+      await approveDeviceEnrollment(enrollment.device_id, {
+        wrapped_ack: wrappedAck,
+        verification_code: verificationCode,
+      });
+      setDeviceApprovalCodes((prev) => {
+        const next = { ...prev };
+        delete next[enrollment.device_id];
+        return next;
+      });
+      setDeviceEnrollments(await listDeviceEnrollments().catch(() => []));
+      setTrustedDevices(await listTrustedDevices().catch(() => []));
+      toast.success("Device approved.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to approve device.");
+    } finally {
+      setApprovingDeviceId(null);
+    }
   };
 
   const handleRemoveTrustedDevice = async (device: TrustedDevicePayload) => {
@@ -534,6 +548,11 @@ export function ContentEncryptionSection({
     try {
       await deleteDeviceEnrollment(deviceId);
       setDeviceEnrollments((prev) => prev.filter((item) => item.device_id !== deviceId));
+      setDeviceApprovalCodes((prev) => {
+        const next = { ...prev };
+        delete next[deviceId];
+        return next;
+      });
       toast.success("Device request removed.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to remove device request.");
@@ -586,31 +605,9 @@ export function ContentEncryptionSection({
     <div className="space-y-6">
       {showDevices && (
         <SectionCard
-          title="Content"
-          description="Manage the account content key used to encrypt prompts, responses, and saved content, plus the recovery bundle for restoring access."
+          title="Recovery"
+          description="Manage the encrypted recovery bundle used to restore local access on this browser."
         >
-          <ItemRow
-            title="Account Content Key"
-            description={`Version ${keyVersion} · ${summarizeKey(ackPreview)}`}
-          >
-            <Button variant="primary" size="md" onClick={() => void handleGenerateKey()}>
-              {ackLoading ? "Loading..." : ackPreview ? "Rotate Key" : "Generate Key"}
-            </Button>
-          </ItemRow>
-
-          <div>
-            <label className="theme-text-muted block text-xs font-medium uppercase tracking-[0.2em]">
-              Key Version
-            </label>
-            <Input
-              type="number"
-              min={1}
-              value={String(keyVersion)}
-              onChange={(event) => setKeyVersion(Math.max(1, Number(event.target.value) || 1))}
-              className="mt-2 w-28"
-            />
-          </div>
-
           <ItemRow
             title="Recovery Bundle"
             description={
@@ -668,16 +665,40 @@ export function ContentEncryptionSection({
                   title={device.device_label || device.device_id}
                   description={device.device_id}
                 >
-                  {device.verification_code ? (
-                    <VerificationWarning code={device.verification_code} />
-                  ) : null}
-                  <Button variant="primary" size="sm" onClick={() => void handleApproveDevice(device)}>
-                    Approve
+                  <div className="flex w-full flex-col gap-2 sm:w-72">
+                    <Input
+                      value={deviceApprovalCodes[device.device_id] ?? ""}
+                      onChange={(event) =>
+                        setDeviceApprovalCodes((prev) => ({
+                          ...prev,
+                          [device.device_id]: event.target.value,
+                        }))
+                      }
+                      placeholder="Verification code"
+                      className="h-8 text-xs"
+                    />
+                    <p className="theme-text-muted text-xs leading-5">
+                      Enter the code shown on the requesting device before approving.
+                    </p>
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={
+                      approvingDeviceId === device.device_id ||
+                      !deviceApprovalCodes[device.device_id]?.trim()
+                    }
+                    onClick={() => void handleApproveDevice(device)}
+                  >
+                    {approvingDeviceId === device.device_id ? "Approving..." : "Approve"}
                   </Button>
                   <Button
                     variant="secondary"
                     size="sm"
-                    disabled={removingPendingDeviceId === device.device_id}
+                    disabled={
+                      removingPendingDeviceId === device.device_id ||
+                      approvingDeviceId === device.device_id
+                    }
                     onClick={() => void handleRemovePendingDeviceRequest(device.device_id)}
                   >
                     {removingPendingDeviceId === device.device_id ? "Removing..." : "Remove"}

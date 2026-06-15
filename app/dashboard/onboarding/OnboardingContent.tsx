@@ -17,7 +17,6 @@ import type {
 } from "@/lib/types";
 import {
   approveWorkerEnrollment,
-  approveDeviceEnrollment,
   bootstrapCurrentOrgContentKey,
   createOrganization,
   createModel,
@@ -1532,7 +1531,7 @@ function StepRestoreDevice({
                       </p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
                         {deviceEnrollmentId
-                          ? "Approve this request on another trusted device for this account."
+                          ? "Enter the code below in Settings on another trusted device before approving this request."
                           : registering
                             ? "Sending approval request..."
                             : "If another trusted device is available, you can send an approval request from here."}

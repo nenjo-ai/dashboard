@@ -419,6 +419,7 @@ export interface DeviceEnrollmentPayload {
 
 export interface ApproveDeviceEnrollmentRequest {
   wrapped_ack: WrappedAccountContentKey;
+  verification_code: string;
 }
 
 export interface WorkerCertificate {
