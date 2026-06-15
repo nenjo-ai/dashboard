@@ -7,6 +7,7 @@ import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
 export const metadata: Metadata = {
   title: "Privacy Policy",
   description: "Nenjo privacy policy.",
+  alternates: { canonical: "/privacy" },
 };
 
 async function getPrivacyHtml() {

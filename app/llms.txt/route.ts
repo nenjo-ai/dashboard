@@ -17,5 +17,17 @@ export function GET() {
     },
   }).index();
 
-  return new Response(text);
+  const preamble = `# Nenjo
+
+> Zero-trust platform for building and running teams of AI agents — together, on your terms.
+
+- Website: https://nenjo.ai
+- Documentation: https://nenjo.ai/docs
+- Full corpus: https://nenjo.ai/llms-full.txt
+- Preferred citation: https://nenjo.ai/docs
+- Contact: hello@nenjo.ai
+
+`;
+
+  return new Response(preamble + text);
 }

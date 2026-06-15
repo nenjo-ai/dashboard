@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 import {
   BadgeDollarSign,
+  BookOpen,
   Boxes,
   Braces,
   EyeOff,
@@ -178,7 +179,7 @@ export default function LandingPage() {
     <main className="nenjo-landing nenjo-light">
       <nav className="lp-nav" aria-label="Primary">
         <Link className="lp-brand" href="/" aria-label="Nenjo home">
-          <img src={NAV_LOGO} alt="" width="31" height="28" />
+          <img src={NAV_LOGO} alt="Nenjo" width="31" height="28" />
           <span>Nenjo</span>
         </Link>
         <div className="lp-nav-current" aria-live="polite">{currentSection}</div>
@@ -186,6 +187,10 @@ export default function LandingPage() {
           <Link className="lp-nav-ghost" href="/pricing">
             <BadgeDollarSign size={16} />
             Pricing
+          </Link>
+          <Link className="lp-nav-ghost" href="/docs">
+            <BookOpen size={16} />
+            Docs
           </Link>
           <a className="lp-nav-ghost" href="https://github.com/nenjo-ai/nenjo" target="_blank" rel="noreferrer">
             <Github size={16} />
@@ -210,6 +215,10 @@ export default function LandingPage() {
             <Link href="/pricing" onClick={() => setMenuOpen(false)}>
               <BadgeDollarSign size={16} />
               Pricing
+            </Link>
+            <Link href="/docs" onClick={() => setMenuOpen(false)}>
+              <BookOpen size={16} />
+              Docs
             </Link>
             <a
               href="https://github.com/nenjo-ai/nenjo"

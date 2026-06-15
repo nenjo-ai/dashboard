@@ -7,6 +7,7 @@ import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
 export const metadata: Metadata = {
   title: "Terms of Service",
   description: "Nenjo terms of service.",
+  alternates: { canonical: "/terms" },
 };
 
 async function getTermsHtml() {
