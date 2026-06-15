@@ -7,6 +7,11 @@ const config = {
   reactStrictMode: true,
   turbopack: {},
   allowedDevOrigins: ['192.168.1.228'],
+  // Ship the OG/Twitter card fonts (read at runtime via fs) with their routes.
+  outputFileTracingIncludes: {
+    '/opengraph-image': ['./app/_og/*.ttf'],
+    '/twitter-image': ['./app/_og/*.ttf'],
+  },
   async rewrites() {
     const rewrites = [
       {

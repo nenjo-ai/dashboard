@@ -11,12 +11,14 @@ import {
   Layers3,
   LayoutDashboard,
   Lock,
+  Menu,
   Network,
   PackageCheck,
   Play,
   RefreshCcw,
   ShieldCheck,
   Users,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -154,6 +156,7 @@ const navSections = [
 export default function LandingPage() {
   const [activePreview, setActivePreview] = useState(previewTabs[0]);
   const [currentSection, setCurrentSection] = useState(navSections[0].label);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const onScroll = () => {
@@ -186,13 +189,43 @@ export default function LandingPage() {
           </Link>
           <a className="lp-nav-ghost" href="https://github.com/nenjo-ai/nenjo" target="_blank" rel="noreferrer">
             <Github size={16} />
-            Star
+            GitHub
           </a>
           <Link className="lp-nav-cta" href="/dashboard/login">
             <LayoutDashboard size={16} />
-            Enter
+            Sign in
           </Link>
+          <button
+            className="lp-nav-burger"
+            type="button"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {menuOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
         </div>
+        {menuOpen && (
+          <div className="lp-nav-menu">
+            <Link href="/pricing" onClick={() => setMenuOpen(false)}>
+              <BadgeDollarSign size={16} />
+              Pricing
+            </Link>
+            <a
+              href="https://github.com/nenjo-ai/nenjo"
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => setMenuOpen(false)}
+            >
+              <Github size={16} />
+              GitHub
+            </a>
+            <Link href="/dashboard/login" onClick={() => setMenuOpen(false)}>
+              <LayoutDashboard size={16} />
+              Sign in
+            </Link>
+          </div>
+        )}
       </nav>
 
       <section className="lp-hero" id="hero">

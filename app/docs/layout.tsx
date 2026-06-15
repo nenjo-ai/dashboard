@@ -6,14 +6,7 @@ import type { ReactNode } from 'react';
 
 export default function Layout({ children }: { children: ReactNode }) {
   return (
-    <RootProvider
-      theme={{
-        enabled: true,
-        attribute: 'class',
-        storageKey: 'nenjo-theme',
-        defaultTheme: 'dark',
-      }}
-    >
+    <RootProvider theme={{ enabled: false }}>
       <DocsLayout tree={source.getPageTree()} {...baseOptions()}>
         {children}
       </DocsLayout>
