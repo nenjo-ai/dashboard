@@ -1066,6 +1066,53 @@ html{scroll-behavior:smooth}
   background: rgba(255, 255, 255, 0.38);
 }
 
+.nenjo-light .lp-nav-burger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.nenjo-light .lp-nav-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 190px;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  background: color-mix(in oklab, var(--paper-soft) 96%, transparent);
+  backdrop-filter: blur(22px);
+  box-shadow: 0 18px 44px rgba(43, 36, 23, 0.18);
+  z-index: 30;
+}
+
+.nenjo-light .lp-nav-menu a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  color: var(--ink);
+  font-family: var(--f-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nenjo-light .lp-nav-menu a:hover {
+  background: var(--paper-warm);
+}
+
 .nenjo-light .lp-hero,
 .nenjo-light .lp-section,
 .nenjo-light .lp-control-plane,
@@ -1900,6 +1947,35 @@ html{scroll-behavior:smooth}
   }
 }
 
+/* Short laptops (e.g. 1366x768): compress the hero so the primary CTA stays
+   above the fold, without shrinking the full-size hero on taller displays. */
+@media (min-width: 921px) and (max-height: 860px) {
+  .nenjo-light .lp-hero {
+    padding-top: clamp(86px, 11vh, 116px);
+    padding-bottom: 40px;
+    gap: clamp(30px, 4vw, 54px);
+    align-items: center;
+  }
+
+  .nenjo-light .lp-hero h1 {
+    margin-top: 14px;
+    font-size: clamp(52px, 6.4vw, 84px);
+  }
+
+  .nenjo-light .lp-hero-lede {
+    margin-top: 16px;
+    font-size: clamp(16px, 1.5vw, 20px);
+  }
+
+  .nenjo-light .lp-actions {
+    margin-top: 20px;
+  }
+
+  .nenjo-light .lp-hero-points {
+    margin-top: 16px;
+  }
+}
+
 @media (max-width: 560px) {
   .nenjo-light .lp-nav {
     top: 12px;
@@ -1926,30 +2002,21 @@ html{scroll-behavior:smooth}
   }
 
   .nenjo-light .lp-nav-current {
-    display: block;
-    justify-self: center;
-    max-width: 116px;
-    overflow: hidden;
-    color: var(--muted);
-    font-size: 9px;
-    letter-spacing: 0.13em;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: none;
   }
 
   .nenjo-light .lp-nav-actions {
     justify-self: end;
-    width: 38px;
+    width: auto;
     gap: 0;
   }
 
   .nenjo-light .lp-nav-cta {
-    width: 38px;
-    min-height: 38px;
-    padding: 0;
-    gap: 0;
-    font-size: 0;
-    box-shadow: none;
+    display: none;
+  }
+
+  .nenjo-light .lp-nav-burger {
+    display: inline-flex;
   }
 
   .nenjo-light .lp-nav-cta svg {
