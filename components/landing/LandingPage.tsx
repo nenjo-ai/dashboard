@@ -2,19 +2,21 @@
 
 /* eslint-disable @next/next/no-img-element */
 import {
-  ArrowRight,
   BadgeDollarSign,
   Boxes,
   Braces,
+  EyeOff,
   GitBranch,
   Github,
   Layers3,
   LayoutDashboard,
+  Lock,
   Network,
   PackageCheck,
   Play,
   RefreshCcw,
   ShieldCheck,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -82,6 +84,7 @@ const previewTabs = [
   {
     id: "packages",
     label: "packages",
+    icon: PackageCheck,
     title: "Package graph",
     summary: "Versioned knowledge and runtime units with explicit dependencies.",
     lines: [
@@ -95,6 +98,7 @@ const previewTabs = [
   {
     id: "knowledge",
     label: "knowledge graph",
+    icon: Network,
     title: "Knowledge graph",
     summary: "Documents become connected concepts agents can traverse.",
     lines: [
@@ -107,6 +111,7 @@ const previewTabs = [
   {
     id: "manifest",
     label: "agent manifest",
+    icon: Braces,
     title: "Manifest as code",
     summary: "Agent behavior lives in portable, reviewable package files.",
     lines: [
@@ -121,7 +126,8 @@ const previewTabs = [
   },
   {
     id: "routine",
-    label: "Routine Flow",
+    label: "routine flow",
+    icon: GitBranch,
     title: "Routine flow",
     summary: "DAG orchestration for long-running work, review loops, and retries.",
     lines: [
@@ -136,9 +142,11 @@ const previewTabs = [
 
 const navSections = [
   { id: "hero", label: "Overview" },
+  { id: "zero-trust", label: "Zero-trust" },
   { id: "packages", label: "Native packages" },
   { id: "control-plane", label: "Nenjo Cloud" },
   { id: "architecture", label: "Architecture" },
+  { id: "teams", label: "For teams" },
   { id: "how", label: "How it works" },
   { id: "builders", label: "Builders" },
 ];
@@ -190,34 +198,32 @@ export default function LandingPage() {
       <section className="lp-hero" id="hero">
         <div className="lp-hero-copy">
           <div className="lp-kicker">
+            <span>Zero-trust</span>
+            <span>Collaborative</span>
             <span>Open source</span>
-            <span>Rust-powered</span>
-            <span>Native packages</span>
           </div>
-          <h1>The modular agentic control plane.</h1>
+          <h1>The private, collaborative agentic workspace.</h1>
           <p className="lp-hero-lede">
-            Build, deploy, and evolve autonomous agents across your own apps and infrastructure with versioned packages for knowledge and runtime configuration.
+            Build and run teams of agents on a fully managed platform — with everything encrypted on your devices first, so not even Nenjo can read it.
           </p>
           <div className="lp-actions">
-            <a className="lp-button primary" href="https://github.com/nenjo-ai/nenjo" target="_blank" rel="noreferrer">
-              <Github size={18} />
-              Get started on GitHub
-            </a>
-            <Link className="lp-button secondary" href="/dashboard/login">
+            <Link className="lp-button primary" href="/dashboard/login">
               <LayoutDashboard size={18} />
-              Enter dashboard
+              Start free
             </Link>
-            <Link className="lp-link" href="/docs">
-              Read the docs <ArrowRight size={16} />
+            <Link className="lp-button secondary" href="/docs">
+              <Play size={18} />
+              Read the docs
             </Link>
-            <Link className="lp-link" href="/pricing">
-              View pricing <ArrowRight size={16} />
-            </Link>
+            <a className="lp-link" href="https://github.com/nenjo-ai/nenjo" target="_blank" rel="noreferrer">
+              <Github size={16} />
+              View on GitHub
+            </a>
           </div>
           <div className="lp-hero-points">
-            <span>No lock-in</span>
-            <span>Hot-swappable updates</span>
-            <span>Composable by default</span>
+            <span>Managed dashboard</span>
+            <span>Encrypted client-side</span>
+            <span>Runs on your workers</span>
           </div>
         </div>
 
@@ -251,27 +257,53 @@ export default function LandingPage() {
             </div>
           </div>
           <div className="lp-package-map">
-            {previewTabs.map((tab) => (
-              <button
-                className={`lp-map-node${activePreview.id === tab.id ? " active" : ""}`}
-                key={tab.id}
-                type="button"
-                onClick={() => setActivePreview(tab)}
-              >
-                {tab.id === "packages" && <PackageCheck size={20} />}
-                {tab.label}
-              </button>
-            ))}
+            {previewTabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  className={`lp-map-node${activePreview.id === tab.id ? " active" : ""}`}
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActivePreview(tab)}
+                >
+                  <Icon size={16} />
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
+        </div>
+      </section>
+
+      <section className="lp-control-plane" id="zero-trust">
+        <div className="lp-control-copy">
+          <span className="lp-eyebrow">Zero-trust by architecture</span>
+          <h2>The convenience of a hosted platform, without the data trust it usually demands.</h2>
+          <p>
+            Nenjo runs a hosted dashboard and backend, so you get the polish of a managed product. But every chat message and dashboard-authored resource — agent prompts, knowledge documents, agent responses — is encrypted on your devices first. The platform only ever stores and routes ciphertext it cannot read, so &ldquo;managed&rdquo; never means &ldquo;hand it over.&rdquo;
+          </p>
+        </div>
+        <div className="lp-split-grid">
+          <article>
+            <Lock size={22} />
+            <h3>Encrypted client-side</h3>
+            <p>Material that may hold sensitive business or personal context is unreadable to Nenjo by design. Everything in between simply stores and routes encrypted data for your convenience.</p>
+          </article>
+          <article>
+            <EyeOff size={22} />
+            <h3>You own the trust boundary</h3>
+            <p>Your devices and your own Nenjo workers are the only places your content exists in the clear. Nothing in between, including the platform, can read it.</p>
+            <Link href="/docs/platform/security">How the security model works</Link>
+          </article>
         </div>
       </section>
 
       <section className="lp-section" id="packages">
         <div className="lp-section-head">
-          <span className="lp-eyebrow">Native package primitives</span>
-          <h2>Skills and configuration, done right.</h2>
+          <span className="lp-eyebrow">How agents ship and evolve</span>
+          <h2>Versioned packages, updated live on workers you control.</h2>
           <p>
-            Nenjo introduces a real package system for agentic platforms: first-class, versioned packages for structured knowledge and live runtime configuration.
+            Nenjo gives agentic systems a real package manager: first-class, versioned packages for structured knowledge and runtime configuration that move cleanly between projects, environments, and machines you own.
           </p>
         </div>
         <div className="lp-card-grid">
@@ -350,6 +382,34 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <section className="lp-band" id="teams">
+        <div className="lp-band-copy">
+          <span className="lp-eyebrow">Built for teams</span>
+          <h2>Design, operate, and control your agents together.</h2>
+          <p>
+            Create a workspace, invite your teammates, and build agentic workflows together — with shared knowledge, clear roles, and explicit permission boundaries instead of scattered chat histories and one-off prompts.
+          </p>
+        </div>
+        <div className="lp-primitive-grid">
+          <div className="lp-primitive">
+            <Users size={16} />
+            Shared workspaces
+          </div>
+          <div className="lp-primitive">
+            <Users size={16} />
+            Shared knowledge
+          </div>
+          <div className="lp-primitive">
+            <Users size={16} />
+            Clear roles
+          </div>
+          <div className="lp-primitive">
+            <Users size={16} />
+            Permission boundaries
+          </div>
+        </div>
+      </section>
+
       <section className="lp-how" id="how">
         <div className="lp-section-head">
           <span className="lp-eyebrow">How it works</span>
@@ -397,18 +457,18 @@ export default function LandingPage() {
           Start with the open-source runtime, explore the docs, or enter the hosted dashboard to onboard and manage your live agent systems.
         </p>
         <div className="lp-actions centered">
-          <a className="lp-button primary" href="https://github.com/nenjo-ai/nenjo" target="_blank" rel="noreferrer">
-            <Github size={18} />
-            Get started
-          </a>
           <Link className="lp-button primary" href="/dashboard/login">
             <LayoutDashboard size={18} />
-            Enter dashboard
+            Start free
           </Link>
           <Link className="lp-button secondary" href="/docs">
             <Play size={18} />
             Read the docs
           </Link>
+          <a className="lp-button secondary" href="https://github.com/nenjo-ai/nenjo" target="_blank" rel="noreferrer">
+            <Github size={18} />
+            View on GitHub
+          </a>
         </div>
       </section>
 
