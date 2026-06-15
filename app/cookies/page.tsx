@@ -7,6 +7,7 @@ import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
 export const metadata: Metadata = {
   title: "Cookie Policy",
   description: "Nenjo cookie policy.",
+  alternates: { canonical: "/cookies" },
 };
 
 async function getCookiePolicyHtml() {

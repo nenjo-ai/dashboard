@@ -52,8 +52,13 @@ export async function generateMetadata(props: {
   const page = source.getPage(params.slug);
   if (!page) notFound();
 
+  const slugPath = params.slug?.length ? params.slug.join('/') : '';
+
   return {
     title: page.data.title,
     description: page.data.description,
+    alternates: {
+      canonical: slugPath ? `/docs/${slugPath}` : '/docs',
+    },
   };
 }

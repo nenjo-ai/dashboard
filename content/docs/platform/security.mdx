@@ -15,7 +15,7 @@ Several layers work together so that connecting to the platform is never the sam
 
 - **Authentication** — every worker and integration connects with an organization **API key**. No valid key, no connection.
 - **Authorization** — what an authenticated caller may do is bounded by organization membership and [scopes](/docs/building-blocks/foundations/scopes). Scopes decide which resources and platform tools are reachable.
-- **Isolation** — each organization rides its own dedicated [event bus](/docs/platform/pages/settings#a-dedicated-event-bus), so one org's traffic is never delivered to another.
+- **Isolation & outbound connectivity** — each organization has its own dedicated [event bus](/docs/platform/pages/settings#a-dedicated-event-bus). Your worker **connects out** to that bus with an org API key and keeps the subscription **open**. Work is delivered over that channel — you don't open inbound ports or expose your harness to the public internet for remote access from the dashboard.
 - **Admin-gated access** — trusted devices and workers must be **approved by an owner or admin** before they receive the keys needed to decrypt protected content. Connecting is not the same as being trusted.
 - **Encryption** — sensitive content is encrypted on trusted clients before it reaches the platform, so the server only ever holds ciphertext for it.
 
@@ -56,7 +56,13 @@ If the recovery phrase is lost, Nenjo cannot reconstruct the user's local recove
 
 Workers need explicit enrollment before they can run work for an organization. The onboarding flow creates a worker API key, starts the worker, then approves the worker so it can receive the encrypted access material it needs.
 
+Once approved, your harness (`nenjo run`) **maintains an outbound connection** to your organization's event bus. Chat, tasks, schedules, and live resource updates are **pushed to the worker** over that bus — the platform does not call into your network. You don't need a public URL, reverse proxy, or open firewall rules so the dashboard can reach your agents.
+
+The connection stays up while the worker runs. If the bus or backend is briefly unavailable, the worker retries with backoff until it can reconnect.
+
 Workers do not get general plaintext access just because they exist. They receive scoped credentials and wrapped keys needed for the work they are approved to perform. Org-scoped encrypted payloads must match the enrolled organization before the worker can decrypt them.
+
+Connecting with an API key is not the same as being trusted: an unapproved worker can reach the bus, but it cannot decrypt protected content until an owner or admin approves it.
 
 ## What remains visible
 

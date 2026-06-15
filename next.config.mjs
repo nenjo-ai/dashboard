@@ -12,6 +12,29 @@ const config = {
     '/opengraph-image': ['./app/_og/*.ttf'],
     '/twitter-image': ['./app/_og/*.ttf'],
   },
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+        ],
+      },
+    ];
+  },
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'www.nenjo.ai' }],
+        destination: 'https://nenjo.ai/:path*',
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     const rewrites = [
       {

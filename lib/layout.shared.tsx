@@ -12,12 +12,12 @@ export function baseOptions(): BaseLayoutProps {
           <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
             <img
               src="/nenjo-logo-dark.png"
-              alt=""
+              alt="Nenjo"
               className="size-5 object-contain dark:hidden"
             />
             <img
               src="/nenjo-logo-white.png"
-              alt=""
+              alt="Nenjo"
               className="hidden size-5 object-contain dark:block"
             />
           </span>
