@@ -8,8 +8,10 @@ import {
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { JsonLd } from "@/components/seo/JsonLd";
 import { PricingPlanGrid } from "@/components/pricing/PricingPlanGrid";
 import { pageSocialMetadata } from "@/lib/seo/metadata";
+import { buildPricingSchemaGraph } from "@/lib/seo/pricing-schema";
 
 const NAV_LOGO = "/nenjo-logo-dark.png";
 
@@ -118,6 +120,7 @@ const faqItems = [
 export default function PricingPage() {
   return (
     <main className="nenjo-landing nenjo-light">
+      <JsonLd data={buildPricingSchemaGraph()} />
       <nav className="lp-nav" aria-label="Primary">
         <Link className="lp-brand" href="/" aria-label="Nenjo home">
           <Image src={NAV_LOGO} alt="Nenjo" width={31} height={28} priority />

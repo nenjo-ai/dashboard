@@ -10,50 +10,16 @@ import TermlyCMP from '@/components/TermlyCMP'
 import { Analytics } from "@vercel/analytics/next"
 import './globals.css'
 
+import { JsonLd } from '@/components/seo/JsonLd'
 import {
   SITE_DESCRIPTION,
   SITE_PREVIEW_TITLE,
   SITE_URL,
 } from '@/lib/seo/constants'
+import { buildSiteSchemaGraph } from '@/lib/seo/site-schema'
 
 const WEBSITE_UUID = '05016a17-3f9b-4d9a-97f7-989353c2fa40'
-
-const organizationLd = {
-  '@context': 'https://schema.org',
-  '@type': 'Organization',
-  name: 'Nenjo',
-  url: SITE_URL,
-  logo: `${SITE_URL}/pwa-icon-512.png`,
-  email: 'hello@nenjo.ai',
-  sameAs: ['https://github.com/nenjo-ai/nenjo'],
-}
-
-const websiteLd = {
-  '@context': 'https://schema.org',
-  '@type': 'WebSite',
-  name: 'Nenjo',
-  url: SITE_URL,
-}
-
-const softwareApplicationLd = {
-  '@context': 'https://schema.org',
-  '@type': 'SoftwareApplication',
-  name: 'Nenjo',
-  url: SITE_URL,
-  applicationCategory: 'DeveloperApplication',
-  operatingSystem: 'Web, Linux, macOS',
-  description: SITE_DESCRIPTION,
-  offers: {
-    '@type': 'Offer',
-    price: '0',
-    priceCurrency: 'USD',
-  },
-  creator: {
-    '@type': 'Organization',
-    name: 'Nenjo',
-    url: SITE_URL,
-  },
-}
+const siteSchemaGraph = buildSiteSchemaGraph()
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -156,18 +122,7 @@ export default function RootLayout({
         </Script>
       </head>
       <body>
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationLd).replace(/</g, '\\u003c') }}
-        />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteLd).replace(/</g, '\\u003c') }}
-        />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationLd).replace(/</g, '\\u003c') }}
-        />
+        <JsonLd data={siteSchemaGraph} />
         <PwaProvider>
           <ThemeProvider>
             {children}
