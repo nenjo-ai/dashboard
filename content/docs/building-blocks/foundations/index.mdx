@@ -7,9 +7,40 @@ order: 1
 
 Foundations are the containers and platform resources everything else runs inside. They are not composed into a prompt like [primitives](/docs/building-blocks/primitives), and they do not orchestrate work like [workflows](/docs/building-blocks/workflows) — they scope it, package it, power it, and govern it.
 
+Think of foundations as the **runtime environment** for everything else: where work is scoped, how behavior is packaged and shipped, which models and tools agents can call, and which platform capabilities they are allowed to touch.
+
+## When to reach for each foundation
+
+| Situation | Start here |
+|-----------|------------|
+| You need to isolate memory, context, and runtime for a product, client, or initiative | [Projects](/docs/building-blocks/foundations/projects) |
+| You want to version, share, or install a bundle of agents, knowledge, and workflows | [Packages](/docs/building-blocks/foundations/packages) |
+| You are wiring LLMs, MCP servers, or script-backed tools into agents | [Models & Tools](/docs/building-blocks/foundations/models-and-tools) |
+| You need least-privilege access to dashboard MCP tools for a resource family | [Scopes](/docs/building-blocks/foundations/scopes) |
+
+## How foundations relate to the rest of Nenjo
+
+1. **Projects** define the boundary for a unit of work — tasks, memory, and runtime context live here.
+2. **Packages** move versioned bundles of primitives and workflows between projects, environments, and machines.
+3. **Models & Tools** are configured once, then assigned where agents need them.
+4. **Scopes** gate which platform MCP tools an agent may call inside a project.
+
+Primitives answer *what an agent knows and does*. Workflows answer *how multiple steps run together*. Foundations answer *where that work runs, how it ships, what powers it, and what it is allowed to touch*.
+
 | Foundation | Job |
 |------------|-----|
 | **[Projects](/docs/building-blocks/foundations/projects)** | Scope the runtime, memory, and context for a unit of work |
 | **[Packages](/docs/building-blocks/foundations/packages)** | Versioned containers that bundle primitives and workflows, installed via nenpm |
 | **[Models & Tools](/docs/building-blocks/foundations/models-and-tools)** | The LLMs (and external/script tools) agents act through |
 | **[Scopes](/docs/building-blocks/foundations/scopes)** | Least-privilege permissions that grant agents platform MCP tools |
+
+## Typical setup path
+
+Most workspaces grow in this order:
+
+1. Create a **project** for the initiative you are building.
+2. Install or author **packages** that carry agents, knowledge, and routines.
+3. Assign **models and tools** where agents need provider or MCP access.
+4. Tighten **scopes** so each agent only receives the platform tools it needs.
+
+If you are onboarding a new workspace, pair this section with [Onboarding](/docs/getting-started/onboarding) for trusted devices and worker setup, and [Installation](/docs/introduction/installation) for getting `nenjo run` onto your infrastructure.
