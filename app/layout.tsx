@@ -10,10 +10,13 @@ import TermlyCMP from '@/components/TermlyCMP'
 import { Analytics } from "@vercel/analytics/next"
 import './globals.css'
 
+import {
+  SITE_DESCRIPTION,
+  SITE_PREVIEW_TITLE,
+  SITE_URL,
+} from '@/lib/seo/constants'
+
 const WEBSITE_UUID = '05016a17-3f9b-4d9a-97f7-989353c2fa40'
-const SITE_URL = 'https://nenjo.ai'
-const SITE_DESCRIPTION = 'Nenjo is a private, collaborative, open-source platform for building and running teams of AI agents — fully managed, with everything encrypted client-side so not even Nenjo can read your data.'
-const SITE_PREVIEW_TITLE = 'Nenjo — The private, collaborative agentic workspace'
 
 const organizationLd = {
   '@context': 'https://schema.org',

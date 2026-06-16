@@ -3,11 +3,20 @@ import path from "node:path";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
+import { pageSocialMetadata } from "@/lib/seo/metadata";
+
+const TERMS_DESCRIPTION =
+  "Terms governing use of Nenjo Cloud, the open-source runtime, and related services operated by Boon Labs LLC.";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
-  description: "Nenjo terms of service.",
+  description: TERMS_DESCRIPTION,
   alternates: { canonical: "/terms" },
+  ...pageSocialMetadata({
+    path: "/terms",
+    title: "Terms of Service",
+    description: TERMS_DESCRIPTION,
+  }),
 };
 
 async function getTermsHtml() {

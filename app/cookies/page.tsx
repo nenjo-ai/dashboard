@@ -3,11 +3,20 @@ import path from "node:path";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
+import { pageSocialMetadata } from "@/lib/seo/metadata";
+
+const COOKIES_DESCRIPTION =
+  "How Nenjo uses cookies and similar technologies on nenjo.ai, including authentication, preferences, and analytics.";
 
 export const metadata: Metadata = {
   title: "Cookie Policy",
-  description: "Nenjo cookie policy.",
+  description: COOKIES_DESCRIPTION,
   alternates: { canonical: "/cookies" },
+  ...pageSocialMetadata({
+    path: "/cookies",
+    title: "Cookie Policy",
+    description: COOKIES_DESCRIPTION,
+  }),
 };
 
 async function getCookiePolicyHtml() {

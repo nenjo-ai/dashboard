@@ -3,11 +3,20 @@ import path from "node:path";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
+import { pageSocialMetadata } from "@/lib/seo/metadata";
+
+const PRIVACY_DESCRIPTION =
+  "How Nenjo (Boon Labs LLC) collects, uses, and protects personal data across the hosted dashboard, workers, and marketing site.";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
-  description: "Nenjo privacy policy.",
+  description: PRIVACY_DESCRIPTION,
   alternates: { canonical: "/privacy" },
+  ...pageSocialMetadata({
+    path: "/privacy",
+    title: "Privacy Policy",
+    description: PRIVACY_DESCRIPTION,
+  }),
 };
 
 async function getPrivacyHtml() {

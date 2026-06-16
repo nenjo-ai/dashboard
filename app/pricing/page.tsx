@@ -9,14 +9,22 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { PricingPlanGrid } from "@/components/pricing/PricingPlanGrid";
+import { pageSocialMetadata } from "@/lib/seo/metadata";
 
 const NAV_LOGO = "/nenjo-logo-dark.png";
 
+const PRICING_DESCRIPTION =
+  "Free Nenjo Cloud tier with one worker harness and encrypted workspace. Team plans coming soon. Open-source runtime you can inspect and extend — connected to the platform today.";
+
 export const metadata: Metadata = {
   title: "Pricing — Nenjo Cloud",
-  description:
-    "Free Nenjo Cloud tier with one worker harness and encrypted workspace. Team plans coming soon. Open-source runtime you can inspect and extend — connected to the platform today.",
+  description: PRICING_DESCRIPTION,
   alternates: { canonical: "/pricing" },
+  ...pageSocialMetadata({
+    path: "/pricing",
+    title: "Pricing — Nenjo Cloud",
+    description: PRICING_DESCRIPTION,
+  }),
 };
 
 const architectureRows = [
