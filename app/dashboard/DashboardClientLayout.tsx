@@ -48,13 +48,7 @@ function DashboardLayoutWithClerk({
   const isChatRoute = pathname.startsWith("/dashboard/chat");
   const showMobileNav = !isChatRoute;
   const [authReady, setAuthReady] = useState(false);
-  const routeCheckKey =
-    isChromeless || !authReady || !isLoaded || !isSignedIn
-      ? null
-      : pathname;
-  const [completedRouteCheckKey, setCompletedRouteCheckKey] = useState<
-    string | null
-  >(null);
+  const [routeReady, setRouteReady] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== "undefined"
@@ -109,10 +103,19 @@ function DashboardLayoutWithClerk({
     };
   }, [getToken, isLoaded]);
 
+  // Run vault-restore / bootstrap gate once per auth session, not on every route.
   useEffect(() => {
-    if (!routeCheckKey) return;
+    if (isChromeless) {
+      setRouteReady(true);
+      return;
+    }
+    if (!authReady || !isLoaded || !isSignedIn) {
+      setRouteReady(false);
+      return;
+    }
 
     let cancelled = false;
+    setRouteReady(false);
 
     void (async () => {
       try {
@@ -143,14 +146,14 @@ function DashboardLayoutWithClerk({
       }
 
       if (!cancelled) {
-        setCompletedRouteCheckKey(routeCheckKey);
+        setRouteReady(true);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [routeCheckKey, router]);
+  }, [authReady, isChromeless, isLoaded, isSignedIn, router]);
 
   if (isChromeless) {
     // Wait for Clerk to load so the auth token getter is wired up
@@ -195,7 +198,7 @@ function DashboardLayoutWithClerk({
     );
   }
 
-  if (!routeCheckKey || completedRouteCheckKey !== routeCheckKey) {
+  if (!routeReady) {
     return (
       <div className="min-h-screen bg-[#f5f7fb] dark:bg-[#05070b]">
         <main className="min-h-screen flex items-center justify-center">

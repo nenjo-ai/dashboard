@@ -109,6 +109,9 @@ let deviceIdentityPromise: Promise<{ deviceId: string; keyPair: CryptoKeyPair; p
 let vaultKeyRawSession: Uint8Array | null = null;
 let vaultKeyPromise: Promise<CryptoKey> | null = null;
 let vaultSessionAccountId: string | null = null;
+let vaultIdleExpiresAt: number | null = null;
+let lastVaultIdlePersistAt = 0;
+const VAULT_IDLE_EXTENSION_THROTTLE_MS = 60_000;
 let ackSessionAccountId: string | null = null;
 
 function generateVerificationCode(): string {
@@ -483,6 +486,7 @@ async function saveVaultUnlockSession(accountId: string): Promise<void> {
     asBufferSource(vaultKeyRawSession),
   );
   const now = Date.now();
+  vaultIdleExpiresAt = now + VAULT_SESSION_DURATION_MS;
   const db = await openDb();
   await idbPut(db, VAULT_SESSION_ENTRY, {
     version: 1,
@@ -490,14 +494,49 @@ async function saveVaultUnlockSession(accountId: string): Promise<void> {
     nonce: bytesToBase64(nonce),
     ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
     created_at: new Date(now).toISOString(),
-    expires_at: new Date(now + VAULT_SESSION_DURATION_MS).toISOString(),
+    expires_at: new Date(vaultIdleExpiresAt).toISOString(),
   } satisfies LocalVaultSessionRecord);
+}
+
+function isVaultIdleExpired(): boolean {
+  if (!vaultKeyRawSession) return false;
+  if (vaultIdleExpiresAt === null) return false;
+  return Date.now() >= vaultIdleExpiresAt;
+}
+
+export function isLocalSecretVaultUnlocked(): boolean {
+  return vaultKeyRawSession !== null && !isVaultIdleExpired();
+}
+
+export function touchVaultSessionActivity(accountId: string): void {
+  if (!vaultKeyRawSession || !accountId) return;
+  if (vaultSessionAccountId && vaultSessionAccountId !== accountId) return;
+
+  const now = Date.now();
+  vaultIdleExpiresAt = now + VAULT_SESSION_DURATION_MS;
+
+  if (now - lastVaultIdlePersistAt < VAULT_IDLE_EXTENSION_THROTTLE_MS) {
+    return;
+  }
+
+  lastVaultIdlePersistAt = now;
+  void saveVaultUnlockSession(accountId);
+}
+
+export function enforceVaultIdleExpiry(): boolean {
+  if (!isVaultIdleExpired()) return false;
+  lockLocalSecretVault();
+  return true;
 }
 
 export async function restoreLocalSecretVaultSession(accountId: string): Promise<boolean> {
   if (typeof window === "undefined") return false;
   if (vaultKeyRawSession) {
     if (vaultSessionAccountId && vaultSessionAccountId !== accountId) return false;
+    if (isVaultIdleExpired()) {
+      lockLocalSecretVault();
+      return false;
+    }
     vaultSessionAccountId = accountId;
     return true;
   }
@@ -522,6 +561,7 @@ export async function restoreLocalSecretVaultSession(accountId: string): Promise
     );
     await setVaultRawKey(new Uint8Array(plaintext));
     vaultSessionAccountId = accountId;
+    vaultIdleExpiresAt = Date.parse(record.expires_at);
     return true;
   } catch {
     await idbDelete(db, VAULT_SESSION_ENTRY);
@@ -628,6 +668,8 @@ export function lockLocalSecretVault(): void {
   vaultKeyRawSession = null;
   vaultKeyPromise = null;
   vaultSessionAccountId = null;
+  vaultIdleExpiresAt = null;
+  lastVaultIdlePersistAt = 0;
   ackSessionCache = null;
   ackSessionAccountId = null;
   orgContentKeySessionCache.clear();

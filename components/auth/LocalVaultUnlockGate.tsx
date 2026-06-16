@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import {
   bindLocalSecretVaultSession,
+  enforceVaultIdleExpiry,
   hasLocalSecretVault,
   hasPasswordUnlockMethod,
   listLocalPasskeyUnlockMethods,
   loadStoredAccountContentKey,
   restoreLocalSecretVaultSession,
+  touchVaultSessionActivity,
   unlockWithPassword,
 } from "@/lib/cryptoContent";
 import { unlockWithAnyLocalPasskey } from "@/lib/localUnlock";
@@ -25,6 +27,7 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState<"password" | "passkey" | null>(null);
   const [autoPasskeyTried, setAutoPasskeyTried] = useState(false);
+  const [hasVault, setHasVault] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const accountId = user?.id ?? null;
 
@@ -32,8 +35,14 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
     if (!isLoaded) return;
     setChecking(true);
     try {
-      const hasVault = await hasLocalSecretVault();
-      if (!hasVault) {
+      if (enforceVaultIdleExpiry()) {
+        setLocked(true);
+        return;
+      }
+
+      const vaultConfigured = await hasLocalSecretVault();
+      setHasVault(vaultConfigured);
+      if (!vaultConfigured) {
         setLocked(false);
         return;
       }
@@ -59,9 +68,53 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
     }
   }, [accountId, isLoaded]);
 
+  const handleVaultExpired = useCallback(() => {
+    setAutoPasskeyTried(false);
+    void checkVault();
+  }, [checkVault]);
+
   useEffect(() => {
     void checkVault();
   }, [checkVault]);
+
+  useEffect(() => {
+    if (!hasVault || locked || !accountId) return;
+
+    const handleActivity = () => {
+      if (enforceVaultIdleExpiry()) {
+        handleVaultExpired();
+        return;
+      }
+      touchVaultSessionActivity(accountId);
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      if (enforceVaultIdleExpiry()) {
+        handleVaultExpired();
+      }
+    };
+
+    const activityEvents = ["pointerdown", "keydown", "touchstart", "scroll"] as const;
+    for (const eventName of activityEvents) {
+      window.addEventListener(eventName, handleActivity, { passive: true });
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    const intervalId = window.setInterval(() => {
+      if (enforceVaultIdleExpiry()) {
+        handleVaultExpired();
+      }
+    }, 30_000);
+
+    return () => {
+      for (const eventName of activityEvents) {
+        window.removeEventListener(eventName, handleActivity);
+      }
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.clearInterval(intervalId);
+    };
+  }, [accountId, handleVaultExpired, hasVault, locked]);
 
   const handlePasswordUnlock = useCallback(async () => {
     if (!accountId) return;
