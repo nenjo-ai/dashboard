@@ -10,6 +10,7 @@ import { getMDXComponents } from '@/components/mdx';
 import type { Metadata } from 'next';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
 import { ResetDocsScroll } from '@/components/docs/ResetDocsScroll';
+import { pageSocialMetadata } from '@/lib/seo/metadata';
 
 export default async function Page(props: {
   params: Promise<{ slug?: string[] }>;
@@ -53,12 +54,19 @@ export async function generateMetadata(props: {
   if (!page) notFound();
 
   const slugPath = params.slug?.length ? params.slug.join('/') : '';
+  const canonicalPath = slugPath ? `/docs/${slugPath}` : '/docs';
+  const description = page.data.description ?? '';
 
   return {
     title: page.data.title,
-    description: page.data.description,
+    description,
     alternates: {
-      canonical: slugPath ? `/docs/${slugPath}` : '/docs',
+      canonical: canonicalPath,
     },
+    ...pageSocialMetadata({
+      path: canonicalPath,
+      title: page.data.title,
+      description,
+    }),
   };
 }
