@@ -131,6 +131,12 @@ export default function RootLayout({
         <meta name="color-scheme" content="light dark" />
         <meta name="theme-color" content="#f5f7fb" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#05070b" media="(prefers-color-scheme: dark)" />
+        <link
+          rel="alternate"
+          type="text/plain"
+          href="/llms.txt"
+          title="LLM documentation index"
+        />
         <Script id="nenjo-theme-init" strategy="beforeInteractive">
           {`
             (function(){
