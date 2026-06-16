@@ -20,12 +20,23 @@ const isPublicRoute = createRouteMatcher([
 // Only enable Clerk middleware if the publishable key is configured
 const clerkKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
-function noopMiddleware(_req: NextRequest) {
-  return NextResponse.next();
+function canonicalizeHomepage(req: NextRequest) {
+  if (req.nextUrl.pathname === "/" && req.url.endsWith("/")) {
+    return NextResponse.redirect(req.url.replace(/\/$/, ""), 308);
+  }
+
+  return null;
+}
+
+function noopMiddleware(req: NextRequest) {
+  return canonicalizeHomepage(req) ?? NextResponse.next();
 }
 
 export default clerkKey
   ? clerkMiddleware(async (auth, req) => {
+      const canonical = canonicalizeHomepage(req);
+      if (canonical) return canonical;
+
       // If the route is protected and user is not signed in, redirect to login
       if (isProtectedRoute(req) && !isPublicRoute(req)) {
         await auth.protect();
