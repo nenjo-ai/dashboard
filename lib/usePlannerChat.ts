@@ -139,6 +139,14 @@ function writePendingAgentId(agentId: string | null): void {
   }
 }
 
+function isBrowserReload(): boolean {
+  if (typeof performance === "undefined") return false;
+  const [navigation] = performance.getEntriesByType(
+    "navigation",
+  ) as PerformanceNavigationTiming[];
+  return navigation?.type === "reload";
+}
+
 function readPersistedTools() {
   try {
     const raw = sessionStorage.getItem(TOOLS_KEY);
@@ -645,6 +653,14 @@ function isTerminalRunTrace(trace: RunTrace | undefined): boolean {
   );
 }
 
+function hasRestorableStreamProgress(snapshot: ChatStreamSnapshot): boolean {
+  if (snapshot.content.trim()) return true;
+  if (snapshot.livePreview?.trim()) return true;
+  if ((snapshot.activeTools?.length ?? 0) > 0) return true;
+  const trace = snapshot.activeRunTrace as RunTrace | undefined;
+  return !!trace && !isTerminalRunTrace(trace);
+}
+
 export function usePlannerChat(
   projectId: string | null | undefined,
   agentId?: string,
@@ -672,7 +688,7 @@ export function usePlannerChat(
   // very first render after remount — no useEffect delay.
   // Only show typing if THIS role is the one with a pending response.
   const [isTyping, setIsTyping] = useState(
-    () => !!agentId && readPendingAgentId() === agentId,
+    () => !isBrowserReload() && !!agentId && readPendingAgentId() === agentId,
   );
 
   useEffect(() => {
@@ -681,9 +697,10 @@ export function usePlannerChat(
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const isReloadRef = useRef(isBrowserReload());
   const workerAckSyncedRef = useRef(false);
   const [activeTools, setActiveTools] = useState<ActiveToolEntry[]>(() =>
-    !!agentId && readPendingAgentId() === agentId
+    !isBrowserReload() && !!agentId && readPendingAgentId() === agentId
       ? (readPersistedTools() as ActiveToolEntry[])
       : [],
   );
@@ -815,7 +832,9 @@ export function usePlannerChat(
       } else {
         setActiveRunTrace(undefined);
       }
-      setIsTyping(snapshot.status === "streaming");
+      setIsTyping(
+        snapshot.status === "streaming" && hasRestorableStreamProgress(snapshot),
+      );
       setMessages((prev) => {
         const targetIndex = findLastIndexCompat(
           prev,
@@ -936,7 +955,8 @@ export function usePlannerChat(
     prevSessionIdRef.current = activeSessionId;
 
     // Reset typing state: only show if the NEW role has a pending response
-    const isPending = !!agentId && pendingAgentId === agentId;
+    const isPending =
+      !isReloadRef.current && !!agentId && pendingAgentId === agentId;
     setIsTyping(isPending);
     setActiveTools(isPending ? persistedActiveTools : []);
     setLivePreview(isPending ? persistedLivePreview : undefined);
@@ -1955,6 +1975,14 @@ export function usePlannerChat(
       ) {
         return;
       }
+      if (!hasRestorableStreamProgress(snapshot)) {
+        void clearChatStreamSnapshot(activeSessionId);
+        notifyChatStreamSnapshot({
+          sessionId: activeSessionId,
+          clear: true,
+        });
+        return;
+      }
       applyStreamSnapshot(snapshot);
     });
   }, [activeSessionId, applyStreamSnapshot]);
@@ -2085,133 +2113,150 @@ export function usePlannerChat(
         return;
       }
 
-      const storedAck = await loadStoredAccountContentKey();
-      if (!storedAck) {
-        failOptimisticMessage();
-        toast.error(
-          "Generate a local account content key in Settings before sending encrypted messages.",
-        );
-        return;
-      }
+      let controller: AbortController;
+      let streamPromise: Promise<void>;
 
-      if (!workerAckSyncedRef.current) {
-        try {
-          await syncCurrentUserAckToActiveWorkers();
-          workerAckSyncedRef.current = true;
-        } catch (error) {
-          console.error(
-            "Failed to sync current user ACK to active workers",
-            error,
-          );
+      try {
+        const storedAck = await loadStoredAccountContentKey();
+        if (!storedAck) {
           failOptimisticMessage();
           toast.error(
-            "This device could not sync its chat encryption access to the worker yet.",
+            "Generate a local account content key in Settings before sending encrypted messages.",
           );
           return;
         }
-      }
 
-      const encryptedMessage = await encryptContentPayload({
-        accountId: userId,
-        objectId: crypto.randomUUID(),
-        objectType: "chat.message",
-        plaintext: trimmed,
-      });
-      if (!encryptedMessage) {
+        if (!workerAckSyncedRef.current) {
+          try {
+            await syncCurrentUserAckToActiveWorkers();
+            workerAckSyncedRef.current = true;
+          } catch (error) {
+            console.error(
+              "Failed to sync current user ACK to active workers",
+              error,
+            );
+            failOptimisticMessage();
+            toast.error(
+              "This device could not sync its chat encryption access to the worker yet.",
+            );
+            return;
+          }
+        }
+
+        const encryptedMessage = await encryptContentPayload({
+          accountId: userId,
+          objectId: crypto.randomUUID(),
+          objectType: "chat.message",
+          plaintext: trimmed,
+        });
+        if (!encryptedMessage) {
+          failOptimisticMessage();
+          toast.error("Failed to encrypt this message on the current device.");
+          return;
+        }
+
+        // Pre-allocate a response ID so the final response targets the same message
+        responsePersistedRef.current = false;
+        responseIdRef.current = generateId();
+        currentRequestIdRef.current = msgId;
+        setLivePreview(undefined);
+        pendingFinalTraceTargetRef.current = undefined;
+        suppressActiveRunTraceRef.current = false;
+        activeRunTraceRef.current = undefined;
+        activeRunEnvelopeIdRef.current = undefined;
+        setActiveRunTrace(undefined);
+        setIsTyping(false);
+
+        if (activeSessionId) {
+          void persistChatStreamSnapshot({
+            sessionId: activeSessionId,
+            agentId,
+            requestId: msgId,
+            responseId: responseIdRef.current ?? undefined,
+            content: "",
+            activeTools: activeToolsRef.current,
+            livePreview: livePreviewRef.current,
+            activeRunTrace: activeRunTraceRef.current,
+            status: "streaming",
+            updatedAt: Date.now(),
+          });
+          notifyChatStreamSnapshot({
+            sessionId: activeSessionId,
+            agentId,
+            requestId: msgId,
+            responseId: responseIdRef.current ?? undefined,
+            content: "",
+            activeTools: activeToolsRef.current,
+            livePreview: livePreviewRef.current,
+            activeRunTrace: activeRunTraceRef.current,
+            status: "streaming",
+            updatedAt: Date.now(),
+          });
+        }
+
+        controller = new AbortController();
+        streamAbortRef.current = controller;
+
+        const streamBody = {
+          id: msgId,
+          message: "[Encrypted message]",
+          encrypted_message: encryptedMessage,
+          ...(options?.commandInvocation
+            ? { command: options.commandInvocation.command }
+            : {}),
+          session_id: activeSessionId,
+          ...(options?.domainActivation
+            ? {
+                domain_session_id: options.domainActivation.domain_session_id,
+                domain_activation: options.domainActivation,
+              }
+            : activeDomainSession
+              ? { domain_session_id: activeDomainSession.id }
+              : {}),
+          ...(isAgentTarget ? { agent_id: agentId! } : {}),
+          target_type: targetType,
+          target_id: agentId!,
+          ...(projectId ? { project_id: projectId } : {}),
+        };
+
+        const handleStreamEvent = (event: { event: string; data: unknown }) => {
+          if (event.event === "message_persisted") {
+            handleIncomingRef.current(event.data);
+            return;
+          }
+          if (event.event === "delivery_receipt") {
+            handleIncomingRef.current(event.data);
+            return;
+          }
+          const normalized = normalizeSseAgentEvent(event);
+          if (!normalized) {
+            return;
+          }
+          handleIncomingRef.current({
+            type: "agent_response",
+            payload: normalized,
+          });
+        };
+
+        streamPromise = createChatStream(
+          streamBody,
+          controller.signal,
+        ).then((response) => {
+          return consumeSseStream(response, handleStreamEvent);
+        });
+      } catch (error) {
+        console.error("Failed to prepare chat stream:", error);
         failOptimisticMessage();
-        toast.error("Failed to encrypt this message on the current device.");
+        toast.error("Failed to prepare this message on the current device.");
+        if (activeSessionId) {
+          void clearChatStreamSnapshot(activeSessionId);
+          notifyChatStreamSnapshot({
+            sessionId: activeSessionId,
+            clear: true,
+          });
+        }
         return;
       }
-
-      // Pre-allocate a response ID so the final response targets the same message
-      responsePersistedRef.current = false;
-      responseIdRef.current = generateId();
-      currentRequestIdRef.current = msgId;
-      setLivePreview(undefined);
-      pendingFinalTraceTargetRef.current = undefined;
-      suppressActiveRunTraceRef.current = false;
-      activeRunTraceRef.current = undefined;
-      activeRunEnvelopeIdRef.current = undefined;
-      setActiveRunTrace(undefined);
-      setIsTyping(false);
-
-      if (activeSessionId) {
-        void persistChatStreamSnapshot({
-          sessionId: activeSessionId,
-          agentId,
-          requestId: msgId,
-          responseId: responseIdRef.current ?? undefined,
-          content: "",
-          activeTools: activeToolsRef.current,
-          livePreview: livePreviewRef.current,
-          activeRunTrace: activeRunTraceRef.current,
-          status: "streaming",
-          updatedAt: Date.now(),
-        });
-        notifyChatStreamSnapshot({
-          sessionId: activeSessionId,
-          agentId,
-          requestId: msgId,
-          responseId: responseIdRef.current ?? undefined,
-          content: "",
-          activeTools: activeToolsRef.current,
-          livePreview: livePreviewRef.current,
-          activeRunTrace: activeRunTraceRef.current,
-          status: "streaming",
-          updatedAt: Date.now(),
-        });
-      }
-
-      const controller = new AbortController();
-      streamAbortRef.current = controller;
-
-      const streamBody = {
-        id: msgId,
-        message: "[Encrypted message]",
-        encrypted_message: encryptedMessage,
-        ...(options?.commandInvocation
-          ? { command: options.commandInvocation.command }
-          : {}),
-        session_id: activeSessionId,
-        ...(options?.domainActivation
-          ? {
-              domain_session_id: options.domainActivation.domain_session_id,
-              domain_activation: options.domainActivation,
-            }
-          : activeDomainSession
-            ? { domain_session_id: activeDomainSession.id }
-            : {}),
-        ...(isAgentTarget ? { agent_id: agentId! } : {}),
-        target_type: targetType,
-        target_id: agentId!,
-        ...(projectId ? { project_id: projectId } : {}),
-      };
-
-      const handleStreamEvent = (event: { event: string; data: unknown }) => {
-        if (event.event === "message_persisted") {
-          handleIncomingRef.current(event.data);
-          return;
-        }
-        if (event.event === "delivery_receipt") {
-          handleIncomingRef.current(event.data);
-          return;
-        }
-        const normalized = normalizeSseAgentEvent(event);
-        if (!normalized) {
-          return;
-        }
-        handleIncomingRef.current({
-          type: "agent_response",
-          payload: normalized,
-        });
-      };
-
-      const streamPromise = createChatStream(
-        streamBody,
-        controller.signal,
-      ).then((response) => {
-        return consumeSseStream(response, handleStreamEvent);
-      });
 
       void streamPromise
         .then(async () => {
