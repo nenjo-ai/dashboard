@@ -60,17 +60,59 @@ function randomChallenge(): ArrayBuffer {
   return bytesToArrayBuffer(crypto.getRandomValues(new Uint8Array(32)));
 }
 
-function requirePrfOutput(credential: PublicKeyCredentialWithPrf): Uint8Array {
+function prfOutputFromCredential(credential: PublicKeyCredentialWithPrf): Uint8Array | null {
   const output = credential.getClientExtensionResults().prf?.results?.first;
+  if (!output) return null;
+  return new Uint8Array(output as ArrayBuffer);
+}
+
+function requirePrfOutput(credential: PublicKeyCredentialWithPrf): Uint8Array {
+  const output = prfOutputFromCredential(credential);
   if (!output) {
     throw new Error("This passkey did not return WebAuthn PRF output.");
   }
-  return new Uint8Array(output as ArrayBuffer);
+  return output;
 }
 
 function credentialTransports(response: AuthenticatorAttestationResponse): string[] {
   const transports = response.getTransports?.() ?? [];
   return Array.from(transports);
+}
+
+async function requestPrfOutputForNewCredential(
+  credential: PublicKeyCredentialWithPrf,
+  salt: Uint8Array,
+): Promise<Uint8Array> {
+  const registrationPrf = credential.getClientExtensionResults().prf;
+  if (registrationPrf?.enabled === false) {
+    throw new Error("This passkey does not support WebAuthn PRF.");
+  }
+
+  const assertion = (await navigator.credentials.get({
+    publicKey: {
+      challenge: randomChallenge(),
+      rpId: window.location.hostname,
+      userVerification: "required",
+      allowCredentials: [
+        {
+          type: "public-key",
+          id: credential.rawId,
+        },
+      ],
+      extensions: {
+        prf: {
+          eval: {
+            first: bytesToArrayBuffer(salt),
+          },
+        },
+      } as AuthenticationExtensionsClientInputs,
+    },
+  })) as PublicKeyCredentialWithPrf | null;
+
+  if (!assertion) {
+    throw new Error("Device unlock setup was cancelled.");
+  }
+  return requirePrfOutput(assertion);
 }
 
 export function canUsePasskeyPrf(): boolean {
@@ -129,7 +171,8 @@ export async function registerPasskeyUnlock(accountId: string, label?: string | 
   if (!credential) {
     throw new Error("Device unlock setup was cancelled.");
   }
-  const prfOutput = requirePrfOutput(credential);
+  const prfOutput = prfOutputFromCredential(credential) ??
+    (await requestPrfOutputForNewCredential(credential, salt));
   const response = credential.response as AuthenticatorAttestationResponse;
   const credentialId = arrayBufferToBase64Url(credential.rawId);
 
