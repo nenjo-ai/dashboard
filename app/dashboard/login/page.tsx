@@ -39,6 +39,12 @@ function LoginContent() {
         </div>
       )}
 
+      <p className="mb-4 text-center text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+        <span className="font-medium text-gray-800 dark:text-gray-200">~2 min setup</span>{" "}
+        if you already have an LLM provider API key — sign in, secure your device, and connect a
+        worker.
+      </p>
+
       {/* Clerk SignIn component — configured for GitHub OAuth only */}
       <SignIn
         routing="hash"

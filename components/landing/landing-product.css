@@ -1179,6 +1179,27 @@ html{scroll-behavior:smooth}
   line-height: 1.45;
 }
 
+.nenjo-light .lp-hero-note {
+  max-width: 660px;
+  margin-top: 14px;
+  color: var(--ink-dim);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.nenjo-light .lp-builder-link {
+  display: inline-block;
+  margin-top: 16px;
+  color: var(--accent-deep);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.nenjo-light .lp-builder-link:hover {
+  text-decoration: underline;
+}
+
 .nenjo-light .lp-actions {
   display: flex;
   flex-wrap: wrap;

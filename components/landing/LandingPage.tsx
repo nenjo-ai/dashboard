@@ -63,14 +63,20 @@ const builders = [
   {
     title: "Product developers",
     body: "Embed agents directly in your app with the SDK, then reuse the same packages across users, projects, and environments.",
+    href: "/docs/harness/sdk",
+    linkLabel: "Explore the SDK",
   },
   {
     title: "Personal AI Assistants",
-    body: "Run standalone workers for long-lived assistants, multi-step routines, and capability-scoped agent systems on your own infrastructure.",
+    body: "Run workers for long-lived assistants, multi-step routines, and capability-scoped agent systems on infrastructure you control.",
+    href: "/docs/getting-started/onboarding",
+    linkLabel: "Start onboarding",
   },
   {
     title: "Consultants and teams",
-    body: "Package repeatable client solutions once, adapt per deployment, and keep every install inspectable, self-hosted, and maintainable.",
+    body: "Package repeatable client solutions once, adapt per deployment, and keep every install inspectable and maintainable on your workers.",
+    href: "/docs/platform/security",
+    linkLabel: "Read the security model",
   },
 ];
 
@@ -248,6 +254,9 @@ export default function LandingPage() {
           <p className="lp-hero-lede">
             Build and run teams of agents on a fully managed platform — with everything encrypted on your devices first, so not even Nenjo can read it.
           </p>
+          <p className="lp-hero-note">
+            Workers run on your infrastructure. Nenjo Cloud coordinates them — required today.
+          </p>
           <div className="lp-actions">
             <Link className="lp-button primary" href="/dashboard/login">
               <LayoutDashboard size={18} />
@@ -256,6 +265,9 @@ export default function LandingPage() {
             <Link className="lp-button secondary" href="/docs">
               <Play size={18} />
               Read the docs
+            </Link>
+            <Link className="lp-button secondary" href="/pricing">
+              See pricing
             </Link>
             <a className="lp-link" href="https://github.com/nenjo-ai/nenjo" target="_blank" rel="noreferrer">
               <Github size={16} />
@@ -391,7 +403,8 @@ export default function LandingPage() {
           <span className="lp-eyebrow">Hybrid architecture</span>
           <h2>Built on Rust. Designed for your infrastructure.</h2>
           <p>
-            Embed Nenjo core crates inside your product, run standalone workers with <code>nenjo run</code>, or combine both. The hosted control plane coordinates package operations while zero-trust boundaries and encrypted context keep runtime control close to your apps and infrastructure.
+            Embed Nenjo core crates inside your product, run standalone workers with <code>nenjo run</code>, or combine both. The hosted control plane coordinates package operations while zero-trust boundaries and encrypted context keep runtime control close to your apps and infrastructure.{" "}
+            <Link href="/docs/harness">Explore the harness →</Link>
           </p>
         </div>
         <div className="lp-primitive-grid">
@@ -461,12 +474,18 @@ export default function LandingPage() {
           <div>
             <span>01</span>
             <h3>Run your workers</h3>
-            <p>Deploy <code>nenjo run</code> where your data, tools, and policies already live.</p>
+            <p>
+              Deploy <code>nenjo run</code> where your data, tools, and policies already live.{" "}
+              <Link href="/docs/introduction/installation">Install the harness →</Link>
+            </p>
           </div>
           <div>
             <span>02</span>
             <h3>Chat with Nenji</h3>
-            <p>Nenji is included in the first Nenjo package to help you rapidly bootstrap agents, routines, abilities, and context from a conversation.</p>
+            <p>
+              Nenji is included in the first Nenjo package to help you rapidly bootstrap agents, routines, abilities, and context from a conversation.{" "}
+              <Link href="/docs/getting-started/onboarding">Onboarding guide →</Link>
+            </p>
           </div>
           <div>
             <span>03</span>
@@ -487,6 +506,9 @@ export default function LandingPage() {
               <Boxes size={20} />
               <h3>{builder.title}</h3>
               <p>{builder.body}</p>
+              <Link className="lp-builder-link" href={builder.href}>
+                {builder.linkLabel} →
+              </Link>
             </article>
           ))}
         </div>
@@ -520,14 +542,18 @@ export default function LandingPage() {
           <p>Open source runtime. Managed control plane.</p>
         </div>
         <div className="lp-footer-links">
+          <Link href="/docs">Docs</Link>
           <Link href="/pricing">Pricing</Link>
+          <a href="https://github.com/nenjo-ai/nenjo" target="_blank" rel="noreferrer">
+            GitHub
+          </a>
           <a href="mailto:hello@nenjo.ai">hello@nenjo.ai</a>
-          <a href="https://nenjo.ai/privacy">Privacy</a>
-          <a href="https://nenjo.ai/cookies">Cookies</a>
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/cookies">Cookies</Link>
           <a href="#" className="termly-display-preferences">
             Cookie Preferences
           </a>
-          <a href="https://nenjo.ai/terms">Terms</a>
+          <Link href="/terms">Terms</Link>
         </div>
       </footer>
     </main>
