@@ -9,8 +9,11 @@ import { notFound } from 'next/navigation';
 import { getMDXComponents } from '@/components/mdx';
 import type { Metadata } from 'next';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
+import { LastUpdated } from '@/components/docs/LastUpdated';
 import { ResetDocsScroll } from '@/components/docs/ResetDocsScroll';
+import { JsonLd } from '@/components/seo/JsonLd';
 import { pageSocialMetadata } from '@/lib/seo/metadata';
+import { buildDocsSchemaGraph } from '@/lib/seo/docs-schema';
 
 export default async function Page(props: {
   params: Promise<{ slug?: string[] }>;
@@ -20,6 +23,7 @@ export default async function Page(props: {
   if (!page) notFound();
 
   const MDX = page.data.body;
+  const schemaGraph = buildDocsSchemaGraph(source.getPageTree(), page);
 
   return (
     <DocsPage
@@ -28,9 +32,13 @@ export default async function Page(props: {
       tableOfContent={{ style: 'clerk' }}
       tableOfContentPopover={{ style: 'clerk' }}
     >
+      <JsonLd data={schemaGraph} />
       <ResetDocsScroll />
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
+      {page.data.lastModified ? (
+        <LastUpdated value={page.data.lastModified} />
+      ) : null}
       <DocsBody>
         <MDX
           components={getMDXComponents({
