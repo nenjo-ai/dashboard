@@ -5,12 +5,16 @@ const STORE_NAME = "snapshots";
 const CHANNEL_NAME = "nenjo-chat-stream";
 
 export type ChatStreamToolSnapshot = {
+  callId?: string;
+  parentCallId?: string;
   name: string;
   args: string;
   textPreview?: string;
   status?: "running" | "completed" | "failed";
   outputPreview?: string;
   errorPreview?: string;
+  providerNative?: boolean;
+  provider?: string;
   children?: ChatStreamToolSnapshot[];
 };
 

@@ -44,6 +44,11 @@ import type {
   PromptConfigResponse,
   RoutineCronTaskPayload,
   TokenUsageSource,
+  ConfigureMediaProvidersRequest,
+  ConfigureMediaAssignmentsRequest,
+  MediaCapabilitiesResponse,
+  MediaConfig,
+  MediaAssignmentsResponse,
 } from "./types";
 import { mutate as mutateSWR } from "swr";
 import {
@@ -315,6 +320,7 @@ function scopedCacheKey(orgId: string, url: string): string {
 function isCatalogUrl(url: string): boolean {
   if (url === projectsUrl()) return true;
   if (url === modelsUrl()) return true;
+  if (url === mediaConfigUrl()) return true;
   if (url.startsWith(`${modelsUrl()}?`)) return true;
   if (/\/api\/v1\/knowledge$/.test(url)) return true;
   if (/\/api\/v1\/knowledge\/[^/]+\/items$/.test(url)) return true;
@@ -414,6 +420,10 @@ function invalidateModelsCatalogCache(): void {
   clearCatalogCacheMatching(
     (url) => url === modelsUrl() || url.startsWith(`${modelsUrl()}?`),
   );
+}
+
+function invalidateMediaConfigCache(): void {
+  clearCatalogCache(mediaConfigUrl());
 }
 
 function invalidateAgentsCatalogCache(): void {
@@ -1053,6 +1063,58 @@ export async function updateModel(
 export async function deleteModel(id: string): Promise<void> {
   await authFetch(modelUrl(id), { method: "DELETE" });
   invalidateModelsCatalogCache();
+}
+
+// ---------------------------------------------------------------------------
+// Native Media Provider Configuration
+// ---------------------------------------------------------------------------
+
+export function mediaConfigUrl(): string {
+  return `${API_V1}/media/config`;
+}
+
+export function mediaCapabilitiesUrl(): string {
+  return `${API_V1}/media/capabilities`;
+}
+
+export function agentMediaUrl(agentId: string): string {
+  return `${API_V1}/agents/${agentId}/media`;
+}
+
+export async function fetchMediaConfig(): Promise<MediaConfig> {
+  return fetcher<MediaConfig>(mediaConfigUrl());
+}
+
+export async function fetchMediaCapabilities(): Promise<MediaCapabilitiesResponse> {
+  return fetcher<MediaCapabilitiesResponse>(mediaCapabilitiesUrl());
+}
+
+export async function configureMediaProviders(
+  data: ConfigureMediaProvidersRequest,
+): Promise<MediaConfig> {
+  const res = await authFetch(mediaConfigUrl(), {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  invalidateMediaConfigCache();
+  return res.json() as Promise<MediaConfig>;
+}
+
+export async function fetchAgentMedia(
+  agentId: string,
+): Promise<MediaAssignmentsResponse> {
+  return fetcher<MediaAssignmentsResponse>(agentMediaUrl(agentId));
+}
+
+export async function configureAgentMedia(
+  agentId: string,
+  data: ConfigureMediaAssignmentsRequest,
+): Promise<MediaAssignmentsResponse> {
+  const res = await authFetch(agentMediaUrl(agentId), {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return res.json() as Promise<MediaAssignmentsResponse>;
 }
 
 export async function fetchAllTags(projectId?: string): Promise<string[]> {

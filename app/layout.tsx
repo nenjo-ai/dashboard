@@ -149,7 +149,6 @@ export default function RootLayout({
       publishableKey={clerkKey}
       signInUrl="/dashboard/login"
       signUpUrl="/dashboard/signup"
-      waitlistUrl="/dashboard/signup"
       signInFallbackRedirectUrl="/dashboard/onboarding"
       signUpFallbackRedirectUrl="/dashboard/onboarding"
       afterSignOutUrl="/"

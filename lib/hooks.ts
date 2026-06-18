@@ -19,6 +19,9 @@ import {
   activityUrl,
   dependencyGraphUrl,
   modelsUrl,
+  mediaCapabilitiesUrl,
+  mediaConfigUrl,
+  agentMediaUrl,
   knowledgeItemsUrl,
   knowledgePacksUrl,
   packageSourcesUrl,
@@ -80,6 +83,9 @@ import type {
   BootstrapStatus,
   TokenUsageSource,
   TokenUsageSummary,
+  MediaCapabilitiesResponse,
+  MediaConfig,
+  MediaAssignmentsResponse,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -399,6 +405,55 @@ export function useModels(projectId?: string) {
 
   return {
     models: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useMediaConfig() {
+  const { data, error, isLoading, mutate } = useSWR<MediaConfig>(
+    mediaConfigUrl(),
+    fetcher,
+    { revalidateOnFocus: true, dedupingInterval: 0 },
+  );
+
+  return {
+    mediaConfig: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useMediaCapabilities() {
+  const { data, error, isLoading, mutate } = useSWR<MediaCapabilitiesResponse>(
+    mediaCapabilitiesUrl(),
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 },
+  );
+
+  return {
+    mediaCapabilities: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useAgentMedia(agentId: string | undefined) {
+  const url = agentId ? agentMediaUrl(agentId) : null;
+  const { data, error, isLoading, mutate } = useSWR<MediaAssignmentsResponse>(
+    url,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5000 },
+  );
+
+  return {
+    mediaAssignments: data,
     isLoading,
     isError: !!error,
     error,

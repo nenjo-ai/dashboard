@@ -104,7 +104,7 @@ const faqItems = [
   {
     question: "When is Professional available?",
     answer:
-      "Not self-serve yet. Use Join waitlist on the Professional plan card and we'll email you when team plans open.",
+      "Not self-serve yet. Email sales@nenjo.ai and we'll talk through team plan timing.",
   },
   {
     question: "Who is Enterprise for?",

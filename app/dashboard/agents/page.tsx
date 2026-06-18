@@ -7,23 +7,21 @@ import type { Model } from "@/lib/types";
 
 import { TopBar } from "@/components/layout/TopBar";
 import { MobilePageShell } from "@/components/layout/MobilePageShell";
-import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
-import { AgentList } from "@/components/agents/AgentList";
 import { AgentsSection } from "@/components/agents/AgentsSection";
 import { MobileAgentList } from "@/components/agents/MobileAgentList";
 import { DomainsSection } from "@/components/agents/DomainsSection";
 import { McpServersSection } from "@/components/settings/McpServersSection";
+import { MediaProvidersSection } from "@/components/agents/MediaProvidersSection";
+import { ModelsSection } from "@/components/agents/ModelsSection";
 import { AbilitiesSection } from "@/components/agents/AbilitiesSection";
 import { ContextBlocksSection } from "@/components/agents/ContextBlocksSection";
-import { AgentFormModal } from "@/components/agents/AgentFormModal";
-import { AgentDetailModal } from "@/components/agents/AgentDetailModal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PageContent } from "@/components/ui/PageContent";
 import { toast } from "@/lib/toast";
 import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
-type AgentsTab = "agents" | "domains" | "abilities" | "context" | "mcp" | "models";
+type AgentsTab = "agents" | "domains" | "abilities" | "context" | "mcp" | "media" | "models";
 
 export default function AgentsPage() {
   return (
@@ -39,30 +37,12 @@ function AgentsPageContent() {
   const { projects } = useProjects();
   const { agents } = useAgents();
 
-  const [activeTab, setActiveTab] = useTabParam<AgentsTab>("agents", ["agents", "domains", "abilities", "context", "mcp", "models"]);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editingModel, setEditingModel] = useState<Model | null>(null);
-  const [viewingModel, setViewingModel] = useState<Model | null>(null);
+  const [activeTab, setActiveTab] = useTabParam<AgentsTab>("agents", ["agents", "domains", "abilities", "context", "mcp", "media", "models"]);
   const [deletingModel, setDeletingModel] = useState<Model | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Use the first project from any model, or fall back to the first project from the projects list.
   const projectId = models?.[0]?.project_id ?? projects?.[0]?.id ?? "";
-
-  const handleCreate = useCallback(() => {
-    setEditingModel(null);
-    setFormOpen(true);
-  }, []);
-
-  const handleEdit = useCallback((model: Model) => {
-    setViewingModel(null);
-    setEditingModel(model);
-    setFormOpen(true);
-  }, []);
-
-  const handleView = useCallback((model: Model) => {
-    setViewingModel(model);
-  }, []);
 
   const handleDeleteRequest = useCallback((model: Model) => {
     setDeletingModel(model);
@@ -93,6 +73,7 @@ function AgentsPageContent() {
     { id: "abilities" as const, label: "Abilities" },
     { id: "context" as const, label: "Context" },
     { id: "mcp" as const, label: "MCP" },
+    { id: "media" as const, label: "Media" },
     { id: "models" as const, label: "Models" },
   ];
 
@@ -152,19 +133,28 @@ function AgentsPageContent() {
             </>
           )}
 
+          {activeTab === "media" && (
+            <>
+              <p className="text-sm leading-6 text-gray-500 dark:text-gray-400">
+                Native media providers agents can use for image, video, and audio capabilities.
+              </p>
+              <MediaProvidersSection />
+            </>
+          )}
+
           {activeTab === "models" && (
             <>
               <p className="text-sm leading-6 text-gray-500 dark:text-gray-400">
                 LLM configurations assigned to agents for execution.
               </p>
-              <AgentList
-                agents={models}
-                roles={agents ?? []}
+              <ModelsSection
+                models={models}
+                agents={agents ?? []}
                 isLoading={isLoading}
                 isError={isError}
-                onEdit={handleEdit}
-                onView={handleView}
                 onDelete={handleDeleteRequest}
+                onSaved={handleSaved}
+                projectId={projectId}
               />
             </>
           )}
@@ -228,58 +218,34 @@ function AgentsPageContent() {
             </>
           )}
 
+          {activeTab === "media" && (
+            <>
+              <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                Native media providers agents can use for image, video, and audio capabilities.
+              </p>
+              <MediaProvidersSection />
+            </>
+          )}
+
           {activeTab === "models" && (
             <>
               <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
                 LLM configurations assigned to agents for execution.
               </p>
-              <div className="mb-4 flex justify-end">
-                <Button
-                  onClick={handleCreate}
-                  className="h-10 w-10 !bg-deep-space-blue-500 !px-0 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
-                  title="New Agent"
-                  aria-label="New Agent"
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                  </svg>
-                </Button>
-              </div>
-              <AgentList
-                agents={models}
-                roles={agents ?? []}
+              <ModelsSection
+                models={models}
+                agents={agents ?? []}
                 isLoading={isLoading}
                 isError={isError}
-                onEdit={handleEdit}
-                onView={handleView}
                 onDelete={handleDeleteRequest}
-                onCreate={handleCreate}
+                onSaved={handleSaved}
+                projectId={projectId}
               />
             </>
           )}
         </PageContent>
       </>
       )}
-
-      {/* Create / Edit Modal */}
-      <AgentFormModal
-        open={formOpen}
-        onClose={() => {
-          setFormOpen(false);
-          setEditingModel(null);
-        }}
-        onSaved={handleSaved}
-        agent={editingModel}
-        projectId={projectId}
-      />
-
-      {/* Detail Modal */}
-      <AgentDetailModal
-        agent={viewingModel}
-        roles={agents ?? []}
-        onClose={() => setViewingModel(null)}
-        onEdit={handleEdit}
-      />
 
       {/* Confirm Delete */}
       <ConfirmDialog

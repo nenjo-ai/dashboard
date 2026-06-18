@@ -69,6 +69,7 @@ type LifecyclePayload = {
   message?: string;
   delta?: string;
   details?: unknown;
+  tool_name?: string;
   tool_args?: unknown;
   text_preview?: string;
   output_preview?: string;
@@ -100,6 +101,112 @@ function appendPreview(
   if (!next) return existing;
   const prev = existing?.trim();
   return prev ? `${prev}\n\n${next}` : next;
+}
+
+type ToolPreviewPayload = LifecyclePayload & {
+  provider_native?: boolean;
+  provider?: string;
+  tool_origin?: string;
+};
+
+type ToolStreamData = Record<string, unknown> & {
+  batch_id?: string;
+  call_id?: string;
+  parent_call_id?: string;
+  tool_name?: string;
+  success?: boolean;
+  payload?: ToolPreviewPayload;
+  encrypted_payload?: EncryptedPayload;
+};
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function providerDisplayName(provider?: string): string {
+  if (!provider) return "provider";
+  if (provider.toLowerCase() === "xai") return "xAI";
+  return provider;
+}
+
+function toolDisplayName(toolName: string): string {
+  return toolName.replaceAll("_", " ");
+}
+
+function providerToolPreview(
+  toolName: string,
+  provider: string | undefined,
+  status: "started" | "completed" | "failed",
+): string {
+  const providerName = providerDisplayName(provider);
+  if (toolName === "web_search") {
+    if (status === "started") return `Searching the web with ${providerName}`;
+    if (status === "failed") return `Web search failed`;
+    return `Web search completed`;
+  }
+  if (toolName === "x_search") {
+    if (status === "started") return `Searching X with ${providerName}`;
+    if (status === "failed") return `X search failed`;
+    return `X search completed`;
+  }
+  const label = toolDisplayName(toolName);
+  if (status === "started") return `Running ${label} with ${providerName}`;
+  if (status === "failed") return `${label} failed`;
+  return `${label} completed`;
+}
+
+function isProviderTool(
+  data: ToolStreamData,
+  payload?: ToolPreviewPayload,
+): boolean {
+  return (
+    data.provider_native === true ||
+    data.tool_origin === "provider" ||
+    payload?.provider_native === true ||
+    payload?.tool_origin === "provider"
+  );
+}
+
+function providerForTool(
+  data: ToolStreamData,
+  payload?: ToolPreviewPayload,
+): string | undefined {
+  return stringField(payload?.provider) ?? stringField(data.provider);
+}
+
+function toolArgsSummary(
+  data: ToolStreamData,
+  payload?: ToolPreviewPayload,
+): string {
+  const args =
+    payload?.tool_args !== undefined ? payload.tool_args : data.tool_args;
+  if (args !== undefined) return normalizeToolCallArgs(args);
+  return stringField(data.args_summary) ?? "";
+}
+
+function upsertActiveTool(
+  tools: ActiveToolEntry[],
+  next: ActiveToolEntry,
+): ActiveToolEntry[] {
+  const matches = (tool: ActiveToolEntry) =>
+    next.callId ? tool.callId === next.callId : tool.name === next.name;
+  const update = (tool: ActiveToolEntry): ActiveToolEntry =>
+    matches(tool)
+      ? {
+          ...tool,
+          ...next,
+          args: next.args || tool.args,
+          textPreview: next.textPreview ?? tool.textPreview,
+          outputPreview: next.outputPreview ?? tool.outputPreview,
+          errorPreview: next.errorPreview ?? tool.errorPreview,
+        }
+      : {
+          ...tool,
+          children: tool.children?.map(update),
+        };
+
+  if (tools.some(matches)) return tools.map(update);
+  return [...tools.map(update), next];
 }
 
 const LOCAL_CHAT_SEED_KEY = "nenjo:local_chat_seed";
@@ -592,6 +699,27 @@ async function resolveLifecycleEventPayload(
     data.encrypted_payload,
   );
   const payload = encryptedPayload ?? data.payload ?? {};
+  const toolData = data as ToolStreamData;
+  const toolPayload = payload as ToolPreviewPayload;
+  const providerNative = isProviderTool(toolData, toolPayload);
+  const provider = providerForTool(toolData, toolPayload);
+  const toolName =
+    stringField(toolPayload.tool_name) ??
+    stringField(toolData.tool_name) ??
+    "tool";
+  const toolFailed = toolData.success === false;
+  const providerTextPreview =
+    providerNative && event.event_type === "ToolCallStarted"
+      ? providerToolPreview(toolName, provider, "started")
+      : undefined;
+  const providerOutputPreview =
+    providerNative && event.event_type === "ToolCallCompleted"
+      ? providerToolPreview(
+          toolName,
+          provider,
+          toolFailed ? "failed" : "completed",
+        )
+      : undefined;
   const withPayloadData = {
     ...data,
     message:
@@ -603,6 +731,10 @@ async function resolveLifecycleEventPayload(
     delta: typeof payload.delta === "string" ? payload.delta : data.delta,
     tool_args:
       payload.tool_args !== undefined ? payload.tool_args : data.tool_args,
+    tool_name:
+      typeof payload.tool_name === "string"
+        ? payload.tool_name
+        : data.tool_name,
     details: payload.details !== undefined ? payload.details : data.details,
     args_summary:
       payload.tool_args !== undefined
@@ -611,11 +743,14 @@ async function resolveLifecycleEventPayload(
     text_preview:
       typeof payload.text_preview === "string"
         ? payload.text_preview
-        : data.text_preview,
+        : typeof data.text_preview === "string"
+          ? data.text_preview
+          : providerTextPreview,
     output_preview:
-      typeof payload.output_preview === "string"
+      providerOutputPreview ??
+      (typeof payload.output_preview === "string"
         ? payload.output_preview
-        : data.output_preview,
+        : data.output_preview),
     error_preview:
       typeof payload.error_preview === "string"
         ? payload.error_preview
@@ -628,6 +763,12 @@ async function resolveLifecycleEventPayload(
       typeof payload.result_preview === "string"
         ? payload.result_preview
         : data.result_preview,
+    tool_origin:
+      typeof toolPayload.tool_origin === "string"
+        ? toolPayload.tool_origin
+        : data.tool_origin,
+    provider_native: providerNative ? true : data.provider_native,
+    provider,
   };
   delete withPayloadData.payload;
   delete withPayloadData.encrypted_payload;
@@ -1818,6 +1959,92 @@ export function usePlannerChat(
             }
 
             setActiveDomainSession(null);
+            break;
+          }
+
+          case "ToolCallStarted": {
+            const data = streamEvent.data as ToolStreamData;
+            void (async () => {
+              const encryptedData =
+                await resolveEncryptedPayloadJson<ToolPreviewPayload>(
+                  data.encrypted_payload,
+                );
+              const payload = encryptedData ?? data.payload ?? {};
+              const toolName =
+                stringField(payload.tool_name) ??
+                stringField(data.tool_name) ??
+                "tool";
+              const providerNative = isProviderTool(data, payload);
+              const provider = providerForTool(data, payload);
+              const textPreview =
+                stringField(payload.text_preview) ??
+                stringField(data.text_preview) ??
+                (providerNative
+                  ? providerToolPreview(toolName, provider, "started")
+                  : undefined);
+              setTypingIfDelivered();
+              setActiveTools((prev) =>
+                upsertActiveTool(prev, {
+                  callId: stringField(data.call_id),
+                  parentCallId: stringField(data.parent_call_id),
+                  name: toolName,
+                  args: toolArgsSummary(data, payload),
+                  textPreview,
+                  status: "running",
+                  providerNative,
+                  provider,
+                  children: [],
+                }),
+              );
+            })();
+            break;
+          }
+
+          case "ToolCallCompleted": {
+            const data = streamEvent.data as ToolStreamData;
+            void (async () => {
+              const encryptedData =
+                await resolveEncryptedPayloadJson<ToolPreviewPayload>(
+                  data.encrypted_payload,
+                );
+              const payload = encryptedData ?? data.payload ?? {};
+              const toolName =
+                stringField(payload.tool_name) ??
+                stringField(data.tool_name) ??
+                "tool";
+              const providerNative = isProviderTool(data, payload);
+              const provider = providerForTool(data, payload);
+              const status = data.success === false ? "failed" : "completed";
+              const providerPreview = providerNative
+                ? providerToolPreview(toolName, provider, status)
+                : undefined;
+              const outputPreview =
+                providerPreview ??
+                stringField(payload.output_preview) ??
+                stringField(data.output_preview);
+              const errorPreview =
+                stringField(payload.error_preview) ??
+                stringField(data.error_preview);
+              setTypingIfDelivered();
+              if (providerPreview) {
+                setLivePreview((prev) => appendPreview(prev, providerPreview));
+              }
+              setActiveTools((prev) =>
+                upsertActiveTool(prev, {
+                  callId: stringField(data.call_id),
+                  parentCallId: stringField(data.parent_call_id),
+                  name: toolName,
+                  args: toolArgsSummary(data, payload),
+                  textPreview: providerPreview,
+                  status,
+                  outputPreview,
+                  errorPreview,
+                  providerNative,
+                  provider,
+                  children: [],
+                }),
+              );
+            })();
             break;
           }
 

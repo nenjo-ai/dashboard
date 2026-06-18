@@ -66,6 +66,8 @@ export interface ToolSpan extends TraceSpanBase {
   textPreview?: string;
   outputPreview?: string;
   errorPreview?: string;
+  providerNative?: boolean;
+  provider?: string;
   stdout?: string;
   stderr?: string;
   children?: TraceSpan[];
@@ -206,6 +208,9 @@ export type AgentLifecycleEvent =
         tool_args?: unknown;
         args_summary?: string;
         text_preview?: string;
+        provider_native?: boolean;
+        provider?: string;
+        tool_origin?: string;
       };
     }
   | {
@@ -225,10 +230,14 @@ export type AgentLifecycleEvent =
         call_id: string;
         parent_call_id?: string;
         success: boolean;
+        tool_name?: string;
         tool_args?: unknown;
         args_summary?: string;
         output_preview?: string;
         error_preview?: string;
+        provider_native?: boolean;
+        provider?: string;
+        tool_origin?: string;
       };
     }
   | {

@@ -34,7 +34,7 @@ export function buildPricingSchemaGraph() {
             name: 'Professional',
             availability: 'https://schema.org/PreOrder',
             url: `${SITE_URL}/pricing`,
-            description: 'Team plans — coming soon. Join waitlist.',
+            description: 'Team plans — coming soon. Contact sales for timing.',
             itemOffered: { '@id': `${SITE_URL}/#software` },
           },
           {

@@ -1,6 +1,5 @@
 export type PricingPlanCta =
   | { kind: "link"; label: string; href: string }
-  | { kind: "waitlist"; label: string }
   | { kind: "mailto"; label: string; href: string };
 
 export type PricingPlan = {
@@ -47,9 +46,12 @@ export const pricingPlans: PricingPlan[] = [
       "500 cloud chat messages retained",
       "500 notifications, activity rows, and execution runs retained",
     ],
-    finePrint:
-      "Join the waitlist and we'll notify you when team plans open.",
-    cta: { kind: "waitlist", label: "Join waitlist" },
+    finePrint: "Professional isn't self-serve today.",
+    cta: {
+      kind: "mailto",
+      label: "Contact us",
+      href: "mailto:sales@nenjo.ai?subject=Professional%20plan",
+    },
   },
   {
     name: "Enterprise",

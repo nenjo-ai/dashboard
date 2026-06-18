@@ -30,6 +30,13 @@ import type {
   TraceSpan,
   TraceStatus,
 } from "@/lib/agentRunTrace/types";
+import {
+  chronologicalSpans,
+  currentCycleSpans,
+  filterHistorySpans,
+  hasRunningSpan,
+  spanChildren,
+} from "@/lib/agentRunTrace/visibility";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import type { AgentDefinition } from "@/lib/types";
 
@@ -103,112 +110,6 @@ function formatDuration(ms: number | null): string {
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   return `${minutes}m ${seconds % 60}s`;
-}
-
-function spanChildren(span: TraceSpan): TraceSpan[] {
-  return "children" in span ? span.children ?? [] : [];
-}
-
-function chronologicalSpans(spans: TraceSpan[]): TraceSpan[] {
-  return spans
-    .map((span, index) => ({ span, index }))
-    .sort((left, right) => {
-      const leftTime = new Date(left.span.startedAt).getTime();
-      const rightTime = new Date(right.span.startedAt).getTime();
-      if (leftTime === rightTime) return left.index - right.index;
-      return leftTime - rightTime;
-    })
-    .map(({ span }) => {
-      if (!("children" in span) || !span.children) return span;
-      return {
-        ...span,
-        children: chronologicalSpans(span.children),
-      } as TraceSpan;
-    });
-}
-
-function isCompletedModelSpan(span: TraceSpan): boolean {
-  return span.kind === "model" && span.status === "completed";
-}
-
-function filterHistorySpans(spans: TraceSpan[]): TraceSpan[] {
-  return spans.flatMap((span) => {
-    if (isCompletedModelSpan(span)) return [];
-    if (!("children" in span) || !span.children) return [span];
-    return [
-      {
-        ...span,
-        children: filterHistorySpans(span.children),
-      } as TraceSpan,
-    ];
-  });
-}
-
-function hasRunningSpan(span: TraceSpan): boolean {
-  return span.status === "running" || spanChildren(span).some(hasRunningSpan);
-}
-
-function activeActionSpansBefore(spans: TraceSpan[], beforeIndex: number): TraceSpan[] {
-  const activeActions: TraceSpan[] = [];
-  for (let index = 0; index < beforeIndex; index += 1) {
-    const span = spans[index];
-    if (span.kind !== "model" && hasRunningSpan(span)) {
-      activeActions.push(span);
-    }
-  }
-  return activeActions;
-}
-
-function currentCycleSpans(spans: TraceSpan[]): TraceSpan[] {
-  let lastModelIndex = -1;
-  for (let index = spans.length - 1; index >= 0; index -= 1) {
-    if (spans[index].kind === "model") {
-      lastModelIndex = index;
-      break;
-    }
-  }
-
-  if (lastModelIndex === -1) return spans;
-
-  const latestModel = spans[lastModelIndex];
-  const activeActionsBeforeLatestModel = activeActionSpansBefore(
-    spans,
-    lastModelIndex,
-  );
-
-  if (latestModel.status === "running") {
-    return activeActionsBeforeLatestModel.length > 0
-      ? [...activeActionsBeforeLatestModel, latestModel]
-      : [latestModel];
-  }
-
-  const currentActionBatch = spans
-    .slice(lastModelIndex + 1)
-    .filter((span) => span.kind !== "model");
-  if (currentActionBatch.length > 0) {
-    const latestBatchId = [...currentActionBatch]
-      .reverse()
-      .find((span): span is ToolSpan => span.kind === "tool" && Boolean(span.batchId))
-      ?.batchId;
-    const activeIds = new Set(activeActionsBeforeLatestModel.map((span) => span.id));
-    const visibleBatch = latestBatchId
-      ? currentActionBatch.filter(
-          (span) =>
-            span.kind !== "tool" ||
-            !span.batchId ||
-            span.batchId === latestBatchId ||
-            span.status === "running",
-        )
-      : currentActionBatch;
-    return [
-      ...activeActionsBeforeLatestModel,
-      ...visibleBatch.filter((span) => !activeIds.has(span.id)),
-    ];
-  }
-
-  return activeActionsBeforeLatestModel.length > 0
-    ? [...activeActionsBeforeLatestModel, latestModel]
-    : [latestModel];
 }
 
 function spanSummary(spans: TraceSpan[]): string {
@@ -427,6 +328,12 @@ function PreviewMarkdown({ children }: { children: string | undefined }) {
 function ToolTraceRow({ span, compact }: { span: ToolSpan; compact: boolean }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsPayload = useMemo(() => detailPayloadForSpan(span), [span]);
+  const inlinePreview =
+    span.textPreview ??
+    (span.providerNative ? (span.outputPreview ?? span.errorPreview) : undefined);
+  const originLabel = span.providerNative
+    ? [span.provider, "provider"].filter(Boolean).join(" ")
+    : undefined;
   const hasDetails = Boolean(
     detailsPayload &&
       Object.values(detailsPayload).some((value) => hasDetailValue(value)),
@@ -438,6 +345,11 @@ function ToolTraceRow({ span, compact }: { span: ToolSpan; compact: boolean }) {
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-700 dark:text-gray-300" title={span.name}>
           {span.name}
         </span>
+        {originLabel && (
+          <span className="shrink-0 rounded-sm bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+            {originLabel}
+          </span>
+        )}
         <span className="shrink-0 text-[10px] font-medium text-gray-400">
           {statusLabel(span.status)}
         </span>
@@ -453,6 +365,7 @@ function ToolTraceRow({ span, compact }: { span: ToolSpan; compact: boolean }) {
       </div>
       {!compact && (
         <>
+          <PreviewText>{inlinePreview}</PreviewText>
           {detailsOpen && detailsPayload && <JsonCodeBlock value={detailsPayload} />}
         </>
       )}
@@ -759,7 +672,7 @@ export const AgentRunTrace = memo(function AgentRunTrace({
           ? "w-full max-w-full"
           : mode === "history"
             ? "w-full"
-            : "w-full max-w-[620px]",
+            : "w-full",
         className,
       )}
     >
@@ -785,7 +698,11 @@ export const AgentRunTrace = memo(function AgentRunTrace({
           embedded && "border-0 bg-transparent px-0 py-0 dark:bg-transparent",
           mode === "live" && "rounded-tl-sm",
           !embedded && (compact ? "px-3 py-2" : "px-4 py-2.5"),
-          mobile ? "flex-1" : "w-full flex-1",
+          mobile || embedded
+            ? "flex-1"
+            : mode === "history"
+              ? "w-full flex-1"
+              : "w-full max-w-[75%]",
         )}
       >
         <div className="flex min-h-7 items-center gap-2">

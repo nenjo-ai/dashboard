@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Cpu, Globe, PlugZap, ShieldCheck, TimerReset } from "lucide-react";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { Tabs } from "@/components/ui/Tabs";
+import { AgentMediaTab } from "@/components/agents/AgentMediaTab";
 import { useAgentAbilities, useAgentDomains, useAgentExecutions, useAgentMcpServers } from "@/lib/hooks";
 import type { AgentDefinition, PromptConfig } from "@/lib/types";
 
@@ -12,6 +13,7 @@ type MobileAgentTab =
   | "preview"
   | "abilities"
   | "domains"
+  | "media"
   | "mcp"
   | "heartbeat"
   | "scopes"
@@ -202,6 +204,8 @@ export function MobileAgentDetail({
           )}
         </div>
       )}
+
+      {activeTab === "media" && <AgentMediaTab agentId={agent.id} />}
 
       {activeTab === "mcp" && (
         <div className="space-y-3">
