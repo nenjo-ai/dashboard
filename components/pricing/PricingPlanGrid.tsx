@@ -1,20 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useClerk } from "@clerk/nextjs";
 import {
   BadgeDollarSign,
   Building2,
   LayoutDashboard,
   Mail,
   Sparkles,
-  UserPlus,
 } from "lucide-react";
-import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
-import { clerkWaitlistAppearance } from "@/lib/clerk-waitlist-appearance";
 import { pricingPlans, type PricingPlan } from "@/lib/pricing-plans";
-
-const CLERK_ENABLED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 export function PricingPlanGrid() {
   return (
@@ -62,39 +56,11 @@ function PlanCta({ plan }: { plan: PricingPlan }) {
     );
   }
 
-  if (plan.cta.kind === "waitlist") {
-    if (!CLERK_ENABLED) {
-      return <ClerkConfigurationNotice compact />;
-    }
-
-    return <JoinWaitlistButton label={plan.cta.label} />;
-  }
-
   return (
     <a className="lp-button secondary" href={plan.cta.href}>
       <Mail size={18} />
       {plan.cta.label}
     </a>
-  );
-}
-
-function JoinWaitlistButton({ label }: { label: string }) {
-  const { openWaitlist } = useClerk();
-
-  return (
-    <button
-      type="button"
-      className="lp-button primary"
-      onClick={() =>
-        openWaitlist({
-          afterJoinWaitlistUrl: "/pricing",
-          appearance: clerkWaitlistAppearance,
-        })
-      }
-    >
-      <UserPlus size={18} />
-      {label}
-    </button>
   );
 }
 

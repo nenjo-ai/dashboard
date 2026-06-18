@@ -342,6 +342,10 @@ export function reduceRunTrace(
         argsSummary: event.data.args_summary,
         rawArgs: event.data.tool_args,
         textPreview: event.data.text_preview,
+        providerNative:
+          event.data.provider_native === true ||
+          event.data.tool_origin === "provider",
+        provider: event.data.provider,
         startedAt: now,
       };
       const activeAbilityId = event.data.parent_call_id;
@@ -394,6 +398,11 @@ export function reduceRunTrace(
               : span.argsSummary,
           outputPreview: event.data.output_preview ?? span.outputPreview,
           errorPreview: event.data.error_preview ?? span.errorPreview,
+          providerNative:
+            span.providerNative ||
+            event.data.provider_native === true ||
+            event.data.tool_origin === "provider",
+          provider: event.data.provider ?? span.provider,
         };
       });
       return {

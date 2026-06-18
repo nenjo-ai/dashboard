@@ -16,6 +16,7 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get("error");
   const redirectUrl = searchParams.get("redirect_url") || "/dashboard/onboarding";
+  const signUpHref = `/dashboard/signup?redirect_url=${encodeURIComponent(redirectUrl)}`;
 
   useEffect(() => {
     if (isLoaded && isSignedIn) {
@@ -59,6 +60,7 @@ function LoginContent() {
             socialButtonsBlockButton:
               "flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 shadow-xs transition-all hover:bg-gray-50 hover:shadow-md active:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:active:bg-gray-600",
             socialButtonsBlockButtonText: "text-sm font-medium",
+            footer: "hidden",
             formFieldInput:
               "rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white",
             dividerLine: "bg-gray-200 dark:bg-gray-700",
@@ -72,6 +74,13 @@ function LoginContent() {
         forceRedirectUrl={redirectUrl}
         signUpForceRedirectUrl={redirectUrl}
       />
+
+      <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
+        Don&apos;t have an account?{" "}
+        <Link href={signUpHref} className="font-medium text-gray-700 underline hover:text-gray-900 dark:text-gray-200 dark:hover:text-white">
+          Sign up
+        </Link>
+      </p>
 
       {/* Clerk CAPTCHA widget mount point (bot protection) */}
       <div id="clerk-captcha" />

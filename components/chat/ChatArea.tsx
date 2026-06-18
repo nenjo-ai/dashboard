@@ -1058,7 +1058,7 @@ const TypingIndicator = memo(function TypingIndicator({
     <div
       className={cn(
         "flex items-start gap-3",
-        mobile ? "w-full max-w-full" : "w-full max-w-[72%]",
+        mobile ? "w-full max-w-full" : "w-full",
       )}
     >
       {activeAgent ? (
@@ -1078,7 +1078,7 @@ const TypingIndicator = memo(function TypingIndicator({
       <div
         className={cn(
           "theme-border theme-surface min-w-0 rounded-xl rounded-tl-sm border px-4 py-2.5",
-          mobile ? "flex-1" : "w-full flex-1",
+          mobile ? "flex-1" : "w-full max-w-[75%]",
         )}
       >
         {textPreview ? (
@@ -2281,7 +2281,7 @@ export function ChatArea({
     }
 
     return (
-      <>
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         {isLoadingMore && (
           <div className="flex justify-center py-2">
             <span className="text-xs text-gray-400">
@@ -2352,7 +2352,7 @@ export function ChatArea({
             hasActiveRunTrace || isTyping || hasActiveTools ? "h-16" : "h-1",
           )}
         />
-      </>
+      </div>
     );
   }, [
     isLoadingHistory,

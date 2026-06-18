@@ -862,13 +862,26 @@ export const MODEL_PROVIDERS: {
     id: "xai",
     label: "xAI (Grok)",
     models: [
+      "grok-4.3",
+      "grok-4.3-latest",
+      "grok-latest",
+      "grok-build-0.1",
+      "grok-code-fast-1",
+      "grok-code-fast",
+      "grok-4",
+      "grok-4-latest",
+      "grok-4-fast",
+      "grok-4-fast-reasoning",
+      "grok-4-fast-non-reasoning",
+      "grok-4-1-fast",
       "grok-4-1-fast-reasoning",
       "grok-4-1-fast-non-reasoning",
       "grok-4-0709",
-      "grok-code-fast-1",
       "grok-3",
+      "grok-3-latest",
+      "grok-3-fast",
       "grok-3-mini",
-      "grok-2-vision-1212",
+      "grok-3-mini-fast",
     ],
   },
   {
@@ -958,6 +971,7 @@ export interface Model {
   tools: unknown[];
   tags: string[];
   base_url: string | null;
+  native_tools?: NativeModelTool[];
   project_id: string | null;
   created_at: string;
   updated_at: string;
@@ -974,6 +988,7 @@ export interface CreateModelRequest {
   tools?: unknown[];
   tags?: string[];
   base_url?: string;
+  native_tools?: NativeModelTool[];
   project_id?: string;
 }
 
@@ -985,7 +1000,176 @@ export interface UpdateModelRequest {
   temperature?: number;
   tags?: string[];
   base_url?: string | null;
+  native_tools?: NativeModelTool[];
 }
+
+export type NativeModelTool = "web_search" | "x_search";
+
+export const NATIVE_MODEL_TOOL_LABELS: Record<NativeModelTool, string> = {
+  web_search: "Web Search",
+  x_search: "X Search",
+};
+
+// ---------------------------------------------------------------------------
+// Native media provider configuration
+// ---------------------------------------------------------------------------
+
+export type NativeMediaCapability =
+  | "generate_image"
+  | "edit_image"
+  | "generate_video"
+  | "edit_video"
+  | "image_to_video"
+  | "reference_to_video"
+  | "extend_video"
+  | "generate_speech"
+  | "transcribe_audio"
+  | "realtime_voice_agent";
+
+export type NativeMediaProvider = "openai" | "xai";
+
+export interface NativeMediaCapabilityInfo {
+  id: NativeMediaCapability;
+  label: string;
+  kind: "image" | "video" | "audio" | "voice";
+}
+
+export interface NativeMediaProviderInfo {
+  id: NativeMediaProvider;
+  label: string;
+  models: string[];
+  capabilities: NativeMediaCapability[];
+  model_capabilities?: NativeMediaModelCapabilityInfo[];
+}
+
+export interface NativeMediaModelCapabilityInfo {
+  model: string;
+  capabilities: NativeMediaCapability[];
+}
+
+export interface MediaProviderConfig {
+  id: string;
+  name: string;
+  slug: string;
+  provider: NativeMediaProvider;
+  model: string;
+  capabilities: NativeMediaCapability[];
+  order_index: number;
+  metadata: Record<string, unknown>;
+  created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface MediaConfig {
+  version: string;
+  providers: MediaProviderConfig[];
+}
+
+export type MediaProviderConfigInput = Omit<
+  MediaProviderConfig,
+  "id" | "order_index" | "metadata" | "created_by" | "created_at" | "updated_at"
+> & {
+  id?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export interface ConfigureMediaProvidersRequest {
+  providers: MediaProviderConfigInput[];
+}
+
+export interface MediaRequirementInput {
+  capability: NativeMediaCapability;
+  provider?: NativeMediaProvider | null;
+  model?: string | null;
+}
+
+export interface MediaAssignment {
+  id: string;
+  resource_id: string;
+  capability: NativeMediaCapability;
+  provider: NativeMediaProvider | null;
+  model: string | null;
+  assignment_source: "local" | "package" | string;
+  package_install_id?: string | null;
+  package_source_path?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConfigureMediaAssignmentsRequest {
+  media: MediaRequirementInput[];
+}
+
+export interface MediaAssignmentsResponse {
+  media: MediaAssignment[];
+}
+
+export interface MediaCapabilitiesResponse {
+  capabilities: NativeMediaCapabilityInfo[];
+  providers: NativeMediaProviderInfo[];
+}
+
+export const NATIVE_MEDIA_CAPABILITIES: NativeMediaCapabilityInfo[] = [
+  { id: "generate_image", label: "Generate image", kind: "image" },
+  { id: "edit_image", label: "Edit image", kind: "image" },
+  { id: "generate_video", label: "Generate video", kind: "video" },
+  { id: "edit_video", label: "Edit video", kind: "video" },
+  { id: "image_to_video", label: "Image to video", kind: "video" },
+  { id: "reference_to_video", label: "Reference to video", kind: "video" },
+  { id: "extend_video", label: "Extend video", kind: "video" },
+  { id: "generate_speech", label: "Generate speech", kind: "audio" },
+  { id: "transcribe_audio", label: "Transcribe audio", kind: "audio" },
+  { id: "realtime_voice_agent", label: "Realtime voice agent", kind: "voice" },
+];
+
+export const NATIVE_MEDIA_PROVIDERS: NativeMediaProviderInfo[] = [
+  {
+    id: "openai",
+    label: "OpenAI",
+    models: ["gpt-image-1"],
+    capabilities: ["generate_image"],
+    model_capabilities: [
+      {
+        model: "gpt-image-1",
+        capabilities: ["generate_image"],
+      },
+    ],
+  },
+  {
+    id: "xai",
+    label: "xAI",
+    models: [
+      "grok-imagine-image-quality",
+      "grok-imagine-video",
+    ],
+    capabilities: [
+      "generate_image",
+      "edit_image",
+      "generate_video",
+      "edit_video",
+      "image_to_video",
+      "reference_to_video",
+      "extend_video",
+    ],
+    model_capabilities: [
+      {
+        model: "grok-imagine-image-quality",
+        capabilities: ["generate_image", "edit_image"],
+      },
+      {
+        model: "grok-imagine-video",
+        capabilities: [
+          "generate_video",
+          "edit_video",
+          "image_to_video",
+          "reference_to_video",
+          "extend_video",
+        ],
+      },
+    ],
+  },
+];
 
 export interface ApiError {
   message: string;

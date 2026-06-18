@@ -5,9 +5,10 @@ import type {
   Model,
   ModelProvider,
   CreateModelRequest,
+  NativeModelTool,
   UpdateModelRequest,
 } from "@/lib/types";
-import { MODEL_PROVIDERS } from "@/lib/types";
+import { MODEL_PROVIDERS, NATIVE_MODEL_TOOL_LABELS } from "@/lib/types";
 import { createModel, updateModel } from "@/lib/api";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -30,6 +31,7 @@ interface FormState {
   temperature: number;
   baseUrl: string;
   keyTag: string;
+  nativeTools: NativeModelTool[];
 }
 
 interface FormErrors {
@@ -58,7 +60,10 @@ const INITIAL: FormState = {
   temperature: 0.7,
   baseUrl: "",
   keyTag: "",
+  nativeTools: [],
 };
+
+const XAI_NATIVE_MODEL_TOOLS: NativeModelTool[] = ["web_search", "x_search"];
 
 /** Derive the env var name from a key tag: "sambanova" → "SAMBANOVA_API_KEY" */
 function envVarFromTag(tag: string): string {
@@ -97,6 +102,7 @@ export function AgentFormModal({
         temperature: agent.temperature,
         baseUrl: agent.base_url ?? "",
         keyTag,
+        nativeTools: provider === "xai" ? agent.native_tools ?? [] : [],
       });
     } else {
       setForm(INITIAL);
@@ -126,7 +132,20 @@ export function AgentFormModal({
       model: pd?.models[0] ?? "",
       baseUrl: "",
       keyTag: "",
+      nativeTools: provider === "xai" ? prev.nativeTools : [],
     }));
+  }, []);
+
+  const toggleNativeTool = useCallback((tool: NativeModelTool) => {
+    setForm((prev) => {
+      const selected = prev.nativeTools.includes(tool);
+      return {
+        ...prev,
+        nativeTools: selected
+          ? prev.nativeTools.filter((item) => item !== tool)
+          : [...prev.nativeTools, tool],
+      };
+    });
   }, []);
 
   const validate = useCallback((): boolean => {
@@ -162,6 +181,7 @@ export function AgentFormModal({
           form.provider === "openai-compatible" && form.keyTag.trim()
             ? `openai-compatible:${form.keyTag.trim()}`
             : form.provider;
+        const nativeTools = form.provider === "xai" ? form.nativeTools : [];
         if (isEdit && agent) {
           const data: UpdateModelRequest = {
             name: modelName,
@@ -170,6 +190,7 @@ export function AgentFormModal({
             model_provider: modelProvider,
             temperature: form.temperature,
             base_url: trimmedUrl ?? null,
+            native_tools: nativeTools,
           };
           await updateModel(agent.id, data);
         } else {
@@ -180,6 +201,7 @@ export function AgentFormModal({
             model_provider: modelProvider,
             temperature: form.temperature,
             base_url: trimmedUrl,
+            native_tools: nativeTools,
           };
           await createModel(data);
         }
@@ -297,6 +319,40 @@ export function AgentFormModal({
               {form.keyTag.trim()
                 ? <>Set <code className="text-gray-500 dark:text-gray-400">{envVarFromTag(form.keyTag.trim())}</code> on your harness</>
                 : "Optional — identifies which env var holds the API key"}
+            </p>
+          </div>
+        )}
+
+        {form.provider === "xai" && (
+          <div>
+            <Label>Native Tools</Label>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {XAI_NATIVE_MODEL_TOOLS.map((tool) => {
+                const checked = form.nativeTools.includes(tool);
+                return (
+                  <label
+                    key={tool}
+                    className={[
+                      "flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
+                      checked
+                        ? "border-deep-space-blue-300 bg-deep-space-blue-50 text-deep-space-blue-700 dark:border-deep-space-blue-700 dark:bg-deep-space-blue-950/40 dark:text-deep-space-blue-200"
+                        : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800",
+                    ].join(" ")}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleNativeTool(tool)}
+                      disabled={submitting}
+                      className="h-4 w-4 rounded border-gray-300 text-deep-space-blue-600 focus:ring-deep-space-blue-500"
+                    />
+                    <span>{NATIVE_MODEL_TOOL_LABELS[tool]}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+              Enabled tools run inside xAI and take precedence over matching local tools.
             </p>
           </div>
         )}

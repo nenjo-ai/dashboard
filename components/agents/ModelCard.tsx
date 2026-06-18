@@ -1,6 +1,7 @@
 "use client";
 
 import type { Model } from "@/lib/types";
+import { NATIVE_MODEL_TOOL_LABELS } from "@/lib/types";
 import { Card } from "@/components/ui/Card";
 
 interface ModelCardProps {
@@ -24,6 +25,8 @@ function providerLabel(provider: string): string {
 }
 
 export function ModelCard({ model, onEdit, onView, onDelete }: ModelCardProps) {
+  const nativeTools = model.native_tools ?? [];
+
   return (
     <Card className="relative group transition-all">
       <div className="p-5">
@@ -50,6 +53,19 @@ export function ModelCard({ model, onEdit, onView, onDelete }: ModelCardProps) {
           <p className="mt-2 text-xs text-gray-500 line-clamp-2 dark:text-gray-400">
             {model.description}
           </p>
+        )}
+
+        {nativeTools.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {nativeTools.map((tool) => (
+              <span
+                key={tool}
+                className="rounded-md border border-deep-space-blue-200 bg-deep-space-blue-50 px-2 py-0.5 text-[10px] font-medium text-deep-space-blue-700 dark:border-deep-space-blue-800 dark:bg-deep-space-blue-950/40 dark:text-deep-space-blue-200"
+              >
+                {NATIVE_MODEL_TOOL_LABELS[tool] ?? tool}
+              </span>
+            ))}
+          </div>
         )}
 
         {/* Footer */}
