@@ -13,10 +13,10 @@ import {
   useQueryParam,
 } from "@/lib/hooks";
 import { usePlannerChat } from "@/lib/usePlannerChat";
-import { formatToolCallSignature } from "@/lib/toolCallDisplay";
 import { Button } from "@/components/ui/Button";
 import { useUser } from "@clerk/nextjs";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
+import { AgentRunTrace } from "@/components/agent-run-trace/AgentRunTrace";
 import { agentColorBg, agentColorText } from "@/lib/agent-colors";
 import { DomainSlashCommandDropdown } from "./DomainSlashCommandDropdown";
 import { DomainIndicator } from "./DomainIndicator";
@@ -203,96 +203,6 @@ const MessageBubble = memo(function MessageBubble({
   );
 });
 
-type ToolEntry = { name: string; args: string; textPreview?: string; status?: "running" | "completed" | "failed"; outputPreview?: string; errorPreview?: string; children?: ToolEntry[] };
-
-function ToolCallLine({ tool, compact = false }: { tool: ToolEntry; compact?: boolean }) {
-  const signature = formatToolCallSignature(tool.name, tool.args);
-  const statusLabel = tool.status === "completed" ? "done" : tool.status === "failed" ? "failed" : null;
-  return (
-    <div className={cn("flex items-start gap-2", compact ? "text-[10px]" : "text-[11px]")}>
-      <span className={cn(
-        "mt-[5px] inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-        tool.status === "failed"
-          ? "bg-flag-red-400"
-          : tool.status === "completed"
-            ? "bg-emerald-400"
-            : "animate-pulse bg-deep-space-blue-400",
-      )} />
-      <div className="min-w-0 flex-1">
-        <div className="rounded-md border border-gray-200/80 bg-gray-50 px-2 py-1.5 font-mono leading-relaxed text-gray-600 shadow-sm dark:border-gray-700/80 dark:bg-gray-900/45 dark:text-gray-300">
-          <span className="whitespace-pre-wrap break-words">{signature}</span>
-          {statusLabel && (
-            <span className={cn(
-              "ml-2 font-sans text-[10px] font-medium",
-              tool.status === "failed"
-                ? "text-flag-red-500/80 dark:text-flag-red-400/80"
-                : "text-emerald-500/80 dark:text-emerald-400/80",
-            )}>
-              {statusLabel}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const TypingIndicator = memo(function TypingIndicator({ activeAgent, tools, preview }: { activeAgent?: AgentDefinition; tools?: ToolEntry[]; preview?: string }) {
-  const hasTools = tools && tools.length > 0;
-  const textPreview = preview?.trim() || tools?.find((tool) => tool.textPreview?.trim())?.textPreview?.trim();
-  return (
-    <div className="flex items-start gap-3">
-      {activeAgent ? (
-        <RoleIdenticon
-          roleId={activeAgent.id}
-          color={activeAgent.color}
-          size={32}
-          className="shrink-0"
-          animate={true}
-          name={activeAgent.name}
-        />
-      ) : (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vivid-tangerine-100 text-xs font-bold text-vivid-tangerine-700">
-          AI
-        </div>
-      )}
-      <div className="rounded-xl rounded-tl-sm border border-gray-200 bg-white px-4 py-2.5 dark:border-gray-700 dark:bg-gray-800">
-        {textPreview ? (
-          <div className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-gray-600 dark:text-gray-300">
-            {textPreview}
-            <span className="ml-1 animate-blink-cursor text-base leading-none text-deep-space-blue-500 dark:text-deep-space-blue-400">&#9612;</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 font-mono text-xs text-gray-400">
-            <span className="tracking-wider">thinking</span>
-            <span className="animate-blink-cursor text-base leading-none text-deep-space-blue-500 dark:text-deep-space-blue-400">&#9612;</span>
-          </div>
-        )}
-        {hasTools && (
-          <div className="mt-1.5 flex flex-col gap-1">
-            {tools.map((tool, i) => (
-              <div key={tool.name + i} className="leading-tight">
-                <div className="min-w-0 space-y-1">
-                  <ToolCallLine tool={tool} />
-                  {tool.children && tool.children.length > 0 && (
-                    <div className="mt-1.5 ml-3 flex flex-col gap-1 border-l border-gray-200 pl-3 dark:border-gray-700">
-                      {tool.children.map((child, childIndex) => (
-                        <div key={`${child.name}-${childIndex}`} className="leading-tight">
-                          <ToolCallLine tool={child} compact />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
-
 export function PlannerChat({ projectId }: PlannerChatProps) {
   const { user } = useUser();
   const userImageUrl = user?.imageUrl;
@@ -361,8 +271,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
     sendMessage,
     deleteMessage,
     isTyping,
-    activeTools,
-    livePreview,
+    activeRunTrace,
     isLoadingHistory,
     hasMore,
     isLoadingMore,
@@ -381,7 +290,12 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
     archiveSession,
     deleteSession,
   } = usePlannerChat(projectId, activeAgentId);
-  const hasActiveTools = activeTools.length > 0;
+  const visibleRunTrace =
+    activeRunTrace &&
+    !["completed", "failed", "cancelled"].includes(activeRunTrace.phase)
+      ? activeRunTrace
+      : undefined;
+  const hasActiveRunTrace = !!visibleRunTrace;
 
   const [showSessionList, setShowSessionList] = useState(false);
 
@@ -485,7 +399,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isTyping]);
+  }, [messages, isTyping, hasActiveRunTrace]);
 
   // Scroll-to-top pagination: load older messages
   const handleScroll = useCallback(() => {
@@ -680,9 +594,6 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
       }
     }
 
-    // Block direct sends to the current role while it's still responding
-    if (isTyping) return;
-
     sendMessage(text);
     setInput("");
   };
@@ -829,7 +740,9 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
                 onDelete={msg.id !== "welcome" ? deleteMessage : undefined}
               />
             ))}
-            {(isTyping || hasActiveTools) && <TypingIndicator activeAgent={activeAgent} tools={activeTools} preview={livePreview} />}
+            {visibleRunTrace && (
+              <AgentRunTrace trace={visibleRunTrace} activeAgent={activeAgent} />
+            )}
           </>
         )}
       </div>

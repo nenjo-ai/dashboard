@@ -4,6 +4,10 @@ const STREAM_STORE = 'snapshots'
 const CRYPTO_DB = 'nenjo-crypto'
 const CRYPTO_STORE = 'secrets'
 const WRAP_KEY_ENTRY = 'device-wrap-key'
+const VAULT_SESSION_WRAP_KEY_ENTRY = 'vault-session-wrap-key'
+const VAULT_SESSION_ENTRY = 'vault-session'
+const PENDING_NOTIFICATION_PREFIX = 'pending-encrypted-notification:'
+const PENDING_NOTIFICATION_MAX_AGE_MS = 24 * 60 * 60 * 1000
 const PAYLOAD_ALGORITHM = 'aes-256-gcm'
 const AES_ALGORITHM = 'AES-GCM'
 const APP_SHELL_ASSETS = [
@@ -82,10 +86,74 @@ function readCryptoEntry(db, key) {
   })
 }
 
+function writeCryptoEntry(db, key, value) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(CRYPTO_STORE, 'readwrite')
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.objectStore(CRYPTO_STORE).put(value, key)
+  })
+}
+
+function deleteCryptoEntry(db, key) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(CRYPTO_STORE, 'readwrite')
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.objectStore(CRYPTO_STORE).delete(key)
+  })
+}
+
+function readCryptoKeys(db) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(CRYPTO_STORE, 'readonly')
+    const store = tx.objectStore(CRYPTO_STORE)
+    const request = store.getAllKeys()
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+async function loadVaultKeyForDecrypt(db, accountId) {
+  const session = await readCryptoEntry(db, VAULT_SESSION_ENTRY)
+  if (!session?.nonce || !session?.ciphertext || !session?.expires_at) return null
+  if (accountId && session.account_id && session.account_id !== accountId) return null
+
+  const expiresAt = Date.parse(session.expires_at)
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    await deleteCryptoEntry(db, VAULT_SESSION_ENTRY).catch(() => undefined)
+    return null
+  }
+
+  const wrapKey = await readCryptoEntry(db, VAULT_SESSION_WRAP_KEY_ENTRY)
+  if (!wrapKey) return null
+
+  const plaintext = await crypto.subtle.decrypt(
+    { name: AES_ALGORITHM, iv: base64ToBytes(session.nonce) },
+    wrapKey,
+    base64ToBytes(session.ciphertext)
+  )
+
+  return crypto.subtle.importKey(
+    'raw',
+    new Uint8Array(plaintext),
+    { name: AES_ALGORITHM, length: 256 },
+    false,
+    ['decrypt']
+  )
+}
+
+async function storageWrapKeyForDecrypt(db, stored) {
+  if (stored?.version === 2 && stored?.wrap === 'vault') {
+    return loadVaultKeyForDecrypt(db, stored.account_id)
+  }
+  return readCryptoEntry(db, WRAP_KEY_ENTRY)
+}
+
 async function loadStoredOrgContentKey(orgId, keyVersion) {
   const db = await openCryptoDb()
-  const wrapKey = await readCryptoEntry(db, WRAP_KEY_ENTRY)
   const stored = await readCryptoEntry(db, `encrypted-ock:${orgId}:${keyVersion}`)
+  const wrapKey = await storageWrapKeyForDecrypt(db, stored)
   if (!wrapKey || !stored?.nonce || !stored?.ciphertext) return null
 
   const plaintext = await crypto.subtle.decrypt(
@@ -126,34 +194,99 @@ async function decryptOrgPayload(payload) {
   return new TextDecoder().decode(plaintext)
 }
 
-async function resolveEncryptedNotification(data) {
-  const options = {
+function encryptedNotificationId(data) {
+  const payload = data.encrypted_payload
+  if (typeof data.tag === 'string' && data.tag.trim()) return data.tag
+  if (payload?.account_id && payload?.object_id && payload?.object_type) {
+    return `${payload.account_id}:${payload.object_type}:${payload.object_id}`
+  }
+  return `notification:${Date.now()}`
+}
+
+async function storePendingEncryptedNotification(id, data) {
+  if (!data.encrypted_payload) return
+  const db = await openCryptoDb()
+  const now = Date.now()
+  await writeCryptoEntry(db, `${PENDING_NOTIFICATION_PREFIX}${id}`, {
+    id,
+    data: {
+      ...data,
+      tag: typeof data.tag === 'string' && data.tag.trim() ? data.tag : id,
+    },
+    created_at: now,
+    expires_at: now + PENDING_NOTIFICATION_MAX_AGE_MS,
+  })
+}
+
+async function resolveEncryptedNotification(data, controlOptions = {}) {
+  const pendingId = encryptedNotificationId(data)
+  const notificationOptions = {
     body: data.body || 'New encrypted notification',
     icon: data.icon || '/pwa-icon-192.png',
     badge: data.badge || '/pwa-icon-192.png',
-    tag: data.tag,
-    data: { url: '/dashboard/chat?channel=notifications' },
+    tag: data.tag || pendingId,
+    data: {
+      url: data.url || '/dashboard/chat?channel=notifications',
+      pendingNotificationId: pendingId,
+    },
   }
+  let decrypted = false
 
   try {
     const plaintext = await decryptOrgPayload(data.encrypted_payload)
     if (plaintext) {
-      const decrypted = JSON.parse(plaintext)
-      if (typeof decrypted.body === 'string' && decrypted.body.trim()) {
-        options.body = decrypted.body
+      const parsed = JSON.parse(plaintext)
+      if (typeof parsed.body === 'string' && parsed.body.trim()) {
+        notificationOptions.body = parsed.body
       }
-      if (typeof decrypted.tag === 'string' && decrypted.tag.trim()) {
-        options.tag = decrypted.tag
+      if (
+        controlOptions.preserveTag !== true &&
+        typeof parsed.tag === 'string' &&
+        parsed.tag.trim()
+      ) {
+        notificationOptions.tag = parsed.tag
       }
+      delete notificationOptions.data.pendingNotificationId
+      decrypted = true
     }
   } catch {
     // Keep the generic fallback if local decryption is unavailable or fails.
   }
 
+  if (!decrypted && controlOptions.storePending !== false) {
+    await storePendingEncryptedNotification(pendingId, data).catch(() => undefined)
+  }
+
   return {
     title: data.title || 'Nenjo',
-    options,
+    options: notificationOptions,
+    decrypted,
   }
+}
+
+async function retryPendingEncryptedNotifications() {
+  const db = await openCryptoDb()
+  const keys = await readCryptoKeys(db)
+  await Promise.all(
+    keys
+      .filter((key) => typeof key === 'string' && key.startsWith(PENDING_NOTIFICATION_PREFIX))
+      .map(async (key) => {
+        const pending = await readCryptoEntry(db, key)
+        if (!pending?.data || typeof pending.expires_at !== 'number' || pending.expires_at <= Date.now()) {
+          await deleteCryptoEntry(db, key).catch(() => undefined)
+          return
+        }
+
+        const notification = await resolveEncryptedNotification(pending.data, {
+          preserveTag: true,
+          storePending: false,
+        })
+        if (!notification.decrypted) return
+
+        await self.registration.showNotification(notification.title, notification.options)
+        await deleteCryptoEntry(db, key).catch(() => undefined)
+      })
+  )
 }
 
 function isStaticAsset(pathname) {
@@ -268,6 +401,11 @@ self.addEventListener('notificationclick', (event) => {
 
 self.addEventListener('message', (event) => {
   const data = event.data
+  if (data?.type === 'retry-encrypted-notifications') {
+    event.waitUntil(retryPendingEncryptedNotifications().catch(() => undefined))
+    return
+  }
+
   if (!data || data.type !== 'chat-stream-snapshot' || !data.snapshot) {
     return
   }

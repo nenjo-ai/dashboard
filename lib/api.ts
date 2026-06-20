@@ -58,6 +58,7 @@ import {
   decryptContentPayload,
   encryptOrgContentPayload,
 } from "./cryptoContent";
+import { packageInstallJobRunning } from "./packageInstalls";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -1252,6 +1253,19 @@ async function waitForPackageInstall(
       });
     }
 
+    if (detail.job?.status === "failed") {
+      throw new ApiError(
+        detail.job.error ||
+          packageInstallErrorMessage(detail.install),
+        500,
+      );
+    }
+
+    if (packageInstallJobRunning(detail.job)) {
+      await sleep(PACKAGE_INSTALL_POLL_INTERVAL_MS);
+      continue;
+    }
+
     if (detail.install.status === "installed") {
       options?.onProgress?.({
         phase: "complete",
@@ -1409,7 +1423,8 @@ export async function installPackage(
     });
   }
   const detail =
-    install.install.status === "installing"
+    install.install.status === "installing" ||
+    packageInstallJobRunning(install.job)
       ? await waitForPackageInstall(install.install.id, options)
       : install;
   invalidatePackageCatalogCache(data.source_id);
@@ -1434,7 +1449,8 @@ export async function updatePackageInstall(
     });
   }
   const detail =
-    install.install.status === "installing"
+    install.install.status === "installing" ||
+    packageInstallJobRunning(install.job)
       ? await waitForPackageInstall(install.install.id, options)
       : install;
   invalidateKnowledgeCatalogCache();

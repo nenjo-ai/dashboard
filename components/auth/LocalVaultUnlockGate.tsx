@@ -17,6 +17,7 @@ import {
   unlockWithPassword,
 } from "@/lib/cryptoContent";
 import { unlockWithAnyLocalPasskey } from "@/lib/localUnlock";
+import { retryEncryptedPushNotifications } from "@/lib/pushNotificationRetry";
 
 export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }) {
   const { isLoaded, user } = useUser();
@@ -60,6 +61,7 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
         await restoreLocalSecretVaultSession(accountId);
       }
       await loadStoredAccountContentKey();
+      retryEncryptedPushNotifications();
       setLocked(false);
     } catch {
       setLocked(true);

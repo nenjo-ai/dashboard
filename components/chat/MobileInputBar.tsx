@@ -23,7 +23,7 @@ interface MobileInputBarProps {
   placeholder: string;
   disabled?: boolean;
   isTyping: boolean;
-  hasActiveTools: boolean;
+  hasActiveRunTrace: boolean;
   activeAgent?: AgentDefinition;
   availableAgents: AgentDefinition[];
   availableDomains: Domain[];
@@ -50,7 +50,7 @@ export function MobileInputBar({
   placeholder,
   disabled,
   isTyping,
-  hasActiveTools,
+  hasActiveRunTrace,
   activeAgent,
   availableAgents,
   availableDomains,
@@ -85,7 +85,7 @@ export function MobileInputBar({
   const blurResetCleanupRef = useRef<(() => void) | null>(null);
   const cancelArmTimerRef = useRef<number | null>(null);
   const currentAgentId = activeAgent?.id;
-  const interruptActive = isTyping || hasActiveTools;
+  const interruptActive = isTyping || hasActiveRunTrace;
   const canSend = input.trim().length > 0 || !!pendingCommand;
   const shouldRenderComposer =
     isMobileViewport
@@ -463,42 +463,43 @@ export function MobileInputBar({
             )}
           </div>
 
-          {interruptActive && interruptReady ? (
-            <div className="flex shrink-0 items-center gap-2">
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.span
-                  key={cancelArmed ? "armed" : "idle"}
-                  initial={{ opacity: 0, x: 6 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -6 }}
-                  transition={{ duration: 0.16, ease: "easeOut" }}
-                  className="whitespace-nowrap text-[10px] font-medium text-gray-400 dark:text-gray-500"
+          <div className="flex shrink-0 items-center gap-2">
+            {interruptActive && interruptReady && (
+              <>
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.span
+                    key={cancelArmed ? "armed" : "idle"}
+                    initial={{ opacity: 0, x: 6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -6 }}
+                    transition={{ duration: 0.16, ease: "easeOut" }}
+                    className="whitespace-nowrap text-[10px] font-medium text-gray-400 dark:text-gray-500"
+                  >
+                    {cancelArmed ? "Press again to cancel" : "Press twice to cancel"}
+                  </motion.span>
+                </AnimatePresence>
+                <button
+                  type="button"
+                  onClick={handleCancelPress}
+                  className={cn(
+                    "relative flex h-9 w-9 items-center justify-center rounded-full transition-colors",
+                    cancelArmed
+                      ? "bg-flag-red-200 text-flag-red-700 dark:bg-flag-red-800/70 dark:text-flag-red-200"
+                      : "bg-flag-red-100 text-flag-red-600 dark:bg-flag-red-900/40 dark:text-flag-red-400",
+                  )}
                 >
-                  {cancelArmed ? "Press again to cancel" : "Press twice to cancel"}
-                </motion.span>
-              </AnimatePresence>
-              <button
-                type="button"
-                onClick={handleCancelPress}
-                className={cn(
-                  "relative flex h-9 w-9 items-center justify-center rounded-full transition-colors",
-                  cancelArmed
-                    ? "bg-flag-red-200 text-flag-red-700 dark:bg-flag-red-800/70 dark:text-flag-red-200"
-                    : "bg-flag-red-100 text-flag-red-600 dark:bg-flag-red-900/40 dark:text-flag-red-400",
-                )}
-              >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="6" y="6" width="12" height="12" rx="2" />
-                </svg>
-              </button>
-            </div>
-          ) : (
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="6" y="6" width="12" height="12" rx="2" />
+                  </svg>
+                </button>
+              </>
+            )}
             <MobileTouchButton
               onPress={handleSendPress}
-              disabled={!canSend || interruptActive}
+              disabled={!canSend}
               className={cn(
                 "flex h-10 w-10 items-center justify-center rounded-full border border-black/5 transition-colors dark:border-white/10",
-                canSend && !interruptActive
+                canSend
                   ? "bg-gray-950 text-white active:bg-gray-800 dark:bg-white dark:text-gray-950"
                   : "bg-black/[0.04] text-gray-400 dark:bg-white/[0.06] dark:text-gray-500",
               )}
@@ -507,7 +508,7 @@ export function MobileInputBar({
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
               </svg>
             </MobileTouchButton>
-          )}
+          </div>
         </div>
       </motion.div>
 
