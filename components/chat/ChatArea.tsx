@@ -17,20 +17,16 @@ import remarkGfm from "remark-gfm";
 import useSWR from "swr";
 import type {
   AgentDefinition,
+  ChatCommand,
   ChatMessage,
   ChatSessionExtended,
   Domain,
-  PackageInstall,
-  PackageInstallDetail,
-  PackageInstallResource,
 } from "@/lib/types";
-import { useAgent, useAgents, useAgentDomains, useProjects } from "@/lib/hooks";
+import { useAgent, useAgents, useAgentDomains, useChatCommands, useProjects } from "@/lib/hooks";
 import {
   allChatSessionsUrl,
   createChatSession,
-  fetchPackageInstallDetail,
   fetcher,
-  packageInstallsUrl,
 } from "@/lib/api";
 import { usePlannerChat } from "@/lib/usePlannerChat";
 import { formatToolCallSignature } from "@/lib/toolCallDisplay";
@@ -71,12 +67,28 @@ type ChatProjectOption = {
 };
 
 type ChatCommandOption = {
+  id?: string;
+  name?: string;
+  path?: string;
   command: string;
   description: string;
-  source: "builtin" | "package";
+  source: "builtin" | "native" | "package";
   sourcePath?: string;
+  hooks?: string[];
   updatedAt?: string;
 };
+
+type ChatCommandPickerEntry =
+  | {
+      type: "folder";
+      name: string;
+      path: string;
+      commandCount: number;
+    }
+  | {
+      type: "command";
+      command: ChatCommandOption;
+    };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -107,55 +119,189 @@ function metadataText(
   return typeof current === "string" && current.trim() ? current : null;
 }
 
-function packageCommandOption(
-  resource: PackageInstallResource,
-): ChatCommandOption | null {
-  if (
-    resource.install_state !== "installed" ||
-    resource.resource_type !== "command"
-  ) {
-    return null;
-  }
-  const command = metadataText(resource.metadata, ["runtime", "command"]);
-  if (!command?.startsWith("/")) return null;
-  return {
-    command,
-    description:
-      metadataText(resource.metadata, ["runtime", "description"]) ??
-      metadataText(resource.metadata, ["source", "package"]) ??
-      resource.source_path,
-    source: "package",
-    sourcePath: resource.source_path,
-    updatedAt: resource.updated_at,
-  };
-}
-
-function installedPackageCommands(
-  details: PackageInstallDetail[] | undefined,
-): ChatCommandOption[] {
-  if (!details?.length) return [];
-  const seen = new Set(CHAT_COMMANDS.map((command) => command.command));
-  const commands = new Map<string, ChatCommandOption>();
-  for (const detail of details) {
-    for (const resource of detail.resources) {
-      const option = packageCommandOption(resource);
-      if (!option || seen.has(option.command)) continue;
-      const existing = commands.get(option.command);
-      if (
-        !existing ||
-        new Date(option.updatedAt ?? 0).getTime() >
-          new Date(existing.updatedAt ?? 0).getTime()
-      ) {
-        commands.set(option.command, option);
-      }
-    }
-  }
-  return Array.from(commands.values()).sort((left, right) =>
-    left.command.localeCompare(right.command),
+function commandSourcePath(command: ChatCommand): string | undefined {
+  return (
+    metadataText(command.metadata, ["install", "source_path"]) ??
+    metadataText(command.metadata, ["package", "module_path"]) ??
+    metadataText(command.metadata, ["claude", "command", "source_path"]) ??
+    undefined
   );
 }
 
-function matchInstalledPackageCommand(
+function cleanCommandPath(path?: string): string {
+  return (path ?? "")
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("/");
+}
+
+function splitCommandPath(path?: string): string[] {
+  const cleaned = cleanCommandPath(path);
+  return cleaned ? cleaned.split("/") : [];
+}
+
+function commandGroupLabel(command: ChatCommandOption): string {
+  if (command.source === "builtin") return "Built in";
+  const path = cleanCommandPath(command.path);
+  return path || "Root commands";
+}
+
+function commandGroupSortRank(command: ChatCommandOption): number {
+  if (command.source === "builtin") return 0;
+  return cleanCommandPath(command.path) ? 2 : 1;
+}
+
+function compareCommandOptions(
+  left: ChatCommandOption,
+  right: ChatCommandOption,
+): number {
+  if (left.source === "builtin" && right.source !== "builtin") return -1;
+  if (left.source !== "builtin" && right.source === "builtin") return 1;
+
+  const rank = commandGroupSortRank(left) - commandGroupSortRank(right);
+  if (rank !== 0) return rank;
+
+  const group = commandGroupLabel(left).localeCompare(commandGroupLabel(right));
+  if (group !== 0) return group;
+  return left.command.localeCompare(right.command);
+}
+
+function commandMatchesFilter(
+  command: ChatCommandOption,
+  lowerFilter: string,
+): boolean {
+  if (!lowerFilter) return true;
+  const path = cleanCommandPath(command.path);
+  return (
+    command.command.slice(1).toLowerCase().includes(lowerFilter) ||
+    command.description.toLowerCase().includes(lowerFilter) ||
+    command.name?.toLowerCase().includes(lowerFilter) ||
+    path.toLowerCase().includes(lowerFilter)
+  );
+}
+
+function commandChildPath(
+  commandPath: string,
+  currentPath: string,
+): { childPath: string; childName: string } | null {
+  const commandParts = splitCommandPath(commandPath);
+  const currentParts = splitCommandPath(currentPath);
+  if (commandParts.length <= currentParts.length) return null;
+  for (let index = 0; index < currentParts.length; index += 1) {
+    if (commandParts[index] !== currentParts[index]) return null;
+  }
+  const childParts = commandParts.slice(0, currentParts.length + 1);
+  const childPath = childParts.join("/");
+  return {
+    childPath,
+    childName: childParts[childParts.length - 1],
+  };
+}
+
+function buildCommandPickerEntries(
+  commands: ChatCommandOption[],
+  currentPath: string,
+  filter: string,
+): ChatCommandPickerEntry[] {
+  const path = cleanCommandPath(currentPath);
+  const lowerFilter = filter.toLowerCase();
+  const folders = new Map<
+    string,
+    { name: string; path: string; commandCount: number; matchesFilter: boolean }
+  >();
+  const commandEntries: ChatCommandPickerEntry[] = [];
+
+  for (const command of commands) {
+    const commandPath = cleanCommandPath(command.path);
+    if (commandPath === path) {
+      if (commandMatchesFilter(command, lowerFilter)) {
+        commandEntries.push({ type: "command", command });
+      }
+      continue;
+    }
+
+    const child = commandChildPath(commandPath, path);
+    if (!child) continue;
+
+    const existing = folders.get(child.childPath) ?? {
+      name: child.childName,
+      path: child.childPath,
+      commandCount: 0,
+      matchesFilter: false,
+    };
+    existing.commandCount += 1;
+    existing.matchesFilter =
+      existing.matchesFilter ||
+      !lowerFilter ||
+      child.childName.toLowerCase().includes(lowerFilter) ||
+      child.childPath.toLowerCase().includes(lowerFilter) ||
+      commandMatchesFilter(command, lowerFilter);
+    folders.set(child.childPath, existing);
+  }
+
+  const folderEntries: ChatCommandPickerEntry[] = Array.from(folders.values())
+    .filter((folder) => folder.matchesFilter)
+    .sort((left, right) => left.path.localeCompare(right.path))
+    .map((folder) => ({
+      type: "folder" as const,
+      name: folder.name,
+      path: folder.path,
+      commandCount: folder.commandCount,
+    }));
+
+  commandEntries.sort((left, right) =>
+    left.type === "command" && right.type === "command"
+      ? compareCommandOptions(left.command, right.command)
+      : 0,
+  );
+
+  return [...folderEntries, ...commandEntries];
+}
+
+function platformCommandOption(
+  commandRecord: ChatCommand,
+): ChatCommandOption | null {
+  const command = commandRecord.command.trim();
+  if (!command.startsWith("/")) return null;
+  return {
+    id: commandRecord.id,
+    name: commandRecord.name,
+    path: commandRecord.path,
+    command,
+    description:
+      commandRecord.description ??
+      metadataText(commandRecord.metadata, ["source", "package"]) ??
+      commandRecord.name,
+    source: commandRecord.source_type,
+    sourcePath: commandSourcePath(commandRecord),
+    hooks: commandRecord.hooks,
+    updatedAt: commandRecord.updated_at,
+  };
+}
+
+function platformCommands(
+  commandRecords: ChatCommand[] | undefined,
+): ChatCommandOption[] {
+  if (!commandRecords?.length) return [];
+  const seen = new Set(CHAT_COMMANDS.map((command) => command.command));
+  const commands = new Map<string, ChatCommandOption>();
+  for (const record of commandRecords) {
+    const option = platformCommandOption(record);
+    if (!option || seen.has(option.command)) continue;
+    const existing = commands.get(option.command);
+    if (
+      !existing ||
+      new Date(option.updatedAt ?? 0).getTime() >
+        new Date(existing.updatedAt ?? 0).getTime()
+    ) {
+      commands.set(option.command, option);
+    }
+  }
+  return Array.from(commands.values()).sort(compareCommandOptions);
+}
+
+function matchRuntimeCommand(
   text: string,
   commands: ChatCommandOption[],
 ): ChatCommandOption | null {
@@ -163,7 +309,7 @@ function matchInstalledPackageCommand(
   const lowerText = trimmed.toLowerCase();
   return (
     commands
-      .filter((command) => command.source === "package")
+      .filter((command) => command.source !== "builtin")
       .sort((left, right) => right.command.length - left.command.length)
       .find((command) => {
         const lowerCommand = command.command.toLowerCase();
@@ -175,15 +321,21 @@ function matchInstalledPackageCommand(
 }
 
 function ChatCommandDropdown({
-  commands,
+  entries,
+  currentPath,
   selectedIndex,
   onSelect,
+  onNavigate,
+  onBack,
   onClose,
   anchorRef,
 }: {
-  commands: ChatCommandOption[];
+  entries: ChatCommandPickerEntry[];
+  currentPath: string;
   selectedIndex: number;
   onSelect: (command: ChatCommandOption) => void;
+  onNavigate: (path: string) => void;
+  onBack: () => void;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLElement | null>;
 }) {
@@ -199,7 +351,7 @@ function ChatCommandDropdown({
       const anchor = anchorRef.current;
       if (!anchor) return;
       const rect = anchor.getBoundingClientRect();
-      const width = Math.min(320, Math.max(0, window.innerWidth - 32));
+      const width = Math.min(380, Math.max(0, window.innerWidth - 32));
       const left = Math.min(
         Math.max(rect.left, 16),
         Math.max(16, window.innerWidth - width - 16),
@@ -233,9 +385,12 @@ function ChatCommandDropdown({
     };
   }, [anchorRef, onClose]);
 
-  if (commands.length === 0 || !position || typeof document === "undefined") {
+  if (entries.length === 0 || !position || typeof document === "undefined") {
     return null;
   }
+
+  const normalizedPath = cleanCommandPath(currentPath);
+  const pathParts = splitCommandPath(normalizedPath);
 
   return createPortal(
     <div
@@ -247,47 +402,150 @@ function ChatCommandDropdown({
         width: position.width,
       }}
     >
-      <div className="px-3 py-1.5 text-xs font-medium text-gray-400 dark:text-gray-500">
-        Available Commands
-      </div>
-      {commands.map((command, index) => (
-        <button
-          key={`${command.source}:${command.command}`}
-          type="button"
-          className={cn(
-            "flex w-full items-start gap-3 px-3 py-2 text-left text-sm transition-colors",
-            index === selectedIndex
-              ? "bg-deep-space-blue-500 text-white"
-              : "text-gray-700 hover:[background:var(--app-hover)] dark:text-gray-300",
-          )}
-          onClick={() => onSelect(command)}
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          <span
-            className={cn(
-              "mt-0.5 flex h-5 w-5 items-center justify-center rounded-sm text-xs font-medium",
-              index === selectedIndex
-                ? "bg-white/15 text-white"
-                : "theme-surface-muted theme-text-muted",
-            )}
+      <div className="theme-border flex min-w-0 items-center gap-2 border-b px-3 py-1.5">
+        {normalizedPath ? (
+          <button
+            type="button"
+            className="theme-text-muted hover:theme-text flex h-6 w-6 shrink-0 items-center justify-center rounded-sm transition-colors hover:[background:var(--app-hover)]"
+            onClick={onBack}
+            onMouseDown={(e) => e.preventDefault()}
+            aria-label="Back to parent command group"
           >
-            /
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block font-medium">{command.command}</span>
+            <ChevronRight className="h-3.5 w-3.5 rotate-180" />
+          </button>
+        ) : null}
+        <div className="min-w-0 flex-1 text-xs font-medium text-gray-400 dark:text-gray-500">
+          {normalizedPath ? (
+            <div className="flex min-w-0 items-center gap-1.5">
+              {pathParts.map((part, index) => (
+                <span
+                  key={`${normalizedPath}:${index}`}
+                  className="flex min-w-0 items-center gap-1.5"
+                >
+                  {index > 0 ? (
+                    <ChevronRight className="h-3 w-3 shrink-0" />
+                  ) : null}
+                  <span className="truncate">{part}</span>
+                </span>
+              ))}
+            </div>
+          ) : (
+            "Available Commands"
+          )}
+        </div>
+      </div>
+      {entries.map((entry, index) => {
+        if (entry.type === "folder") {
+          const selected = index === selectedIndex;
+          return (
+            <button
+              key={`folder:${entry.path}`}
+              type="button"
+              className={cn(
+                "flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors",
+                selected
+                  ? "bg-deep-space-blue-500 text-white"
+                  : "text-gray-700 hover:[background:var(--app-hover)] dark:text-gray-300",
+              )}
+              onClick={() => onNavigate(entry.path)}
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              <span
+                className={cn(
+                  "flex h-5 w-5 items-center justify-center rounded-sm",
+                  selected
+                    ? "bg-white/15 text-white"
+                    : "theme-surface-muted theme-text-muted",
+                )}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{entry.name}</span>
+                <span
+                  className={cn(
+                    "block truncate text-xs",
+                    selected
+                      ? "text-deep-space-blue-100"
+                      : "text-gray-500 dark:text-gray-400",
+                  )}
+                >
+                  Open command group · {entry.commandCount}{" "}
+                  {entry.commandCount === 1 ? "command" : "commands"}
+                </span>
+              </span>
+            </button>
+          );
+        }
+
+        const { command } = entry;
+        return (
+          <button
+            key={`${command.source}:${command.command}`}
+            type="button"
+            className={cn(
+              "flex w-full items-start gap-3 px-3 py-2 text-left text-sm transition-colors",
+              index === selectedIndex
+                ? "bg-deep-space-blue-500 text-white"
+                : "text-gray-700 hover:[background:var(--app-hover)] dark:text-gray-300",
+            )}
+            onClick={() => onSelect(command)}
+            onMouseDown={(e) => e.preventDefault()}
+          >
             <span
               className={cn(
-                "block truncate text-xs",
+                "mt-0.5 flex h-5 w-5 items-center justify-center rounded-sm text-xs font-medium",
                 index === selectedIndex
-                  ? "text-deep-space-blue-100"
-                  : "text-gray-500 dark:text-gray-400",
+                  ? "bg-white/15 text-white"
+                  : "theme-surface-muted theme-text-muted",
               )}
             >
-              {command.description}
+              /
             </span>
-          </span>
-        </button>
-      ))}
+            <span className="min-w-0 flex-1">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0 truncate font-medium">
+                  {command.command}
+                </span>
+                {command.source !== "builtin" ? (
+                  <span
+                    className={cn(
+                      "shrink-0 rounded border px-1.5 py-0.5 text-[10px] uppercase leading-none",
+                      index === selectedIndex
+                        ? "border-white/20 text-deep-space-blue-100"
+                        : "theme-border theme-text-muted",
+                    )}
+                  >
+                    {command.source}
+                  </span>
+                ) : null}
+              </span>
+              {command.path ? (
+                <span
+                  className={cn(
+                    "block truncate text-[11px]",
+                    index === selectedIndex
+                      ? "text-deep-space-blue-100"
+                      : "text-gray-400 dark:text-gray-500",
+                  )}
+                >
+                  {cleanCommandPath(command.path)}
+                </span>
+              ) : null}
+              <span
+                className={cn(
+                  "block truncate text-xs",
+                  index === selectedIndex
+                    ? "text-deep-space-blue-100"
+                    : "text-gray-500 dark:text-gray-400",
+                )}
+              >
+                {command.description}
+              </span>
+            </span>
+          </button>
+        );
+      })}
     </div>,
     document.body,
   );
@@ -296,6 +554,30 @@ function ChatCommandDropdown({
 /** Shorten full UUIDs to their first 8-char segment for compact mobile display. */
 function shortenUuids(text: string): string {
   return text.replace(UUID_RE, (match) => `${match.slice(0, 8)}…`);
+}
+
+function messageCommandDisplay(
+  message: ChatMessage,
+  content: string,
+): { command: string; content: string } | null {
+  if (message.role !== "user") return null;
+  const command = message.command?.trim();
+  if (command?.startsWith("/")) {
+    const body =
+      content === command
+        ? ""
+        : content.startsWith(`${command} `)
+          ? content.slice(command.length).trimStart()
+          : content;
+    return { command, content: body };
+  }
+
+  const match = content.match(/^(\/\S+)(?:\s+([\s\S]*))?$/);
+  if (!match) return null;
+  return {
+    command: match[1],
+    content: match[2]?.trimStart() ?? "",
+  };
 }
 
 function getCodeLanguage(className?: string): string | null {
@@ -637,9 +919,11 @@ const MessageBubble = memo(function MessageBubble({
   animateStream?: boolean;
 }) {
   const isUser = message.role === "user";
-  const displayContent = compact
+  const rawDisplayContent = compact
     ? shortenUuids(message.content)
     : message.content;
+  const commandDisplay = messageCommandDisplay(message, rawDisplayContent);
+  const displayContent = commandDisplay?.content ?? rawDisplayContent;
   const streamedContent = useAnimatedStreamText(
     displayContent,
     animateStream,
@@ -708,7 +992,26 @@ const MessageBubble = memo(function MessageBubble({
         )}
       >
         {isUser ? (
-          <p className="whitespace-pre-wrap">{displayContent}</p>
+          <div className="space-y-2">
+            {commandDisplay ? (
+              <div className="flex min-w-0">
+                <span
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-gray-300 bg-white/60 px-2 py-1 text-[11px] font-medium text-gray-600 dark:border-gray-700 dark:bg-white/5 dark:text-gray-300 md:border-white/25 md:bg-white/10 md:text-deep-space-blue-50 md:dark:border-white/25 md:dark:bg-white/10 md:dark:text-deep-space-blue-50"
+                  title={commandDisplay.command}
+                >
+                  <span className="shrink-0 text-[10px] uppercase text-gray-400 md:text-deep-space-blue-100">
+                    Command
+                  </span>
+                  <span className="min-w-0 truncate font-mono">
+                    {commandDisplay.command}
+                  </span>
+                </span>
+              </div>
+            ) : null}
+            {displayContent.trim() ? (
+              <p className="whitespace-pre-wrap">{displayContent}</p>
+            ) : null}
+          </div>
         ) : (
           <div className="space-y-3">
             {mermaidContent.before ? (
@@ -1200,6 +1503,7 @@ export function ChatArea({
     useState<ChatCommandOption | null>(null);
   const [showCommandDropdown, setShowCommandDropdown] = useState(false);
   const [commandFilter, setCommandFilter] = useState("");
+  const [commandPickerPath, setCommandPickerPath] = useState("");
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
 
   const { agents: allAgents } = useAgents();
@@ -1208,47 +1512,13 @@ export function ChatArea({
   );
   const { agentDomains } = useAgentDomains(isAgentTarget ? agentId : undefined);
   const { projects } = useProjects();
-  const { data: packageInstalls } = useSWR<PackageInstall[]>(
-    packageInstallsUrl(),
-    fetcher,
-    { revalidateOnFocus: true, dedupingInterval: 5000 },
-  );
-  const activePackageInstalls = useMemo(
-    () =>
-      (packageInstalls ?? []).filter(
-        (install) => install.status === "installed",
-      ),
-    [packageInstalls],
-  );
-  const packageInstallDetailKey = useMemo(() => {
-    if (!activePackageInstalls.length) return null;
-    return [
-      "chat-package-install-details",
-      activePackageInstalls
-        .map((install) => `${install.id}:${install.updated_at}`)
-        .join("|"),
-    ] as const;
-  }, [activePackageInstalls]);
-  const { data: packageInstallDetails } = useSWR<PackageInstallDetail[]>(
-    packageInstallDetailKey,
-    async () => {
-      const details = await Promise.all(
-        activePackageInstalls.map((install) =>
-          fetchPackageInstallDetail(install.id).catch(() => null),
-        ),
-      );
-      return details.filter(
-        (detail): detail is PackageInstallDetail => detail !== null,
-      );
-    },
-    { revalidateOnFocus: true, dedupingInterval: 5000 },
-  );
+  const { commands: platformCommandRecords } = useChatCommands();
   const chatCommands = useMemo(
     () => [
       ...CHAT_COMMANDS,
-      ...installedPackageCommands(packageInstallDetails),
+      ...platformCommands(platformCommandRecords),
     ],
-    [packageInstallDetails],
+    [platformCommandRecords],
   );
   useEffect(() => {
     if (!pendingCommand) return;
@@ -1368,19 +1638,18 @@ export function ChatArea({
     setSelectedDomainIndex(0);
   }, [filteredDomains]);
 
-  const filteredCommands = useMemo(() => {
+  const filteredCommandEntries = useMemo(() => {
     if (!showCommandDropdown) return [];
-    const lower = commandFilter.toLowerCase();
-    return chatCommands.filter(
-      (command) =>
-        command.command.slice(1).toLowerCase().includes(lower) ||
-        command.description.toLowerCase().includes(lower),
+    return buildCommandPickerEntries(
+      chatCommands,
+      commandPickerPath,
+      commandFilter,
     );
-  }, [showCommandDropdown, commandFilter, chatCommands]);
+  }, [showCommandDropdown, commandFilter, commandPickerPath, chatCommands]);
 
   useEffect(() => {
     setSelectedCommandIndex(0);
-  }, [filteredCommands]);
+  }, [filteredCommandEntries]);
 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1658,6 +1927,9 @@ export function ChatArea({
     if (value.startsWith("/") && !pendingCommand) {
       const commandText = value.slice(1);
       if (!/\s/.test(commandText)) {
+        if (!showCommandDropdown) {
+          setCommandPickerPath("");
+        }
         setShowCommandDropdown(true);
         setCommandFilter(commandText);
         setSelectedCommandIndex(0);
@@ -1671,6 +1943,7 @@ export function ChatArea({
 
     setShowCommandDropdown(false);
     setCommandFilter("");
+    setCommandPickerPath("");
 
     const cursorPos = e.target.selectionStart ?? value.length;
     const textBeforeCursor = value.slice(0, cursorPos);
@@ -1725,6 +1998,7 @@ export function ChatArea({
     setDomainFilter("");
     setShowCommandDropdown(false);
     setCommandFilter("");
+    setCommandPickerPath("");
     inputRef.current?.focus();
   }, []);
 
@@ -1834,6 +2108,7 @@ export function ChatArea({
       resetInputHeight();
       setShowCommandDropdown(false);
       setCommandFilter("");
+      setCommandPickerPath("");
       setShowDomainDropdown(false);
       setDomainFilter("");
 
@@ -1844,7 +2119,7 @@ export function ChatArea({
         return;
       }
 
-      if (command.source === "package") {
+      if (command.source !== "builtin") {
         setPendingCommand(command);
         setPendingDomain(null);
         requestAnimationFrame(() => {
@@ -1869,6 +2144,28 @@ export function ChatArea({
     [handleNewSessionCommand, resetInputHeight],
   );
 
+  const handleCommandGroupNavigate = useCallback((path: string) => {
+    setCommandPickerPath(cleanCommandPath(path));
+    setCommandFilter("");
+    setSelectedCommandIndex(0);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, []);
+
+  const handleCommandGroupBack = useCallback(() => {
+    setCommandPickerPath((current) => {
+      const parts = splitCommandPath(current);
+      parts.pop();
+      return parts.join("/");
+    });
+    setCommandFilter("");
+    setSelectedCommandIndex(0);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, []);
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text && !pendingCommand) return;
@@ -1881,6 +2178,7 @@ export function ChatArea({
       resetInputHeight();
       setShowCommandDropdown(false);
       setCommandFilter("");
+      setCommandPickerPath("");
       setShowDomainDropdown(false);
       setDomainFilter("");
       await handleNewSessionCommand();
@@ -1954,11 +2252,11 @@ export function ChatArea({
     }
 
     if (isTyping) return;
-    const packageCommand = matchInstalledPackageCommand(text, chatCommands);
-    if (packageCommand) {
+    const runtimeCommand = matchRuntimeCommand(text, chatCommands);
+    if (runtimeCommand) {
       sendMessage(text, {
         commandInvocation: {
-          command: packageCommand.command,
+          command: runtimeCommand.command,
         },
       });
     } else {
@@ -1996,29 +2294,45 @@ export function ChatArea({
     }
 
     // Local slash command keyboard nav
-    if (showCommandDropdown && filteredCommands.length > 0) {
+    if (showCommandDropdown && filteredCommandEntries.length > 0) {
       if (e.key === "Escape") {
         e.preventDefault();
         setShowCommandDropdown(false);
+        setCommandFilter("");
+        setCommandPickerPath("");
+        return;
+      }
+      if (
+        e.key === "Backspace" &&
+        commandPickerPath &&
+        commandFilter.length === 0
+      ) {
+        e.preventDefault();
+        handleCommandGroupBack();
         return;
       }
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedCommandIndex((prev) =>
-          prev < filteredCommands.length - 1 ? prev + 1 : 0,
+          prev < filteredCommandEntries.length - 1 ? prev + 1 : 0,
         );
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
         setSelectedCommandIndex((prev) =>
-          prev > 0 ? prev - 1 : filteredCommands.length - 1,
+          prev > 0 ? prev - 1 : filteredCommandEntries.length - 1,
         );
         return;
       }
       if (e.key === "Tab" || e.key === "Enter") {
         e.preventDefault();
-        void handleCommandSelect(filteredCommands[selectedCommandIndex]);
+        const entry = filteredCommandEntries[selectedCommandIndex];
+        if (entry?.type === "folder") {
+          handleCommandGroupNavigate(entry.path);
+        } else if (entry?.type === "command") {
+          void handleCommandSelect(entry.command);
+        }
         return;
       }
     }
@@ -2194,6 +2508,7 @@ export function ChatArea({
     setInput("");
     setShowCommandDropdown(false);
     setCommandFilter("");
+    setCommandPickerPath("");
     inputRef.current?.focus();
   }, []);
 
@@ -2507,15 +2822,22 @@ export function ChatArea({
       {isMobile && (
         <div className="pointer-events-none relative z-[90] shrink-0">
           {/* Dropdowns render above the mobile input */}
-          {showCommandDropdown && filteredCommands.length > 0 && (
+          {showCommandDropdown && filteredCommandEntries.length > 0 && (
             <div className="pointer-events-auto absolute bottom-full left-0 right-0 z-[120] px-4 pb-2">
               <ChatCommandDropdown
-                commands={filteredCommands}
+                entries={filteredCommandEntries}
+                currentPath={commandPickerPath}
                 selectedIndex={selectedCommandIndex}
                 onSelect={(command) => {
                   void handleCommandSelect(command);
                 }}
-                onClose={() => setShowCommandDropdown(false)}
+                onNavigate={handleCommandGroupNavigate}
+                onBack={handleCommandGroupBack}
+                onClose={() => {
+                  setShowCommandDropdown(false);
+                  setCommandFilter("");
+                  setCommandPickerPath("");
+                }}
                 anchorRef={inputRef}
               />
             </div>
@@ -2795,14 +3117,21 @@ export function ChatArea({
       {!isMobile && (
         <div className="theme-border theme-surface relative z-[90] border-t p-3">
           <div className="relative">
-            {showCommandDropdown && filteredCommands.length > 0 && (
+            {showCommandDropdown && filteredCommandEntries.length > 0 && (
               <ChatCommandDropdown
-                commands={filteredCommands}
+                entries={filteredCommandEntries}
+                currentPath={commandPickerPath}
                 selectedIndex={selectedCommandIndex}
                 onSelect={(command) => {
                   void handleCommandSelect(command);
                 }}
-                onClose={() => setShowCommandDropdown(false)}
+                onNavigate={handleCommandGroupNavigate}
+                onBack={handleCommandGroupBack}
+                onClose={() => {
+                  setShowCommandDropdown(false);
+                  setCommandFilter("");
+                  setCommandPickerPath("");
+                }}
                 anchorRef={inputRef}
               />
             )}

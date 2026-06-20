@@ -9,6 +9,7 @@ import {
   fetchRoutine,
   fetchCouncil,
   fetchCouncils,
+  fetchChatCommands,
   fetcher,
   fetchTasks,
   projectsUrl,
@@ -26,6 +27,7 @@ import {
   knowledgePacksUrl,
   packageSourcesUrl,
   packageInstallsUrl,
+  chatCommandsUrl,
   apiKeysUrl,
   authMeUrl,
   currentOrgUrl,
@@ -62,6 +64,7 @@ import type {
   KnowledgeItem,
   KnowledgePack,
   PackageInstall,
+  ChatCommand,
   PackageSource,
   ApiKey,
   RoutineSummary,
@@ -549,6 +552,22 @@ export function usePackageInstalls() {
   };
 }
 
+export function useChatCommands() {
+  const { data, error, isLoading, mutate } = useSWR<ChatCommand[]>(
+    chatCommandsUrl(),
+    fetchChatCommands,
+    { revalidateOnFocus: true, dedupingInterval: 5000 },
+  );
+
+  return {
+    commands: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Current User (resolved DB user from /auth/me)
 // ---------------------------------------------------------------------------
@@ -561,11 +580,14 @@ interface CurrentUser {
   org_name?: string | null;
   org_role?: string | null;
   org_scopes?: string[] | null;
+  email?: string | null;
+  name?: string | null;
+  username?: string | null;
   onboarded?: boolean;
 }
 
 export function useCurrentUser() {
-  const { data, error, isLoading } = useSWR<CurrentUser>(
+  const { data, error, isLoading, mutate } = useSWR<CurrentUser>(
     authMeUrl(),
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 30000 },
@@ -577,6 +599,7 @@ export function useCurrentUser() {
     isLoading,
     isError: !!error,
     error,
+    mutate,
   };
 }
 
