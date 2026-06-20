@@ -10,6 +10,7 @@ import { HANDLE_GATE_PASS, HANDLE_GATE_FAIL } from "./constants";
 // ---------------------------------------------------------------------------
 
 export interface StepNodeData {
+  stepId?: string;
   label: string;
   stepType: RoutineStepType;
   agentId: string | null;
@@ -20,6 +21,7 @@ export interface StepNodeData {
   delegationStrategy: string | null;
   memberCount: number | null;
   config: Record<string, unknown>;
+  encryptedPayload?: unknown;
   [key: string]: unknown;
 }
 

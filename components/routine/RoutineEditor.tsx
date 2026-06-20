@@ -115,6 +115,7 @@ function stepsToNodes(
       type: "routineStep",
       position: { x: step.position_x, y: step.position_y },
       data: {
+        stepId: step.id,
         label: step.name,
         stepType: step.step_type,
         agentId: step.agent_id,
@@ -125,6 +126,7 @@ function stepsToNodes(
         delegationStrategy: council?.delegation_strategy ?? null,
         memberCount: council?.members?.length ?? null,
         config: step.config,
+        encryptedPayload: step.encrypted_payload ?? null,
       } satisfies StepNodeData,
     };
   });
@@ -521,12 +523,14 @@ function RoutineEditorInner({
       const baseSlug = slugify(name);
       const tempId = `${baseSlug}_${tempIdCounter.current + 1}`;
       tempIdCounter.current += 1;
+      const stepId = crypto.randomUUID();
 
       const newNode: Node = {
         id: tempId,
         type: "routineStep",
         position: { x: position_x, y: position_y },
         data: {
+          stepId,
           label: name,
           stepType: stepType,
           agentId: null,
@@ -537,6 +541,7 @@ function RoutineEditorInner({
           delegationStrategy: council?.delegation_strategy ?? null,
           memberCount: council?.members?.length ?? null,
           config,
+          encryptedPayload: null,
         } satisfies StepNodeData,
       };
 
@@ -656,12 +661,14 @@ function RoutineEditorInner({
         const agentId = pendingUpdate?.agent_id ?? (data.config?.agent_id as string) ?? data.agentId ?? undefined;
         const councilId = pendingUpdate?.council_id ?? data.councilId ?? undefined;
         return {
+          id: data.stepId as string | undefined,
           slug: node.id,
           name: pendingUpdate?.name ?? data.label,
           step_type: (pendingUpdate?.step_type ?? data.stepType) as RoutineStepType,
           agent: agentRef(agentId),
           council: councilRef(councilId),
           config: pendingUpdate?.config ?? data.config ?? {},
+          encrypted_payload: data.encryptedPayload as import("@/lib/types").EncryptedPayload | null | undefined,
           position_x: Math.round(node.position.x),
           position_y: Math.round(node.position.y),
           order_index: index,
