@@ -1,12 +1,15 @@
 "use client";
 
 import { cn } from "@/lib/cn";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { MessageCircle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  createChatSession,
   fetcher,
   notificationMessagesUrl,
   markNotificationRead,
@@ -94,11 +97,15 @@ function timeAgo(dateStr: string): string {
 }
 
 export function NotificationArea({
+  agentId,
   sessionId,
+  agentName,
   variant = "desktop",
 }: NotificationAreaProps) {
+  const router = useRouter();
   const scrollRef = useRef<HTMLDivElement>(null);
   const isMobile = variant === "mobile";
+  const [openingChatForMessageId, setOpeningChatForMessageId] = useState<string | null>(null);
 
   // Fetch notification messages
   const { data, isLoading } = useSWR<ResolvedNotificationPage>(
@@ -124,6 +131,24 @@ export function NotificationArea({
       scrollRef.current.scrollTop = 0;
     }
   }, [messages.length]);
+
+  async function openChatForNotification(messageId: string, sourceSessionId: string) {
+    if (openingChatForMessageId) return;
+    setOpeningChatForMessageId(messageId);
+    try {
+      const session = await createChatSession({
+        id: sourceSessionId,
+        agent_id: agentId,
+        target_type: "agent",
+        target_id: agentId,
+        title: agentName ? `${agentName} chat` : "Notification chat",
+      });
+      router.push(`/dashboard/chat?session=${encodeURIComponent(session.id)}`);
+    } catch (error) {
+      console.error("Failed to open notification chat:", error);
+      setOpeningChatForMessageId(null);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -173,7 +198,9 @@ export function NotificationArea({
         const meta: NotificationMetadata | null = msg.metadata;
         const severity = meta?.severity ?? "info";
         const link = meta?.link;
+        const sourceSessionId = meta?.source_session_id;
         const borderClass = SEVERITY_STYLES[severity] ?? SEVERITY_STYLES.info;
+        const isOpeningChat = openingChatForMessageId === msg.id;
 
         return (
           <div
@@ -189,10 +216,21 @@ export function NotificationArea({
                 {msg.resolved_content}
               </ReactMarkdown>
             </div>
-            <div className="mt-1.5 flex items-center gap-3">
+            <div className="mt-1.5 flex flex-wrap items-center gap-3">
               <span className="text-xs text-gray-400 dark:text-gray-500">
                 {timeAgo(msg.created_at)}
               </span>
+              {sourceSessionId && (
+                <button
+                  type="button"
+                  onClick={() => void openChatForNotification(msg.id, sourceSessionId)}
+                  disabled={Boolean(openingChatForMessageId)}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-deep-space-blue-600 hover:text-deep-space-blue-700 hover:underline disabled:cursor-wait disabled:opacity-60 dark:text-deep-space-blue-300 dark:hover:text-deep-space-blue-200"
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  {isOpeningChat ? "Opening..." : "Chat"}
+                </button>
+              )}
               {link && (
                 <Link
                   href={link}
