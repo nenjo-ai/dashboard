@@ -1160,7 +1160,7 @@ function packageModuleCandidatePaths(packageDir: string, modulePath: string): st
   const relative = modulePath.replace(/^\/+/, "");
   const path = `${packageDir ? `${packageDir}/` : ""}${relative}`;
   if (!modulePath.trim().endsWith("/")) return [path];
-  return [`${path}index.yml`, `${path}index.yaml`];
+  return [`${path}index.yaml`, `${path}index.yml`];
 }
 
 function packageModuleRefs(value: Record<string, unknown>): string[] {

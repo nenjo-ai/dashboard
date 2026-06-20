@@ -154,10 +154,17 @@ export function useTabParam<T extends string>(
   const pathname = usePathname();
 
   const raw = searchParams.get("tab") as T | null;
-  const activeTab = raw && (validTabs as readonly string[]).includes(raw) ? raw : defaultTab;
+  const urlTab =
+    raw && (validTabs as readonly string[]).includes(raw) ? raw : defaultTab;
+  const [optimistic, setOptimistic] = useState<T>(urlTab);
+
+  useEffect(() => {
+    setOptimistic(urlTab);
+  }, [urlTab]);
 
   const setTab = useCallback(
     (tab: T) => {
+      setOptimistic(tab);
       const params = new URLSearchParams(searchParams.toString());
       if (tab === defaultTab) {
         params.delete("tab");
@@ -170,7 +177,7 @@ export function useTabParam<T extends string>(
     [searchParams, router, pathname, defaultTab],
   );
 
-  return [activeTab, setTab];
+  return [optimistic, setTab];
 }
 
 // ---------------------------------------------------------------------------
