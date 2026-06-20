@@ -66,6 +66,7 @@ import {
   updatePackageInstall,
   updatePackageSource,
 } from "@/lib/api";
+import { packageInstallVisibleInInstalledList } from "@/lib/packageInstalls";
 import type {
   Ability,
   KnowledgePack,
@@ -1351,7 +1352,7 @@ export default function KnowledgePage() {
   const [importName, setImportName] = useState("");
 
   const activePackageInstalls = useMemo(
-    () => (installs ?? []).filter((install) => install.status === "installed"),
+    () => (installs ?? []).filter(packageInstallVisibleInInstalledList),
     [installs],
   );
 
@@ -1754,7 +1755,14 @@ export default function KnowledgePage() {
     setBusyKey(`update-install:${install.id}`);
     resetNotice();
     try {
-      const detail = await updatePackageInstall(install.id);
+      const detail = await updatePackageInstall(install.id, {
+        onProgress: (progress) => {
+          setInstallProgress((current) => ({
+            ...current,
+            [install.id]: progress,
+          }));
+        },
+      });
       setPackageInstallDetails((current) => ({
         ...current,
         [install.id]: detail,
@@ -1774,6 +1782,11 @@ export default function KnowledgePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Package update failed");
     } finally {
+      setInstallProgress((current) => {
+        const next = { ...current };
+        delete next[install.id];
+        return next;
+      });
       setBusyKey(null);
     }
   };
@@ -2076,6 +2089,7 @@ export default function KnowledgePage() {
             onUninstallSkill={handleUninstallSkill}
             onEditSkillEnv={handleOpenEnvEditor}
             busyKey={busyKey}
+            installProgress={installProgress}
           />
         ) : null}
 
@@ -3028,6 +3042,7 @@ function PackageInstallCard({
   onUpdateInstall,
   onUninstallInstall,
   busyKey,
+  installProgress,
 }: {
   install: PackageInstall;
   detail: PackageInstallDetail | undefined;
@@ -3036,6 +3051,7 @@ function PackageInstallCard({
   onUpdateInstall: (install: PackageInstall) => void;
   onUninstallInstall: (install: PackageInstall) => void;
   busyKey: string | null;
+  installProgress?: PackageInstallProgress;
 }) {
   const dependencyInfo = packageInstallDependencyInfo(install);
   const resources = installedPackageResources(detail);
@@ -3058,38 +3074,43 @@ function PackageInstallCard({
       updatedAt={install.updated_at}
       isBusy={busyKey === `update-install:${install.id}`}
       actions={
-        <div className="grid gap-2 sm:grid-cols-3">
-          <Button
-            size="sm"
-            variant="secondary"
-            className="w-full"
-            onClick={onInspect}
-          >
-            <ChevronDown className="-rotate-90 h-4 w-4" />
-            Inspect
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="w-full"
-            onClick={() => onUpdateInstall(install)}
-            isLoading={busyKey === `update-install:${install.id}`}
-          >
-            <RefreshCw className="h-4 w-4" />
-            Update
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            className="w-full"
-            onClick={() => onUninstallInstall(install)}
-            isLoading={busyKey === `uninstall-install:${install.id}`}
-            disabled={uninstallBlocked}
-            title={uninstallTitle}
-          >
-            <Trash2 className="h-4 w-4" />
-            Uninstall
-          </Button>
+        <div className="space-y-2">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Button
+              size="sm"
+              variant="secondary"
+              className="w-full"
+              onClick={onInspect}
+            >
+              <ChevronDown className="-rotate-90 h-4 w-4" />
+              Inspect
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="w-full"
+              onClick={() => onUpdateInstall(install)}
+              isLoading={busyKey === `update-install:${install.id}`}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Update
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              className="w-full"
+              onClick={() => onUninstallInstall(install)}
+              isLoading={busyKey === `uninstall-install:${install.id}`}
+              disabled={uninstallBlocked}
+              title={uninstallTitle}
+            >
+              <Trash2 className="h-4 w-4" />
+              Uninstall
+            </Button>
+          </div>
+          {busyKey === `update-install:${install.id}` && installProgress ? (
+            <PackageInstallProgressBar progress={installProgress} />
+          ) : null}
         </div>
       }
     />
@@ -3348,6 +3369,7 @@ function InstalledTab({
   onUninstallSkill,
   onEditSkillEnv,
   busyKey,
+  installProgress,
 }: {
   installs: PackageInstall[];
   installDetails: Record<string, PackageInstallDetail>;
@@ -3366,6 +3388,7 @@ function InstalledTab({
   onUninstallSkill: (ability: Ability) => void;
   onEditSkillEnv: (ability: Ability) => void;
   busyKey: string | null;
+  installProgress: Record<string, PackageInstallProgress>;
 }) {
   const [inspectingInstallId, setInspectingInstallId] = useState<string | null>(
     null,
@@ -3431,6 +3454,7 @@ function InstalledTab({
               onUpdateInstall={onUpdateInstall}
               onUninstallInstall={onUninstallInstall}
               busyKey={busyKey}
+              installProgress={installProgress[install.id]}
             />
           ))}
         </CollapsibleAssetSection>

@@ -68,6 +68,7 @@ type NormalizedStreamEvent = {
 type LifecyclePayload = {
   message?: string;
   delta?: string;
+  status?: string;
   details?: unknown;
   tool_name?: string;
   tool_args?: unknown;
@@ -328,6 +329,7 @@ function normalizeSseAgentEvent(event: {
     run_cancelled: "RunCancelled",
     model_request_started: "ModelRequestStarted",
     assistant_text_delta: "AssistantTextDelta",
+    assistant_response: "AssistantResponse",
     model_request_completed: "ModelRequestCompleted",
     tool_call_started: "ToolCallStarted",
     tool_output_delta: "ToolOutputDelta",
@@ -738,6 +740,7 @@ async function resolveLifecycleEventPayload(
           ? data.message
           : undefined,
     delta: typeof payload.delta === "string" ? payload.delta : data.delta,
+    status: typeof payload.status === "string" ? payload.status : data.status,
     tool_args:
       payload.tool_args !== undefined ? payload.tool_args : data.tool_args,
     tool_name:
@@ -801,6 +804,10 @@ function isTerminalRunTrace(trace: RunTrace | undefined): boolean {
     trace?.phase === "failed" ||
     trace?.phase === "cancelled"
   );
+}
+
+function isTerminalAssistantStatus(status: string | undefined): boolean {
+  return Boolean(status && status !== "in_progress");
 }
 
 function hasRestorableStreamProgress(snapshot: ChatStreamSnapshot): boolean {
@@ -1726,6 +1733,171 @@ export function usePlannerChat(
         });
 
         switch (streamEvent.event_type) {
+          case "AssistantResponse": {
+            const data = streamEvent.data as {
+              payload?: { message?: string; status?: string };
+              encrypted_payload?: EncryptedPayload;
+              message?: string;
+              status?: string;
+            };
+            void (async () => {
+              const encryptedData = await resolveEncryptedPayloadJson<{
+                message?: string;
+                status?: string;
+              }>(data.encrypted_payload);
+              const payload = encryptedData ?? data.payload ?? {};
+              const message =
+                typeof payload.message === "string"
+                  ? payload.message
+                  : typeof data.message === "string"
+                    ? data.message
+                    : "";
+              const status =
+                typeof payload.status === "string"
+                  ? payload.status
+                  : typeof data.status === "string"
+                    ? data.status
+                    : "completed";
+              const terminal = isTerminalAssistantStatus(status);
+              if (!message.trim()) {
+                if (terminal) {
+                  const finalizingEnvelopeId =
+                    activeRunEnvelopeIdRef.current ??
+                    lastRunEnvelopeIdRef.current;
+                  if (finalizingEnvelopeId) {
+                    finalizedRunEnvelopeIdsRef.current.add(
+                      finalizingEnvelopeId,
+                    );
+                  }
+                  suppressActiveRunTraceRef.current = true;
+                  await lifecycleQueueRef.current;
+                  if (clearTypingUiTimeoutRef.current) {
+                    clearTimeout(clearTypingUiTimeoutRef.current);
+                  }
+                  setActiveTools([]);
+                  setLivePreview(undefined);
+                  setIsTyping(false);
+                  currentRequestIdRef.current = null;
+                  setActiveRunTrace(undefined);
+                  clearTypingUiTimeoutRef.current = null;
+                  if (activeSessionId) {
+                    void clearChatStreamSnapshot(activeSessionId);
+                    notifyChatStreamSnapshot({
+                      sessionId: activeSessionId,
+                      clear: true,
+                    });
+                  }
+                }
+                return;
+              }
+              let id = responseIdRef.current;
+              if (!id) {
+                id = generateId();
+                responseIdRef.current = id;
+              }
+              const now = new Date().toISOString();
+              setTypingIfDelivered();
+              setMessages((prev) => {
+                const existing = prev.find((m) => m.id === id);
+                if (existing) {
+                  return compactDuplicateChatMessages(
+                    prev.map((m) =>
+                      m.id === id
+                        ? {
+                            ...m,
+                            content: terminal
+                              ? message
+                              : m.content
+                                ? `${m.content}\n\n${message}`
+                                : message,
+                          }
+                        : m,
+                    ),
+                  );
+                }
+                return compactDuplicateChatMessages([
+                  ...prev,
+                  {
+                    id,
+                    role: "assistant" as const,
+                    content: message,
+                    timestamp: now,
+                  },
+                ]);
+              });
+              if (terminal) {
+                const finalizingEnvelopeId =
+                  activeRunEnvelopeIdRef.current ??
+                  lastRunEnvelopeIdRef.current;
+                if (finalizingEnvelopeId) {
+                  finalizedRunEnvelopeIdsRef.current.add(finalizingEnvelopeId);
+                }
+                suppressActiveRunTraceRef.current = true;
+                pendingFinalTraceTargetRef.current = {
+                  id,
+                  content: message,
+                };
+                await lifecycleQueueRef.current;
+                const traceForFinal =
+                  activeRunTraceRef.current ?? lastRunTraceRef.current;
+                const envelopeIdForFinal =
+                  activeRunEnvelopeIdRef.current ??
+                  lastRunEnvelopeIdRef.current;
+                let linkMessageId = id;
+                let linkMessageTimestamp = now;
+                setMessages((prev) => {
+                  const existing = prev.find((m) => m.id === id);
+                  if (!existing) return prev;
+                  linkMessageId = existing.persistedId ?? existing.id;
+                  linkMessageTimestamp = existing.timestamp;
+                  return compactDuplicateChatMessages(
+                    prev.map((m) =>
+                      m.id === id
+                        ? {
+                            ...m,
+                            runTrace: m.runTrace ?? traceForFinal,
+                            runEnvelopeId: m.runEnvelopeId ?? envelopeIdForFinal,
+                          }
+                        : m,
+                    ),
+                  );
+                });
+                if (envelopeIdForFinal && activeSessionId) {
+                  void linkEnvelopeToMessage({
+                    sessionId: activeSessionId,
+                    messageId: linkMessageId,
+                    messageCreatedAt: linkMessageTimestamp,
+                    envelopeId: envelopeIdForFinal,
+                    finalContent: message,
+                  }).catch((error) => {
+                    console.warn(
+                      "Failed to link agent run envelope to final message",
+                      error,
+                    );
+                  });
+                }
+                pendingFinalTraceTargetRef.current = undefined;
+                if (clearTypingUiTimeoutRef.current) {
+                  clearTimeout(clearTypingUiTimeoutRef.current);
+                }
+                setActiveTools([]);
+                setLivePreview(undefined);
+                setIsTyping(false);
+                currentRequestIdRef.current = null;
+                setActiveRunTrace(undefined);
+                clearTypingUiTimeoutRef.current = null;
+                if (activeSessionId) {
+                  void clearChatStreamSnapshot(activeSessionId);
+                  notifyChatStreamSnapshot({
+                    sessionId: activeSessionId,
+                    clear: true,
+                  });
+                }
+              }
+            })();
+            break;
+          }
+
           case "Done": {
             optimisticUserMessageIdRef.current = null;
             const { payload, encrypted_payload, session_id } =
@@ -2320,32 +2492,45 @@ export function usePlannerChat(
       if (!trimmed || !activeSessionId) return;
 
       const msgId = generateId();
-      suppressActiveRunTraceRef.current = false;
+      const queueIntoActiveTurn =
+        !!currentRequestIdRef.current ||
+        !!responseIdRef.current ||
+        activeToolsRef.current.length > 0 ||
+        !!livePreviewRef.current?.trim() ||
+        (!!activeRunTraceRef.current &&
+          !isTerminalRunTrace(activeRunTraceRef.current));
+      if (!queueIntoActiveTurn) {
+        suppressActiveRunTraceRef.current = false;
+      }
       const userMsg: ChatMessage = {
         id: msgId,
         role: "user",
         content: trimmed,
         command: options?.commandInvocation?.command,
         timestamp: new Date().toISOString(),
-        status: "sending",
+        status: queueIntoActiveTurn ? "queued" : "sending",
       };
-      optimisticUserMessageIdRef.current = msgId;
-      awaitingDeliveryRef.current = true;
+      if (!queueIntoActiveTurn) {
+        optimisticUserMessageIdRef.current = msgId;
+        awaitingDeliveryRef.current = true;
+      }
       setMessages((prev) => [...prev, userMsg]);
 
       const failOptimisticMessage = () => {
-        optimisticUserMessageIdRef.current = null;
-        currentRequestIdRef.current = null;
-        awaitingDeliveryRef.current = false;
-        setIsTyping(false);
-        pendingFinalTraceTargetRef.current = undefined;
-        suppressActiveRunTraceRef.current = true;
-        if (activeRunEnvelopeIdRef.current) {
-          void markEnvelopeOrphaned(activeRunEnvelopeIdRef.current);
+        if (!queueIntoActiveTurn) {
+          optimisticUserMessageIdRef.current = null;
+          currentRequestIdRef.current = null;
+          awaitingDeliveryRef.current = false;
+          setIsTyping(false);
+          pendingFinalTraceTargetRef.current = undefined;
+          suppressActiveRunTraceRef.current = true;
+          if (activeRunEnvelopeIdRef.current) {
+            void markEnvelopeOrphaned(activeRunEnvelopeIdRef.current);
+          }
+          activeRunTraceRef.current = undefined;
+          activeRunEnvelopeIdRef.current = undefined;
+          setActiveRunTrace(undefined);
         }
-        activeRunTraceRef.current = undefined;
-        activeRunEnvelopeIdRef.current = undefined;
-        setActiveRunTrace(undefined);
         setMessages((prev) =>
           prev.map((message) =>
             message.id === msgId ? { ...message, status: "failed" } : message,
@@ -2401,47 +2586,51 @@ export function usePlannerChat(
           return;
         }
 
-        // Pre-allocate a response ID so the final response targets the same message
-        responsePersistedRef.current = false;
-        responseIdRef.current = generateId();
-        currentRequestIdRef.current = msgId;
-        setLivePreview(undefined);
-        pendingFinalTraceTargetRef.current = undefined;
-        suppressActiveRunTraceRef.current = false;
-        activeRunTraceRef.current = undefined;
-        activeRunEnvelopeIdRef.current = undefined;
-        setActiveRunTrace(undefined);
-        setIsTyping(false);
+        if (!queueIntoActiveTurn) {
+          // Pre-allocate a response ID so the final response targets the same message
+          responsePersistedRef.current = false;
+          responseIdRef.current = generateId();
+          currentRequestIdRef.current = msgId;
+          setLivePreview(undefined);
+          pendingFinalTraceTargetRef.current = undefined;
+          suppressActiveRunTraceRef.current = false;
+          activeRunTraceRef.current = undefined;
+          activeRunEnvelopeIdRef.current = undefined;
+          setActiveRunTrace(undefined);
+          setIsTyping(false);
 
-        if (activeSessionId) {
-          void persistChatStreamSnapshot({
-            sessionId: activeSessionId,
-            agentId,
-            requestId: msgId,
-            responseId: responseIdRef.current ?? undefined,
-            content: "",
-            activeTools: activeToolsRef.current,
-            livePreview: livePreviewRef.current,
-            activeRunTrace: activeRunTraceRef.current,
-            status: "streaming",
-            updatedAt: Date.now(),
-          });
-          notifyChatStreamSnapshot({
-            sessionId: activeSessionId,
-            agentId,
-            requestId: msgId,
-            responseId: responseIdRef.current ?? undefined,
-            content: "",
-            activeTools: activeToolsRef.current,
-            livePreview: livePreviewRef.current,
-            activeRunTrace: activeRunTraceRef.current,
-            status: "streaming",
-            updatedAt: Date.now(),
-          });
+          if (activeSessionId) {
+            void persistChatStreamSnapshot({
+              sessionId: activeSessionId,
+              agentId,
+              requestId: msgId,
+              responseId: responseIdRef.current ?? undefined,
+              content: "",
+              activeTools: activeToolsRef.current,
+              livePreview: livePreviewRef.current,
+              activeRunTrace: activeRunTraceRef.current,
+              status: "streaming",
+              updatedAt: Date.now(),
+            });
+            notifyChatStreamSnapshot({
+              sessionId: activeSessionId,
+              agentId,
+              requestId: msgId,
+              responseId: responseIdRef.current ?? undefined,
+              content: "",
+              activeTools: activeToolsRef.current,
+              livePreview: livePreviewRef.current,
+              activeRunTrace: activeRunTraceRef.current,
+              status: "streaming",
+              updatedAt: Date.now(),
+            });
+          }
         }
 
         controller = new AbortController();
-        streamAbortRef.current = controller;
+        if (!queueIntoActiveTurn) {
+          streamAbortRef.current = controller;
+        }
 
         const streamBody = {
           id: msgId,
@@ -2494,7 +2683,7 @@ export function usePlannerChat(
         console.error("Failed to prepare chat stream:", error);
         failOptimisticMessage();
         toast.error("Failed to prepare this message on the current device.");
-        if (activeSessionId) {
+        if (activeSessionId && !queueIntoActiveTurn) {
           void clearChatStreamSnapshot(activeSessionId);
           notifyChatStreamSnapshot({
             sessionId: activeSessionId,
@@ -2535,11 +2724,13 @@ export function usePlannerChat(
         })
         .catch((err) => {
           console.error("Failed to stream chat:", err);
-          optimisticUserMessageIdRef.current = null;
-          responseIdRef.current = null;
-          currentRequestIdRef.current = null;
-          setIsTyping(false);
-          if (activeSessionId) {
+          if (!queueIntoActiveTurn) {
+            optimisticUserMessageIdRef.current = null;
+            responseIdRef.current = null;
+            currentRequestIdRef.current = null;
+            setIsTyping(false);
+          }
+          if (activeSessionId && !queueIntoActiveTurn) {
             void clearChatStreamSnapshot(activeSessionId);
             notifyChatStreamSnapshot({
               sessionId: activeSessionId,
@@ -2561,6 +2752,9 @@ export function usePlannerChat(
           if (streamAbortRef.current === controller) {
             streamAbortRef.current = null;
           }
+          if (queueIntoActiveTurn) {
+            return;
+          }
           if (clearTypingUiTimeoutRef.current) {
             clearTimeout(clearTypingUiTimeoutRef.current);
           }
@@ -2569,6 +2763,10 @@ export function usePlannerChat(
             setLivePreview(undefined);
             setIsTyping(false);
             currentRequestIdRef.current = null;
+            responseIdRef.current = null;
+            activeRunTraceRef.current = undefined;
+            activeRunEnvelopeIdRef.current = undefined;
+            setActiveRunTrace(undefined);
             clearTypingUiTimeoutRef.current = null;
           }, 0);
         });

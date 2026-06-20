@@ -29,7 +29,6 @@ import {
   fetcher,
 } from "@/lib/api";
 import { usePlannerChat } from "@/lib/usePlannerChat";
-import { formatToolCallSignature } from "@/lib/toolCallDisplay";
 import { useUser } from "@clerk/nextjs";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { DomainSlashCommandDropdown } from "@/components/project/DomainSlashCommandDropdown";
@@ -768,6 +767,36 @@ const MessageStatusIndicator = memo(function MessageStatusIndicator({
 }) {
   if (!status) return null;
 
+  if (status === "queued") {
+    return (
+      <motion.span
+        key="queued"
+        initial={{ opacity: 0, x: 10 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -5 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        className="inline-flex items-center gap-1.5 text-[11px] font-medium text-deep-space-blue-200"
+      >
+        Queued
+        <svg
+          className="h-3.5 w-3.5 animate-spin"
+          viewBox="0 0 16 16"
+          fill="none"
+        >
+          <circle
+            cx="8"
+            cy="8"
+            r="6"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeDasharray="20 12"
+            strokeLinecap="round"
+          />
+        </svg>
+      </motion.span>
+    );
+  }
+
   if (status === "sending") {
     return (
       <motion.span
@@ -1267,183 +1296,6 @@ const MessageBubble = memo(function MessageBubble({
   );
 });
 
-type ToolEntry = {
-  name: string;
-  args: string;
-  textPreview?: string;
-  status?: "running" | "completed" | "failed";
-  outputPreview?: string;
-  errorPreview?: string;
-  children?: ToolEntry[];
-};
-
-function ToolCallLine({
-  tool,
-  compact = false,
-}: {
-  tool: ToolEntry;
-  compact?: boolean;
-}) {
-  const signature = formatToolCallSignature(tool.name, tool.args);
-  const statusLabel =
-    tool.status === "completed"
-      ? "done"
-      : tool.status === "failed"
-        ? "failed"
-        : null;
-  return (
-    <div
-      className={cn(
-        "flex items-start gap-2",
-        compact ? "text-[10px]" : "text-[11px]",
-      )}
-    >
-      <span
-        className={cn(
-          "mt-[5px] inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-          tool.status === "failed"
-            ? "bg-flag-red-400"
-            : tool.status === "completed"
-              ? "bg-emerald-400"
-              : "animate-pulse bg-deep-space-blue-400",
-        )}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="rounded-md border border-gray-200/80 bg-gray-50 px-2 py-1.5 font-mono leading-relaxed text-gray-600 shadow-sm dark:border-gray-700/80 dark:bg-gray-900/45 dark:text-gray-300">
-          <span className="whitespace-pre-wrap break-words">{signature}</span>
-          {statusLabel && (
-            <span
-              className={cn(
-                "ml-2 font-sans text-[10px] font-medium",
-                tool.status === "failed"
-                  ? "text-flag-red-500/80 dark:text-flag-red-400/80"
-                  : "text-emerald-500/80 dark:text-emerald-400/80",
-              )}
-            >
-              {statusLabel}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const TypingIndicator = memo(function TypingIndicator({
-  activeAgent,
-  tools,
-  preview,
-  mobile = false,
-}: {
-  activeAgent?: AgentDefinition;
-  tools?: ToolEntry[];
-  preview?: string;
-  mobile?: boolean;
-}) {
-  const hasTools = tools && tools.length > 0;
-  const textPreview =
-    preview?.trim() ||
-    tools?.find((tool) => tool.textPreview?.trim())?.textPreview?.trim();
-  const streamedPreview = useAnimatedStreamText(
-    textPreview ?? "",
-    !!textPreview,
-    26,
-  );
-
-  const renderedPreview = textPreview ? streamedPreview : "";
-  const previewLeadLength = textPreview ? Math.min(textPreview.length, 18) : 0;
-  const showTools =
-    hasTools &&
-    (!textPreview ||
-      streamedPreview === textPreview ||
-      streamedPreview.length >= previewLeadLength);
-  return (
-    <div
-      className={cn(
-        "flex items-start gap-3",
-        mobile ? "w-full max-w-full" : "w-full",
-      )}
-    >
-      {activeAgent ? (
-        <RoleIdenticon
-          roleId={activeAgent.id}
-          color={activeAgent.color}
-          size={32}
-          className="shrink-0"
-          animate={true}
-          name={activeAgent.name}
-        />
-      ) : (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vivid-tangerine-100 text-xs font-bold text-vivid-tangerine-700">
-          AI
-        </div>
-      )}
-      <div
-        className={cn(
-          "theme-border theme-surface min-w-0 rounded-xl rounded-tl-sm border px-4 py-2.5",
-          mobile ? "flex-1" : "w-full max-w-[75%]",
-        )}
-      >
-        {textPreview ? (
-          <div className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-gray-600 dark:text-gray-300">
-            {renderedPreview}
-            <span className="ml-1 animate-blink-cursor text-base leading-none text-deep-space-blue-500 dark:text-deep-space-blue-400">
-              &#9612;
-            </span>
-          </div>
-        ) : (
-          <div className="flex items-center font-mono text-xs text-gray-400">
-            <span className="animate-blink-cursor text-base leading-none text-deep-space-blue-500 dark:text-deep-space-blue-400">
-              &#9612;
-            </span>
-          </div>
-        )}
-        {showTools && (
-          <div className="mt-1.5 flex flex-col gap-1">
-            <AnimatePresence initial={false}>
-              {tools.map((tool, i) => (
-                <motion.div
-                  key={`${tool.name}-${i}`}
-                  initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                  transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-                  className="leading-tight"
-                >
-                  <div className="min-w-0 space-y-1">
-                    <ToolCallLine tool={tool} />
-                    {tool.children && tool.children.length > 0 && (
-                      <div className="theme-border mt-1.5 ml-3 flex flex-col gap-1 border-l pl-3">
-                        <AnimatePresence initial={false}>
-                          {tool.children.map((child, childIndex) => (
-                            <motion.div
-                              key={`${child.name}-${childIndex}`}
-                              initial={{ opacity: 0, x: -6 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: -4 }}
-                              transition={{
-                                duration: 0.34,
-                                ease: [0.22, 1, 0.36, 1],
-                              }}
-                              className="leading-tight"
-                            >
-                              <ToolCallLine tool={child} compact />
-                            </motion.div>
-                          ))}
-                        </AnimatePresence>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
-
 // ---------------------------------------------------------------------------
 // Session picker dropdown (step 2 of @mention navigation)
 // ---------------------------------------------------------------------------
@@ -1588,8 +1440,6 @@ export function ChatArea({
     sendMessage,
     deleteMessage,
     isTyping,
-    activeTools,
-    livePreview,
     activeRunTrace,
     isLoadingHistory,
     hasMore,
@@ -1601,13 +1451,13 @@ export function ChatArea({
     exitDomain,
     cancelResponse,
   } = usePlannerChat(projectId, agentId, sessionId ?? undefined, targetType);
-  const hasActiveTools = activeTools.length > 0;
   const visibleRunTrace =
     activeRunTrace &&
     !["completed", "failed", "cancelled"].includes(activeRunTrace.phase)
       ? activeRunTrace
       : undefined;
   const hasActiveRunTrace = !!visibleRunTrace;
+  const hasActiveTurn = hasActiveRunTrace || isTyping;
 
   // Domains
   const agentDomainsList: Domain[] = useMemo(
@@ -1745,7 +1595,7 @@ export function ChatArea({
     if (scrollRef.current) {
       const el = scrollRef.current;
       const behavior: ScrollBehavior =
-        hasActiveRunTrace || isTyping || hasActiveTools ? "smooth" : "auto";
+        hasActiveTurn ? "smooth" : "auto";
       requestAnimationFrame(() => {
         el.scrollTo({ top: el.scrollHeight, behavior });
       });
@@ -1754,11 +1604,9 @@ export function ChatArea({
   }, [
     messages,
     isTyping,
-    activeTools,
-    livePreview,
     visibleRunTrace,
     hasActiveRunTrace,
-    hasActiveTools,
+    hasActiveTurn,
   ]);
 
   useEffect(() => {
@@ -2204,7 +2052,6 @@ export function ChatArea({
     }
 
     if (pendingCommand) {
-      if (isTyping) return;
       const commandText = `${pendingCommand.command} ${text}`.trim();
       sendMessage(commandText, {
         commandInvocation: {
@@ -2251,7 +2098,6 @@ export function ChatArea({
       }
     }
 
-    if (isTyping) return;
     const runtimeCommand = matchRuntimeCommand(text, chatCommands);
     if (runtimeCommand) {
       sendMessage(text, {
@@ -2562,33 +2408,24 @@ export function ChatArea({
               />
             </div>
           ))}
-          {(hasActiveRunTrace || isTyping || hasActiveTools) && (
+          {hasActiveRunTrace && (
             <motion.div
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.22, ease: "easeOut" }}
             >
-              {visibleRunTrace ? (
-                <AgentRunTrace
-                  trace={visibleRunTrace}
-                  activeAgent={activeAgent}
-                  mobile
-                />
-              ) : (
-                <TypingIndicator
-                  activeAgent={activeAgent}
-                  tools={activeTools}
-                  preview={livePreview}
-                  mobile
-                />
-              )}
+              <AgentRunTrace
+                trace={visibleRunTrace}
+                activeAgent={activeAgent}
+                mobile
+              />
             </motion.div>
           )}
           <div
             className={cn(
               "shrink-0",
-              hasActiveRunTrace || isTyping || hasActiveTools ? "h-20" : "h-1",
+              hasActiveRunTrace ? "h-20" : "h-1",
             )}
           />
         </>
@@ -2638,7 +2475,7 @@ export function ChatArea({
               </motion.div>
             );
           })}
-          {(hasActiveRunTrace || isTyping || hasActiveTools) && (
+          {hasActiveRunTrace && (
             <motion.div
               key="typing"
               initial={{ opacity: 0, y: 18 }}
@@ -2646,25 +2483,17 @@ export function ChatArea({
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.22, ease: "easeOut" }}
             >
-              {visibleRunTrace ? (
-                <AgentRunTrace
-                  trace={visibleRunTrace}
-                  activeAgent={activeAgent}
-                />
-              ) : (
-                <TypingIndicator
-                  activeAgent={activeAgent}
-                  tools={activeTools}
-                  preview={livePreview}
-                />
-              )}
+              <AgentRunTrace
+                trace={visibleRunTrace}
+                activeAgent={activeAgent}
+              />
             </motion.div>
           )}
         </AnimatePresence>
         <div
           className={cn(
             "shrink-0",
-            hasActiveRunTrace || isTyping || hasActiveTools ? "h-16" : "h-1",
+            hasActiveRunTrace ? "h-16" : "h-1",
           )}
         />
       </div>
@@ -2682,12 +2511,8 @@ export function ChatArea({
     userInitials,
     deleteMessage,
     streamingAssistantId,
-    isTyping,
     hasActiveRunTrace,
     visibleRunTrace,
-    hasActiveTools,
-    activeTools,
-    livePreview,
   ]);
 
   const agentColor = activeAgent?.color;
@@ -3086,7 +2911,7 @@ export function ChatArea({
             placeholder={placeholder}
             disabled={isDomainPending}
             isTyping={isTyping}
-            hasActiveTools={hasActiveTools}
+            hasActiveRunTrace={hasActiveRunTrace}
             activeAgent={activeAgent}
             availableAgents={availableAgents}
             availableDomains={availableDomains}
@@ -3551,7 +3376,7 @@ export function ChatArea({
                   </div>
                 )}
               </div>
-              {(hasActiveRunTrace || isTyping || hasActiveTools) && (
+              {hasActiveTurn && (
                 <button
                   onMouseDown={handleCancelHoldStart}
                   onMouseUp={handleCancelHoldEnd}
@@ -3614,7 +3439,7 @@ export function ChatArea({
               </Button>
             </div>
             <AnimatePresence>
-              {(hasActiveRunTrace || isTyping || hasActiveTools) && (
+              {hasActiveTurn && (
                 <motion.p
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}

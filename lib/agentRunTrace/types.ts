@@ -182,6 +182,14 @@ export type AgentLifecycleEvent =
       };
     }
   | {
+      event_type: "AssistantResponse";
+      data: {
+        run_id?: string;
+        message?: string;
+        status?: string;
+      };
+    }
+  | {
       event_type: "ModelRequestCompleted";
       data: {
         run_id?: string;

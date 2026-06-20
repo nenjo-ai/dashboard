@@ -75,6 +75,8 @@ function phaseAfterSpanCompletion(
       case "ability":
         return "running_ability";
       case "async_operation":
+        if (active.operationKind === "ability") return "running_ability";
+        if (active.operationKind === "sub_agent") return "delegating";
         return "executing_tools";
       case "delegation":
         return "delegating";
@@ -163,6 +165,10 @@ function completeRunningSpans(
     }
     return next;
   });
+}
+
+function isTerminalAssistantResponseStatus(status?: string): boolean {
+  return Boolean(status && status !== "in_progress");
 }
 
 function completeSpanStatus(success: boolean): TraceStatus {
@@ -307,6 +313,16 @@ export function reduceRunTrace(
         spans,
       };
     }
+    case "AssistantResponse":
+      if (!isTerminalAssistantResponseStatus(event.data.status)) {
+        return trace;
+      }
+      return {
+        ...trace,
+        phase: "completed",
+        completedAt: now,
+        spans: completeRunningSpans(trace.spans, now),
+      };
     case "MessageCompacted":
       return {
         ...trace,

@@ -113,6 +113,10 @@ function statusForEvent(event: AgentLifecycleEvent): EnvelopeStatus | undefined 
       return "failed";
     case "RunCancelled":
       return "cancelled";
+    case "AssistantResponse":
+      return event.data.status && event.data.status !== "in_progress"
+        ? "completed"
+        : undefined;
     default:
       return undefined;
   }

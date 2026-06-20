@@ -5,7 +5,7 @@ export interface NormalizedTraceStreamEvent {
   data?: Record<string, unknown>;
 }
 
-const canonicalLifecycleEvents = new Set<string>([
+export const canonicalLifecycleEventTypes = [
   "RunStarted",
   "RunCompleted",
   "RunFailed",
@@ -14,6 +14,7 @@ const canonicalLifecycleEvents = new Set<string>([
   "Resumed",
   "ModelRequestStarted",
   "AssistantTextDelta",
+  "AssistantResponse",
   "ModelRequestCompleted",
   "MessageCompacted",
   "ToolCallStarted",
@@ -23,7 +24,9 @@ const canonicalLifecycleEvents = new Set<string>([
   "AsyncOperationTranscript",
   "HookStarted",
   "HookCompleted",
-]);
+] as const;
+
+const canonicalLifecycleEvents = new Set<string>(canonicalLifecycleEventTypes);
 
 export function chatStreamEventToLifecycleEvent(
   event: NormalizedTraceStreamEvent,

@@ -295,6 +295,7 @@ export type ChatRole = "user" | "assistant";
 
 export type MessageStatus =
   | "sending"
+  | "queued"
   | "sent"
   | "delivered"
   | "failed"
