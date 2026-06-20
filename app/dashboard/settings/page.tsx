@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import {
+  AtSign,
   Bell,
   BellOff,
   Building2,
@@ -9,6 +10,7 @@ import {
   HardDrive,
   KeyRound,
   Palette,
+  Save,
 } from "lucide-react";
 import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { TopBar } from "@/components/layout/TopBar";
@@ -19,11 +21,12 @@ import { UnlockMethodsSection } from "@/components/settings/UnlockMethodsSection
 import { usePwa } from "@/components/pwa/PwaProvider";
 import { PageContent } from "@/components/ui/PageContent";
 import { Tabs } from "@/components/ui/Tabs";
+import { updateCurrentUser } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
 import { toast } from "@/lib/toast";
 import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 import { cn } from "@/lib/cn";
-import { useTabParam, useWorkerStatus } from "@/lib/hooks";
+import { useCurrentUser, useTabParam, useWorkerStatus } from "@/lib/hooks";
 import { useOrgContext } from "@/lib/org-context";
 
 const SETTINGS_TABS = ["general", "org", "runtime", "devices", "keys"] as const;
@@ -179,6 +182,94 @@ function WorkerStatusPanel() {
   );
 }
 
+function AccountHandleSettings() {
+  const { currentUser, isLoading, mutate } = useCurrentUser();
+  const [username, setUsername] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setUsername(currentUser?.username ?? "");
+  }, [currentUser?.username]);
+
+  const normalized = username.trim().replace(/^@+/, "").toLowerCase();
+  const unchanged = normalized === (currentUser?.username ?? "");
+  const canSave = /^[a-z0-9][a-z0-9_-]{2,31}$/.test(normalized) && !unchanged && !saving;
+
+  const handleSave = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    try {
+      const updated = await updateCurrentUser({ username: normalized });
+      await mutate(updated, { revalidate: false });
+      toast.success("Username saved.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save username.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SettingsSection
+      title="Account"
+      description="Your username is used as a notification handle for agents and mentions."
+    >
+      <div className="space-y-4">
+        <div className="min-w-0">
+          <p className="theme-text truncate text-sm font-medium">
+            {currentUser?.name || currentUser?.email || "Current account"}
+          </p>
+          <p className="theme-text-muted mt-1 truncate text-xs">
+            {currentUser?.email ?? currentUser?.user_id ?? "Loading account"}
+          </p>
+        </div>
+
+        <div className="max-w-xl">
+          <label className="theme-text mb-2 block text-sm font-medium" htmlFor="account-username">
+            Notification handle
+          </label>
+          <div className="theme-border flex min-h-11 w-full flex-col overflow-hidden rounded-lg border sm:flex-row">
+            <div className="flex h-11 min-w-0 flex-1 items-center gap-2 px-3">
+              <AtSign className="h-4 w-4 shrink-0 text-gray-400" />
+              <input
+                id="account-username"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="casey"
+                disabled={isLoading || saving}
+                className="theme-text min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
+                autoComplete="off"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={!canSave}
+              className={cn(
+                "theme-border flex h-11 shrink-0 items-center justify-center gap-2 border-t px-4 text-sm font-medium transition-colors sm:border-l sm:border-t-0",
+                canSave
+                  ? "text-gray-900 hover:bg-black/[0.03] dark:text-gray-100 dark:hover:bg-white/[0.04]"
+                  : "text-gray-400 dark:text-gray-600",
+              )}
+            >
+              <Save className="h-4 w-4" />
+              {saving ? "Saving" : "Save"}
+            </button>
+          </div>
+          <p className="theme-text-muted mt-2 text-xs leading-5">
+            Use 3-32 lowercase letters, numbers, underscores, or hyphens. Agents can notify you at
+            {" "}
+            <span className="theme-text font-medium">
+              @{normalized || "username"}
+            </span>
+            .
+          </p>
+        </div>
+      </div>
+    </SettingsSection>
+  );
+}
+
 function SettingsContent() {
   const isMobileViewport = useIsMobileViewport();
   const { theme, setTheme } = useTheme();
@@ -236,6 +327,8 @@ function SettingsContent() {
 
         {activeTab === "general" && (
           <div className="space-y-6">
+            <AccountHandleSettings />
+
             <SettingsSection
               title="Appearance"
               description="Keep visual preferences simple and close to the content."
