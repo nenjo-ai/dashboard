@@ -15,13 +15,14 @@ import { McpServersSection } from "@/components/settings/McpServersSection";
 import { MediaProvidersSection } from "@/components/agents/MediaProvidersSection";
 import { ModelsSection } from "@/components/agents/ModelsSection";
 import { AbilitiesSection } from "@/components/agents/AbilitiesSection";
+import { CommandsSection } from "@/components/agents/CommandsSection";
 import { ContextBlocksSection } from "@/components/agents/ContextBlocksSection";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PageContent } from "@/components/ui/PageContent";
 import { toast } from "@/lib/toast";
 import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
-type AgentsTab = "agents" | "domains" | "abilities" | "context" | "mcp" | "media" | "models";
+type AgentsTab = "agents" | "domains" | "abilities" | "commands" | "context" | "mcp" | "media" | "models";
 
 export default function AgentsPage() {
   return (
@@ -37,7 +38,7 @@ function AgentsPageContent() {
   const { projects } = useProjects();
   const { agents } = useAgents();
 
-  const [activeTab, setActiveTab] = useTabParam<AgentsTab>("agents", ["agents", "domains", "abilities", "context", "mcp", "media", "models"]);
+  const [activeTab, setActiveTab] = useTabParam<AgentsTab>("agents", ["agents", "domains", "abilities", "commands", "context", "mcp", "media", "models"]);
   const [deletingModel, setDeletingModel] = useState<Model | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -71,6 +72,7 @@ function AgentsPageContent() {
     { id: "agents" as const, label: "Agents" },
     { id: "domains" as const, label: "Domains" },
     { id: "abilities" as const, label: "Abilities" },
+    { id: "commands" as const, label: "Commands" },
     { id: "context" as const, label: "Context" },
     { id: "mcp" as const, label: "MCP" },
     { id: "media" as const, label: "Media" },
@@ -112,6 +114,15 @@ function AgentsPageContent() {
                 Specialized behaviors agents can activate as tools during execution.
               </p>
               <AbilitiesSection />
+            </>
+          )}
+
+          {activeTab === "commands" && (
+            <>
+              <p className="text-sm leading-6 text-gray-500 dark:text-gray-400">
+                Slash commands installed from packages and plugins.
+              </p>
+              <CommandsSection />
             </>
           )}
 
@@ -197,6 +208,15 @@ function AgentsPageContent() {
                 Specialized behaviors agents can activate as tools during execution.
               </p>
               <AbilitiesSection />
+            </>
+          )}
+
+          {activeTab === "commands" && (
+            <>
+              <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                Slash commands installed from packages and plugins.
+              </p>
+              <CommandsSection />
             </>
           )}
 

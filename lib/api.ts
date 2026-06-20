@@ -38,8 +38,11 @@ import type {
   ChatDomainExitRequest,
   ChatSessionDeleteRequest,
   ChatStreamRequest,
+  ChatCommand,
+  ConfigureChatCommandRequest,
   EncryptedPayload,
   HeartbeatInstructionsPayload,
+  RoutineStepInstructionsPayload,
   PackageInstallProgress,
   PromptConfigResponse,
   RoutineCronTaskPayload,
@@ -1830,9 +1833,34 @@ export async function fetchCurrentUser(): Promise<{
   org_name?: string | null;
   org_role?: string | null;
   org_scopes?: string[] | null;
+  email?: string | null;
+  name?: string | null;
+  username?: string | null;
   onboarded?: boolean;
 }> {
   return fetcher(authMeUrl());
+}
+
+export async function updateCurrentUser(data: {
+  username: string;
+}): Promise<{
+  user_id: string | null;
+  clerk_id?: string;
+  session_id?: string | null;
+  org_id?: string | null;
+  org_name?: string | null;
+  org_role?: string | null;
+  org_scopes?: string[] | null;
+  email?: string | null;
+  name?: string | null;
+  username?: string | null;
+  onboarded?: boolean;
+}> {
+  const res = await authFetch(authMeUrl(), {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------
@@ -2480,7 +2508,42 @@ export async function fetchRoutines(): Promise<
 export async function fetchRoutine(
   routineId: string,
 ): Promise<import("./types").RoutineDetail> {
-  return fetcher(routineUrl(routineId));
+  const routine = await fetcher<import("./types").RoutineDetail>(routineUrl(routineId));
+  return hydrateRoutineStepInstructions(routine);
+}
+
+async function hydrateRoutineStepInstructions(
+  routine: import("./types").RoutineDetail,
+): Promise<import("./types").RoutineDetail> {
+  const steps = await Promise.all(
+    routine.steps.map(async (step) => {
+      const instructions = await decryptRoutineStepInstructionsPayload(step.encrypted_payload);
+      if (!instructions) return step;
+      return {
+        ...step,
+        config: {
+          ...step.config,
+          instructions,
+        },
+      };
+    }),
+  );
+  return { ...routine, steps };
+}
+
+function splitStepInstructions(config: Record<string, unknown> | undefined): {
+  config: Record<string, unknown>;
+  instructions: string;
+} {
+  const next = { ...(config ?? {}) };
+  const rawInstructions = next.instructions;
+  delete next.instructions;
+  delete next.description;
+  delete next.context;
+  return {
+    config: next,
+    instructions: typeof rawInstructions === "string" ? rawInstructions : "",
+  };
 }
 
 export async function createRoutine(
@@ -2518,12 +2581,27 @@ export async function saveRoutineGraph(
   routineId: string,
   data: import("./types").SaveRoutineGraphRequest,
 ): Promise<import("./types").RoutineDetail> {
+  const steps = await Promise.all(
+    data.steps.map(async (step) => {
+      const { config, instructions } = splitStepInstructions(step.config);
+      const id = step.id ?? (instructions.trim() ? crypto.randomUUID() : undefined);
+      const encryptedPayload = id
+        ? await encryptRoutineStepInstructionsPayload(id, instructions)
+        : null;
+      return {
+        ...step,
+        id,
+        config,
+        encrypted_payload: encryptedPayload ?? step.encrypted_payload ?? null,
+      };
+    }),
+  );
   const body: import("./types").ConfigureRoutineRequest = {
     ...routineConfigureBase(data),
     routine: routineId,
     graph: {
       entry_steps: data.entry_steps,
-      steps: data.steps,
+      steps,
       edges: data.edges,
     },
   };
@@ -2532,7 +2610,7 @@ export async function saveRoutineGraph(
     body: JSON.stringify(body),
   });
   invalidateRoutinesCatalogCache();
-  return res.json();
+  return hydrateRoutineStepInstructions(await res.json());
 }
 
 export async function deleteRoutine(routineId: string): Promise<void> {
@@ -2544,12 +2622,26 @@ export async function createRoutineStep(
   routineId: string,
   data: import("./types").CreateStepRequest,
 ): Promise<import("./types").RoutineStep> {
+  const { config, instructions } = splitStepInstructions(data.config);
+  const id = data.id ?? (instructions.trim() ? crypto.randomUUID() : undefined);
+  const encryptedPayload = id
+    ? await encryptRoutineStepInstructionsPayload(id, instructions)
+    : null;
   const res = await authFetch(routineStepsUrl(routineId), {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      ...data,
+      id,
+      config,
+      encrypted_payload: encryptedPayload ?? data.encrypted_payload ?? null,
+    }),
   });
   invalidateRoutinesCatalogCache();
-  return res.json();
+  const step = await res.json();
+  const decrypted = await decryptRoutineStepInstructionsPayload(step.encrypted_payload);
+  return decrypted
+    ? { ...step, config: { ...step.config, instructions: decrypted } }
+    : step;
 }
 
 export async function updateRoutineStep(
@@ -2557,12 +2649,23 @@ export async function updateRoutineStep(
   stepId: string,
   data: import("./types").UpdateStepRequest,
 ): Promise<import("./types").RoutineStep> {
+  const body: import("./types").UpdateStepRequest = { ...data };
+  if (hasOwn(data, "config")) {
+    const { config, instructions } = splitStepInstructions(data.config);
+    const encryptedPayload = await encryptRoutineStepInstructionsPayload(stepId, instructions);
+    body.config = config;
+    body.encrypted_payload = encryptedPayload ?? data.encrypted_payload ?? null;
+  }
   const res = await authFetch(routineStepUrl(routineId, stepId), {
     method: "PATCH",
-    body: JSON.stringify(data),
+    body: JSON.stringify(body),
   });
   invalidateRoutinesCatalogCache();
-  return res.json();
+  const step = await res.json();
+  const decrypted = await decryptRoutineStepInstructionsPayload(step.encrypted_payload);
+  return decrypted
+    ? { ...step, config: { ...step.config, instructions: decrypted } }
+    : step;
 }
 
 export async function deleteRoutineStep(
@@ -2870,6 +2973,32 @@ export async function decryptHeartbeatInstructionsPayload(
     payload,
     null,
     "heartbeat instructions",
+  );
+  return typeof decrypted?.instructions === "string" ? decrypted.instructions : "";
+}
+
+export async function encryptRoutineStepInstructionsPayload(
+  stepId: string,
+  instructions: string,
+): Promise<EncryptedPayload | null> {
+  const trimmed = instructions.trim();
+  if (!trimmed) return null;
+
+  return encryptOrgJsonPayload({
+    objectId: stepId,
+    objectType: "routine.step.instructions",
+    value: { instructions: trimmed } satisfies RoutineStepInstructionsPayload,
+    label: "Routine step instructions",
+  });
+}
+
+export async function decryptRoutineStepInstructionsPayload(
+  payload: unknown,
+): Promise<string> {
+  const decrypted = await decryptJsonPayload<Partial<RoutineStepInstructionsPayload> | null>(
+    payload,
+    null,
+    "routine step instructions",
   );
   return typeof decrypted?.instructions === "string" ? decrypted.instructions : "";
 }
@@ -3312,6 +3441,7 @@ export async function fetchChatSessions(
 }
 
 export async function createChatSession(body: {
+  id?: string | null;
   project_id?: string | null;
   agent_id?: string | null;
   target_type?: "agent" | "council";
@@ -3454,7 +3584,7 @@ export async function fetchAllChatSessions(params?: {
 export const notificationsUnreadUrl = () => `${API_V1}/notifications/unread`;
 
 export const notificationMessagesUrl = (sessionId: string, limit = 100) =>
-  `${API_V1}/notifications/${sessionId}/messages?limit=${limit}`;
+  `${API_V1}/notifications?session_id=${encodeURIComponent(sessionId)}&limit=${limit}`;
 
 export async function markNotificationRead(sessionId: string): Promise<void> {
   await authFetch(`${API_V1}/notifications/${sessionId}/read`, {
@@ -3884,6 +4014,111 @@ export async function removeMcpFromAgent(
   mcpId: string,
 ): Promise<void> {
   await authFetch(agentMcpAssignmentUrl(agentId, mcpId), { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
+// Chat Commands
+// ---------------------------------------------------------------------------
+
+export function chatCommandsUrl(): string {
+  return `${API_V1}/chat-commands`;
+}
+
+export function configureChatCommandUrl(): string {
+  return `${chatCommandsUrl()}/configure`;
+}
+
+export function chatCommandUrl(commandId: string): string {
+  return `${chatCommandsUrl()}/${encodeURIComponent(commandId)}`;
+}
+
+async function encryptCommandContent(
+  objectId: string,
+  content: string,
+): Promise<EncryptedPayload | null> {
+  const currentUser = await fetchCurrentUser();
+  if (!currentUser.org_id) return null;
+
+  return encryptOrgContentPayload({
+    orgId: currentUser.org_id,
+    objectId,
+    objectType: "manifest.command.content",
+    plaintext: JSON.stringify(content),
+  });
+}
+
+function decodeCommandContentPlaintext(plaintext: string): string {
+  try {
+    const decoded = JSON.parse(plaintext) as unknown;
+    if (typeof decoded === "string") return decoded;
+  } catch {
+    // Older dashboard-authored commands were encrypted as raw text.
+  }
+  return plaintext;
+}
+
+async function hydrateChatCommand(command: ChatCommand): Promise<ChatCommand> {
+  if (!isEncryptedPayload(command.encrypted_payload)) {
+    return command;
+  }
+
+  try {
+    const plaintext = await decryptContentPayload(command.encrypted_payload);
+    if (plaintext === null) {
+      return {
+        ...command,
+        content: "",
+        content_decrypt_error:
+          "This device does not have the org content key for this encrypted command.",
+      };
+    }
+    return {
+      ...command,
+      content: decodeCommandContentPlaintext(plaintext),
+      content_decrypt_error: null,
+    };
+  } catch (error) {
+    console.warn("Failed to decrypt command content", {
+      objectId: command.encrypted_payload.object_id,
+      error,
+    });
+    return {
+      ...command,
+      content: "",
+      content_decrypt_error: "Failed to decrypt this encrypted command content.",
+    };
+  }
+}
+
+export async function fetchChatCommands(): Promise<ChatCommand[]> {
+  const commands = await fetcher<ChatCommand[]>(chatCommandsUrl());
+  return Promise.all(commands.map(hydrateChatCommand));
+}
+
+export async function configureChatCommand(
+  data: ConfigureChatCommandRequest,
+): Promise<ChatCommand> {
+  const id = data.id ?? crypto.randomUUID();
+  const encryptedPayload = requireEncryptedPayload(
+    await encryptCommandContent(id, data.content),
+    "Command content",
+  );
+  const res = await authFetch(configureChatCommandUrl(), {
+    method: "POST",
+    body: JSON.stringify({
+      id,
+      ...(data.name ? { name: data.name } : {}),
+      path: data.path ?? "",
+      command: data.command,
+      description: data.description ?? null,
+      encrypted_payload: encryptedPayload,
+    }),
+  });
+  return hydrateChatCommand((await res.json()) as ChatCommand);
+}
+
+export async function deleteChatCommand(commandId: string): Promise<void> {
+  await authFetch(chatCommandUrl(commandId), { method: "DELETE" });
 }
 
 // ---------------------------------------------------------------------------

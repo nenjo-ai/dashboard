@@ -16,6 +16,7 @@ const SCOPE_GROUPS = [
   { label: "Routines", scopes: ["routines:read", "routines:write"] },
   { label: "Councils", scopes: ["councils:read", "councils:write"] },
   { label: "Context Blocks", scopes: ["context_blocks:read", "context_blocks:write"] },
+  { label: "Commands", scopes: ["commands:read", "commands:write"] },
   { label: "MCP Servers", scopes: ["mcp_servers:read", "mcp_servers:write"] },
   { label: "Notifications", scopes: ["notify:read", "notify:write"] },
   { label: "Models", scopes: ["models:read", "models:write"] },

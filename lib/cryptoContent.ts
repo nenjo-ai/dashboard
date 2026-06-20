@@ -106,6 +106,7 @@ const orgContentKeySessionCache = new Map<string, string>();
 let accountSigningKeyPromise: Promise<CryptoKeyPair | null> | null = null;
 let accountSigningPublicKeyCache: string | null = null;
 let deviceIdentityPromise: Promise<{ deviceId: string; keyPair: CryptoKeyPair; publicKey: string } | null> | null = null;
+let deviceIdentityEnsurePromise: Promise<{ deviceId: string; publicKey: string }> | null = null;
 let vaultKeyRawSession: Uint8Array | null = null;
 let vaultKeyPromise: Promise<CryptoKey> | null = null;
 let vaultSessionAccountId: string | null = null;
@@ -1053,26 +1054,34 @@ export async function ensureDeviceEncryptionIdentity(): Promise<{
   deviceId: string;
   publicKey: string;
 }> {
-  const existing = await loadStoredDeviceIdentity();
-  if (existing) {
-    return { deviceId: existing.deviceId, publicKey: existing.publicKey };
-  }
+  if (!deviceIdentityEnsurePromise) {
+    deviceIdentityEnsurePromise = (async () => {
+      const existing = await loadStoredDeviceIdentity();
+      if (existing) {
+        return { deviceId: existing.deviceId, publicKey: existing.publicKey };
+      }
 
-  const generated = await crypto.subtle.generateKey(
-    { name: "X25519" } as AlgorithmIdentifier,
-    true,
-    ["deriveBits"],
-  ).catch((err) => {
-    throw describeCryptoError("generate X25519 key pair", err);
-  });
-  if (!("privateKey" in generated) || !("publicKey" in generated)) {
-    throw new Error("Browser did not return an X25519 device key pair.");
+      const generated = await crypto.subtle.generateKey(
+        { name: "X25519" } as AlgorithmIdentifier,
+        true,
+        ["deriveBits"],
+      ).catch((err) => {
+        throw describeCryptoError("generate X25519 key pair", err);
+      });
+      if (!("privateKey" in generated) || !("publicKey" in generated)) {
+        throw new Error("Browser did not return an X25519 device key pair.");
+      }
+      const persisted = await persistDeviceIdentity({
+        deviceId: crypto.randomUUID(),
+        keyPair: generated,
+      });
+      return { deviceId: persisted.deviceId, publicKey: persisted.publicKey };
+    })().catch((err) => {
+      deviceIdentityEnsurePromise = null;
+      throw err;
+    });
   }
-  const persisted = await persistDeviceIdentity({
-    deviceId: crypto.randomUUID(),
-    keyPair: generated,
-  });
-  return { deviceId: persisted.deviceId, publicKey: persisted.publicKey };
+  return deviceIdentityEnsurePromise;
 }
 
 export async function importWrappedAccountContentKeyForDevice(

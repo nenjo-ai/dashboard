@@ -305,6 +305,7 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   timestamp: string;
+  command?: string;
   status?: MessageStatus;
   runTrace?: import("./agentRunTrace/types").RunTrace;
   runEnvelopeId?: string;
@@ -341,6 +342,35 @@ export interface ChatStreamRequest {
   target_type?: "agent" | "council";
   target_id?: string;
   project_id?: string;
+}
+
+export interface ChatCommand {
+  id: string;
+  name: string;
+  path: string;
+  command: string;
+  description: string | null;
+  content: string;
+  encrypted_payload?: EncryptedPayload | null;
+  content_decrypt_error?: string | null;
+  entry_path: string;
+  root_path: string;
+  plugin_root_path: string | null;
+  hooks: string[];
+  source_type: "native" | "package";
+  read_only: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConfigureChatCommandRequest {
+  id?: string;
+  name?: string;
+  path?: string;
+  command: string;
+  description?: string;
+  content: string;
 }
 
 export interface EncryptedPayload {
@@ -406,6 +436,8 @@ export interface TrustedDevicePayload {
   enc_public_key: string;
   sign_public_key: string;
   wrapped_ack: WrappedAccountContentKey;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface DeviceEnrollmentPayload {
@@ -415,6 +447,8 @@ export interface DeviceEnrollmentPayload {
   verification_code: string;
   state: "pending" | "active" | "revoked";
   wrapped_ack?: WrappedAccountContentKey | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface ApproveDeviceEnrollmentRequest {
@@ -613,6 +647,10 @@ export interface NotificationMetadata {
   severity?: "info" | "warning" | "action";
   link?: string;
   hidden?: boolean;
+  command?: string;
+  source_session_id?: string;
+  recipient_user_id?: string | null;
+  recipient_handle?: string | null;
   encrypted_payload?: EncryptedPayload;
 }
 
@@ -1295,6 +1333,8 @@ export const MCP_RESOURCE_SCOPES = [
   "councils:write",
   "context_blocks:read",
   "context_blocks:write",
+  "commands:read",
+  "commands:write",
   "mcp_servers:read",
   "mcp_servers:write",
   "notify:read",
@@ -1685,6 +1725,10 @@ export interface RoutineCronTaskPayload {
   acceptance_criteria?: string | null;
 }
 
+export interface RoutineStepInstructionsPayload {
+  instructions: string;
+}
+
 export interface CreateRoutineRequest {
   id?: string;
   name: string;
@@ -1742,6 +1786,7 @@ export interface CreateEdgeRequest {
 }
 
 export interface SaveRoutineGraphStepRequest {
+  id?: string;
   slug: string;
   name: string;
   step_type: RoutineStepType;
