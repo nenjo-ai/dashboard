@@ -216,6 +216,15 @@ const LIVE_PREVIEW_KEY = "nenjo:livePreview";
 const STREAM_CHANNEL_NAME = "nenjo-chat-stream";
 const ENCRYPTED_USER_MESSAGE_PLACEHOLDER = "[Encrypted message]";
 
+function persistedMessageCommand(
+  message: Pick<PersistedChatMessage, "metadata">,
+): string | undefined {
+  const command = message.metadata?.command;
+  return typeof command === "string" && command.trim().startsWith("/")
+    ? command.trim()
+    : undefined;
+}
+
 function isClearSnapshot(
   snapshot: ChatStreamSnapshot | { sessionId: string; clear: true },
 ): snapshot is { sessionId: string; clear: true } {
@@ -1187,6 +1196,7 @@ export function usePlannerChat(
               persistedId: m.id,
               role: m.sender,
               content: await resolvePersistedMessageContent(m),
+              command: persistedMessageCommand(m),
               timestamp: m.created_at,
             })),
           );
@@ -1358,6 +1368,7 @@ export function usePlannerChat(
             persistedId: m.id,
             role: m.sender,
             content: await resolvePersistedMessageContent(m),
+            command: persistedMessageCommand(m),
             timestamp: m.created_at,
           })),
         );
@@ -1422,6 +1433,9 @@ export function usePlannerChat(
             msg.sender === "assistant"
               ? (activeRunEnvelopeIdRef.current ?? lastRunEnvelopeIdRef.current)
               : undefined;
+          const persistedCommand = persistedMessageCommand({
+            metadata: msg.metadata ?? null,
+          });
           if (persistedRunEnvelopeId && activeSessionId) {
             void linkEnvelopeToMessage({
               sessionId: activeSessionId,
@@ -1458,6 +1472,7 @@ export function usePlannerChat(
                           )
                             ? m.content
                             : resolvedContent,
+                          command: persistedCommand ?? m.command,
                           timestamp: msg.created_at,
                           status:
                             m.status === "cancelled"
@@ -1478,11 +1493,12 @@ export function usePlannerChat(
                   prev.map((m, i) =>
                     i === responseIdx
                       ? {
-                          ...m,
-                          persistedId: msg.id,
-                          content: resolvedContent,
-                          timestamp: msg.created_at,
-                          runEnvelopeId:
+                        ...m,
+                        persistedId: msg.id,
+                        content: resolvedContent,
+                        command: persistedCommand ?? m.command,
+                        timestamp: msg.created_at,
+                        runEnvelopeId:
                             persistedRunEnvelopeId ?? m.runEnvelopeId,
                         }
                       : m,
@@ -1539,6 +1555,7 @@ export function usePlannerChat(
                         ...m,
                         persistedId: msg.id,
                         content: resolvedContent,
+                        command: persistedCommand ?? m.command,
                         timestamp: msg.created_at,
                         runEnvelopeId:
                           role === "assistant"
@@ -1570,6 +1587,7 @@ export function usePlannerChat(
                 persistedId: msg.id,
                 role,
                 content: resolvedContent,
+                command: persistedCommand,
                 timestamp: msg.created_at,
                 runEnvelopeId:
                   role === "assistant" ? persistedRunEnvelopeId : undefined,
@@ -2307,6 +2325,7 @@ export function usePlannerChat(
         id: msgId,
         role: "user",
         content: trimmed,
+        command: options?.commandInvocation?.command,
         timestamp: new Date().toISOString(),
         status: "sending",
       };
@@ -2504,6 +2523,7 @@ export function usePlannerChat(
               persistedId: message.id,
               role: message.sender,
               content: await resolvePersistedMessageContent(message),
+              command: persistedMessageCommand(message),
               timestamp: message.created_at,
               status: message.sender === "user" ? "delivered" : undefined,
             })),

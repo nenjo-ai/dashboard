@@ -33,12 +33,20 @@ export function ChatView() {
   const sessionParam = searchParams.get("session");
   const channelParam = searchParams.get("channel");
   const isNotificationView = channelParam === "notifications";
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
+  const [localSelectedSessionId, setSelectedSessionId] = useState<string | null>(
     () => sessionParam,
   );
+  const selectedSessionId = sessionParam ?? localSelectedSessionId;
 
   useEffect(() => {
-    setSelectedSessionId(sessionParam);
+    if (sessionParam) {
+      pendingNavigationSessionRef.current = sessionParam;
+      return;
+    }
+
+    pendingNavigationSessionRef.current = null;
+    const timer = setTimeout(() => setSelectedSessionId(null), 0);
+    return () => clearTimeout(timer);
   }, [sessionParam]);
 
   useEffect(() => {
@@ -128,7 +136,7 @@ export function ChatView() {
     if (isMobileViewport) return;
     if (!selectedSessionId || sessionsLoading || !sessions) return;
     if (sessions.some((s) => s.id === selectedSessionId)) return;
-    if (pendingNavigationSessionRef.current === selectedSessionId) {
+    if (sessionParam === selectedSessionId || pendingNavigationSessionRef.current === selectedSessionId) {
       void mutateSessions();
       return;
     }
@@ -136,8 +144,8 @@ export function ChatView() {
     const params = new URLSearchParams(searchParams.toString());
     if (sessions.length > 0) {
       params.set("session", sessions[0].id);
-      setSelectedSessionId(sessions[0].id);
       const timer = setTimeout(() => {
+        setSelectedSessionId(sessions[0].id);
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
       }, 0);
       return () => clearTimeout(timer);
@@ -149,7 +157,7 @@ export function ChatView() {
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [selectedSessionId, sessions, sessionsLoading, searchParams, router, pathname, isMobileViewport, mutateSessions]);
+  }, [selectedSessionId, sessions, sessionsLoading, searchParams, router, pathname, isMobileViewport, mutateSessions, sessionParam]);
 
   // Create new chat
   const handleCreateChat = useCallback(
