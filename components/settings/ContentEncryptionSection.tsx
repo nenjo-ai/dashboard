@@ -28,7 +28,6 @@ import {
   clearStoredRecoveryBundle,
   clearStoredAccountContentKey,
   ensureAccountSigningKeyPair,
-  importWrappedAccountContentKeyForDevice,
   importWrappedOrgContentKeyFromRecovery,
   loadAccountSigningPublicKey,
   loadStoredRecoveryBundle,
@@ -43,6 +42,7 @@ import { useCurrentUser } from "@/lib/hooks";
 import { fetcher, workerEnrollmentUrl } from "@/lib/api";
 import type {
   DeviceEnrollmentPayload,
+  RecoveryBundlePayload,
   TrustedDevicePayload,
   WorkerHarnessMetadata,
   WorkerEnrollmentStatusResponse,
@@ -74,6 +74,73 @@ function harnessDescription(
     metadata?.labels?.length ? metadata.labels.join(", ") : null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : enrollment.api_key_id;
+}
+
+type RecoveryBundleSource = "local" | "server";
+
+interface RecoveryBundleCandidate {
+  source: RecoveryBundleSource;
+  bundle: RecoveryBundlePayload;
+}
+
+function recoveryBundleFingerprint(bundle: RecoveryBundlePayload): string {
+  return [bundle.salt, bundle.nonce, bundle.ciphertext].join(":");
+}
+
+function recoveryBundleCandidates(
+  local: RecoveryBundlePayload | null,
+  remote: RecoveryBundlePayload | null,
+): RecoveryBundleCandidate[] {
+  const candidates: RecoveryBundleCandidate[] = [];
+  const seen = new Set<string>();
+  for (const candidate of [
+    local ? { source: "local" as const, bundle: local } : null,
+    remote ? { source: "server" as const, bundle: remote } : null,
+  ]) {
+    if (!candidate) continue;
+    const fingerprint = recoveryBundleFingerprint(candidate.bundle);
+    if (seen.has(fingerprint)) continue;
+    seen.add(fingerprint);
+    candidates.push(candidate);
+  }
+  return candidates;
+}
+
+function formatRecoveryBundleTimestamp(value: string | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function formatDeviceTimestamp(value: string | null | undefined): string | null {
+  return formatRecoveryBundleTimestamp(value ?? undefined);
+}
+
+function deviceRowDescription(deviceId: string, details: Array<string | null>): string {
+  const present = details.filter(Boolean);
+  return present.length > 0 ? `${deviceId} · ${present.join(" · ")}` : deviceId;
+}
+
+function deviceEnrollmentDescription(device: DeviceEnrollmentPayload): string {
+  const requestedAt = formatDeviceTimestamp(device.created_at);
+  const updatedAt = formatDeviceTimestamp(device.updated_at);
+  return deviceRowDescription(device.device_id, [
+    requestedAt ? `requested ${requestedAt}` : null,
+    updatedAt ? `updated ${updatedAt}` : null,
+  ]);
+}
+
+function trustedDeviceDescription(device: TrustedDevicePayload): string {
+  const enrolledAt = formatDeviceTimestamp(device.created_at);
+  const refreshedAt = formatDeviceTimestamp(device.updated_at);
+  return deviceRowDescription(device.device_id, [
+    enrolledAt ? `enrolled ${enrolledAt}` : null,
+    refreshedAt ? `refreshed ${refreshedAt}` : null,
+  ]);
 }
 
 function SectionCard({
@@ -178,6 +245,7 @@ export function ContentEncryptionSection({
   const [signingKeyLoading, setSigningKeyLoading] = useState(true);
   const [signingKeySynced, setSigningKeySynced] = useState(false);
   const [hasRecoveryBundle, setHasRecoveryBundle] = useState(false);
+  const [recoveryBundleSummary, setRecoveryBundleSummary] = useState<string | null>(null);
   const [recoveryPhrase, setRecoveryPhrase] = useState("");
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [trustedDevices, setTrustedDevices] = useState<TrustedDevicePayload[]>([]);
@@ -284,9 +352,24 @@ export function ContentEncryptionSection({
       const local = await loadStoredRecoveryBundle();
       const remote = await fetchRecoveryBundle().catch(() => ({ recovery_bundle: null }));
       if (cancelled) return;
-      setHasRecoveryBundle(Boolean(local ?? remote.recovery_bundle));
-      if (!local && remote.recovery_bundle) {
-        await storeRecoveryBundle(remote.recovery_bundle).catch(() => undefined);
+      const remoteBundle = remote.recovery_bundle;
+      setHasRecoveryBundle(Boolean(local ?? remoteBundle));
+      const localCreatedAt = formatRecoveryBundleTimestamp(local?.created_at);
+      const remoteCreatedAt = formatRecoveryBundleTimestamp(remoteBundle?.created_at);
+      if (local && remoteBundle && recoveryBundleFingerprint(local) !== recoveryBundleFingerprint(remoteBundle)) {
+        setRecoveryBundleSummary(
+          [
+            localCreatedAt ? `local copy: ${localCreatedAt}` : "local copy detected",
+            remoteCreatedAt ? `server copy: ${remoteCreatedAt}` : "server copy detected",
+          ].join("; "),
+        );
+      } else if (localCreatedAt || remoteCreatedAt) {
+        setRecoveryBundleSummary(`created ${localCreatedAt ?? remoteCreatedAt}`);
+      } else {
+        setRecoveryBundleSummary(local ?? remoteBundle ? "encrypted bundle detected" : null);
+      }
+      if (!local && remoteBundle) {
+        await storeRecoveryBundle(remoteBundle).catch(() => undefined);
       }
     };
 
@@ -403,23 +486,44 @@ export function ContentEncryptionSection({
   const handleRestore = async () => {
     setRecoveryBusy(true);
     try {
-      const remote = await fetchRecoveryBundle();
-      const bundle = remote.recovery_bundle;
-      if (!bundle) {
+      const [localBundle, remoteBundle] = await Promise.all([
+        loadStoredRecoveryBundle().catch(() => null),
+        fetchRecoveryBundle()
+          .then((remote) => remote.recovery_bundle ?? null)
+          .catch(() => null),
+      ]);
+      const candidates = recoveryBundleCandidates(localBundle, remoteBundle);
+      if (candidates.length === 0) {
         throw new Error("No recovery bundle is stored for this account.");
       }
-      const restored = await restoreFromRecoveryBundle({
-        recoveryPhrase,
-        bundle,
-      });
-      if (bundle && deviceEnrollments.find((item) => item.state === "active" && item.wrapped_ack)) {
-        const activeEnrollment = deviceEnrollments.find((item) => item.state === "active" && item.wrapped_ack);
-        if (activeEnrollment?.wrapped_ack) {
-          await importWrappedAccountContentKeyForDevice(activeEnrollment.wrapped_ack).catch(() => undefined);
+
+      let restored: Awaited<ReturnType<typeof restoreFromRecoveryBundle>> | null = null;
+      let restoredFrom: RecoveryBundleCandidate | null = null;
+      for (const candidate of candidates) {
+        try {
+          restored = await restoreFromRecoveryBundle({
+            recoveryPhrase,
+            bundle: candidate.bundle,
+          });
+          restoredFrom = candidate;
+          break;
+        } catch {
+          // Local and server copies can diverge after stale setup attempts.
         }
       }
+
+      if (!restored || !restoredFrom) {
+        const sources = candidates.map((candidate) => candidate.source).join(" and ");
+        throw new Error(
+          `The recovery phrase could not decrypt the available ${sources} recovery bundle${
+            candidates.length > 1 ? "s" : ""
+          }. Confirm this is the phrase shown when that bundle was created.`,
+        );
+      }
+
       await putWorkerApprovalKey(restored.publicKey);
-      await putRecoveryBundle(bundle);
+      await putRecoveryBundle(restoredFrom.bundle);
+      await storeRecoveryBundle(restoredFrom.bundle);
       const trustedDevice = await buildTrustedDevicePayload({
         deviceLabel:
           typeof navigator !== "undefined"
@@ -445,7 +549,13 @@ export function ContentEncryptionSection({
       setSigningKeyPreview(restored.publicKey);
       setSigningKeySynced(true);
       setHasRecoveryBundle(true);
-      toast.success("Restored local encryption keys from the recovery phrase.");
+      const createdAt = formatRecoveryBundleTimestamp(restoredFrom.bundle.created_at);
+      setRecoveryBundleSummary(createdAt ? `created ${createdAt}` : "encrypted bundle detected");
+      toast.success(
+        restoredFrom.source === "local"
+          ? "Restored local encryption keys from the local recovery bundle."
+          : "Restored local encryption keys from the server recovery bundle.",
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to restore recovery bundle.");
     } finally {
@@ -457,6 +567,7 @@ export function ContentEncryptionSection({
     await deleteRecoveryBundle().catch(() => undefined);
     await clearStoredRecoveryBundle();
     setHasRecoveryBundle(false);
+    setRecoveryBundleSummary(null);
     toast.success("Removed the stored recovery bundle for this account.");
   };
 
@@ -612,7 +723,9 @@ export function ContentEncryptionSection({
             title="Recovery Bundle"
             description={
               hasRecoveryBundle
-                ? "An encrypted recovery bundle is stored for this account."
+                ? recoveryBundleSummary
+                  ? `An encrypted recovery bundle is available (${recoveryBundleSummary}).`
+                  : "An encrypted recovery bundle is available for this account."
                 : "No recovery bundle detected yet."
             }
           />
@@ -663,7 +776,7 @@ export function ContentEncryptionSection({
                 <ItemRow
                   key={device.device_id}
                   title={device.device_label || device.device_id}
-                  description={device.device_id}
+                  description={deviceEnrollmentDescription(device)}
                 >
                   <div className="flex w-full flex-col gap-2 sm:w-72">
                     <Input
@@ -718,7 +831,7 @@ export function ContentEncryptionSection({
                 <ItemRow
                   key={device.device_id}
                   title={device.device_label || device.device_id}
-                  description={device.device_id}
+                  description={trustedDeviceDescription(device)}
                 />
               ))}
             </div>
