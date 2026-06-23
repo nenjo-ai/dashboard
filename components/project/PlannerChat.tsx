@@ -13,6 +13,7 @@ import {
   useQueryParam,
 } from "@/lib/hooks";
 import { usePlannerChat } from "@/lib/usePlannerChat";
+import { visibleLiveChatRunTrace } from "@/lib/chatInterfaceState";
 import { Button } from "@/components/ui/Button";
 import { useUser } from "@clerk/nextjs";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
@@ -290,12 +291,8 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
     archiveSession,
     deleteSession,
   } = usePlannerChat(projectId, activeAgentId);
-  const visibleRunTrace =
-    activeRunTrace &&
-    !["completed", "failed", "cancelled"].includes(activeRunTrace.phase)
-      ? activeRunTrace
-      : undefined;
-  const hasActiveRunTrace = !!visibleRunTrace;
+  const visibleRunTrace = visibleLiveChatRunTrace(activeRunTrace);
+  const hasActiveRunTrace = Boolean(visibleRunTrace);
 
   const [showSessionList, setShowSessionList] = useState(false);
 

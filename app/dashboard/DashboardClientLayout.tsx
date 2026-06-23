@@ -106,18 +106,23 @@ function DashboardLayoutWithClerk({
   // Run vault-restore / bootstrap gate once per auth session, not on every route.
   useEffect(() => {
     if (isChromeless) {
-      setRouteReady(true);
-      return;
+      const timer = setTimeout(() => setRouteReady(true), 0);
+      return () => clearTimeout(timer);
     }
     if (!authReady || !isLoaded || !isSignedIn) {
-      setRouteReady(false);
-      return;
+      const timer = setTimeout(() => setRouteReady(false), 0);
+      return () => clearTimeout(timer);
     }
 
+    const pendingTimer = setTimeout(() => setRouteReady(false), 0);
     let cancelled = false;
-    setRouteReady(false);
 
     void (async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (cancelled) {
+        return;
+      }
+
       try {
         const me = await fetchCurrentUser();
         const accountId = me.clerk_id ?? me.user_id ?? null;
@@ -152,6 +157,7 @@ function DashboardLayoutWithClerk({
 
     return () => {
       cancelled = true;
+      clearTimeout(pendingTimer);
     };
   }, [authReady, isChromeless, isLoaded, isSignedIn, router]);
 

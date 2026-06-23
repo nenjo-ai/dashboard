@@ -5,6 +5,8 @@ import { reduceRunTrace } from "../lib/agentRunTrace/reducer.ts";
 import {
   chronologicalSpans,
   currentCycleSpans,
+  filterHistorySpans,
+  visibleHistoryTranscriptEntries,
 } from "../lib/agentRunTrace/visibility.ts";
 
 function reduceEvents(events) {
@@ -232,4 +234,112 @@ test("reducer preserves provider-native metadata on completed tool spans", () =>
   assert.equal(span.provider, "xai");
   assert.equal(span.name, "x_search");
   assert.equal(span.status, "completed");
+});
+
+test("history trace hides raw transcript echo rows while keeping named child tools", () => {
+  const history = filterHistorySpans([
+    {
+      kind: "async_operation",
+      id: "ability-1",
+      status: "completed",
+      operationKind: "ability",
+      label: "deep-research-routine",
+      signal: "completed",
+      transcript: [],
+      children: [
+        {
+          kind: "message",
+          id: "assistant-message-1",
+          status: "completed",
+          role: "assistant",
+          text: 'assistant_message {"content":"","tool_calls":[]}',
+          startedAt: "2026-01-01T00:00:01.000Z",
+          completedAt: "2026-01-01T00:00:01.000Z",
+        },
+        {
+          kind: "tool",
+          id: "call-configure",
+          status: "completed",
+          name: "configure_routine",
+          startedAt: "2026-01-01T00:00:02.000Z",
+          completedAt: "2026-01-01T00:00:03.000Z",
+        },
+        {
+          kind: "tool",
+          id: "provider-echo-tool",
+          status: "completed",
+          name: "tool",
+          providerNative: true,
+          startedAt: "2026-01-01T00:00:04.000Z",
+          completedAt: "2026-01-01T00:00:05.000Z",
+        },
+      ],
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:00:06.000Z",
+    },
+  ]);
+
+  assert.equal(history.length, 1);
+  const [span] = history;
+  assert.equal(span.kind, "async_operation");
+  assert.deepEqual(
+    span.children.map((child) => child.kind === "tool" ? child.name : child.text),
+    ["configure_routine"],
+  );
+});
+
+test("history transcript hides duplicate tool entries only when child spans exist", () => {
+  const span = {
+    kind: "async_operation",
+    id: "ability-1",
+    status: "completed",
+    operationKind: "ability",
+    label: "deep-research-routine",
+    signal: "completed",
+    transcript: [
+      {
+        kind: "assistant_message",
+        summary: '{"content":"","tool_calls":[]}',
+      },
+      {
+        kind: "tool_call",
+        tool: "configure_routine",
+        summary: '{"graph":{"edges":[]}}',
+      },
+      {
+        kind: "tool_result",
+        tool: "configure_routine",
+        success: true,
+        summary: '{"routine":{}}',
+      },
+      {
+        kind: "error",
+        summary: "network unavailable",
+      },
+    ],
+    children: [
+      {
+        kind: "tool",
+        id: "call-configure",
+        status: "completed",
+        name: "configure_routine",
+        startedAt: "2026-01-01T00:00:02.000Z",
+        completedAt: "2026-01-01T00:00:03.000Z",
+      },
+    ],
+    startedAt: "2026-01-01T00:00:00.000Z",
+    completedAt: "2026-01-01T00:00:06.000Z",
+  };
+
+  assert.deepEqual(
+    visibleHistoryTranscriptEntries(span).map((entry) => entry.kind),
+    ["error"],
+  );
+
+  assert.deepEqual(
+    visibleHistoryTranscriptEntries({ ...span, children: [] }).map(
+      (entry) => entry.kind,
+    ),
+    ["assistant_message", "tool_call", "tool_result", "error"],
+  );
 });

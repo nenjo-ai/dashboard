@@ -50,6 +50,7 @@ import {
   runEnvelopeGc,
 } from "./agentRunTrace/envelopeStore";
 import { reduceRunTrace } from "./agentRunTrace/reducer";
+import { retainedLiveChatRunTrace } from "./chatInterfaceState";
 import { normalizeToolCallArgs } from "./toolCallDisplay";
 import type { AgentLifecycleEvent, RunTrace } from "./agentRunTrace/types";
 import type {
@@ -951,6 +952,57 @@ export function usePlannerChat(
     void persistChatStreamSnapshot(snapshot);
   }, [activeSessionId, agentId]);
 
+  const clearLiveTurnIndicators = useCallback(
+    (
+      options: {
+        preserveRunTraceForFinalMessage?: boolean;
+        broadcastClear?: boolean;
+      } = {},
+    ) => {
+      const {
+        preserveRunTraceForFinalMessage = false,
+        broadcastClear = true,
+      } = options;
+      if (clearTypingUiTimeoutRef.current) {
+        clearTimeout(clearTypingUiTimeoutRef.current);
+      }
+      activeToolsRef.current = [];
+      livePreviewRef.current = undefined;
+      setActiveTools([]);
+      setLivePreview(undefined);
+      setIsTyping(false);
+      currentRequestIdRef.current = null;
+      if (!preserveRunTraceForFinalMessage) {
+        activeRunTraceRef.current = undefined;
+      }
+      setActiveRunTrace(undefined);
+      clearTypingUiTimeoutRef.current = null;
+      if (activeSessionId) {
+        void clearChatStreamSnapshot(activeSessionId);
+        if (broadcastClear) {
+          notifyChatStreamSnapshot({
+            sessionId: activeSessionId,
+            clear: true,
+          });
+        }
+      }
+    },
+    [activeSessionId],
+  );
+
+  const finishFinalizedLiveTurn = useCallback(() => {
+    activeRunTraceRef.current = undefined;
+    activeRunEnvelopeIdRef.current = undefined;
+    setActiveRunTrace(undefined);
+    if (activeSessionId) {
+      void clearChatStreamSnapshot(activeSessionId);
+      notifyChatStreamSnapshot({
+        sessionId: activeSessionId,
+        clear: true,
+      });
+    }
+  }, [activeSessionId]);
+
   const applyStreamSnapshot = useCallback(
     (snapshot: ChatStreamSnapshot | { sessionId: string; clear: true }) => {
       if (!activeSessionId || snapshot.sessionId !== activeSessionId) {
@@ -1675,7 +1727,6 @@ export function usePlannerChat(
           if (lifecycleEvent.event_type === "RunStarted") {
             activeRunEnvelopeIdRef.current = lifecycleEvent.data.run_id;
             lastRunEnvelopeIdRef.current = lifecycleEvent.data.run_id;
-            suppressActiveRunTraceRef.current = false;
             finalizedRunEnvelopeIdsRef.current.delete(
               lifecycleEvent.data.run_id,
             );
@@ -1693,8 +1744,17 @@ export function usePlannerChat(
           const next = reduceRunTrace(
             activeRunTraceRef.current,
             lifecycleEvent,
+            {
+              defaultRunId:
+                activeRunEnvelopeIdRef.current ??
+                lastRunEnvelopeIdRef.current ??
+                currentRequestIdRef.current ??
+                responseIdRef.current ??
+                undefined,
+              defaultSessionId: activeSessionId ?? undefined,
+              source: "chat",
+            },
           );
-          activeRunTraceRef.current = next;
           if (next) {
             lastRunTraceRef.current = next;
             const pendingTarget = pendingFinalTraceTargetRef.current;
@@ -1720,16 +1780,28 @@ export function usePlannerChat(
           const isFinalizedRun =
             envelopeId != null &&
             finalizedRunEnvelopeIdsRef.current.has(envelopeId);
-          if (
-            !isFinalizedRun &&
-            !suppressActiveRunTraceRef.current &&
-            !isTerminalRunTrace(next)
-          ) {
-            setActiveRunTrace(next);
+          const retainedTrace = retainedLiveChatRunTrace({
+            trace: next,
+            suppressed: suppressActiveRunTraceRef.current,
+            finalized: isFinalizedRun,
+          });
+          if (retainedTrace) {
+            activeRunTraceRef.current = retainedTrace;
+            setActiveRunTrace(retainedTrace);
+            persistCurrentStreamSnapshot();
           } else {
+            activeRunTraceRef.current = undefined;
             setActiveRunTrace(undefined);
+            if (activeSessionId) {
+              void clearChatStreamSnapshot(activeSessionId);
+              if (suppressActiveRunTraceRef.current || isFinalizedRun) {
+                notifyChatStreamSnapshot({
+                  sessionId: activeSessionId,
+                  clear: true,
+                });
+              }
+            }
           }
-          persistCurrentStreamSnapshot();
         });
 
         switch (streamEvent.event_type) {
@@ -1770,23 +1842,8 @@ export function usePlannerChat(
                     );
                   }
                   suppressActiveRunTraceRef.current = true;
+                  clearLiveTurnIndicators();
                   await lifecycleQueueRef.current;
-                  if (clearTypingUiTimeoutRef.current) {
-                    clearTimeout(clearTypingUiTimeoutRef.current);
-                  }
-                  setActiveTools([]);
-                  setLivePreview(undefined);
-                  setIsTyping(false);
-                  currentRequestIdRef.current = null;
-                  setActiveRunTrace(undefined);
-                  clearTypingUiTimeoutRef.current = null;
-                  if (activeSessionId) {
-                    void clearChatStreamSnapshot(activeSessionId);
-                    notifyChatStreamSnapshot({
-                      sessionId: activeSessionId,
-                      clear: true,
-                    });
-                  }
                 }
                 return;
               }
@@ -1837,6 +1894,10 @@ export function usePlannerChat(
                   id,
                   content: message,
                 };
+                clearLiveTurnIndicators({
+                  preserveRunTraceForFinalMessage: true,
+                  broadcastClear: false,
+                });
                 await lifecycleQueueRef.current;
                 const traceForFinal =
                   activeRunTraceRef.current ?? lastRunTraceRef.current;
@@ -1877,22 +1938,7 @@ export function usePlannerChat(
                   });
                 }
                 pendingFinalTraceTargetRef.current = undefined;
-                if (clearTypingUiTimeoutRef.current) {
-                  clearTimeout(clearTypingUiTimeoutRef.current);
-                }
-                setActiveTools([]);
-                setLivePreview(undefined);
-                setIsTyping(false);
-                currentRequestIdRef.current = null;
-                setActiveRunTrace(undefined);
-                clearTypingUiTimeoutRef.current = null;
-                if (activeSessionId) {
-                  void clearChatStreamSnapshot(activeSessionId);
-                  notifyChatStreamSnapshot({
-                    sessionId: activeSessionId,
-                    clear: true,
-                  });
-                }
+                finishFinalizedLiveTurn();
               }
             })();
             break;
@@ -1920,6 +1966,10 @@ export function usePlannerChat(
                 finalizedRunEnvelopeIdsRef.current.add(finalizingEnvelopeId);
               }
               suppressActiveRunTraceRef.current = true;
+              clearLiveTurnIndicators({
+                preserveRunTraceForFinalMessage: true,
+                broadcastClear: false,
+              });
               const resolvedFinalOutput = encrypted_payload
                 ? await resolvePersistedMessageContent({
                     content: payload ?? "",
@@ -2039,24 +2089,7 @@ export function usePlannerChat(
               if (traceForFinal) {
                 pendingFinalTraceTargetRef.current = undefined;
               }
-              if (clearTypingUiTimeoutRef.current) {
-                clearTimeout(clearTypingUiTimeoutRef.current);
-              }
-              setActiveTools([]);
-              setLivePreview(undefined);
-              setIsTyping(false);
-              currentRequestIdRef.current = null;
-              activeRunTraceRef.current = undefined;
-              activeRunEnvelopeIdRef.current = undefined;
-              setActiveRunTrace(undefined);
-              clearTypingUiTimeoutRef.current = null;
-              if (activeSessionId) {
-                void clearChatStreamSnapshot(activeSessionId);
-                notifyChatStreamSnapshot({
-                  sessionId: activeSessionId,
-                  clear: true,
-                });
-              }
+              finishFinalizedLiveTurn();
             })();
             break;
           }
@@ -2375,7 +2408,13 @@ export function usePlannerChat(
       // are no longer sent by the worker. All responses use the
       // agent_response envelope handled above.
     },
-    [activeSessionId, persistCurrentStreamSnapshot, setTypingIfDelivered],
+    [
+      activeSessionId,
+      clearLiveTurnIndicators,
+      finishFinalizedLiveTurn,
+      persistCurrentStreamSnapshot,
+      setTypingIfDelivered,
+    ],
   );
 
   // Keep the ref in sync with the latest handleIncoming

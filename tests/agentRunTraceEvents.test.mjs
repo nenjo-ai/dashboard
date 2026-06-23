@@ -441,6 +441,23 @@ test("tool output deltas render to their matching preview streams", () => {
   assert.equal(span.textPreview, "Inspecting operationspreview");
 });
 
+test("tool start creates a visible trace before RunStarted when chat session is known", () => {
+  const trace = reduceRunTrace(undefined, toolStarted(), {
+    defaultSessionId: "session-1",
+    now: at(0),
+    source: "chat",
+  });
+
+  assert.ok(trace, "trace should be created from first tool event");
+  assert.equal(trace.id, "run-1");
+  assert.equal(trace.sessionId, "session-1");
+  assert.equal(trace.phase, "executing_tools");
+  assert.equal(trace.spans.length, 1);
+  assert.equal(trace.spans[0].kind, "tool");
+  assert.equal(trace.spans[0].name, "inspect_operations");
+  assert.equal(trace.spans[0].status, "running");
+});
+
 test("chat surfaces do not contain the legacy active-tool fallback display", () => {
   const files = [
     new URL("components/chat/ChatArea.tsx", ROOT),
@@ -453,4 +470,17 @@ test("chat surfaces do not contain the legacy active-tool fallback display", () 
     assert.equal(source.includes("ToolCallLine"), false);
     assert.equal(source.includes("formatToolCallSignature"), false);
   }
+});
+
+test("chat finalization preserves run trace until it is attached to the final message", () => {
+  const source = readFileSync(new URL("lib/usePlannerChat.ts", ROOT), "utf8");
+
+  assert.match(
+    source,
+    /clearLiveTurnIndicators\(\{\s*preserveRunTraceForFinalMessage: true,\s*broadcastClear: false,\s*\}\);\s*const resolvedFinalOutput[\s\S]*?const traceForFinal =[\s\S]*?runTrace: traceForFinal[\s\S]*?finishFinalizedLiveTurn\(\);/,
+  );
+  assert.match(
+    source,
+    /clearLiveTurnIndicators\(\{\s*preserveRunTraceForFinalMessage: true,\s*broadcastClear: false,\s*\}\);\s*await lifecycleQueueRef\.current;[\s\S]*?const traceForFinal =[\s\S]*?runTrace: m\.runTrace \?\? traceForFinal[\s\S]*?finishFinalizedLiveTurn\(\);/,
+  );
 });
