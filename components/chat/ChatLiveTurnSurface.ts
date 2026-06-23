@@ -1,8 +1,14 @@
 "use client";
 
-import { createElement, type ReactElement } from "react";
+import { createElement, type ComponentType } from "react";
 import type { RunTrace } from "@/lib/agentRunTrace/types";
 import type { AgentDefinition } from "@/lib/types";
+
+type LiveTraceComponent = ComponentType<{
+  trace: RunTrace;
+  activeAgent?: AgentDefinition;
+  mobile?: boolean;
+}>;
 
 export function ChatLiveToolPreview({
   trace,
@@ -11,11 +17,7 @@ export function ChatLiveToolPreview({
   mobile,
 }: {
   trace?: RunTrace;
-  TraceComponent: (props: {
-    trace: RunTrace;
-    activeAgent?: AgentDefinition;
-    mobile?: boolean;
-  }) => ReactElement | null;
+  TraceComponent: LiveTraceComponent;
   activeAgent?: AgentDefinition;
   mobile?: boolean;
 }) {
