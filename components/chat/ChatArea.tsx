@@ -40,10 +40,19 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { MobileInputBar } from "./MobileInputBar";
 import { MobileEmptyState } from "./MobileEmptyState";
 import { PendingCommandPill } from "./PendingCommandPill";
+import {
+  ChatCancelControl,
+  ChatLiveToolPreview,
+  chatLiveTurnSpacerClass,
+} from "./ChatLiveTurnSurface";
 import { AgentRunTrace } from "@/components/agent-run-trace/AgentRunTrace";
 import { loadEnvelopeEvents } from "@/lib/agentRunTrace/envelopeStore";
 import { reduceRunTraceEvents } from "@/lib/agentRunTrace/reducer";
 import type { RunTrace } from "@/lib/agentRunTrace/types";
+import {
+  shouldShowChatCancelControl,
+  visibleLiveChatRunTrace,
+} from "@/lib/chatInterfaceState";
 
 interface ChatAreaProps {
   projectId: string | null;
@@ -1451,13 +1460,12 @@ export function ChatArea({
     exitDomain,
     cancelResponse,
   } = usePlannerChat(projectId, agentId, sessionId ?? undefined, targetType);
-  const visibleRunTrace =
-    activeRunTrace &&
-    !["completed", "failed", "cancelled"].includes(activeRunTrace.phase)
-      ? activeRunTrace
-      : undefined;
-  const hasActiveRunTrace = !!visibleRunTrace;
-  const hasActiveTurn = hasActiveRunTrace || isTyping;
+  const visibleRunTrace = visibleLiveChatRunTrace(activeRunTrace);
+  const hasActiveRunTrace = Boolean(visibleRunTrace);
+  const hasActiveTurn = shouldShowChatCancelControl({
+    isTyping,
+    activeRunTrace,
+  });
 
   // Domains
   const agentDomainsList: Domain[] = useMemo(
@@ -2415,19 +2423,15 @@ export function ChatArea({
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.22, ease: "easeOut" }}
             >
-              <AgentRunTrace
+              <ChatLiveToolPreview
                 trace={visibleRunTrace}
+                TraceComponent={AgentRunTrace}
                 activeAgent={activeAgent}
                 mobile
               />
             </motion.div>
           )}
-          <div
-            className={cn(
-              "shrink-0",
-              hasActiveRunTrace ? "h-20" : "h-1",
-            )}
-          />
+          <div className={chatLiveTurnSpacerClass(hasActiveRunTrace, true)} />
         </>
       );
     }
@@ -2483,19 +2487,15 @@ export function ChatArea({
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.22, ease: "easeOut" }}
             >
-              <AgentRunTrace
+              <ChatLiveToolPreview
                 trace={visibleRunTrace}
+                TraceComponent={AgentRunTrace}
                 activeAgent={activeAgent}
               />
             </motion.div>
           )}
         </AnimatePresence>
-        <div
-          className={cn(
-            "shrink-0",
-            hasActiveRunTrace ? "h-16" : "h-1",
-          )}
-        />
+        <div className={chatLiveTurnSpacerClass(hasActiveRunTrace, false)} />
       </div>
     );
   }, [
@@ -3376,47 +3376,12 @@ export function ChatArea({
                   </div>
                 )}
               </div>
-              {hasActiveTurn && (
-                <button
-                  onMouseDown={handleCancelHoldStart}
-                  onMouseUp={handleCancelHoldEnd}
-                  onMouseLeave={handleCancelHoldEnd}
-                  onTouchStart={handleCancelHoldStart}
-                  onTouchEnd={handleCancelHoldEnd}
-                  className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-flag-red-100 hover:bg-flag-red-200 text-flag-red-600 dark:bg-flag-red-900/40 dark:hover:bg-flag-red-800/50 dark:text-flag-red-400 transition-colors"
-                  title="Hold for 1 second to cancel"
-                >
-                  <svg
-                    className="h-4 w-4"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <rect x="6" y="6" width="12" height="12" rx="2" />
-                  </svg>
-                  {!holdProgress && (
-                    <span className="absolute inset-0 rounded-lg border-2 border-flag-red-400 dark:border-flag-red-500 animate-cancel-pulse" />
-                  )}
-                  {holdProgress && (
-                    <svg
-                      className="absolute inset-0 -rotate-90"
-                      viewBox="0 0 40 40"
-                    >
-                      <circle
-                        cx="20"
-                        cy="20"
-                        r="16"
-                        fill="none"
-                        className="stroke-flag-red-500 dark:stroke-flag-red-400"
-                        strokeWidth="3"
-                        strokeDasharray="100"
-                        strokeDashoffset="100"
-                        strokeLinecap="round"
-                        style={{ animation: "hold-arc 1s linear forwards" }}
-                      />
-                    </svg>
-                  )}
-                </button>
-              )}
+              <ChatCancelControl
+                visible={hasActiveTurn}
+                holdProgress={holdProgress}
+                onHoldStart={handleCancelHoldStart}
+                onHoldEnd={handleCancelHoldEnd}
+              />
               <Button
                 onClick={handleSend}
                 disabled={!input.trim() && !pendingCommand}

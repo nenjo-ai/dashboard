@@ -36,6 +36,7 @@ import {
   filterHistorySpans,
   hasRunningSpan,
   spanChildren,
+  visibleHistoryTranscriptEntries,
 } from "@/lib/agentRunTrace/visibility";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import type { AgentDefinition } from "@/lib/types";
@@ -437,6 +438,7 @@ function AsyncOperationTraceBlock({
   const expanded = forceExpanded || manualExpanded;
   const summary = spanSummary(span.children);
   const isAbility = span.operationKind === "ability";
+  const transcript = visibleHistoryTranscriptEntries(span);
   return (
     <div className="min-w-0">
       <button
@@ -468,9 +470,9 @@ function AsyncOperationTraceBlock({
             label={isAbility ? "Task from parent" : span.signal ?? "Status"}
             text={isAbility ? span.taskPreview ?? span.summary : span.summary}
           />
-          {span.transcript.length > 0 && (
+          {transcript.length > 0 && (
             <div className="mt-2 space-y-1">
-              {span.transcript.map((entry, index) => (
+              {transcript.map((entry, index) => (
                 <div
                   key={`${span.id}:transcript:${index}`}
                   className="theme-surface-muted/40 rounded-sm px-1.5 py-1"

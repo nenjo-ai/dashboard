@@ -1,4 +1,10 @@
-import type { ModelSpan, ToolSpan, TraceSpan } from "./types";
+import type {
+  AsyncOperationSpan,
+  AsyncOperationTranscriptEntry,
+  ModelSpan,
+  ToolSpan,
+  TraceSpan,
+} from "./types";
 
 export function spanChildren(span: TraceSpan): TraceSpan[] {
   return "children" in span ? span.children ?? [] : [];
@@ -26,9 +32,40 @@ function isCompletedModelSpan(span: TraceSpan): span is ModelSpan {
   return span.kind === "model" && span.status === "completed";
 }
 
+function isRawTranscriptMessageSpan(span: TraceSpan): boolean {
+  return (
+    span.kind === "message" &&
+    ["assistant_message", "tool_call", "tool_result"].some((kind) =>
+      span.text.startsWith(kind),
+    )
+  );
+}
+
+function isRawProviderEchoToolSpan(span: TraceSpan): boolean {
+  return (
+    span.kind === "tool" &&
+    span.providerNative === true &&
+    (span.name === "tool" || span.name === "assistant_message")
+  );
+}
+
+function isToolTranscriptEntry(entry: AsyncOperationTranscriptEntry): boolean {
+  return ["assistant_message", "tool_call", "tool_result"].includes(entry.kind);
+}
+
+export function visibleHistoryTranscriptEntries(
+  span: AsyncOperationSpan,
+): AsyncOperationTranscriptEntry[] {
+  if (span.children.length === 0) return span.transcript;
+  return span.transcript.filter((entry) => !isToolTranscriptEntry(entry));
+}
+
 export function filterHistorySpans(spans: TraceSpan[]): TraceSpan[] {
   return spans.flatMap((span) => {
     if (isCompletedModelSpan(span)) return [];
+    if (isRawTranscriptMessageSpan(span) || isRawProviderEchoToolSpan(span)) {
+      return [];
+    }
     if (!("children" in span) || !span.children) return [span];
     return [
       {
