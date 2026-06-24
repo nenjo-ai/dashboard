@@ -1449,6 +1449,7 @@ export function ChatArea({
     sendMessage,
     deleteMessage,
     isTyping,
+    hasActiveChatRequest,
     activeRunTrace,
     isLoadingHistory,
     hasMore,
@@ -1463,7 +1464,7 @@ export function ChatArea({
   const visibleRunTrace = visibleLiveChatRunTrace(activeRunTrace);
   const hasActiveRunTrace = Boolean(visibleRunTrace);
   const hasActiveTurn = shouldShowChatCancelControl({
-    isTyping,
+    isTyping: isTyping || hasActiveChatRequest,
     activeRunTrace,
   });
 
@@ -1580,7 +1581,7 @@ export function ChatArea({
   const lastEscRef = useRef(0);
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || !isTyping) return;
+      if (e.key !== "Escape" || !hasActiveTurn) return;
       const now = Date.now();
       if (now - lastEscRef.current < 500) {
         cancelResponse();
@@ -1591,7 +1592,7 @@ export function ChatArea({
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [isTyping, cancelResponse]);
+  }, [hasActiveTurn, cancelResponse]);
 
   // Auto-scroll
   const skipAutoScrollRef = useRef(false);
@@ -2910,7 +2911,7 @@ export function ChatArea({
             onSend={handleSend}
             placeholder={placeholder}
             disabled={isDomainPending}
-            isTyping={isTyping}
+            isTyping={isTyping || hasActiveChatRequest}
             hasActiveRunTrace={hasActiveRunTrace}
             activeAgent={activeAgent}
             availableAgents={availableAgents}
@@ -3379,6 +3380,7 @@ export function ChatArea({
               <ChatCancelControl
                 visible={hasActiveTurn}
                 holdProgress={holdProgress}
+                onCancel={cancelResponse}
                 onHoldStart={handleCancelHoldStart}
                 onHoldEnd={handleCancelHoldEnd}
               />

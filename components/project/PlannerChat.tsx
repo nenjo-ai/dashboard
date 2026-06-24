@@ -13,7 +13,10 @@ import {
   useQueryParam,
 } from "@/lib/hooks";
 import { usePlannerChat } from "@/lib/usePlannerChat";
-import { visibleLiveChatRunTrace } from "@/lib/chatInterfaceState";
+import {
+  shouldShowChatCancelControl,
+  visibleLiveChatRunTrace,
+} from "@/lib/chatInterfaceState";
 import { Button } from "@/components/ui/Button";
 import { useUser } from "@clerk/nextjs";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
@@ -272,6 +275,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
     sendMessage,
     deleteMessage,
     isTyping,
+    hasActiveChatRequest,
     activeRunTrace,
     isLoadingHistory,
     hasMore,
@@ -293,6 +297,10 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
   } = usePlannerChat(projectId, activeAgentId);
   const visibleRunTrace = visibleLiveChatRunTrace(activeRunTrace);
   const hasActiveRunTrace = Boolean(visibleRunTrace);
+  const hasActiveTurn = shouldShowChatCancelControl({
+    isTyping: isTyping || hasActiveChatRequest,
+    activeRunTrace,
+  });
 
   const [showSessionList, setShowSessionList] = useState(false);
 
@@ -373,7 +381,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
   const lastEscRef = useRef(0);
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || !isTyping) return;
+      if (e.key !== "Escape" || !hasActiveTurn) return;
       const now = Date.now();
       if (now - lastEscRef.current < 500) {
         cancelResponse();
@@ -384,7 +392,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [isTyping, cancelResponse]);
+  }, [hasActiveTurn, cancelResponse]);
 
   // Auto-scroll on new messages (skip when loading older messages to preserve position)
   const skipAutoScrollRef = useRef(false);
@@ -885,8 +893,9 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
                 style={{ maxHeight: 200 }}
               />
             </div>
-            {isTyping && (
+            {hasActiveTurn && (
               <button
+                onClick={cancelResponse}
                 onMouseDown={handleCancelHoldStart}
                 onMouseUp={handleCancelHoldEnd}
                 onMouseLeave={handleCancelHoldEnd}
@@ -945,7 +954,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
               </svg>
             </Button>
           </div>
-          {isTyping && (
+          {hasActiveTurn && (
             <p className="text-center text-xs text-gray-400 dark:text-gray-500">
               Press <kbd className="rounded border border-gray-300 px-1 py-0.5 text-[10px] font-medium dark:border-gray-600">Esc</kbd>{" "}
               <kbd className="rounded border border-gray-300 px-1 py-0.5 text-[10px] font-medium dark:border-gray-600">Esc</kbd>{" "}

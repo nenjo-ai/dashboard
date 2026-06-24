@@ -593,8 +593,8 @@ export interface WorkerAccountKeyTarget {
 
 export interface ChatCancelOutbound {
   type: "chat.cancel";
-  project_id: string;
   agent_id?: string;
+  session_id?: string;
 }
 
 export interface ChatDomainExitOutbound {
@@ -605,7 +605,6 @@ export interface ChatDomainExitOutbound {
 }
 
 export interface ChatCancelRequest {
-  project_id?: string | null;
   agent_id?: string;
   session_id?: string;
 }

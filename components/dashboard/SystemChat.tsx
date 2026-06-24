@@ -388,7 +388,7 @@ export function SystemChat() {
             Nenji
           </h3>
         </div>
-        {chat.isTyping && (
+        {(chat.isTyping || chat.hasActiveChatRequest) && (
           <button
             type="button"
             onClick={chat.cancelResponse}
@@ -438,7 +438,7 @@ export function SystemChat() {
           ))
         )}
 
-        {chat.isTyping && (
+          {(chat.isTyping || chat.hasActiveChatRequest) && (
           <SystemTypingIndicator systemAgent={systemAgent} />
         )}
 

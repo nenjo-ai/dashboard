@@ -3522,13 +3522,10 @@ export async function createExecutionEventStream(
 }
 
 export async function cancelChat(body: ChatCancelRequest): Promise<void> {
-  const projectId = normalizeOptionalProjectId(body.project_id);
   await authFetch(`${API_V1}/chat-commands/cancel`, {
     method: "POST",
-    body: JSON.stringify({
-      ...body,
-      project_id: projectId,
-    }),
+    keepalive: true,
+    body: JSON.stringify(body),
   });
 }
 
