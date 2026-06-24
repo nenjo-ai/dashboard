@@ -33,11 +33,13 @@ export function ChatLiveToolPreview({
 export function ChatCancelControl({
   visible,
   holdProgress,
+  onCancel,
   onHoldStart,
   onHoldEnd,
 }: {
   visible: boolean;
   holdProgress: boolean;
+  onCancel: () => void;
   onHoldStart: () => void;
   onHoldEnd: () => void;
 }) {
@@ -47,6 +49,7 @@ export function ChatCancelControl({
     "button",
     {
       type: "button",
+      onClick: onCancel,
       onMouseDown: onHoldStart,
       onMouseUp: onHoldEnd,
       onMouseLeave: onHoldEnd,

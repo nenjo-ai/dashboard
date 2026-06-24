@@ -862,6 +862,7 @@ export function usePlannerChat(
       ? (readPersistedTools() as ActiveToolEntry[])
       : [],
   );
+  const [hasActiveChatRequest, setHasActiveChatRequest] = useState(false);
   const [activeDomainSession, setActiveDomainSession] =
     useState<DomainSession | null>(null);
   const activeDomainSessionRef = useRef<DomainSession | null>(null);
@@ -901,6 +902,7 @@ export function usePlannerChat(
   const responseIdRef = useRef<string | null>(null);
   const responsePersistedRef = useRef(false);
   const streamAbortRef = useRef<AbortController | null>(null);
+  const cancelResponseInFlightRef = useRef(false);
   const clearTypingUiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -971,6 +973,7 @@ export function usePlannerChat(
       setActiveTools([]);
       setLivePreview(undefined);
       setIsTyping(false);
+      setHasActiveChatRequest(false);
       currentRequestIdRef.current = null;
       if (!preserveRunTraceForFinalMessage) {
         activeRunTraceRef.current = undefined;
@@ -2552,6 +2555,7 @@ export function usePlannerChat(
       if (!queueIntoActiveTurn) {
         optimisticUserMessageIdRef.current = msgId;
         awaitingDeliveryRef.current = true;
+        setHasActiveChatRequest(true);
       }
       setMessages((prev) => [...prev, userMsg]);
 
@@ -2560,6 +2564,7 @@ export function usePlannerChat(
           optimisticUserMessageIdRef.current = null;
           currentRequestIdRef.current = null;
           awaitingDeliveryRef.current = false;
+          setHasActiveChatRequest(false);
           setIsTyping(false);
           pendingFinalTraceTargetRef.current = undefined;
           suppressActiveRunTraceRef.current = true;
@@ -2630,6 +2635,7 @@ export function usePlannerChat(
           responsePersistedRef.current = false;
           responseIdRef.current = generateId();
           currentRequestIdRef.current = msgId;
+          setHasActiveChatRequest(true);
           setLivePreview(undefined);
           pendingFinalTraceTargetRef.current = undefined;
           suppressActiveRunTraceRef.current = false;
@@ -2801,6 +2807,7 @@ export function usePlannerChat(
             setActiveTools([]);
             setLivePreview(undefined);
             setIsTyping(false);
+            setHasActiveChatRequest(false);
             currentRequestIdRef.current = null;
             responseIdRef.current = null;
             activeRunTraceRef.current = undefined;
@@ -3015,36 +3022,66 @@ export function usePlannerChat(
   ]);
 
   const cancelResponse = useCallback(() => {
-    if (!isTyping) return;
+    const activeTrace = activeRunTraceRef.current;
+    const hasCancelableResponse =
+      isTyping ||
+      hasActiveChatRequest ||
+      !!streamAbortRef.current ||
+      !!currentRequestIdRef.current ||
+      !!responseIdRef.current ||
+      Boolean(activeTrace && !isTerminalRunTrace(activeTrace));
+    if (!hasCancelableResponse || cancelResponseInFlightRef.current) return;
+    cancelResponseInFlightRef.current = true;
 
-    // Clear local typing state immediately
-    responseIdRef.current = null;
-    currentRequestIdRef.current = null;
+    const cancelRequest =
+      isAgentTarget && activeSessionId
+        ? {
+            ...(agentId ? { agent_id: agentId } : {}),
+            session_id: activeSessionId,
+          }
+        : undefined;
+
+    // Hide the typing affordance immediately, but keep the stream open until
+    // the cancel command has been sent to the platform.
     setIsTyping(false);
-    pendingFinalTraceTargetRef.current = undefined;
-    if (activeRunEnvelopeIdRef.current) {
-      void markEnvelopeOrphaned(activeRunEnvelopeIdRef.current);
-    }
-    activeRunTraceRef.current = undefined;
-    activeRunEnvelopeIdRef.current = undefined;
-    setActiveRunTrace(undefined);
-    streamAbortRef.current?.abort();
-    streamAbortRef.current = null;
-    if (activeSessionId) {
-      void clearChatStreamSnapshot(activeSessionId);
-      notifyChatStreamSnapshot({ sessionId: activeSessionId, clear: true });
+
+    const finishLocalCancel = () => {
+      responseIdRef.current = null;
+      currentRequestIdRef.current = null;
+      pendingFinalTraceTargetRef.current = undefined;
+      if (activeRunEnvelopeIdRef.current) {
+        void markEnvelopeOrphaned(activeRunEnvelopeIdRef.current);
+      }
+      activeRunTraceRef.current = undefined;
+      activeRunEnvelopeIdRef.current = undefined;
+      setActiveRunTrace(undefined);
+      setHasActiveChatRequest(false);
+      streamAbortRef.current?.abort();
+      streamAbortRef.current = null;
+      if (activeSessionId) {
+        void clearChatStreamSnapshot(activeSessionId);
+        notifyChatStreamSnapshot({ sessionId: activeSessionId, clear: true });
+      }
+      cancelResponseInFlightRef.current = false;
+    };
+
+    if (!cancelRequest) {
+      finishLocalCancel();
+      return;
     }
 
-    if (projectId && isAgentTarget) {
-      void cancelChat({
-        project_id: projectId,
-        ...(agentId ? { agent_id: agentId } : {}),
-        ...(activeSessionId ? { session_id: activeSessionId } : {}),
-      }).catch((err) => {
+    void cancelChat(cancelRequest)
+      .catch((err) => {
         console.error("Failed to cancel chat:", err);
-      });
-    }
-  }, [projectId, agentId, activeSessionId, isTyping, isAgentTarget]);
+      })
+      .finally(finishLocalCancel);
+  }, [
+    agentId,
+    activeSessionId,
+    isTyping,
+    hasActiveChatRequest,
+    isAgentTarget,
+  ]);
 
   // ── Session management callbacks ─────────────────────────────────────
   const switchSession = useCallback(
@@ -3203,6 +3240,7 @@ export function usePlannerChat(
     deleteMessage,
     clearMessages,
     isTyping,
+    hasActiveChatRequest,
     activeTools,
     status,
     isLoadingHistory,
