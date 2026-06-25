@@ -43,7 +43,6 @@ export function StepConfigPanel({
   const [localStepType, setLocalStepType] = useState<RoutineStepType>(stepType);
   const [localAgentId, setLocalAgentId] = useState(agentId ?? "");
   const [localCouncilId, setLocalCouncilId] = useState(councilId ?? "");
-  const [localRoleId, setLocalRoleId] = useState<string>((config?.agent_id as string) ?? agentId ?? "");
   const [localInstructions, setLocalInstructions] = useState<string>(
     (config?.instructions as string) ??
       (config?.description as string) ??
@@ -65,7 +64,6 @@ export function StepConfigPanel({
     setLocalStepType(stepType);
     setLocalAgentId(agentId ?? "");
     setLocalCouncilId(councilId ?? "");
-    setLocalRoleId((config?.agent_id as string) ?? agentId ?? "");
     setLocalInstructions(
       (config?.instructions as string) ??
         (config?.description as string) ??
@@ -97,16 +95,8 @@ export function StepConfigPanel({
 
     const parsedConfig: Record<string, unknown> = { ...config };
 
-    if (localStepType === "agent" || localStepType === "gate") {
-      if (localRoleId) {
-        parsedConfig.agent_id = localRoleId;
-      } else {
-        delete parsedConfig.agent_id;
-      }
-    } else {
-      delete parsedConfig.agent_id;
-    }
-
+    delete parsedConfig.agent_id;
+    delete parsedConfig.council_id;
     delete parsedConfig.interval;
     delete parsedConfig.timeout;
 
@@ -322,10 +312,7 @@ export function StepConfigPanel({
                 <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Agent</label>
                 <select
                   value={localAgentId}
-                  onChange={(e) => {
-                    setLocalAgentId(e.target.value);
-                    setLocalRoleId(e.target.value);
-                  }}
+                  onChange={(e) => setLocalAgentId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                 >
                   <option value="">Select an agent…</option>

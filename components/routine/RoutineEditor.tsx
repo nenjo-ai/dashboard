@@ -105,8 +105,7 @@ function stepsToNodes(
     const council = step.council_id
       ? councils?.find((c) => c.id === step.council_id)
       : null;
-    // Get agent_id from top-level DB column (preferred) or config fallback
-    const roleId = (step.agent_id ?? step.config?.agent_id) as string | undefined;
+    const roleId = step.agent_id ?? undefined;
     const role = roleId ? roles.find(r => r.id === roleId) : null;
     const roleName = role?.name ?? null;
 
@@ -519,7 +518,6 @@ function RoutineEditorInner({
       const position_y = 50 + stepNodes.length * 120;
 
       const config: Record<string, unknown> = {};
-      if (roleId) config.agent_id = roleId;
       const baseSlug = slugify(name);
       const tempId = `${baseSlug}_${tempIdCounter.current + 1}`;
       tempIdCounter.current += 1;
@@ -533,8 +531,8 @@ function RoutineEditorInner({
           stepId,
           label: name,
           stepType: stepType,
-          agentId: null,
-          agentName: null,
+          agentId: roleId ?? null,
+          agentName: role?.name ?? null,
           agentRole: roleName,
           councilId: councilId ?? null,
           councilName: council?.name ?? null,
@@ -582,7 +580,7 @@ function RoutineEditorInner({
       // Update local node data for visual representation
       const agent = data.agent_id ? agents.find((a) => a.id === data.agent_id) : undefined;
       const council = data.council_id ? councils?.find((c) => c.id === data.council_id) : undefined;
-      const roleId = data.agent_id ?? data.config?.agent_id as string | undefined;
+      const roleId = data.agent_id ?? undefined;
       const role = roleId ? roles.find((r) => r.id === roleId) : undefined;
 
       setNodes((nds) =>
@@ -658,7 +656,7 @@ function RoutineEditorInner({
       const stepPayload = currentStepNodes.map((node, index) => {
         const data = node.data as StepNodeData;
         const pendingUpdate = pendingStepUpdates.get(node.id);
-        const agentId = pendingUpdate?.agent_id ?? (data.config?.agent_id as string) ?? data.agentId ?? undefined;
+        const agentId = pendingUpdate?.agent_id ?? data.agentId ?? undefined;
         const councilId = pendingUpdate?.council_id ?? data.councilId ?? undefined;
         return {
           id: data.stepId as string | undefined,
