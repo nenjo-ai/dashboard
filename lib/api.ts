@@ -2556,6 +2556,8 @@ function splitStepInstructions(config: Record<string, unknown> | undefined): {
   delete next.instructions;
   delete next.description;
   delete next.context;
+  delete next.agent_id;
+  delete next.council_id;
   return {
     config: next,
     instructions: typeof rawInstructions === "string" ? rawInstructions : "",
