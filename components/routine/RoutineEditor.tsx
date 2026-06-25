@@ -885,6 +885,18 @@ function EdgeConfigPanel({
   onClose: () => void;
 }) {
   const metadata = edgeMetadata(edge);
+  const [purpose, setPurpose] = useState(typeof metadata.purpose === "string" ? metadata.purpose : "");
+  const initialHandoffInstructions =
+    typeof metadata.handoff_instructions === "string"
+      ? metadata.handoff_instructions
+      : typeof metadata.handoff === "string"
+        ? metadata.handoff
+        : typeof metadata.task === "string"
+          ? metadata.task
+          : "";
+  const [handoffInstructions, setHandoffInstructions] = useState(
+    initialHandoffInstructions,
+  );
   const [maxAttempts, setMaxAttempts] = useState(
     metadata.max_attempts != null ? String(metadata.max_attempts) : "",
   );
@@ -898,6 +910,19 @@ function EdgeConfigPanel({
 
   const handleApply = () => {
     const nextMetadata = { ...metadata };
+    if (purpose.trim()) {
+      nextMetadata.purpose = purpose.trim();
+    } else {
+      delete nextMetadata.purpose;
+    }
+    if (handoffInstructions.trim()) {
+      nextMetadata.handoff_instructions = handoffInstructions.trim();
+    } else {
+      delete nextMetadata.handoff_instructions;
+    }
+    delete nextMetadata.handoff;
+    delete nextMetadata.task;
+
     if (canRetry && maxAttempts.trim()) {
       const parsed = Number.parseInt(maxAttempts, 10);
       if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -935,6 +960,30 @@ function EdgeConfigPanel({
           <div className="truncate">{sourceLabel ?? edge.source}</div>
           <div className="text-gray-400">to</div>
           <div className="truncate">{targetLabel ?? edge.target}</div>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Purpose</label>
+          <textarea
+            value={purpose}
+            onChange={(event) => setPurpose(event.target.value)}
+            rows={3}
+            placeholder="Why this route exists."
+            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
+            Handoff Instructions
+          </label>
+          <textarea
+            value={handoffInstructions}
+            onChange={(event) => setHandoffInstructions(event.target.value)}
+            rows={4}
+            placeholder="Tell the source agent what information to hand off to the target step."
+            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+          />
         </div>
 
         {canRetry ? (
