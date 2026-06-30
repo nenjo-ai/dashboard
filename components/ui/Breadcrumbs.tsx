@@ -26,6 +26,7 @@ export function Breadcrumbs({ items, className }: BreadcrumbsProps) {
             {item.href && !isLast ? (
               <Link
                 href={item.href}
+                prefetch={false}
                 onClick={item.onClick}
                 className="text-gray-500 hover:text-gray-700 transition-colors dark:text-gray-400 dark:hover:text-gray-200"
               >

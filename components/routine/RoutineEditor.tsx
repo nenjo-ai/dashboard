@@ -202,6 +202,44 @@ function edgeMetadata(edge: Edge | undefined): Record<string, unknown> {
     : {};
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function defaultHandoffSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    required: ["work"],
+    properties: {
+      work: { type: "string", minLength: 1 },
+    },
+    additionalProperties: false,
+  };
+}
+
+function requiresRouteHandoffSchema(stepType: RoutineStepType | undefined): boolean {
+  return stepType === "agent" || stepType === "gate";
+}
+
+function formatJson(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}
+
+function canonicalEdgeMetadata(
+  metadata: Record<string, unknown>,
+  sourceStepType: RoutineStepType | undefined,
+): Record<string, unknown> {
+  const nextMetadata = { ...metadata };
+  delete nextMetadata.handoff;
+  delete nextMetadata.task;
+
+  if (requiresRouteHandoffSchema(sourceStepType) && !isRecord(nextMetadata.handoff_schema)) {
+    nextMetadata.handoff_schema = defaultHandoffSchema();
+  }
+
+  return nextMetadata;
+}
+
 // ---------------------------------------------------------------------------
 // Step update payload (accumulated per-node for batch save)
 // ---------------------------------------------------------------------------
@@ -388,6 +426,11 @@ function RoutineEditorInner({
       const isFromGate = condition !== "always";
       const style = conditionEdgeStyle(condition, isFromGate);
       const tempEdgeId = nextTempId("edge");
+      const sourceNode = nodes.find((node) => node.id === connection.source);
+      const sourceData = sourceNode?.data as StepNodeData | undefined;
+      const metadata = requiresRouteHandoffSchema(sourceData?.stepType)
+        ? { handoff_schema: defaultHandoffSchema() }
+        : {};
 
       setEdges((eds) =>
         addEdge(
@@ -399,14 +442,14 @@ function RoutineEditorInner({
             animated: style.animated,
             markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: style.stroke },
             style: { strokeWidth: 2, stroke: style.stroke },
-            data: { condition, metadata: {} },
+            data: { condition, metadata },
           },
           eds,
         ),
       );
       setIsDirty(true);
     },
-    [setEdges, nextTempId],
+    [setEdges, nextTempId, nodes],
   );
 
   // Click a node → open config panel (not for trigger node)
@@ -672,12 +715,19 @@ function RoutineEditorInner({
           order_index: index,
         };
       });
+      const stepTypeBySlug = new Map(
+        currentStepNodes.map((node) => {
+          const data = node.data as StepNodeData;
+          const pendingUpdate = pendingStepUpdates.get(node.id);
+          return [node.id, (pendingUpdate?.step_type ?? data.stepType) as RoutineStepType];
+        }),
+      );
 
       const edgePayload = currentRegularEdges.map((edge) => ({
         source_step: edge.source,
         target_step: edge.target,
         condition: ((edge.data as Record<string, unknown>)?.condition as RoutineEdgeCondition | undefined) ?? "always",
-        metadata: edgeMetadata(edge),
+        metadata: canonicalEdgeMetadata(edgeMetadata(edge), stepTypeBySlug.get(edge.source)),
       }));
 
       const entrySteps = edges
@@ -885,28 +935,27 @@ function EdgeConfigPanel({
   onClose: () => void;
 }) {
   const metadata = edgeMetadata(edge);
-  const [purpose, setPurpose] = useState(typeof metadata.purpose === "string" ? metadata.purpose : "");
-  const initialHandoffInstructions =
-    typeof metadata.handoff_instructions === "string"
-      ? metadata.handoff_instructions
-      : typeof metadata.handoff === "string"
-        ? metadata.handoff
-        : typeof metadata.task === "string"
-          ? metadata.task
-          : "";
-  const [handoffInstructions, setHandoffInstructions] = useState(
-    initialHandoffInstructions,
-  );
-  const [maxAttempts, setMaxAttempts] = useState(
-    metadata.max_attempts != null ? String(metadata.max_attempts) : "",
-  );
-  const [error, setError] = useState<string | null>(null);
-
   const sourceStep = steps.find((step) => step.id === edge.source);
   const sourceData = sourceStep?.data as StepNodeData | undefined;
   const sourceLabel = sourceData?.label;
   const targetLabel = steps.find((step) => step.id === edge.target)?.data?.label as string | undefined;
   const canRetry = sourceData?.stepType === "gate";
+  const requiresHandoffSchema = requiresRouteHandoffSchema(sourceData?.stepType);
+  const [purpose, setPurpose] = useState(typeof metadata.purpose === "string" ? metadata.purpose : "");
+  const initialHandoffInstructions =
+    typeof metadata.handoff_instructions === "string"
+      ? metadata.handoff_instructions
+      : "";
+  const [handoffInstructions, setHandoffInstructions] = useState(
+    initialHandoffInstructions,
+  );
+  const [handoffSchema, setHandoffSchema] = useState(
+    formatJson(isRecord(metadata.handoff_schema) ? metadata.handoff_schema : defaultHandoffSchema()),
+  );
+  const [maxAttempts, setMaxAttempts] = useState(
+    metadata.max_attempts != null ? String(metadata.max_attempts) : "",
+  );
+  const [error, setError] = useState<string | null>(null);
 
   const handleApply = () => {
     const nextMetadata = { ...metadata };
@@ -922,6 +971,20 @@ function EdgeConfigPanel({
     }
     delete nextMetadata.handoff;
     delete nextMetadata.task;
+    if (requiresHandoffSchema) {
+      let parsedSchema: unknown;
+      try {
+        parsedSchema = JSON.parse(handoffSchema.trim() || formatJson(defaultHandoffSchema()));
+      } catch {
+        setError("Handoff schema must be valid JSON");
+        return;
+      }
+      if (!isRecord(parsedSchema) || parsedSchema.type !== "object") {
+        setError("Handoff schema must be a JSON object schema with type \"object\"");
+        return;
+      }
+      nextMetadata.handoff_schema = parsedSchema;
+    }
 
     if (canRetry && maxAttempts.trim()) {
       const parsed = Number.parseInt(maxAttempts, 10);
@@ -985,6 +1048,21 @@ function EdgeConfigPanel({
             className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
           />
         </div>
+
+        {requiresHandoffSchema ? (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
+              Handoff Schema
+            </label>
+            <textarea
+              value={handoffSchema}
+              onChange={(event) => setHandoffSchema(event.target.value)}
+              rows={10}
+              spellCheck={false}
+              className="w-full font-mono rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
+            />
+          </div>
+        ) : null}
 
         {canRetry ? (
           <div>

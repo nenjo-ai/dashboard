@@ -2,17 +2,17 @@
 
 import { Suspense, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { SignIn, useAuth } from "@clerk/nextjs";
 import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
+import { useSafeRouter } from "@/lib/safeRouter";
 
 const CLERK_ENABLED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 function LoginContent() {
   const { isLoaded, isSignedIn } = useAuth();
-  const router = useRouter();
+  const router = useSafeRouter();
   const searchParams = useSearchParams();
   const error = searchParams.get("error");
   const redirectUrl = searchParams.get("redirect_url") || "/dashboard/onboarding";

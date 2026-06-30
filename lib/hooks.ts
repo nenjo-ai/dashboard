@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
   catalogFetcher,
@@ -7,6 +7,7 @@ import {
   fetchProject,
   fetchProjects,
   fetchRoutine,
+  fetchExecutionTraceEvents,
   fetchCouncil,
   fetchCouncils,
   fetchChatCommands,
@@ -17,6 +18,7 @@ import {
   tasksUrl,
   executionsUrl,
   executionTasksUrl,
+  executionTraceEventsUrl,
   activityUrl,
   dependencyGraphUrl,
   modelsUrl,
@@ -59,6 +61,7 @@ import type {
   ExecutionDetails,
   AgentHeartbeat,
   ExecutionTask,
+  ExecutionTraceEvent,
   DependencyGraph,
   Model,
   KnowledgeItem,
@@ -90,6 +93,7 @@ import type {
   MediaConfig,
   MediaAssignmentsResponse,
 } from "./types";
+import { useSafeRouter } from "./safeRouter";
 
 // ---------------------------------------------------------------------------
 // URL-synced query param state
@@ -104,7 +108,7 @@ export function useQueryParam(
   defaultValue?: string,
 ): [string | undefined, (val: string | undefined) => void] {
   const searchParams = useSearchParams();
-  const router = useRouter();
+  const router = useSafeRouter();
   const pathname = usePathname();
 
   const raw = searchParams.get(key);
@@ -150,7 +154,7 @@ export function useTabParam<T extends string>(
   validTabs: readonly T[],
 ): [T, (tab: T) => void] {
   const searchParams = useSearchParams();
-  const router = useRouter();
+  const router = useSafeRouter();
   const pathname = usePathname();
 
   const raw = searchParams.get("tab") as T | null;
@@ -303,6 +307,24 @@ export function useExecutionTasks(executionId: string | undefined) {
 
   return {
     tasks: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useExecutionTraceEvents(executionId: string | undefined) {
+  const url = executionId ? executionTraceEventsUrl(executionId) : null;
+
+  const { data, error, isLoading, mutate } = useSWR<ExecutionTraceEvent[]>(
+    url,
+    () => fetchExecutionTraceEvents(executionId!),
+    { revalidateOnFocus: false, dedupingInterval: 3000 },
+  );
+
+  return {
+    traceEvents: data,
     isLoading,
     isError: !!error,
     error,

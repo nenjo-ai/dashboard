@@ -1,15 +1,16 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { TopBar } from "@/components/layout/TopBar";
 import { PageContent } from "@/components/ui/PageContent";
 import { SecureWorkspaceSetup } from "@/components/auth/SecureWorkspaceSetup";
+import { useSafeRouter } from "@/lib/safeRouter";
 import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
 export default function SecureWorkspaceBootstrapPage() {
-  const router = useRouter();
+  const router = useSafeRouter();
   const searchParams = useSearchParams();
   const { user } = useUser();
   const isMobileViewport = useIsMobileViewport();

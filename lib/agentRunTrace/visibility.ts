@@ -2,7 +2,6 @@ import type {
   AsyncOperationSpan,
   AsyncOperationTranscriptEntry,
   ModelSpan,
-  ToolSpan,
   TraceSpan,
 } from "./types";
 
@@ -28,8 +27,17 @@ export function chronologicalSpans(spans: TraceSpan[]): TraceSpan[] {
     });
 }
 
-function isCompletedModelSpan(span: TraceSpan): span is ModelSpan {
-  return span.kind === "model" && span.status === "completed";
+function isEmptyCompletedModelSpan(span: TraceSpan): span is ModelSpan {
+  return (
+    span.kind === "model" &&
+    span.status === "completed" &&
+    !span.text?.trim() &&
+    spanChildren(span).length === 0
+  );
+}
+
+function modelSpanHasDisplayContent(span: TraceSpan): boolean {
+  return span.kind === "model" && (Boolean(span.text?.trim()) || spanChildren(span).length > 0);
 }
 
 function isRawTranscriptMessageSpan(span: TraceSpan): boolean {
@@ -53,6 +61,19 @@ function isToolTranscriptEntry(entry: AsyncOperationTranscriptEntry): boolean {
   return ["assistant_message", "tool_call", "tool_result"].includes(entry.kind);
 }
 
+function comparableText(text: string | undefined): string {
+  return text?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function modelTexts(spans: TraceSpan[]): string[] {
+  return spans.flatMap((span) => {
+    const nested = spanChildren(span);
+    const current =
+      span.kind === "model" && span.text?.trim() ? [span.text] : [];
+    return nested.length > 0 ? [...current, ...modelTexts(nested)] : current;
+  });
+}
+
 export function visibleHistoryTranscriptEntries(
   span: AsyncOperationSpan,
 ): AsyncOperationTranscriptEntry[] {
@@ -60,9 +81,65 @@ export function visibleHistoryTranscriptEntries(
   return span.transcript.filter((entry) => !isToolTranscriptEntry(entry));
 }
 
+export function visibleAsyncOperationResultPreview(
+  span: AsyncOperationSpan,
+): string | undefined {
+  const resultPreview = span.resultPreview?.trim();
+  if (!resultPreview) return undefined;
+  const resultText = comparableText(resultPreview);
+  const isAlreadyShownByChildModel = modelTexts(span.children).some(
+    (text) => comparableText(text) === resultText,
+  );
+  return isAlreadyShownByChildModel ? undefined : span.resultPreview;
+}
+
+function isHiddenChatToolSpan(span: TraceSpan): boolean {
+  return span.kind === "tool" && span.name === "respond_to_user";
+}
+
+function filterChatSpan(span: TraceSpan): TraceSpan | undefined {
+  if (isHiddenChatToolSpan(span)) return undefined;
+  if (!("children" in span) || !span.children) return span;
+  return {
+    ...span,
+    children: chatDisplaySpans(span.children),
+  } as TraceSpan;
+}
+
+export function chatDisplaySpans(spans: TraceSpan[]): TraceSpan[] {
+  const displaySpans: TraceSpan[] = [];
+  let latestModelIndex = -1;
+
+  for (const originalSpan of spans) {
+    const span = filterChatSpan(originalSpan);
+    if (!span) continue;
+
+    if (span.kind === "model") {
+      latestModelIndex = displaySpans.length;
+      displaySpans.push(span);
+      continue;
+    }
+
+    if (span.kind === "tool" && latestModelIndex !== -1) {
+      const latestModel = displaySpans[latestModelIndex];
+      if (latestModel.kind === "model") {
+        displaySpans[latestModelIndex] = {
+          ...latestModel,
+          children: [...spanChildren(latestModel), span],
+        } as ModelSpan;
+        continue;
+      }
+    }
+
+    displaySpans.push(span);
+  }
+
+  return displaySpans;
+}
+
 export function filterHistorySpans(spans: TraceSpan[]): TraceSpan[] {
   return spans.flatMap((span) => {
-    if (isCompletedModelSpan(span)) return [];
+    if (isEmptyCompletedModelSpan(span)) return [];
     if (isRawTranscriptMessageSpan(span) || isRawProviderEchoToolSpan(span)) {
       return [];
     }
@@ -134,28 +211,13 @@ export function currentCycleSpans(spans: TraceSpan[]): TraceSpan[] {
     .slice(lastModelIndex + 1)
     .filter((span) => span.kind !== "model");
   if (currentActionBatch.length > 0) {
-    const latestBatchId = [...currentActionBatch]
-      .reverse()
-      .find(
-        (span): span is ToolSpan =>
-          span.kind === "tool" && Boolean(span.batchId),
-      )?.batchId;
     const activeIds = new Set(
       activeActionsBeforeLatestModel.map((span) => span.id),
     );
-    const visibleBatch = latestBatchId
-      ? currentActionBatch.filter(
-          (span) =>
-            span.kind !== "tool" ||
-            !span.batchId ||
-            span.batchId === latestBatchId ||
-            span.providerNative ||
-            span.status === "running",
-        )
-      : currentActionBatch;
     return [
       ...activeActionsBeforeLatestModel,
-      ...visibleBatch.filter((span) => !activeIds.has(span.id)),
+      ...(modelSpanHasDisplayContent(latestModel) ? [latestModel] : []),
+      ...currentActionBatch.filter((span) => !activeIds.has(span.id)),
     ];
   }
 

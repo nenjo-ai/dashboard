@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/cn";
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
@@ -16,14 +16,35 @@ import {
   createExecution,
   sendExecutionCommand,
 } from "@/lib/api";
+import { EXECUTION_EVENT_TYPE, ExecutionEventKind } from "@/lib/executionEvents";
 import { subscribeExecutionRealtime } from "@/lib/executionRealtime";
-import { useExecutionTasks, useRoutine } from "@/lib/hooks";
+import { useExecutionTasks, useExecutionTraceEvents, useRoutine } from "@/lib/hooks";
 import { decryptContentPayload } from "@/lib/cryptoContent";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
-import { formatToolCallSignature, normalizeToolCallArgs } from "@/lib/toolCallDisplay";
+import { ExecutionCurrentStepBadge } from "@/components/project/ExecutionCurrentStep";
+import { AgentRunTrace } from "@/components/agent-run-trace/AgentRunTrace";
+import {
+  buildRoutineDisplaySteps,
+  currentExecutionTaskStep,
+  routineIsCompletedStep,
+  routineStepIdentityKey,
+  type RoutineDisplayStep,
+} from "@/lib/routineStepEvents";
+import {
+  buildExecutionTraceGroups,
+  traceEnvelopeFromPersistedEvent,
+  traceEnvelopeFromRealtimeEvent,
+  type ExecutionTraceEnvelope,
+  type ExecutionTraceGroup,
+} from "@/lib/executionTraceEvents";
+import {
+  mergeExecutionRealtimeEventIntoTasks,
+  replayExecutionRealtimeEventsIntoTasks,
+  splitReplayableExecutionRealtimeEvents,
+} from "@/lib/executionRealtimeTasks";
 
 
 interface ExecutionPanelProps {
@@ -31,6 +52,7 @@ interface ExecutionPanelProps {
   executions: ExecutionDetails[] | undefined;
   isLoading: boolean;
   onRefresh: () => void;
+  showWorktreePlaceholders?: boolean;
 }
 
 function formatRelativeTime(iso: string): string {
@@ -88,6 +110,9 @@ function StatusIcon({ status, size = "sm" }: { status: string; size?: "sm" | "md
     case "done":
     case "passed":
     case "step_completed":
+    case "tool_completed":
+    case "ability_completed":
+    case "delegation_completed":
       return (
         <svg className={cn(sizeClass, "text-emerald-500 shrink-0")} fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -96,6 +121,9 @@ function StatusIcon({ status, size = "sm" }: { status: string; size?: "sm" | "md
     case "closed":
     case "failed":
     case "step_failed":
+    case "tool_failed":
+    case "ability_failed":
+    case "delegation_failed":
       return (
         <svg className={cn(sizeClass, "text-red-500 shrink-0")} fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -105,6 +133,9 @@ function StatusIcon({ status, size = "sm" }: { status: string; size?: "sm" | "md
     case "in_progress":
     case "running":
     case "step_started":
+    case "tool_started":
+    case "ability_started":
+    case "delegation_started":
       return (
         <svg className={cn(sizeClass, "text-yellow-500 animate-spin shrink-0")} fill="none" viewBox="0 0 24 24">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -170,11 +201,7 @@ function deduplicateSteps(steps: TaskStepProgress[]): TaskStepProgress[] {
   return Array.from(map.values());
 }
 
-interface DisplayStep {
-  step: TaskStepProgress;
-  children: TaskStepProgress[];
-  attemptLabel?: string;
-}
+type DisplayStep = RoutineDisplayStep;
 
 type StepPayloadData = Record<string, unknown>;
 
@@ -183,23 +210,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function stepIdentityKey(step: TaskStepProgress): string {
-  const stepRunId = step.data?.step_run_id;
-  if (typeof stepRunId === "string" && stepRunId.length > 0) {
-    return `routine-run:${stepRunId}`;
-  }
-  const stepId = step.data?.step_id;
-  if (typeof stepId === "string" && stepId.length > 0) {
-    return `routine:${stepId}`;
-  }
-  if (step.step_type === "agent" && step.agent?.agent) {
-    return `agent:${step.agent.agent}:${step.step_name}`;
-  }
-  return `${step.step_type}:${step.step_name}`;
-}
-
-function agentStepIdentityKey(step: TaskStepProgress): string | null {
-  if (!step.agent?.agent) return null;
-  return `${step.agent.agent}:${stepIdentityKey(step)}`;
+  return routineStepIdentityKey(step);
 }
 
 function extractStringFields(data: Record<string, unknown> | undefined): StepPayloadData {
@@ -260,322 +271,16 @@ function getResolvedText(
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
-function mergeStep(prev: TaskStepProgress, next: TaskStepProgress): TaskStepProgress {
-  const merged = { ...next };
-  const prevPayload = isRecord(prev.payload) ? prev.payload : null;
-  const nextPayload = isRecord(next.payload) ? next.payload : null;
-  if (!merged.step_type && prev.step_type) merged.step_type = prev.step_type;
-  if (!merged.agent && prev.agent) merged.agent = prev.agent;
-  merged.data = { ...(prev.data ?? {}), ...(next.data ?? {}) };
-  if (prevPayload || nextPayload) {
-    merged.payload = { ...(prevPayload ?? {}), ...(nextPayload ?? {}) };
-  } else if (!merged.payload && prev.payload) {
-    merged.payload = prev.payload;
-  }
-  if (!merged.encrypted_payload && prev.encrypted_payload) {
-    merged.encrypted_payload = prev.encrypted_payload;
-  }
-  return merged;
-}
-
-function isCompletedStep(step: TaskStepProgress): boolean {
-  return (
-    step.event_type === "step_completed" ||
-    step.event_type === "step_failed" ||
-    step.event_type === "failed" ||
-    step.event_type === "done"
-  );
-}
-
-function stepCreatedTime(step: TaskStepProgress): number {
-  const time = step.created_at ? new Date(step.created_at).getTime() : Number.NaN;
-  return Number.isFinite(time) ? time : 0;
-}
-
-function routineStepKey(step: TaskStepProgress): string {
-  const stepId = step.data?.step_id;
-  if (typeof stepId === "string" && stepId.length > 0) {
-    return `routine:${stepId}`;
-  }
-  return `${step.step_type}:${step.step_name}`;
-}
-
-function isWorktreeStep(step: TaskStepProgress): boolean {
-  return step.step_type === "worktree" || step.step_name.startsWith("worktree_");
-}
-
-function isChildActivityStep(step: TaskStepProgress): boolean {
-  return step.step_type === "tool" || step.step_type === "ability" || step.step_type === "delegation";
-}
-
-function childActivityKey(step: TaskStepProgress): string {
-  const toolCallId = step.data?.tool_call_id;
-  if (typeof toolCallId === "string" && toolCallId.length > 0) {
-    return `tool-call:${toolCallId}`;
-  }
-
-  const toolIndex = step.data?.tool_index;
-  if (typeof toolIndex === "number") {
-    return `${step.step_type}:${step.step_name}:${toolIndex}`;
-  }
-
-  return `${step.step_type}:${step.step_name}`;
-}
-
-function routineOrderIndex(step: TaskStepProgress, routine: RoutineDetail | undefined): number | null {
-  if (!routine) return null;
-  const stepId = step.data?.step_id;
-  const routineStep =
-    typeof stepId === "string"
-      ? routine.steps.find((candidate) => candidate.id === stepId)
-      : routine.steps.find(
-          (candidate) =>
-            candidate.name === step.step_name && candidate.step_type === step.step_type,
-        );
-  return routineStep?.order_index ?? null;
-}
-
-function orderDisplaySteps(groups: DisplayStep[], routine: RoutineDetail | undefined): DisplayStep[] {
-  const withIndex = groups.map((group, index) => ({ ...group, originalIndex: index }));
-  const setup = withIndex.filter((group) => group.step.step_name === "worktree_setup");
-  const cleanup = withIndex.filter((group) => group.step.step_name === "worktree_cleanup");
-  const body = withIndex.filter(
-    (group) =>
-      group.step.step_name !== "worktree_setup" &&
-      group.step.step_name !== "worktree_cleanup",
-  );
-
-  body.sort((a, b) => {
-    const aTime = stepCreatedTime(a.step);
-    const bTime = stepCreatedTime(b.step);
-    if (aTime !== bTime) return aTime - bTime;
-
-    const aOrder = routineOrderIndex(a.step, routine);
-    const bOrder = routineOrderIndex(b.step, routine);
-    if (aOrder != null && bOrder != null && aOrder !== bOrder) {
-      return aOrder - bOrder;
-    }
-
-    return a.originalIndex - b.originalIndex;
-  });
-
-  const ordered = [...setup, ...body, ...cleanup];
-  const attemptCounts = new Map<string, number>();
-  let previousRoutineOrder: number | null = null;
-  let previousRoutineStepName: string | null = null;
-
-  return ordered.map(({ originalIndex: _originalIndex, ...group }) => {
-    if (isWorktreeStep(group.step) || isChildActivityStep(group.step)) {
-      return group;
-    }
-
-    const key = routineStepKey(group.step);
-    const attempt = (attemptCounts.get(key) ?? 0) + 1;
-    attemptCounts.set(key, attempt);
-
-    let attemptLabel: string | undefined;
-    const currentOrder = routineOrderIndex(group.step, routine);
-    if (attempt > 1) {
-      attemptLabel = `attempt ${attempt}`;
-      if (
-        currentOrder != null &&
-        previousRoutineOrder != null &&
-        currentOrder <= previousRoutineOrder &&
-        previousRoutineStepName
-      ) {
-        attemptLabel = `${attemptLabel} after ${previousRoutineStepName}`;
-      }
-    }
-
-    if (currentOrder != null) {
-      previousRoutineOrder = currentOrder;
-      previousRoutineStepName = group.step.step_name;
-    }
-
-    return { ...group, attemptLabel };
-  });
-}
+const isCompletedStep = routineIsCompletedStep;
 
 function buildDisplaySteps(
   steps: TaskStepProgress[],
   routine: RoutineDetail | undefined,
+  showWorktreePlaceholders = false,
 ): DisplayStep[] {
-  const groups: DisplayStep[] = [];
-  const parentIndex = new Map<string, number>();
-  const agentParentIndex = new Map<string, number>();
-  let currentParentName: string | null = null;
-
-  const upsertTopLevel = (step: TaskStepProgress): number => {
-    const key = stepIdentityKey(step);
-    const existingIndex = parentIndex.get(key);
-    if (existingIndex != null) {
-      groups[existingIndex] = {
-        ...groups[existingIndex],
-        step: mergeStep(groups[existingIndex].step, step),
-      };
-      return existingIndex;
-    }
-
-    const nextIndex = groups.length;
-    groups.push({ step, children: [] });
-    parentIndex.set(key, nextIndex);
-    parentIndex.set(step.step_name, nextIndex);
-    const agentKey = agentStepIdentityKey(step);
-    if (agentKey && step.step_type === "agent") {
-      agentParentIndex.set(agentKey, nextIndex);
-    }
-    return nextIndex;
-  };
-
-  const upsertAgentTopLevel = (step: TaskStepProgress): number => {
-    const agentKey = agentStepIdentityKey(step);
-    if (!agentKey) return upsertTopLevel(step);
-
-    const existingIndex = agentParentIndex.get(agentKey);
-    if (existingIndex != null) {
-      groups[existingIndex] = {
-        ...groups[existingIndex],
-        step: mergeStep(groups[existingIndex].step, {
-          ...step,
-          step_name: groups[existingIndex].step.step_name,
-        }),
-      };
-      return existingIndex;
-    }
-
-    return upsertTopLevel(step);
-  };
-
-  const upsertChild = (groupIndex: number, step: TaskStepProgress) => {
-    const toolNames = Array.isArray(step.data?.tool_names)
-      ? step.data.tool_names.filter((value): value is string => typeof value === "string")
-      : [step.step_name];
-    const toolCallIds = Array.isArray(step.data?.tool_call_ids)
-      ? step.data.tool_call_ids
-      : [];
-    const toolArgs = Array.isArray(step.data?.tool_args)
-      ? step.data.tool_args
-      : [];
-
-    for (let toolIndex = 0; toolIndex < toolNames.length; toolIndex += 1) {
-      const toolName = toolNames[toolIndex];
-      const childStep: TaskStepProgress = {
-        ...step,
-        step_name: toolName,
-        data: {
-          ...(step.data ?? {}),
-          tool_call_id:
-            typeof toolCallIds[toolIndex] === "string"
-              ? toolCallIds[toolIndex]
-              : step.data?.tool_call_id,
-          tool_index: toolIndex,
-          tool_args:
-            toolArgs[toolIndex] != null
-              ? normalizeToolCallArgs(toolArgs[toolIndex])
-              : normalizeToolCallArgs(step.data?.tool_args),
-        },
-      };
-
-      const childKey = childActivityKey(childStep);
-      const existingIndex = groups[groupIndex].children.findIndex(
-        (child) => childActivityKey(child) === childKey,
-      );
-
-      if (existingIndex >= 0) {
-        groups[groupIndex].children[existingIndex] = mergeStep(
-          groups[groupIndex].children[existingIndex],
-          childStep,
-        );
-      } else {
-        groups[groupIndex].children.push(childStep);
-      }
-    }
-  };
-
-  const createImplicitAgentParent = (step: TaskStepProgress): number | null => {
-    if (!step.agent?.agent) return null;
-    const stepId = step.data?.step_id;
-    const stepRunId = step.data?.step_run_id;
-    const implicitStep: TaskStepProgress = {
-      ...step,
-      step_name: step.agent.agent_name ?? "agent",
-      step_type: "agent",
-      event_type: step.event_type === "step_completed" ? "step_started" : step.event_type,
-      status: step.status === "passed" ? "running" : step.status,
-      duration_ms: null,
-      data: {
-        ...(typeof stepId === "string" ? { step_id: stepId } : {}),
-        ...(typeof stepRunId === "string" ? { step_run_id: stepRunId } : {}),
-      },
-      payload: null,
-      encrypted_payload: null,
-    };
-    return upsertAgentTopLevel(implicitStep);
-  };
-
-  for (const rawStep of steps) {
-    if (!isChildActivityStep(rawStep)) {
-      if (rawStep.step_type === "agent" && rawStep.agent?.agent) {
-        upsertAgentTopLevel(rawStep);
-      } else {
-        upsertTopLevel(rawStep);
-      }
-      currentParentName = rawStep.step_name;
-    }
-  }
-
-  currentParentName = null;
-
-  for (const rawStep of steps) {
-    if (!isChildActivityStep(rawStep)) {
-      currentParentName = rawStep.step_name;
-      continue;
-    }
-
-    const parentToolName =
-      typeof rawStep.data?.parent_tool_name === "string"
-        ? rawStep.data.parent_tool_name
-        : null;
-    const parentStepId =
-      typeof rawStep.data?.step_run_id === "string"
-        ? `routine-run:${rawStep.data.step_run_id}`
-        : typeof rawStep.data?.step_id === "string"
-          ? `routine:${rawStep.data.step_id}`
-          : null;
-    const parentGroupIndex =
-      parentStepId != null
-        ? parentIndex.get(parentStepId)
-        : parentToolName != null
-          ? parentIndex.get(parentToolName)
-          : undefined;
-
-    if (parentGroupIndex != null && groups[parentGroupIndex].step.step_type !== "tool") {
-      upsertChild(parentGroupIndex, rawStep);
-      continue;
-    }
-
-    const rawAgentKey = agentStepIdentityKey(rawStep);
-    const agentGroupIndex = rawAgentKey
-      ? agentParentIndex.get(rawAgentKey) ?? createImplicitAgentParent(rawStep)
-      : null;
-
-    if (agentGroupIndex != null) {
-      upsertChild(agentGroupIndex, rawStep);
-      continue;
-    }
-
-    const currentParentGroupIndex =
-      currentParentName != null ? parentIndex.get(currentParentName) : undefined;
-
-    if (currentParentGroupIndex != null && groups[currentParentGroupIndex].step.step_type !== "tool") {
-      upsertChild(currentParentGroupIndex, rawStep);
-      continue;
-    }
-
-    upsertTopLevel(rawStep);
-  }
-
-  return orderDisplaySteps(groups, routine);
+  return buildRoutineDisplaySteps(steps, routine, {
+    includeWorktreePlaceholders: showWorktreePlaceholders,
+  });
 }
 
 /** Extract token counts from a step's data — supports both flat (output_preview flow)
@@ -616,47 +321,96 @@ function MarkdownPreview({ content }: { content: string }) {
   );
 }
 
-function friendlyToolName(toolName: string): string {
-  return toolName.replace(/^app\.nenjo\.platform\//, "");
+const EMPTY_TRACE_ENVELOPES: ExecutionTraceEnvelope[] = [];
+const EMPTY_TRACE_GROUPS = new Map<string, ExecutionTraceGroup>();
+
+function stepTraceRunId(step: TaskStepProgress): string | null {
+  const stepRunId = step.data?.step_run_id;
+  return typeof stepRunId === "string" && stepRunId.trim().length > 0
+    ? stepRunId
+    : null;
 }
 
-function hasToolArgs(value: unknown): boolean {
-  if (value == null) return false;
-  if (typeof value === "string") return value.trim().length > 0;
-  if (Array.isArray(value)) return value.length > 0;
-  return true;
-}
+function useExecutionTraceGroups(
+  executionId: string | undefined,
+  liveEnvelopes: ExecutionTraceEnvelope[] = EMPTY_TRACE_ENVELOPES,
+): Map<string, ExecutionTraceGroup> {
+  const { traceEvents } = useExecutionTraceEvents(executionId);
+  const envelopes = useMemo(
+    () => [
+      ...(traceEvents ?? []).map(traceEnvelopeFromPersistedEvent),
+      ...liveEnvelopes,
+    ],
+    [liveEnvelopes, traceEvents],
+  );
+  const [traceGroupState, setTraceGroupState] = useState<{
+    executionId: string | undefined;
+    groups: Map<string, ExecutionTraceGroup>;
+  }>(() => ({
+    executionId: undefined,
+    groups: EMPTY_TRACE_GROUPS,
+  }));
 
-function getToolArgs(
-  data: Record<string, unknown> | undefined,
-  payload: StepPayloadData | null | undefined,
-): string {
-  const payloadArgs = payload?.tool_args;
-  const dataArgs = data?.tool_args;
-  const resolvedFromPayload = hasToolArgs(payloadArgs)
-    ? normalizeToolCallArgs(payloadArgs)
-    : "";
-  const resolvedFromData = hasToolArgs(dataArgs)
-    ? normalizeToolCallArgs(dataArgs)
-    : "";
-  if (resolvedFromPayload) return resolvedFromPayload;
-  if (resolvedFromData) return resolvedFromData;
-  return "";
+  useEffect(() => {
+    if (!executionId || envelopes.length === 0) return;
+    let cancelled = false;
+
+    void buildExecutionTraceGroups(envelopes)
+      .then((nextGroups) => {
+        if (!cancelled) {
+          setTraceGroupState({
+            executionId,
+            groups: nextGroups,
+          });
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.warn("Failed to build execution trace groups", error);
+          setTraceGroupState({
+            executionId,
+            groups: EMPTY_TRACE_GROUPS,
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [envelopes, executionId]);
+
+  if (
+    !executionId ||
+    envelopes.length === 0 ||
+    traceGroupState.executionId !== executionId
+  ) {
+    return EMPTY_TRACE_GROUPS;
+  }
+
+  return traceGroupState.groups;
 }
 
 function TaskRow({
   task,
   defaultExpanded = false,
   defaultOpenActivity = false,
+  showWorktreePlaceholders = false,
+  traceGroups,
 }: {
   task: ExecutionTask;
   defaultExpanded?: boolean;
   defaultOpenActivity?: boolean;
+  showWorktreePlaceholders?: boolean;
+  traceGroups?: Map<string, ExecutionTraceGroup>;
 }) {
   const { routine } = useRoutine(task.routine_id ?? undefined);
   const displaySteps = useMemo(
-    () => buildDisplaySteps(task.steps ?? [], routine),
-    [task.steps, routine],
+    () => buildDisplaySteps(task.steps ?? [], routine, showWorktreePlaceholders),
+    [task.steps, routine, showWorktreePlaceholders],
+  );
+  const currentStep = useMemo(
+    () => currentExecutionTaskStep(task, routine),
+    [task, routine],
   );
   const steps = useMemo(() => deduplicateSteps(task.steps ?? []), [task.steps]);
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -684,10 +438,10 @@ function TaskRow({
 
     let cancelled = false;
 
-    const stepEntries = displaySteps.flatMap(({ step, children }, parentIndex) => [
-      [`step:${parentIndex}`, step] as const,
-      ...children.map((child, childIndex) => [`step:${parentIndex}:child:${childIndex}`, child] as const),
-    ]);
+    const stepEntries = displaySteps.map(({ step }, parentIndex) => [
+      `step:${parentIndex}`,
+      step,
+    ] as const);
 
     void Promise.all(
       stepEntries.map(async ([key, step]) => {
@@ -723,6 +477,7 @@ function TaskRow({
         <span className="theme-text flex-1 truncate text-sm font-medium">
           {task.slug ?? task.title}
         </span>
+        <ExecutionCurrentStepBadge step={currentStep} />
         {totalTokens > 0 && (
           <span className="theme-text-muted shrink-0 text-[10px] tabular-nums">
             {formatTokens(totalTokens)} tok
@@ -749,7 +504,7 @@ function TaskRow({
 
       {expanded && displaySteps.length > 0 && (
         <div className="pl-10 pr-4 pb-2 space-y-1">
-          {displaySteps.map(({ step, children, attemptLabel }, parentIndex) => {
+          {displaySteps.map(({ step, attemptLabel }, parentIndex) => {
             const d = step.data as Record<string, unknown> | undefined;
             const resolved = resolvedPayloads[`step:${parentIndex}`];
             const metrics = d?.metrics as
@@ -757,7 +512,11 @@ function TaskRow({
               | undefined;
             const tokens = getStepTokens(d);
             const errorMsg =
-              (step.event_type === "step_failed" || step.event_type === "failed") &&
+              (step.event_type === "step_failed" ||
+                step.event_type === "tool_failed" ||
+                step.event_type === "ability_failed" ||
+                step.event_type === "delegation_failed" ||
+                step.event_type === "failed") &&
               (getResolvedText(resolved, "error") ?? (d?.error ? String(d.error) : null))
                 ? (getResolvedText(resolved, "error") ?? String(d?.error))
                 : null;
@@ -773,14 +532,21 @@ function TaskRow({
                 : null;
             const agent = step.agent;
             const isRunning =
-              step.event_type === "step_started" || step.event_type === "running";
-            const hasActivity = step.step_type !== "tool" && (children.length > 0 || isRunning);
+              step.event_type === "step_started" ||
+              step.event_type === "tool_started" ||
+              step.event_type === "ability_started" ||
+              step.event_type === "delegation_started" ||
+              step.event_type === "running";
+            const traceKey = stepTraceRunId(step);
+            const trace = traceKey ? traceGroups?.get(traceKey)?.trace : undefined;
+            const hasActivity = step.step_type !== "tool" && (Boolean(trace) || isRunning);
             const stepKey = stepIdentityKey(step);
             const activityKey = `${task.id ?? task.slug ?? task.title}:${stepKey}`;
             const renderKey = `${activityKey}:${parentIndex}`;
             const isDone = isCompletedStep(step);
             const activityExpanded = !!openActivity[activityKey];
-            const activityLabel = isDone ? "source activity" : "live stream";
+            const activityLabel = isDone ? "trace" : "live trace";
+            const activityCount = trace?.spans.length || (isRunning ? "live" : 0);
             return (
               <div key={renderKey}>
                 <div className="flex items-center gap-2 py-1">
@@ -853,7 +619,7 @@ function TaskRow({
                     >
                       <span>{activityExpanded ? "Hide" : "Show"} {activityLabel}</span>
                       <span className="theme-surface-muted theme-text-muted rounded-sm px-1.5 py-0.5 text-[10px]">
-                        {children.length || (isRunning ? "live" : 0)}
+                        {activityCount}
                       </span>
                     </button>
                   </div>
@@ -863,59 +629,20 @@ function TaskRow({
                     <div className="mb-2 flex items-center gap-2">
                       <span className={cn("inline-flex h-2 w-2 rounded-full", isDone ? "bg-gray-400" : "bg-yellow-500 animate-pulse")} />
                       <span className="theme-text-muted text-[11px] font-semibold uppercase tracking-wide">
-                        {isDone ? "Source activity" : "Live stream"}
+                        {isDone ? "Trace" : "Live trace"}
                       </span>
                     </div>
-                    {children.length === 0 ? (
-                      <div className="theme-surface rounded-md px-2.5 py-2 text-xs [color:var(--app-text-muted)]">
-                        Waiting for tool activity…
-                      </div>
+                    {trace ? (
+                      <AgentRunTrace
+                        trace={trace}
+                        mode={isDone ? "history" : "live"}
+                        density="regular"
+                        embedded
+                      />
                     ) : (
-                    <div className="space-y-0.5">
-                      {children.map((child, childIndex) => {
-                        const childData = child.data as Record<string, unknown> | undefined;
-                        const childResolved =
-                          resolvedPayloads[`step:${parentIndex}:child:${childIndex}`];
-                        const childError =
-                          (child.event_type === "step_failed" || child.event_type === "failed") &&
-                          (getResolvedText(childResolved, "error")
-                            ?? (childData?.error ? String(childData.error) : null))
-                            ? (getResolvedText(childResolved, "error") ?? String(childData?.error))
-                            : null;
-                        const signature = formatToolCallSignature(
-                          friendlyToolName(child.step_name),
-                          getToolArgs(childData, childResolved),
-                        );
-                        const statusLabel = childError
-                          ? "failed"
-                          : isCompletedStep(child)
-                            ? "done"
-                            : null;
-
-                        return (
-                          <div key={`${renderKey}:${stepIdentityKey(child)}:${childIndex}`} className="theme-surface rounded-md px-2 py-1.5">
-                            <div className="flex items-start gap-2">
-                              <StatusIcon status={child.event_type} />
-                              <div className="min-w-0 flex-1">
-                                <div className="theme-border theme-surface-muted rounded-md border px-2 py-1.5 font-mono text-[11px] leading-relaxed theme-text">
-                                  <span className="whitespace-pre-wrap break-words">{signature}</span>
-                                  {statusLabel && (
-                                    <span className={cn(
-                                      "ml-2 font-sans text-[10px] font-medium",
-                                      childError
-                                        ? "text-red-500/80 dark:text-red-400/80"
-                                        : "text-emerald-500/80 dark:text-emerald-400/80",
-                                    )}>
-                                      {statusLabel}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                      <div className="theme-surface rounded-md px-2.5 py-2 text-xs [color:var(--app-text-muted)]">
+                        Waiting for trace activity…
+                      </div>
                     )}
                   </div>
                 )}
@@ -950,9 +677,16 @@ function aggregateRunTokens(tasks: ExecutionTask[] | undefined): { input: number
   return { input, output, total: input + output };
 }
 
-function HistoryRow({ execution: exec }: { execution: ExecutionDetails }) {
+function HistoryRow({
+  execution: exec,
+  showWorktreePlaceholders = false,
+}: {
+  execution: ExecutionDetails;
+  showWorktreePlaceholders?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
   const { tasks } = useExecutionTasks(expanded ? exec.id : undefined);
+  const traceGroups = useExecutionTraceGroups(expanded ? exec.id : undefined);
   const tokens = useMemo(() => aggregateRunTokens(tasks), [tasks]);
 
   return (
@@ -1025,6 +759,8 @@ function HistoryRow({ execution: exec }: { execution: ExecutionDetails }) {
               <TaskRow
                 key={task.id}
                 task={task}
+                showWorktreePlaceholders={showWorktreePlaceholders}
+                traceGroups={traceGroups}
               />
             ))
           ) : (
@@ -1047,6 +783,7 @@ export function ExecutionPanel({
   executions,
   isLoading,
   onRefresh,
+  showWorktreePlaceholders = false,
 }: ExecutionPanelProps) {
   const [creating, setCreating] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
@@ -1065,13 +802,45 @@ export function ExecutionPanel({
       ),
     [executions],
   );
+  const displayedExecution = activeExecution ?? executions?.[0];
 
-  // Fetch tasks for active/selected run
+  // Fetch tasks for the active run, or the latest completed run when nothing is active.
   const { tasks: executionTasks, mutate: mutateTasks } = useExecutionTasks(
-    activeExecution?.id,
+    displayedExecution?.id,
   );
+  const pendingRealtimeTaskEvents = useRef<Record<string, unknown>[]>([]);
+  const [liveTraceEnvelopes, setLiveTraceEnvelopes] = useState<ExecutionTraceEnvelope[]>([]);
+  const traceGroups = useExecutionTraceGroups(displayedExecution?.id, liveTraceEnvelopes);
 
   useEffect(() => {
+    pendingRealtimeTaskEvents.current = [];
+    setLiveTraceEnvelopes([]);
+  }, [displayedExecution?.id]);
+
+  useEffect(() => {
+    if (!executionTasks || pendingRealtimeTaskEvents.current.length === 0) {
+      return;
+    }
+
+    const { replayable, pending } = splitReplayableExecutionRealtimeEvents(
+      executionTasks,
+      pendingRealtimeTaskEvents.current,
+    );
+    if (replayable.length === 0) {
+      pendingRealtimeTaskEvents.current = pending;
+      return;
+    }
+
+    pendingRealtimeTaskEvents.current = pending;
+    void mutateTasks(
+      (current) => replayExecutionRealtimeEventsIntoTasks(current, replayable),
+      { revalidate: false },
+    );
+  }, [executionTasks, mutateTasks]);
+
+  useEffect(() => {
+    if (!displayedExecution?.id) return;
+
     const controller = new AbortController();
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -1089,15 +858,51 @@ export function ExecutionPanel({
     void subscribeExecutionRealtime(
       (event) => {
         const type = typeof event.data.type === "string" ? event.data.type : "";
-        if (
-          type === "task.step_event" ||
-          type === "task.completed" ||
-          type === "execution.started" ||
-          type === "execution.completed"
-        ) {
+        if (type === EXECUTION_EVENT_TYPE) {
+          const executionEvent =
+            typeof event.data.event === "object" &&
+            event.data.event !== null &&
+            !Array.isArray(event.data.event)
+              ? (event.data.event as Record<string, unknown>)
+              : null;
+          const kind =
+            typeof executionEvent?.kind === "string" ? executionEvent.kind : "";
+
+          if (kind === ExecutionEventKind.AgentTrace) {
+            const envelope = traceEnvelopeFromRealtimeEvent(event.data);
+            if (envelope) {
+              setLiveTraceEnvelopes((current) => [...current, envelope]);
+            }
+            return;
+          }
+
+          if (
+            kind === ExecutionEventKind.WorkflowStep ||
+            kind === ExecutionEventKind.TaskCompleted
+          ) {
+            pendingRealtimeTaskEvents.current.push(event.data);
+            void mutateTasks(
+              (current) => {
+                if (!current) return current;
+                pendingRealtimeTaskEvents.current =
+                  pendingRealtimeTaskEvents.current.filter(
+                    (queuedEvent) => queuedEvent !== event.data,
+                  );
+                return mergeExecutionRealtimeEventIntoTasks(current, event.data);
+              },
+              { revalidate: false },
+            );
+            scheduleRefresh(kind === ExecutionEventKind.TaskCompleted);
+          }
+
+          return;
+        }
+
+        if (type === "execution.started" || type === "execution.completed") {
           scheduleRefresh(true);
         }
       },
+      displayedExecution.id,
       controller.signal,
     ).catch((error) => {
       if (!controller.signal.aborted) {
@@ -1111,7 +916,7 @@ export function ExecutionPanel({
         clearTimeout(refreshTimer);
       }
     };
-  }, [onRefresh, mutateTasks]);
+  }, [displayedExecution?.id, onRefresh, mutateTasks]);
 
   const handleCreate = useCallback(async () => {
     setError(null);
@@ -1176,6 +981,50 @@ export function ExecutionPanel({
     (t) => t.status === "ready",
   ).length ?? 0;
 
+  const startExecutionControls = (
+    <div className="flex items-end gap-3">
+      <div>
+        <label
+          htmlFor="parallel-count"
+          className="theme-text-muted mb-1 block text-xs font-medium"
+        >
+          Parallel Tasks
+        </label>
+        <input
+          id="parallel-count"
+          type="number"
+          min={1}
+          max={20}
+          value={parallelCount}
+          onChange={(e) =>
+            setParallelCount(
+              Math.max(1, Math.min(20, parseInt(e.target.value) || 1)),
+            )
+          }
+          className="theme-surface theme-border theme-text w-20 rounded-lg border px-3 py-2 text-sm focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500"
+        />
+      </div>
+      <Button onClick={handleCreate} disabled={creating}>
+        {creating ? (
+          <>
+            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            Creating...
+          </>
+        ) : (
+          <>
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+            </svg>
+            Start Execution
+          </>
+        )}
+      </Button>
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       {/* Error */}
@@ -1185,8 +1034,8 @@ export function ExecutionPanel({
         </div>
       )}
 
-      {/* Active execution card */}
-      {activeExecution ? (
+      {/* Active/latest execution card */}
+      {displayedExecution ? (
         <div className="theme-surface theme-border rounded-xl border">
           {/* Header */}
           <div className="theme-border flex items-center justify-between border-b px-5 py-4">
@@ -1194,15 +1043,15 @@ export function ExecutionPanel({
               <h3 className="theme-text text-sm font-semibold">
                 Execution Run
               </h3>
-              <Badge variant={activeExecution.status} showDot>
-                {activeExecution.status}
+              <Badge variant={displayedExecution.status} showDot>
+                {displayedExecution.status}
               </Badge>
               <span
                 className={cn(
                   "h-2 w-2 rounded-full",
-                  activeExecution.status === "running" || activeExecution.status === "pending"
+                  displayedExecution.status === "running" || displayedExecution.status === "pending"
                     ? "bg-emerald-500 animate-pulse"
-                    : activeExecution.status === "paused"
+                    : displayedExecution.status === "paused"
                       ? "bg-yellow-500"
                       : "bg-[var(--app-border-strong)]",
                 )}
@@ -1211,7 +1060,7 @@ export function ExecutionPanel({
             </div>
             <div className="flex items-center gap-2">
               <span className="theme-text-muted text-xs">
-                {formatRelativeTime(activeExecution.created_at)}
+                {formatRelativeTime(displayedExecution.created_at)}
               </span>
               <button
                 type="button"
@@ -1238,17 +1087,17 @@ export function ExecutionPanel({
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="theme-text-muted text-xs">
-                  {doneTasks} / {activeExecution.task_counts.total} tasks complete
+                  {doneTasks} / {displayedExecution.task_counts.total} tasks complete
                 </span>
                 <span className="theme-text text-xs font-medium">
-                  {Math.round(activeExecution.completion_percentage)}%
+                  {Math.round(displayedExecution.completion_percentage)}%
                 </span>
               </div>
               <div className="theme-surface-muted h-2 w-full overflow-hidden rounded-full">
                 <div
                   className="h-full rounded-full bg-deep-space-blue-500 transition-all duration-500"
                   style={{
-                    width: `${Math.min(activeExecution.completion_percentage, 100)}%`,
+                    width: `${Math.min(displayedExecution.completion_percentage, 100)}%`,
                   }}
                 />
               </div>
@@ -1259,7 +1108,7 @@ export function ExecutionPanel({
               {[
                 {
                   label: "Slots",
-                  value: `${runningTasks}/${activeExecution.parallel_count}`,
+                  value: `${runningTasks}/${displayedExecution.parallel_count}`,
                 },
                 { label: "Ready", value: readyTasks },
                 { label: "Running", value: runningTasks },
@@ -1279,7 +1128,7 @@ export function ExecutionPanel({
 
             {/* Control buttons */}
             <div className="flex items-center gap-2">
-              {canStart(activeExecution) && (
+              {activeExecution && canStart(activeExecution) && (
                 <Button
                   size="sm"
                   onClick={() => handleCommand(activeExecution.id, "start")}
@@ -1288,7 +1137,7 @@ export function ExecutionPanel({
                   {sending === "start" ? "Starting..." : "Start Execution"}
                 </Button>
               )}
-              {canPause(activeExecution) && (
+              {activeExecution && canPause(activeExecution) && (
                 <Button
                   size="sm"
                   variant="secondary"
@@ -1301,7 +1150,7 @@ export function ExecutionPanel({
                   {sending === "pause" ? "Pausing..." : "Pause"}
                 </Button>
               )}
-              {canResume(activeExecution) && (
+              {activeExecution && canResume(activeExecution) && (
                 <Button
                   size="sm"
                   onClick={() => handleCommand(activeExecution.id, "resume")}
@@ -1313,7 +1162,7 @@ export function ExecutionPanel({
                   {sending === "resume" ? "Resuming..." : "Resume"}
                 </Button>
               )}
-              {canCancel(activeExecution) && (
+              {activeExecution && canCancel(activeExecution) && (
                 <Button
                   size="sm"
                   variant="danger"
@@ -1322,6 +1171,9 @@ export function ExecutionPanel({
                 >
                   {sending === "cancel" ? "Cancelling..." : "Cancel"}
                 </Button>
+              )}
+              {!activeExecution && (
+                startExecutionControls
               )}
             </div>
           </div>
@@ -1336,7 +1188,12 @@ export function ExecutionPanel({
               </div>
               <div>
                 {executionTasks.map((task) => (
-                  <TaskRow key={task.id} task={task} />
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    showWorktreePlaceholders={showWorktreePlaceholders}
+                    traceGroups={traceGroups}
+                  />
                 ))}
               </div>
             </div>
@@ -1353,47 +1210,7 @@ export function ExecutionPanel({
             Each task uses its own assigned routine.
           </p>
 
-          <div className="flex items-end gap-3">
-            <div>
-              <label
-                htmlFor="parallel-count"
-                className="theme-text-muted mb-1 block text-xs font-medium"
-              >
-                Parallel Tasks
-              </label>
-              <input
-                id="parallel-count"
-                type="number"
-                min={1}
-                max={20}
-                value={parallelCount}
-                onChange={(e) =>
-                  setParallelCount(
-                    Math.max(1, Math.min(20, parseInt(e.target.value) || 1)),
-                  )
-                }
-                className="theme-surface theme-border theme-text w-20 rounded-lg border px-3 py-2 text-sm focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500"
-              />
-            </div>
-            <Button onClick={handleCreate} disabled={creating}>
-              {creating ? (
-                <>
-                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
-                  </svg>
-                  Start Execution
-                </>
-              )}
-            </Button>
-          </div>
+          {startExecutionControls}
         </div>
       )}
 
@@ -1407,7 +1224,11 @@ export function ExecutionPanel({
           </div>
           <div className="theme-border divide-y">
             {executions.map((exec) => (
-              <HistoryRow key={exec.id} execution={exec} />
+              <HistoryRow
+                key={exec.id}
+                execution={exec}
+                showWorktreePlaceholders={showWorktreePlaceholders}
+              />
             ))}
           </div>
         </div>

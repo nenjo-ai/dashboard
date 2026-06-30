@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import type { AgentDefinition, ChatSessionExtended } from "@/lib/types";
 import {
@@ -13,6 +13,7 @@ import {
   updateChatSession,
 } from "@/lib/api";
 import { MobileTabBar } from "@/components/layout/MobileTabBar";
+import { useSafeRouter } from "@/lib/safeRouter";
 import { MobileChatShell } from "./MobileChatShell";
 import { MobileNewChatSheet } from "./MobileNewChatSheet";
 
@@ -23,7 +24,7 @@ interface MobileChatContainerProps {
 export function MobileChatContainer({
   onSessionCreated,
 }: MobileChatContainerProps) {
-  const router = useRouter();
+  const router = useSafeRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const sessionParam = searchParams.get("session");

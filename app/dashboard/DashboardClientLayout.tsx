@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
 import { LocalVaultUnlockGate } from "@/components/auth/LocalVaultUnlockGate";
@@ -13,6 +13,7 @@ import { cn } from "@/lib/cn";
 import { bindLocalSecretVaultSession, loadStoredAccountContentKey } from "@/lib/cryptoContent";
 import { MobileMenuProvider } from "@/lib/MobileMenuContext";
 import { OrgProvider } from "@/lib/org-context";
+import { useSafeRouter } from "@/lib/safeRouter";
 
 /** Routes under /dashboard that should NOT show the sidebar chrome. */
 const CHROMELESS_ROUTES = ["/dashboard/login", "/dashboard/signup", "/dashboard/onboarding", "/dashboard/invitations"];
@@ -43,7 +44,7 @@ function DashboardLayoutWithClerk({
   pathname: string;
 }) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
-  const router = useRouter();
+  const router = useSafeRouter();
   const isChromeless = CHROMELESS_ROUTES.some((r) => pathname.startsWith(r));
   const isChatRoute = pathname.startsWith("/dashboard/chat");
   const showMobileNav = !isChatRoute;
