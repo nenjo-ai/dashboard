@@ -65,8 +65,8 @@ That asymmetry is intentional: critical work is treated as all-or-nothing, while
 
 How a step reports its outcome:
 
-- Every **agent step** ends by calling `route_next_steps`, recording its `verdict`, `reasoning`, `output`, and — on pass — the decomposed task for each downstream edge.
-- Every **gate step** ends by calling `pass_verdict`, recording a structured pass/fail verdict with evidence, which drives `on_pass` / `on_fail` routing.
+- Every **agent step** ends by calling `route_next_steps`, recording its `verdict`, `reasoning`, `output`, and — on pass — a handoff for each activated downstream edge.
+- Every **gate step** also ends by calling `route_next_steps`, recording the same structured verdict shape; `pass` activates `on_pass` routes and `fail` activates `on_fail` routes when present.
 
 ## Bounded rework: the only allowed loop
 

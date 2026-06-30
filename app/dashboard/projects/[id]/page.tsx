@@ -10,7 +10,7 @@ import {
   useDependencyGraph,
   useTabParam,
 } from "@/lib/hooks";
-import type { Task } from "@/lib/types";
+import type { ProjectRepoSettings, Task } from "@/lib/types";
 
 import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { TopBar } from "@/components/layout/TopBar";
@@ -114,6 +114,8 @@ export default function ProjectDetailPage() {
     [selectedTaskId, tasks],
   );
   const { graph, mutate: mutateGraph } = useDependencyGraph(projectId);
+  const repoSettings = (project?.settings ?? {}) as ProjectRepoSettings;
+  const showWorktreePlaceholders = repoSettings.repo_sync_status === "synced";
 
   // Tab content with task counts
   const tabsWithCounts = TABS.map((tab) => ({
@@ -243,6 +245,7 @@ export default function ProjectDetailPage() {
                 projectId={projectId}
                 executions={executions}
                 isLoading={executionsLoading}
+                showWorktreePlaceholders={showWorktreePlaceholders}
                 onRefresh={() => {
                   mutateExecutions();
                   mutateTasks();

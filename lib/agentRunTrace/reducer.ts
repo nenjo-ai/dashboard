@@ -284,6 +284,7 @@ export function reduceRunTrace(
         status: "running",
         provider: event.data.provider,
         model: event.data.model,
+        children: [],
         startedAt: now,
       };
       const parentId = event.data.parent_call_id;

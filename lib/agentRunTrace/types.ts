@@ -36,6 +36,7 @@ export interface RunTrace {
 
 export type TraceSpan =
   | ModelSpan
+  | RoutineStepSpan
   | ToolSpan
   | AbilitySpan
   | AsyncOperationSpan
@@ -55,6 +56,7 @@ export interface ModelSpan extends TraceSpanBase {
   provider?: string;
   model?: string;
   text?: string;
+  children?: TraceSpan[];
 }
 
 export interface ToolSpan extends TraceSpanBase {
@@ -71,6 +73,17 @@ export interface ToolSpan extends TraceSpanBase {
   stdout?: string;
   stderr?: string;
   children?: TraceSpan[];
+}
+
+export interface RoutineStepSpan extends TraceSpanBase {
+  kind: "routine_step";
+  name: string;
+  stepType: string;
+  stepSlug?: string;
+  stepRunId?: string;
+  outputPreview?: string;
+  errorPreview?: string;
+  children: TraceSpan[];
 }
 
 export interface AbilitySpan extends TraceSpanBase {

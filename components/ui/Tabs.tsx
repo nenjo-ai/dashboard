@@ -118,7 +118,13 @@ export function Tabs({
 
           if (tab.href) {
             return (
-              <Link key={tab.id} href={tab.href} scroll={false} className={className}>
+              <Link
+                key={tab.id}
+                href={tab.href}
+                scroll={false}
+                prefetch={false}
+                className={className}
+              >
                 {content}
               </Link>
             );

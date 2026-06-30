@@ -37,6 +37,7 @@ function Section({
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               onClick={onClose}
               className={cn(
                 "flex items-center gap-3 rounded-[1.35rem] border px-4 py-3.5 transition-colors",

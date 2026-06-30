@@ -9,13 +9,15 @@ export type ExecutionRealtimeEvent = SseEvent & {
 
 export async function subscribeExecutionRealtime(
   onEvent: (event: ExecutionRealtimeEvent) => void,
+  executionId?: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await createExecutionEventStream(signal);
+  const response = await createExecutionEventStream(executionId, signal);
   await consumeSseStream(response, (event) => {
     if (typeof event.data !== "object" || event.data === null) {
       return;
     }
+
     onEvent(event as ExecutionRealtimeEvent);
   });
 }

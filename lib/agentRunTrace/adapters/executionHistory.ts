@@ -1,11 +1,13 @@
-import { normalizeToolCallArgs } from "@/lib/toolCallDisplay";
-import type { ExecutionDetails, ExecutionTask, TaskStepProgress } from "@/lib/types";
+import { buildRoutineDisplaySteps } from "../../routineStepEvents";
+import { normalizeToolCallArgs } from "../../toolCallDisplay";
+import type { ExecutionDetails, ExecutionTask, TaskStepProgress } from "../../types";
 import { abilityDisplayName } from "../reducer";
 import type {
   AbilitySpan,
   DelegationSpan,
   HookSpan,
   ModelSpan,
+  RoutineStepSpan,
   RunPhase,
   RunTrace,
   ToolSpan,
@@ -34,10 +36,28 @@ function statusFromRun(status: string): RunPhase {
 }
 
 function statusFromStep(step: TaskStepProgress): TraceStatus {
-  if (step.event_type === "step_failed" || step.status === "failed") return "failed";
-  if (step.event_type === "step_completed" || step.status === "passed") return "completed";
+  if (
+    step.event_type === "step_failed" ||
+    step.event_type === "tool_failed" ||
+    step.event_type === "ability_failed" ||
+    step.event_type === "delegation_failed" ||
+    step.status === "failed"
+  ) return "failed";
+  if (
+    step.event_type === "step_completed" ||
+    step.event_type === "tool_completed" ||
+    step.event_type === "ability_completed" ||
+    step.event_type === "delegation_completed" ||
+    step.status === "passed"
+  ) return "completed";
   if (step.status === "skipped") return "cancelled";
-  if (step.event_type === "step_started" || step.status === "running") return "running";
+  if (
+    step.event_type === "step_started" ||
+    step.event_type === "tool_started" ||
+    step.event_type === "ability_started" ||
+    step.event_type === "delegation_started" ||
+    step.status === "running"
+  ) return "running";
   return "queued";
 }
 
@@ -83,6 +103,26 @@ function errorPreview(step: TaskStepProgress): string | undefined {
   return textValue(step.payload?.error_preview) ?? textValue(step.data?.error_preview);
 }
 
+function stepSlug(step: TaskStepProgress): string | undefined {
+  return textValue(step.data?.step_slug);
+}
+
+function stepRunId(step: TaskStepProgress): string | undefined {
+  return textValue(step.data?.step_run_id);
+}
+
+function isRoutineStep(step: TaskStepProgress): boolean {
+  return [
+    "agent",
+    "gate",
+    "council",
+    "terminal",
+    "terminal_fail",
+    "merge",
+    "lambda",
+  ].includes(step.step_type);
+}
+
 function expandToolStep(step: TaskStepProgress): TaskStepProgress[] {
   if (step.step_type !== "tool") return [step];
   const toolNames = Array.isArray(step.data?.tool_names)
@@ -119,6 +159,23 @@ function stepSpan(task: ExecutionTask, step: TaskStepProgress, index: number): T
   const startedAt =
     step.started_at ?? step.created_at ?? task.started_at ?? new Date(0).toISOString();
   const completedAt = step.completed_at ?? undefined;
+
+  if (isRoutineStep(step)) {
+    return {
+      kind: "routine_step",
+      id,
+      status,
+      name: step.step_name,
+      stepType: step.step_type,
+      stepSlug: stepSlug(step),
+      stepRunId: stepRunId(step),
+      outputPreview: outputPreview(step),
+      errorPreview: errorPreview(step),
+      children: [],
+      startedAt,
+      completedAt,
+    } satisfies RoutineStepSpan;
+  }
 
   if (step.step_type === "ability") {
     const abilityName =
@@ -289,6 +346,39 @@ export function executionTasksToRunTrace(
       });
       continue;
     }
+
+    const isRoutineTask =
+      Boolean(execution.routine_id ?? task.routine_id) ||
+      task.steps.some((step) => stepSlug(step) || stepRunId(step));
+
+    if (isRoutineTask) {
+      buildRoutineDisplaySteps(task.steps).forEach((group, groupIndex) => {
+        const parentSpan = stepSpan(task, group.step, groupIndex);
+        const children = group.children.flatMap((child, childIndex) =>
+          expandToolStep(child).map((expandedChild) =>
+            stepSpan(task, expandedChild, childIndex),
+          ),
+        );
+
+        if ("children" in parentSpan) {
+          spans.splice(
+            0,
+            spans.length,
+            ...upsertSpan(spans, {
+              ...parentSpan,
+              children,
+            } as TraceSpan),
+          );
+        } else {
+          spans.splice(0, spans.length, ...upsertSpan(spans, parentSpan));
+          for (const child of children) {
+            spans.splice(0, spans.length, ...upsertSpan(spans, child));
+          }
+        }
+      });
+      continue;
+    }
+
     task.steps.forEach((step, index) => {
       for (const expandedStep of expandToolStep(step)) {
         const span = stepSpan(task, expandedStep, index);

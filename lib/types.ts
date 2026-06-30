@@ -185,12 +185,22 @@ export interface TaskStepProgress {
   agent?: StepAgent | null;
 }
 
+export interface ExecutionTaskCurrentStep {
+  step_name: string;
+  step_type: string;
+  status: StepStatus;
+  event_type: string;
+  created_at: string;
+  agent?: StepAgent | null;
+}
+
 export interface ExecutionTask {
   id: string | null;
   title: string;
   slug: string | null;
   status: TaskStatus;
   routine_id: string | null;
+  current_step?: ExecutionTaskCurrentStep | null;
   steps: TaskStepProgress[];
   started_at: string | null;
   completed_at: string | null;
@@ -208,6 +218,25 @@ export interface ExecutionStepEvent {
   encrypted_payload?: EncryptedPayload | null;
   duration_ms: number | null;
   created_at: string;
+}
+
+export interface ExecutionTraceRoutineStep {
+  step_slug: string;
+  step_run_id: string;
+  step_name?: string;
+  step_type?: string;
+}
+
+export interface ExecutionTraceEvent {
+  id: string;
+  org_id: string;
+  execution_run_id: string;
+  task_id: string | null;
+  event_type: string;
+  event: Record<string, unknown>;
+  routine_step?: ExecutionTraceRoutineStep | null;
+  created_at: string;
+  sequence: number;
 }
 
 // ---------------------------------------------------------------------------

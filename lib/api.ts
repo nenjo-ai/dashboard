@@ -990,6 +990,10 @@ export function executionEventsUrl(executionId: string): string {
   return `${API_V1}/executions/${executionId}/events`;
 }
 
+export function executionTraceEventsUrl(executionId: string): string {
+  return `${API_V1}/executions/${executionId}/trace-events`;
+}
+
 export async function fetchExecutionTasks(
   executionId: string,
 ): Promise<import("./types").ExecutionTask[]> {
@@ -1003,6 +1007,14 @@ export async function fetchExecutionEvents(
 ): Promise<import("./types").ExecutionStepEvent[]> {
   return fetcher<import("./types").ExecutionStepEvent[]>(
     executionEventsUrl(executionId),
+  );
+}
+
+export async function fetchExecutionTraceEvents(
+  executionId: string,
+): Promise<import("./types").ExecutionTraceEvent[]> {
+  return fetcher<import("./types").ExecutionTraceEvent[]>(
+    executionTraceEventsUrl(executionId),
   );
 }
 
@@ -3506,12 +3518,16 @@ export function chatStreamsUrl(): string {
 }
 
 export async function createExecutionEventStream(
+  executionId?: string,
   signal?: AbortSignal,
 ): Promise<Response> {
   const headers = await authHeaders({
     Accept: "text/event-stream",
   });
-  const res = await fetch(`${API_V1}/execution-streams`, {
+  const url = executionId
+    ? `${API_V1}/execution-streams?execution_id=${encodeURIComponent(executionId)}`
+    : `${API_V1}/execution-streams`;
+  const res = await fetch(url, {
     method: "GET",
     headers,
     signal,

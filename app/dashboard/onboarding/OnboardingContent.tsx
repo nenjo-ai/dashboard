@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import useSWR from "swr";
@@ -76,6 +75,7 @@ import {
   wrapAccountContentKeyForWorker,
   wrapOrgContentKeyForWorker,
 } from "@/lib/cryptoContent";
+import { useSafeRouter } from "@/lib/safeRouter";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -945,7 +945,7 @@ function StepConnect({
   keyPrefix: string;
   accountOrgId: string;
 }) {
-  const router = useRouter();
+  const router = useSafeRouter();
   const { user } = useUser();
   const { isConnected } = useWorkerStatus({ refreshInterval: 3000 });
   const { data: enrollments, mutate: mutateEnrollments } = useSWR<WorkerEnrollmentStatusResponse[]>(
@@ -1673,7 +1673,7 @@ function StepRestoreDevice({
 
 export default function OnboardingContent() {
   const { user, isLoaded } = useUser();
-  const router = useRouter();
+  const router = useSafeRouter();
   const redirected = useRef(false);
   const officialPackagesInstalledForOrg = useRef<string | null>(null);
   const { data: currentUser } = useSWR(user ? authMeUrl() : null, fetcher, {

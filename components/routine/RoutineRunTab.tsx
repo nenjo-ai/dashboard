@@ -156,9 +156,30 @@ function aggregateRunTokens(tasks: ExecutionTask[] | undefined): { input: number
 }
 
 function stepStatusVariant(step: TaskStepProgress): "completed" | "failed" | "running" | "default" {
-  if (step.status === "failed" || step.event_type === "step_failed" || step.event_type === "failed") return "failed";
-  if (step.status === "running" || step.event_type === "step_started" || step.event_type === "running") return "running";
-  if (step.status === "passed" || step.event_type === "step_completed" || step.event_type === "completed") return "completed";
+  if (
+    step.status === "failed" ||
+    step.event_type === "step_failed" ||
+    step.event_type === "tool_failed" ||
+    step.event_type === "ability_failed" ||
+    step.event_type === "delegation_failed" ||
+    step.event_type === "failed"
+  ) return "failed";
+  if (
+    step.status === "running" ||
+    step.event_type === "step_started" ||
+    step.event_type === "tool_started" ||
+    step.event_type === "ability_started" ||
+    step.event_type === "delegation_started" ||
+    step.event_type === "running"
+  ) return "running";
+  if (
+    step.status === "passed" ||
+    step.event_type === "step_completed" ||
+    step.event_type === "tool_completed" ||
+    step.event_type === "ability_completed" ||
+    step.event_type === "delegation_completed" ||
+    step.event_type === "completed"
+  ) return "completed";
   return "default";
 }
 
@@ -245,35 +266,6 @@ function stepOutput(step: TaskStepProgress): string | null {
   return typeof output === "string" && output.trim() ? output : null;
 }
 
-function parseJsonObject(value: unknown): Record<string, unknown> | null {
-  if (value == null) return null;
-  if (typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  if (typeof value !== "string") return null;
-  try {
-    const parsed = JSON.parse(value);
-    return typeof parsed === "object" && parsed != null && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function passVerdictOutput(step: TaskStepProgress): string | null {
-  if (step.step_type !== "tool" || step.step_name !== "pass_verdict") return null;
-
-  const data = step.data as Record<string, unknown> | undefined;
-  const payload = step.payload as Record<string, unknown> | undefined;
-  const args = parseJsonObject(data?.tool_args);
-  return (
-    stringField(args?.output) ??
-    stringField(args?.reasoning) ??
-    stringField(payload?.output_preview)
-  );
-}
-
 function cronStepIdentityKey(step: TaskStepProgress): string {
   const stepRunId = step.data?.step_run_id;
   if (typeof stepRunId === "string" && stepRunId.length > 0) return `routine-run:${stepRunId}`;
@@ -347,7 +339,7 @@ function buildCronDisplaySteps(steps: TaskStepProgress[]): TaskStepProgress[] {
   }
 
   for (const step of steps) {
-    const output = isCronHiddenStep(step) ? passVerdictOutput(step) : stepOutput(step);
+    const output = stepOutput(step);
     if (!output && !step.encrypted_payload) continue;
 
     const parentKey = cronStepIdentityKey(step);
@@ -780,6 +772,7 @@ export function RoutineRunTab({ routine, onSaved }: RoutineRunTabProps) {
           scheduleRefresh();
         }
       },
+      undefined,
       controller.signal,
     ).catch((error) => {
       if (!controller.signal.aborted) {

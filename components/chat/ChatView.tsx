@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
   fetcher,
@@ -17,10 +17,11 @@ import { NotificationArea } from "./NotificationArea";
 import { NewChatModal } from "./NewChatModal";
 import { MobileChatContainer } from "./MobileChatContainer";
 import { MobileNotificationContainer } from "./MobileNotificationContainer";
+import { useSafeRouter } from "@/lib/safeRouter";
 
 export function ChatView() {
   const searchParams = useSearchParams();
-  const router = useRouter();
+  const router = useSafeRouter();
   const pathname = usePathname();
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== "undefined"

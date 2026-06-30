@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import type { ChatSessionExtended } from "@/lib/types";
 import {
@@ -10,10 +10,11 @@ import {
   fetcher,
   updateChatSession,
 } from "@/lib/api";
+import { useSafeRouter } from "@/lib/safeRouter";
 import { MobileNotificationShell } from "./MobileNotificationShell";
 
 export function MobileNotificationContainer() {
-  const router = useRouter();
+  const router = useSafeRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const sessionParam = searchParams.get("session");

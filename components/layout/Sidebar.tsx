@@ -129,6 +129,7 @@ function ProjectSubmenu({ activeProjectId }: { activeProjectId: string | undefin
           <Link
             key={project.id}
             href={`/dashboard/projects/${projectRef}`}
+            prefetch={false}
             className={cn(
               "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs transition-colors",
               isProjectActive
@@ -238,6 +239,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
                 >
                   <Link
                     href={item.href}
+                    prefetch={false}
                     title={collapsed ? item.label : undefined}
                     className="flex flex-1 items-center gap-3 px-3 py-2.5"
                   >
@@ -291,6 +293,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               title={collapsed ? item.label : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
@@ -391,7 +394,11 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
                               : "theme-text-muted hover:[background:var(--app-hover)] hover:text-gray-900 dark:hover:text-gray-100",
                           )}
                         >
-                          <Link href={item.href} className="flex flex-1 items-center gap-3 px-3 py-2.5">
+                          <Link
+                            href={item.href}
+                            prefetch={false}
+                            className="flex flex-1 items-center gap-3 px-3 py-2.5"
+                          >
                             <span className={cn("shrink-0", isActive ? "text-deep-space-blue-500 dark:text-deep-space-blue-300" : "text-gray-400 dark:text-gray-500")}>
                               {item.icon}
                             </span>
@@ -423,6 +430,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
                     <Link
                       key={item.href}
                       href={item.href}
+                      prefetch={false}
                       className={cn(
                         "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                         isActive

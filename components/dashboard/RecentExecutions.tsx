@@ -9,6 +9,7 @@ import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { formatToolCallSignature, normalizeToolCallArgs } from "@/lib/toolCallDisplay";
 import { executionTasksToRunTrace } from "@/lib/agentRunTrace/adapters/executionHistory";
 import { AgentRunTrace } from "@/components/agent-run-trace/AgentRunTrace";
+import { buildRoutineDisplaySteps } from "@/lib/routineStepEvents";
 
 interface RecentExecutionsProps {
   executions: ExecutionDetails[] | undefined;
@@ -106,85 +107,19 @@ function stepDisplayName(step: ExecutionTask["steps"][number]): string {
 }
 
 function stepStatusLabel(step: ExecutionTask["steps"][number]): string {
-  return step.event_type === "step_completed" ? "done"
-    : step.event_type === "step_failed" ? "failed"
-    : step.event_type === "step_started" ? "in_progress"
+  return step.event_type === "step_completed" ||
+    step.event_type === "tool_completed" ||
+    step.event_type === "ability_completed" ||
+    step.event_type === "delegation_completed" ? "done"
+    : step.event_type === "step_failed" ||
+      step.event_type === "tool_failed" ||
+      step.event_type === "ability_failed" ||
+      step.event_type === "delegation_failed" ? "failed"
+    : step.event_type === "step_started" ||
+      step.event_type === "tool_started" ||
+      step.event_type === "ability_started" ||
+      step.event_type === "delegation_started" ? "in_progress"
     : "open";
-}
-
-interface DisplayStep {
-  step: ExecutionTask["steps"][number];
-  children: ExecutionTask["steps"][number][];
-}
-
-function stepIdentityKey(step: ExecutionTask["steps"][number]): string {
-  const stepRunId = step.data?.step_run_id;
-  if (typeof stepRunId === "string" && stepRunId.length > 0) return `routine-run:${stepRunId}`;
-  const stepId = step.data?.step_id;
-  if (typeof stepId === "string" && stepId.length > 0) return `routine:${stepId}`;
-  return `${step.step_type}:${step.step_name}`;
-}
-
-function isChildActivityStep(step: ExecutionTask["steps"][number]): boolean {
-  return step.step_type === "tool" || step.step_type === "ability" || step.step_type === "delegation";
-}
-
-function mergeStep(
-  prev: ExecutionTask["steps"][number],
-  next: ExecutionTask["steps"][number],
-): ExecutionTask["steps"][number] {
-  return {
-    ...next,
-    step_name: next.step_name || prev.step_name,
-    step_type: next.step_type || prev.step_type,
-    agent: next.agent ?? prev.agent,
-    data: { ...(prev.data ?? {}), ...(next.data ?? {}) },
-    payload: next.payload ?? prev.payload,
-    encrypted_payload: next.encrypted_payload ?? prev.encrypted_payload,
-  };
-}
-
-function buildDisplaySteps(steps: ExecutionTask["steps"]): DisplayStep[] {
-  const groups: DisplayStep[] = [];
-  const parentIndex = new Map<string, number>();
-
-  for (const step of steps) {
-    if (isChildActivityStep(step)) continue;
-    const key = stepIdentityKey(step);
-    const existingIndex = parentIndex.get(key);
-    if (existingIndex != null) {
-      groups[existingIndex] = {
-        ...groups[existingIndex],
-        step: mergeStep(groups[existingIndex].step, step),
-      };
-      continue;
-    }
-
-    const index = groups.length;
-    groups.push({ step, children: [] });
-    parentIndex.set(key, index);
-    if (step.step_name) parentIndex.set(step.step_name, index);
-  }
-
-  let currentParentName: string | null = null;
-  for (const step of steps) {
-    if (!isChildActivityStep(step)) {
-      currentParentName = step.step_name;
-      continue;
-    }
-
-    const parentGroupIndex =
-      parentIndex.get(stepIdentityKey(step)) ??
-      (currentParentName ? parentIndex.get(currentParentName) : undefined);
-
-    if (parentGroupIndex != null) {
-      groups[parentGroupIndex].children.push(step);
-    } else {
-      groups.push({ step, children: [] });
-    }
-  }
-
-  return groups;
 }
 
 function StepDetail({
@@ -282,7 +217,7 @@ function StepDetail({
 }
 
 function TaskDetail({ task }: { task: ExecutionTask }) {
-  const displaySteps = buildDisplaySteps(task.steps);
+  const displaySteps = buildRoutineDisplaySteps(task.steps);
   return (
     <div className="py-1.5">
       <div className="flex items-center gap-2.5">

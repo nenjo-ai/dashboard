@@ -78,6 +78,7 @@ export function TopBar({ title, children }: TopBarProps) {
           <div className="hidden items-center gap-1 md:flex">
             <Link
               href="/docs"
+              prefetch={false}
               className="theme-text-muted inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 dark:hover:text-gray-200"
               title="Developer Docs"
               aria-label="Developer Docs"
@@ -103,6 +104,7 @@ export function TopBar({ title, children }: TopBarProps) {
           )}
           <Link
             href="/dashboard/chat?channel=notifications"
+            prefetch={false}
             className="theme-text-muted relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
             title="Notifications"
           >

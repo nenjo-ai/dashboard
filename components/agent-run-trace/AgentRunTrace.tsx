@@ -24,6 +24,7 @@ import type {
   DelegationSpan,
   HookSpan,
   ModelSpan,
+  RoutineStepSpan,
   RunPhase,
   RunTrace,
   ToolSpan,
@@ -31,11 +32,13 @@ import type {
   TraceStatus,
 } from "@/lib/agentRunTrace/types";
 import {
+  chatDisplaySpans,
   chronologicalSpans,
   currentCycleSpans,
   filterHistorySpans,
   hasRunningSpan,
   spanChildren,
+  visibleAsyncOperationResultPreview,
   visibleHistoryTranscriptEntries,
 } from "@/lib/agentRunTrace/visibility";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
@@ -191,6 +194,15 @@ function detailPayloadForSpan(span: TraceSpan): Record<string, unknown> | undefi
       error: span.errorPreview,
     };
   }
+  if (span.kind === "routine_step") {
+    return {
+      step_type: span.stepType,
+      step_slug: span.stepSlug,
+      step_run_id: span.stepRunId,
+      output: span.outputPreview,
+      error: span.errorPreview,
+    };
+  }
   return undefined;
 }
 
@@ -227,6 +239,8 @@ function spanIcon(span: TraceSpan) {
   switch (span.kind) {
     case "model":
       return <Brain className="h-3.5 w-3.5" />;
+    case "routine_step":
+      return <Route className="h-3.5 w-3.5" />;
     case "tool":
       return <Terminal className="h-3.5 w-3.5" />;
     case "async_operation":
@@ -246,6 +260,8 @@ function spanTitle(span: TraceSpan): string {
   switch (span.kind) {
     case "model":
       return [span.provider, span.model].filter(Boolean).join(" / ") || "Thinking";
+    case "routine_step":
+      return span.name;
     case "tool":
       return span.name;
     case "ability":
@@ -326,7 +342,15 @@ function PreviewMarkdown({ children }: { children: string | undefined }) {
   );
 }
 
-function ToolTraceRow({ span, compact }: { span: ToolSpan; compact: boolean }) {
+function ToolTraceRow({
+  span,
+  compact,
+  showPreview = true,
+}: {
+  span: ToolSpan;
+  compact: boolean;
+  showPreview?: boolean;
+}) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsPayload = useMemo(() => detailPayloadForSpan(span), [span]);
   const inlinePreview =
@@ -364,11 +388,76 @@ function ToolTraceRow({ span, compact }: { span: ToolSpan; compact: boolean }) {
           </button>
         )}
       </div>
-      {!compact && (
+      {!compact && showPreview && (
         <>
           <PreviewText>{inlinePreview}</PreviewText>
           {detailsOpen && detailsPayload && <JsonCodeBlock value={detailsPayload} />}
         </>
+      )}
+      {!compact && !showPreview && detailsOpen && detailsPayload && (
+        <JsonCodeBlock value={detailsPayload} />
+      )}
+    </div>
+  );
+}
+
+function RoutineStepTraceBlock({
+  span,
+  compact,
+}: {
+  span: RoutineStepSpan;
+  compact: boolean;
+}) {
+  const forceExpanded = span.status === "running" || span.children.some(hasRunningSpan);
+  const [manualExpanded, setManualExpanded] = useState(span.status !== "completed");
+  const expanded = forceExpanded || manualExpanded;
+  const summary = spanSummary(span.children);
+  return (
+    <div className="min-w-0">
+      <button
+        type="button"
+        onClick={() => setManualExpanded((value) => !value)}
+        className="flex min-h-10 w-full items-center gap-2 rounded-sm text-left"
+      >
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+        )}
+        <span className="shrink-0">{statusIcon(span.status)}</span>
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800 dark:text-gray-200" title={span.name}>
+          {span.name}
+        </span>
+        <span className="shrink-0 rounded-sm bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+          {span.stepType}
+        </span>
+        {summary && (
+          <span className="hidden shrink-0 text-[10px] text-gray-400 sm:inline">
+            {summary}
+          </span>
+        )}
+        <span className="shrink-0 text-[10px] font-medium text-gray-400">
+          {statusLabel(span.status)}
+        </span>
+      </button>
+      {expanded && (
+        <div className="theme-border ml-4 border-l pl-3">
+          <PreviewSection label="Output" text={span.outputPreview} />
+          <PreviewSection label="Error" text={span.errorPreview} />
+          {span.children.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {span.children.map((child, index) => (
+                <TraceSpanRow
+                  key={spanRenderKey(child, index, span.id)}
+                  span={child}
+                  compact={compact}
+                  nested
+                />
+              ))}
+            </div>
+          )}
+          {!compact && <DetailsDisclosure span={span} />}
+        </div>
       )}
     </div>
   );
@@ -438,7 +527,9 @@ function AsyncOperationTraceBlock({
   const expanded = forceExpanded || manualExpanded;
   const summary = spanSummary(span.children);
   const isAbility = span.operationKind === "ability";
+  const isSubAgent = span.operationKind === "sub_agent";
   const transcript = visibleHistoryTranscriptEntries(span);
+  const resultPreview = visibleAsyncOperationResultPreview(span);
   return (
     <div className="min-w-0">
       <button
@@ -504,8 +595,8 @@ function AsyncOperationTraceBlock({
               ))}
             </div>
           )}
-          {isAbility && (
-            <PreviewSection label="Result to parent" text={span.resultPreview} />
+          {(isAbility || isSubAgent) && (
+            <PreviewSection label="Result to parent" text={resultPreview} />
           )}
           {!compact && span.details !== undefined && <JsonCodeBlock value={span.details} />}
         </div>
@@ -570,16 +661,58 @@ function HookTraceRow({ span, compact }: { span: HookSpan; compact: boolean }) {
   );
 }
 
-function ModelThinkingRow({ span }: { span: ModelSpan }) {
+function ModelTraceBlock({
+  span,
+  compact,
+}: {
+  span: ModelSpan;
+  compact: boolean;
+}) {
+  const children = spanChildren(span);
+  const text = span.text?.trim();
+  const toolCount = children.filter((child) => child.kind === "tool").length;
+
+  if (!text && children.length === 0) {
+    return (
+      <div className="flex min-h-8 items-center gap-2">
+        <span className="shrink-0">{statusIcon(span.status)}</span>
+        <span
+          className="min-w-0 flex-1 truncate text-xs text-gray-700 dark:text-gray-300"
+          title={spanTitle(span)}
+        >
+          {span.status === "running" ? "Thinking" : "Thought"}
+        </span>
+        <span className="shrink-0 text-[10px] text-gray-400">
+          {formatDuration(durationMs(span.startedAt, span.completedAt))}
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-8 items-center gap-2">
-      <span className="shrink-0">{statusIcon(span.status)}</span>
-      <span className="min-w-0 flex-1 truncate text-xs text-gray-700 dark:text-gray-300">
-        {span.status === "running" ? "Thinking" : "Thought"}
-      </span>
-      <span className="shrink-0 text-[10px] text-gray-400">
-        {formatDuration(durationMs(span.startedAt, span.completedAt))}
-      </span>
+    <div className="min-w-0">
+      <PreviewMarkdown>{span.text}</PreviewMarkdown>
+      {children.length > 0 && (
+        <div className="theme-border mt-2 border-l pl-3">
+          {toolCount > 0 && (
+            <div className="mb-1 flex min-h-5 items-center gap-1.5 text-[10px] font-medium text-gray-400">
+              <Terminal className="h-3 w-3 shrink-0" />
+              <span>{toolCount === 1 ? "1 tool call" : `${toolCount} tool calls`}</span>
+            </div>
+          )}
+          <div className="space-y-1">
+            {children.map((child, index) => (
+              <TraceSpanRow
+                key={spanRenderKey(child, index, span.id)}
+                span={child}
+                compact={compact}
+                nested
+                suppressToolPreview
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -588,17 +721,27 @@ function TraceSpanRow({
   span,
   compact,
   nested = false,
+  suppressToolPreview = false,
 }: {
   span: TraceSpan;
   compact: boolean;
   nested?: boolean;
+  suppressToolPreview?: boolean;
 }) {
   const content = (() => {
     switch (span.kind) {
       case "model":
-        return <ModelThinkingRow span={span} />;
+        return <ModelTraceBlock span={span} compact={compact} />;
+      case "routine_step":
+        return <RoutineStepTraceBlock span={span} compact={compact} />;
       case "tool":
-        return <ToolTraceRow span={span} compact={compact} />;
+        return (
+          <ToolTraceRow
+            span={span}
+            compact={compact}
+            showPreview={!suppressToolPreview}
+          />
+        );
       case "ability":
         return <AbilityTraceBlock span={span} compact={compact} />;
       case "async_operation":
@@ -665,6 +808,11 @@ export const AgentRunTrace = memo(function AgentRunTrace({
         : cycleSpans,
     [cycleSpans, embedded, mode],
   );
+  const displaySpans = useMemo(
+    () =>
+      trace.source === "chat" ? chatDisplaySpans(visibleSpans) : visibleSpans,
+    [trace.source, visibleSpans],
+  );
 
   return (
     <div
@@ -722,9 +870,9 @@ export const AgentRunTrace = memo(function AgentRunTrace({
             {trace.errorMessage}
           </p>
         )}
-        {visibleSpans.length > 0 && (
+        {displaySpans.length > 0 && (
           <div className={cn("mt-1.5 space-y-1", compact && "mt-1")}>
-            {visibleSpans.map((span, index) => (
+            {displaySpans.map((span, index) => (
               <TraceSpanRow
                 key={spanRenderKey(span, index)}
                 span={span}
