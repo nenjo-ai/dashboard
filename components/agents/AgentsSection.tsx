@@ -2,7 +2,16 @@
 
 import { useState } from "react";
 import { useAgents } from "@/lib/hooks";
-import { createAgent, fetchAgentPrompt, updateAgentPrompt, deleteAgent } from "@/lib/api";
+import {
+  createAgent,
+  deleteAgent,
+  fetchAgentAbilities,
+  fetchAgentMcpServers,
+  fetchAgentPrompt,
+  updateAgent,
+  updateAgentPrompt,
+} from "@/lib/api";
+import { buildCloneAgentUpdate } from "@/lib/agentClone";
 import { AgentCard } from "./AgentCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
@@ -61,10 +70,26 @@ export function AgentsSection() {
         name: newAgentName.trim(),
         description: newAgentDescription.trim() || undefined,
         color: newAgentColor,
+        model_id: sourceAgent?.model_id ?? undefined,
       });
       if (sourceAgent) {
-        const sourcePromptConfig = await fetchAgentPrompt(sourceAgent.id);
-        await updateAgentPrompt(created.id, sourcePromptConfig);
+        const [sourcePromptConfig, sourceAbilities, sourceMcpServers] =
+          await Promise.all([
+            fetchAgentPrompt(sourceAgent.id),
+            fetchAgentAbilities(sourceAgent.id),
+            fetchAgentMcpServers(sourceAgent.id),
+          ]);
+        await Promise.all([
+          updateAgent(
+            created.id,
+            buildCloneAgentUpdate(
+              sourceAgent,
+              sourceAbilities,
+              sourceMcpServers,
+            ),
+          ),
+          updateAgentPrompt(created.id, sourcePromptConfig),
+        ]);
       }
       setNewAgentName("");
       setNewAgentDescription("");
