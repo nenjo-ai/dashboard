@@ -1969,6 +1969,7 @@ export interface CreateAgentRequest {
   description?: string;
   color?: string;
   model_id?: string;
+  platform_scopes?: string[];
 }
 
 export interface UpdateAgentRequest {
@@ -1977,6 +1978,10 @@ export interface UpdateAgentRequest {
   description?: string;
   color?: string;
   model_id?: string | null;
+  platform_scopes?: string[];
+  abilities?: string[];
+  domains?: string[];
+  mcp_servers?: string[];
 }
 
 // ---------------------------------------------------------------------------
