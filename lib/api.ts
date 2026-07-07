@@ -1224,6 +1224,10 @@ export function packageInstallUrl(installId: string): string {
   return `${packageInstallsUrl()}/${installId}`;
 }
 
+export function packageInstallArgumentsUrl(installId: string): string {
+  return `${packageInstallUrl(installId)}/arguments`;
+}
+
 export async function fetchPackageInstallDetail(
   installId: string,
 ): Promise<import("./types").PackageInstallDetail> {
@@ -1444,6 +1448,17 @@ export async function installPackage(
   invalidateAbilitiesCatalogCache();
   invalidateAgentsCatalogCache();
   return detail;
+}
+
+export async function updatePackageInstallArguments(
+  installId: string,
+  data: import("./types").UpdatePackageArgumentBindingsRequest,
+): Promise<import("./types").PackageInstallDetail> {
+  const res = await authFetch(packageInstallArgumentsUrl(installId), {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return (await res.json()) as import("./types").PackageInstallDetail;
 }
 
 export async function updatePackageInstall(

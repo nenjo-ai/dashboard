@@ -1585,6 +1585,33 @@ export interface PackageInstallJob {
   finished_at: string | null;
 }
 
+export type PackageArgumentScope = "org" | "user";
+export type PackageArgumentValueType = "text" | "markdown" | "xml" | "json";
+
+export interface PackageArgumentDefinition {
+  package: string;
+  package_version: string;
+  name: string;
+  selector: string;
+  scope: PackageArgumentScope;
+  type: PackageArgumentValueType;
+  required?: boolean;
+  default?: string | null;
+  description?: string | null;
+  sample?: string | null;
+}
+
+export interface PackageArgumentBinding {
+  package: string;
+  name: string;
+  scope: PackageArgumentScope;
+  value: string;
+}
+
+export interface UpdatePackageArgumentBindingsRequest {
+  bindings: PackageArgumentBinding[];
+}
+
 export interface PackageInstallProgress {
   phase: string;
   progressPercent: number;
@@ -1606,6 +1633,7 @@ export interface InstallPackageRequest {
   source_id: string;
   path: string;
   ref_?: string | null;
+  argument_bindings?: PackageArgumentBinding[];
 }
 
 export interface UpdateAbilityRequest {
