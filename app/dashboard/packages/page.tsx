@@ -20,6 +20,7 @@ import {
   PlugZap,
   Plus,
   RefreshCw,
+  Save,
   Sparkles,
   ShieldCheck,
   Terminal,
@@ -62,6 +63,7 @@ import {
   domainsUrl,
   uninstallSkillAbility,
   uninstallPackageInstall,
+  updatePackageInstallArguments,
   updateSkillRuntimeEnvNames,
   updatePackageInstall,
   updatePackageSource,
@@ -70,6 +72,8 @@ import { packageInstallVisibleInInstalledList } from "@/lib/packageInstalls";
 import type {
   Ability,
   KnowledgePack,
+  PackageArgumentBinding,
+  PackageArgumentDefinition,
   PackageInstall,
   PackageInstallDetail,
   PackageInstallResource,
@@ -164,17 +168,36 @@ interface NenjoPackagesManifest {
     | Record<string, string>;
 }
 
+interface NenjoPackageArgumentManifest {
+  name?: unknown;
+  selector?: unknown;
+  scope?: unknown;
+  type?: unknown;
+  required?: unknown;
+  default?: unknown;
+  description?: unknown;
+  sample?: unknown;
+}
+
 interface NenjoModulePackageManifest {
   schema?: string;
   name?: string;
   version?: string | null;
   description?: string | null;
   dependencies?: Record<string, string>;
+  arguments?: NenjoPackageArgumentManifest[];
   modules?: Array<string | { path?: string | null }>;
 }
 
 interface GithubCommitResponse {
-  sha: string;
+  sha?: string;
+}
+
+interface GithubRefResponse {
+  object?: {
+    sha?: string;
+    type?: string;
+  };
 }
 
 interface GithubContentsEntry {
@@ -192,6 +215,11 @@ interface MarketplaceGitHubInfo {
 
 interface MarketplacePluginSourceInfo extends MarketplaceGitHubInfo {
   rootPath: string;
+}
+
+interface NenjoRegistryScopeInfo {
+  owner: string;
+  marketplacePath: string;
 }
 
 interface SkillReview {
@@ -220,6 +248,12 @@ interface PackageReview {
   };
   envNamesText: string;
   selectedSkillIndex: number;
+}
+
+interface PackageInstallArgumentPrompt {
+  pkg: MarketplacePackage;
+  source: PackageSource;
+  definitions: PackageArgumentDefinition[];
 }
 
 interface NenjoPackageDescriptor {
@@ -535,6 +569,242 @@ function packageInstallDependencyBadges(
   ];
 }
 
+function packageArgumentDefinitions(
+  detail: PackageInstallDetail | undefined,
+): PackageArgumentDefinition[] {
+  const packageMetadata = isRecord(detail?.install.metadata.package)
+    ? detail?.install.metadata.package
+    : null;
+  const argumentsMetadata =
+    packageMetadata && isRecord(packageMetadata.arguments)
+      ? packageMetadata.arguments
+      : null;
+  const definitions = argumentsMetadata?.definitions;
+  if (!Array.isArray(definitions)) return [];
+  return definitions.filter(isPackageArgumentDefinition);
+}
+
+function packageArgumentBindings(
+  detail: PackageInstallDetail | undefined,
+): PackageArgumentBinding[] {
+  const packageMetadata = isRecord(detail?.install.metadata.package)
+    ? detail?.install.metadata.package
+    : null;
+  const argumentsMetadata =
+    packageMetadata && isRecord(packageMetadata.arguments)
+      ? packageMetadata.arguments
+      : null;
+  const bindings = argumentsMetadata?.bindings;
+  if (!Array.isArray(bindings)) return [];
+  return bindings.filter(isPackageArgumentBinding);
+}
+
+function isPackageArgumentDefinition(
+  value: unknown,
+): value is PackageArgumentDefinition {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.package === "string" &&
+    typeof value.package_version === "string" &&
+    typeof value.name === "string" &&
+    typeof value.selector === "string" &&
+    (value.scope === "org" || value.scope === "user") &&
+    (value.type === "text" ||
+      value.type === "markdown" ||
+      value.type === "xml" ||
+      value.type === "json")
+  );
+}
+
+function isPackageArgumentBinding(
+  value: unknown,
+): value is PackageArgumentBinding {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.package === "string" &&
+    typeof value.name === "string" &&
+    (value.scope === "org" || value.scope === "user") &&
+    typeof value.value === "string"
+  );
+}
+
+function packageArgumentBindingKey(
+  binding: Pick<PackageArgumentBinding, "package" | "name" | "scope">,
+): string {
+  return `${binding.package}\u001f${binding.scope}\u001f${binding.name}`;
+}
+
+function packageArgumentDefinitionLabel(definition: PackageArgumentDefinition): string {
+  return definition.name
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function packageArgumentTypeLabel(type: PackageArgumentDefinition["type"]): string {
+  if (type === "json") return "JSON";
+  if (type === "xml") return "XML";
+  return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+function packageArgumentManifestText(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (value == null) return null;
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function packageArgumentDefinitionFromManifest(
+  value: unknown,
+  packageName: string,
+  packageVersion: string | null | undefined,
+): PackageArgumentDefinition | null {
+  if (!isRecord(value)) return null;
+  const name = textValue(value.name);
+  const selector = textValue(value.selector);
+  const scope =
+    value.scope === "org" || value.scope === "user" ? value.scope : null;
+  const type =
+    value.type === "text" ||
+    value.type === "markdown" ||
+    value.type === "xml" ||
+    value.type === "json"
+      ? value.type
+      : null;
+  if (!name || !selector || !scope || !type) return null;
+  return {
+    package: packageName,
+    package_version: packageVersion ?? "",
+    name,
+    selector,
+    scope,
+    type,
+    required: value.required === true,
+    default: packageArgumentManifestText(value.default),
+    description: packageArgumentManifestText(value.description),
+    sample: packageArgumentManifestText(value.sample),
+  };
+}
+
+function dedupePackageArgumentDefinitions(
+  definitions: PackageArgumentDefinition[],
+): PackageArgumentDefinition[] {
+  const seen = new Set<string>();
+  const deduped: PackageArgumentDefinition[] = [];
+  for (const definition of definitions) {
+    const key = packageArgumentBindingKey(definition);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(definition);
+  }
+  return deduped;
+}
+
+function packageArgumentInitialValues(
+  definitions: PackageArgumentDefinition[],
+  bindings: PackageArgumentBinding[] = [],
+): Record<string, string> {
+  const bindingByKey = new Map(
+    bindings.map((binding) => [packageArgumentBindingKey(binding), binding.value]),
+  );
+  const next: Record<string, string> = {};
+  for (const definition of definitions) {
+    const key = packageArgumentBindingKey(definition);
+    next[key] = bindingByKey.get(key) ?? definition.default ?? "";
+  }
+  return next;
+}
+
+function packageArgumentBindingsFromValues(
+  definitions: PackageArgumentDefinition[],
+  values: Record<string, string>,
+): PackageArgumentBinding[] {
+  return definitions.map((definition) => ({
+    package: definition.package,
+    name: definition.name,
+    scope: definition.scope,
+    value: values[packageArgumentBindingKey(definition)] ?? "",
+  }));
+}
+
+function packageArgumentDefinitionsByPackage(
+  definitions: PackageArgumentDefinition[],
+): Array<{ packageName: string; definitions: PackageArgumentDefinition[] }> {
+  return definitions.reduce<
+    Array<{ packageName: string; definitions: PackageArgumentDefinition[] }>
+  >((groups, definition) => {
+    const existing = groups.find((group) => group.packageName === definition.package);
+    if (existing) {
+      existing.definitions.push(definition);
+    } else {
+      groups.push({
+        packageName: definition.package,
+        definitions: [definition],
+      });
+    }
+    return groups;
+  }, []);
+}
+
+function packageArgumentFieldId(
+  prefix: string,
+  definition: PackageArgumentDefinition,
+): string {
+  return `argument-${prefix}-${definition.package}-${definition.name}`
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .toLowerCase();
+}
+
+function validatePackageArgumentValues(
+  definitions: PackageArgumentDefinition[],
+  values: Record<string, string>,
+): string | null {
+  for (const definition of definitions) {
+    const value = values[packageArgumentBindingKey(definition)] ?? "";
+    const displayName = `${definition.package}.${definition.name}`;
+    if (definition.required && !value.trim()) {
+      return `${displayName} is required.`;
+    }
+    if (!value.trim()) continue;
+    if (definition.type === "json") {
+      try {
+        JSON.parse(value);
+      } catch {
+        return `${displayName} must contain valid JSON.`;
+      }
+    }
+    if (definition.type === "xml") {
+      const trimmed = value.trim();
+      if (!trimmed.startsWith("<") || !trimmed.endsWith(">")) {
+        return `${displayName} must contain XML.`;
+      }
+    }
+  }
+  return null;
+}
+
+function packageArgumentsFormKey(
+  install: PackageInstall,
+  detail: PackageInstallDetail | undefined,
+): string {
+  const definitionsKey = packageArgumentDefinitions(detail)
+    .map((definition) => packageArgumentBindingKey(definition))
+    .join("|");
+  const bindingsKey = packageArgumentBindings(detail)
+    .map(
+      (binding) =>
+        `${packageArgumentBindingKey(binding)}=${encodeURIComponent(binding.value)}`,
+    )
+    .join("|");
+  return `${install.id}:${definitionsKey}:${bindingsKey}`;
+}
+
 function installedPackageResources(
   detail: PackageInstallDetail | undefined,
 ): PackageInstallResource[] {
@@ -778,6 +1048,25 @@ function githubRawUrl(
   return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path.replace(/^\/+/, "")}`;
 }
 
+function isNenjoRegistryManifestPath(path: string): boolean {
+  const normalized = normalizeCatalogPath(path);
+  return (
+    normalized === "packages.yaml" ||
+    normalized === "packages.yml" ||
+    normalized.endsWith(".registry.yaml") ||
+    normalized.endsWith(".registry.yml")
+  );
+}
+
+function scopedRegistryPackageName(
+  info: NenjoRegistryScopeInfo,
+  name: string,
+): string {
+  if (name.startsWith("@")) return name;
+  if (!isNenjoRegistryManifestPath(info.marketplacePath)) return name;
+  return `@${info.owner}/${name}`;
+}
+
 function githubContentsUrl(
   owner: string,
   repo: string,
@@ -799,6 +1088,16 @@ async function fetchJson<T>(url: string): Promise<T> {
   return parseStructuredText<T>(text);
 }
 
+async function fetchOptionalGitHubJson<T>(url: string): Promise<T | null> {
+  const res = await fetch(url);
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return null;
+  }
+  if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+  const text = await res.text();
+  return parseStructuredText<T>(text);
+}
+
 async function fetchText(url: string): Promise<string> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
@@ -812,15 +1111,140 @@ async function fetchOptionalText(url: string): Promise<string | null> {
   return res.text();
 }
 
+function githubRefPath(ref: string): string {
+  return ref.split("/").map(encodeURIComponent).join("/");
+}
+
 async function resolveGitHubCommitSha(
   owner: string,
   repo: string,
   ref: string,
-): Promise<string> {
-  const commit = await fetchJson<GithubCommitResponse>(
-    `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`,
+): Promise<string | null> {
+  const encodedOwner = encodeURIComponent(owner);
+  const encodedRepo = encodeURIComponent(repo);
+  const encodedRefPath = githubRefPath(ref);
+  for (const namespace of ["heads", "tags"]) {
+    const resolvedRef = await fetchOptionalGitHubJson<GithubRefResponse>(
+      `https://api.github.com/repos/${encodedOwner}/${encodedRepo}/git/ref/${namespace}/${encodedRefPath}`,
+    );
+    if (
+      resolvedRef?.object?.type === "commit" &&
+      typeof resolvedRef.object.sha === "string" &&
+      resolvedRef.object.sha.trim()
+    ) {
+      return resolvedRef.object.sha;
+    }
+  }
+  const commit = await fetchOptionalGitHubJson<GithubCommitResponse>(
+    `https://api.github.com/repos/${encodedOwner}/${encodedRepo}/commits/${encodeURIComponent(ref)}`,
   );
-  return commit.sha;
+  return typeof commit?.sha === "string" && commit.sha.trim()
+    ? commit.sha
+    : null;
+}
+
+function packageCatalogEntries(
+  manifest: ClaudeMarketplaceManifest & NenjoPackagesManifest,
+): Array<{ name: string; path: string; version: string | null }> {
+  if (manifest.packages && !Array.isArray(manifest.packages)) {
+    return Object.entries(manifest.packages).map(([packageName, packagePath]) => ({
+      name: packageName,
+      path: normalizeCatalogPath(packagePath),
+      version: null,
+    }));
+  }
+  if (!Array.isArray(manifest.packages)) return [];
+  return manifest.packages.map((pkg) => {
+    const path = normalizeCatalogPath(pkg.path);
+    const name = pkg.slug || pkg.name || path.split("/").filter(Boolean).pop() || path;
+    return {
+      name,
+      path,
+      version: pkg.version ?? null,
+    };
+  });
+}
+
+function packageCatalogPathLookup(
+  entries: Array<{ name: string; path: string }>,
+  info: NenjoRegistryScopeInfo,
+): Map<string, string> {
+  const lookup = new Map<string, string>();
+  for (const entry of entries) {
+    const scopedName = scopedRegistryPackageName(info, entry.name);
+    for (const alias of [
+      entry.name,
+      scopedName,
+      identifier(entry.name),
+      identifier(scopedName),
+      entry.path,
+      entry.path.split("/").filter(Boolean).pop() ?? "",
+    ]) {
+      if (alias && !lookup.has(alias)) lookup.set(alias, entry.path);
+    }
+  }
+  return lookup;
+}
+
+async function fetchMarketplacePackageArgumentDefinitions(
+  source: PackageSource,
+  pkg: MarketplacePackage,
+): Promise<PackageArgumentDefinition[]> {
+  if (source.adapter !== "nenjo_packages") return [];
+  const info = sourceGitHubInfo(source);
+  if (!info) return [];
+  const catalog = await fetchPackageCatalog(source.id);
+  const manifest =
+    catalog.manifest as ClaudeMarketplaceManifest & NenjoPackagesManifest;
+  const entries = packageCatalogEntries(manifest);
+  const pathByPackageName = packageCatalogPathLookup(entries, info);
+  const packageNameByPath = new Map(
+    entries.map((entry) => [
+      normalizeCatalogPath(entry.path),
+      scopedRegistryPackageName(info, entry.name),
+    ]),
+  );
+  const visited = new Set<string>();
+  const definitions: PackageArgumentDefinition[] = [];
+
+  const visit = async (packagePath: string): Promise<void> => {
+    const path = normalizeCatalogPath(packagePath);
+    if (!path || visited.has(path)) return;
+    visited.add(path);
+    const packageManifest = await fetchJson<NenjoModulePackageManifest>(
+      githubRawUrl(info.owner, info.repo, sourceFetchRef(info), path),
+    );
+    const pathSegments = path.split("/").filter(Boolean);
+    const fallbackName =
+      packageNameByPath.get(path) ??
+      pathSegments[pathSegments.length - 2] ??
+      pathSegments[pathSegments.length - 1] ??
+      path;
+    const packageName = scopedRegistryPackageName(
+      info,
+      packageManifest.name ?? fallbackName,
+    );
+    for (const argument of packageManifest.arguments ?? []) {
+      const definition = packageArgumentDefinitionFromManifest(
+        argument,
+        packageName,
+        packageManifest.version,
+      );
+      if (definition) definitions.push(definition);
+    }
+    await Promise.all(
+      Object.keys(packageManifest.dependencies ?? {}).map(async (dependencyName) => {
+        const dependencyPath =
+          pathByPackageName.get(dependencyName) ??
+          pathByPackageName.get(identifier(dependencyName));
+        if (!dependencyPath) return;
+        await visit(dependencyPath);
+      }),
+    );
+  };
+
+  await visit(pkg.source_path);
+  return dedupePackageArgumentDefinitions(definitions);
 }
 
 async function fetchMarketplacePackages(
@@ -1330,6 +1754,8 @@ export default function KnowledgePage() {
     pkg: MarketplacePackage;
     source: PackageSource | null;
   } | null>(null);
+  const [packageInstallArgumentPrompt, setPackageInstallArgumentPrompt] =
+    useState<PackageInstallArgumentPrompt | null>(null);
   const [packageInstallDetails, setPackageInstallDetails] = useState<
     Record<string, PackageInstallDetail>
   >({});
@@ -1586,14 +2012,18 @@ export default function KnowledgePage() {
                   reference: ref,
                   manifest_path: manifestPath,
                 },
-                resolved_commit_sha: resolvedCommitSha,
+                ...(resolvedCommitSha
+                  ? { resolved_commit_sha: resolvedCommitSha }
+                  : {}),
               }
             : {
                 owner,
                 repo,
                 ref,
-                resolved_commit_sha: resolvedCommitSha,
                 manifest_path: manifestPath,
+                ...(resolvedCommitSha
+                  ? { resolved_commit_sha: resolvedCommitSha }
+                  : {}),
               },
       });
       await mutateSources();
@@ -1656,7 +2086,9 @@ export default function KnowledgePage() {
             ...(sourceMetadata
               ? { source: sourceMetadata }
               : { ref: info.ref }),
-            resolved_commit_sha: resolvedCommitSha,
+            ...(resolvedCommitSha
+              ? { resolved_commit_sha: resolvedCommitSha }
+              : { resolved_commit_sha: null }),
           },
         });
         await mutateSources();
@@ -1664,7 +2096,9 @@ export default function KnowledgePage() {
         setActiveTab("packages");
         setMarketplaceRefresh((value) => value + 1);
         setMessage(
-          `${source.name} refreshed to ${resolvedCommitSha.slice(0, 7)}.`,
+          resolvedCommitSha
+            ? `${source.name} refreshed to ${resolvedCommitSha.slice(0, 7)}.`
+            : `${source.name} refreshed.`,
         );
       })
       .catch((err) => {
@@ -1703,15 +2137,45 @@ export default function KnowledgePage() {
         key.endsWith("/domains"),
     );
 
-  const handleInstallPackage = async (pkg: MarketplacePackage) => {
-    setBusyKey(`install:${pkg.id}`);
+  const handleInstallPackage = async (
+    pkg: MarketplacePackage,
+    options?: {
+      source?: PackageSource;
+      skipArgumentPrompt?: boolean;
+      argumentBindings?: PackageArgumentBinding[];
+    },
+  ) => {
     resetNotice();
+    const installSource = options?.source ?? selectedSource;
     try {
-      if (!selectedSource) throw new Error("Select a package source first");
+      if (!installSource) throw new Error("Select a package source first");
+      if (!options?.skipArgumentPrompt) {
+        setBusyKey(`install-arguments:${pkg.id}`);
+        const definitions = await fetchMarketplacePackageArgumentDefinitions(
+          installSource,
+          pkg,
+        );
+        const orgDefinitions = definitions.filter(
+          (definition) => definition.scope === "org",
+        );
+        if (orgDefinitions.length) {
+          setPackageReview(null);
+          setPackageDetails(null);
+          setPackageInstallArgumentPrompt({
+            pkg,
+            source: installSource,
+            definitions,
+          });
+          return;
+        }
+      }
+
+      setBusyKey(`install:${pkg.id}`);
       const detail = await installPackage(
         {
-          source_id: selectedSource.id,
+          source_id: installSource.id,
           path: pkg.source_path,
+          argument_bindings: options?.argumentBindings ?? [],
         },
         {
           onProgress: (progress) => {
@@ -1737,8 +2201,8 @@ export default function KnowledgePage() {
       ]);
       setPackageReview(null);
       setPackageDetails(null);
-      setMessage(`${pkg.display_name ?? pkg.name} installed.`);
       setActiveTab("installed");
+      setMessage(`${pkg.display_name ?? pkg.name} installed.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Install failed");
     } finally {
@@ -1787,6 +2251,31 @@ export default function KnowledgePage() {
         delete next[install.id];
         return next;
       });
+      setBusyKey(null);
+    }
+  };
+
+  const handleSavePackageArguments = async (
+    install: PackageInstall,
+    bindings: PackageArgumentBinding[],
+  ) => {
+    setBusyKey(`arguments:${install.id}`);
+    resetNotice();
+    try {
+      const detail = await updatePackageInstallArguments(install.id, {
+        bindings,
+      });
+      setPackageInstallDetails((current) => ({
+        ...current,
+        [install.id]: detail,
+      }));
+      await mutateInstalls();
+      setMessage(`${packageInstallTitle(install, detail)} arguments saved.`);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Package arguments update failed",
+      );
+    } finally {
       setBusyKey(null);
     }
   };
@@ -2084,6 +2573,7 @@ export default function KnowledgePage() {
             }
             onOpenMcp={() => router.push("/dashboard/agents?tab=mcp")}
             onUpdateInstall={handleUpdateInstall}
+            onSavePackageArguments={handleSavePackageArguments}
             onUninstallInstall={handleUninstallPackageInstall}
             onViewSkill={handleViewInstalledSkill}
             onUninstallSkill={handleUninstallSkill}
@@ -2194,6 +2684,21 @@ export default function KnowledgePage() {
         onInstall={() =>
           packageDetails ? handleInstallPackage(packageDetails.pkg) : undefined
         }
+      />
+      <PackageInstallArgumentsModal
+        key={packageInstallArgumentPrompt?.pkg.id ?? "package-install-arguments"}
+        prompt={packageInstallArgumentPrompt}
+        onClose={() => setPackageInstallArgumentPrompt(null)}
+        onInstall={(bindings) => {
+          const prompt = packageInstallArgumentPrompt;
+          if (!prompt) return;
+          setPackageInstallArgumentPrompt(null);
+          handleInstallPackage(prompt.pkg, {
+            source: prompt.source,
+            skipArgumentPrompt: true,
+            argumentBindings: bindings,
+          });
+        }}
       />
       <SkillEnvModal
         editor={envEditor}
@@ -3122,17 +3627,24 @@ function PackageInstallInspectionModal({
   detail,
   source,
   dependencyInstallByRootPath,
+  busyKey,
   onClose,
   onOpenInstall,
   onOpenResource,
+  onSavePackageArguments,
 }: {
   install: PackageInstall | null;
   detail: PackageInstallDetail | undefined;
   source: PackageSource | undefined;
   dependencyInstallByRootPath: Map<string, PackageInstall>;
+  busyKey: string | null;
   onClose: () => void;
   onOpenInstall: (installId: string) => void;
   onOpenResource: (resource: PackageInstallResource) => void;
+  onSavePackageArguments: (
+    install: PackageInstall,
+    bindings: PackageArgumentBinding[],
+  ) => void;
 }) {
   const dependencyInfo = install
     ? packageInstallDependencyInfo(install)
@@ -3167,12 +3679,16 @@ function PackageInstallInspectionModal({
             </p>
           </div>
           <PackageInstallInspection
+            install={install}
+            detail={detail}
             detailLoaded={Boolean(detail)}
             dependencyInfo={dependencyInfo}
             dependencyInstallByRootPath={dependencyInstallByRootPath}
             resources={resources}
+            busyKey={busyKey}
             onOpenInstall={onOpenInstall}
             onOpenResource={onOpenResource}
+            onSavePackageArguments={onSavePackageArguments}
           />
         </div>
       ) : null}
@@ -3181,19 +3697,30 @@ function PackageInstallInspectionModal({
 }
 
 function PackageInstallInspection({
+  install,
+  detail,
   detailLoaded,
   dependencyInfo,
   dependencyInstallByRootPath,
   resources,
+  busyKey,
   onOpenInstall,
   onOpenResource,
+  onSavePackageArguments,
 }: {
+  install: PackageInstall;
+  detail: PackageInstallDetail | undefined;
   detailLoaded: boolean;
   dependencyInfo: PackageInstallDependencyInfo;
   dependencyInstallByRootPath: Map<string, PackageInstall>;
   resources: PackageInstallResource[];
+  busyKey: string | null;
   onOpenInstall: (installId: string) => void;
   onOpenResource: (resource: PackageInstallResource) => void;
+  onSavePackageArguments: (
+    install: PackageInstall,
+    bindings: PackageArgumentBinding[],
+  ) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -3210,6 +3737,13 @@ function PackageInstallInspection({
         dependencyInstallByRootPath={dependencyInstallByRootPath}
         emptyText="No installed package requires this."
         onOpenInstall={onOpenInstall}
+      />
+      <PackageArgumentsForm
+        key={packageArgumentsFormKey(install, detail)}
+        install={install}
+        detail={detail}
+        saving={busyKey === `arguments:${install.id}`}
+        onSave={onSavePackageArguments}
       />
       <div className="space-y-2">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -3236,6 +3770,328 @@ function PackageInstallInspection({
         )}
       </div>
     </div>
+  );
+}
+
+function PackageArgumentFields({
+  definitions,
+  values,
+  inputIdPrefix,
+  onChange,
+}: {
+  definitions: PackageArgumentDefinition[];
+  values: Record<string, string>;
+  inputIdPrefix: string;
+  onChange: (key: string, value: string) => void;
+}) {
+  const grouped = packageArgumentDefinitionsByPackage(definitions);
+  return (
+    <>
+      {grouped.map((group) => (
+        <div
+          key={group.packageName}
+          className="divide-y divide-gray-100 rounded-lg border border-gray-100 dark:divide-gray-800 dark:border-gray-800"
+        >
+          <div className="flex items-center justify-between gap-3 bg-gray-50 px-3 py-2 dark:bg-gray-800/60">
+            <span className="min-w-0 truncate text-xs font-medium text-gray-700 dark:text-gray-200">
+              {group.packageName}
+            </span>
+            <span className="shrink-0 text-[11px] text-gray-400">
+              {group.definitions.length} org
+            </span>
+          </div>
+          {group.definitions.map((definition) => {
+            const key = packageArgumentBindingKey(definition);
+            const fieldId = packageArgumentFieldId(inputIdPrefix, definition);
+            const value = values[key] ?? "";
+            const commonProps = {
+              id: fieldId,
+              value,
+              placeholder: definition.sample ?? undefined,
+              onChange: (
+                event:
+                  | React.ChangeEvent<HTMLInputElement>
+                  | React.ChangeEvent<HTMLTextAreaElement>,
+              ) => onChange(key, event.target.value),
+            };
+            return (
+              <div key={key} className="space-y-2 px-3 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <label
+                    htmlFor={fieldId}
+                    className="text-sm font-medium text-gray-800 dark:text-gray-100"
+                  >
+                    {packageArgumentDefinitionLabel(definition)}
+                  </label>
+                  <span className="rounded-md bg-gray-50 px-1.5 py-0.5 text-[11px] text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">
+                    {packageArgumentTypeLabel(definition.type)}
+                  </span>
+                  {definition.required ? (
+                    <span className="rounded-md bg-red-50 px-1.5 py-0.5 text-[11px] text-red-600 dark:bg-red-950/30 dark:text-red-300">
+                      Required
+                    </span>
+                  ) : null}
+                </div>
+                {definition.description ? (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {definition.description}
+                  </p>
+                ) : null}
+                {definition.type === "text" ? (
+                  <Input {...commonProps} />
+                ) : (
+                  <Textarea
+                    {...commonProps}
+                    rows={definition.type === "markdown" ? 6 : 4}
+                    className={
+                      definition.type === "json" || definition.type === "xml"
+                        ? "font-mono"
+                        : undefined
+                    }
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function PackageArgumentsForm({
+  install,
+  detail,
+  saving,
+  onSave,
+}: {
+  install: PackageInstall;
+  detail: PackageInstallDetail | undefined;
+  saving: boolean;
+  onSave: (install: PackageInstall, bindings: PackageArgumentBinding[]) => void;
+}) {
+  const definitions = useMemo(() => packageArgumentDefinitions(detail), [detail]);
+  const bindings = useMemo(() => packageArgumentBindings(detail), [detail]);
+  const orgDefinitions = useMemo(
+    () => definitions.filter((definition) => definition.scope === "org"),
+    [definitions],
+  );
+  const userDefinitions = useMemo(
+    () => definitions.filter((definition) => definition.scope === "user"),
+    [definitions],
+  );
+  const initialValues = useMemo(
+    () => packageArgumentInitialValues(orgDefinitions, bindings),
+    [bindings, orgDefinitions],
+  );
+  const savedBindingKeys = useMemo(
+    () => new Set(bindings.map((binding) => packageArgumentBindingKey(binding))),
+    [bindings],
+  );
+  const [values, setValues] = useState<Record<string, string>>(
+    () => initialValues,
+  );
+  const [formError, setFormError] = useState<string | null>(null);
+
+  if (!definitions.length) return null;
+
+  const missingRequired = orgDefinitions.some((definition) => {
+    if (!definition.required) return false;
+    return !values[packageArgumentBindingKey(definition)]?.trim();
+  });
+  const hasChanges = orgDefinitions.some((definition) => {
+    const key = packageArgumentBindingKey(definition);
+    return (
+      (values[key] ?? "") !== (initialValues[key] ?? "") ||
+      (!savedBindingKeys.has(key) && Boolean((initialValues[key] ?? "").trim()))
+    );
+  });
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const validationError = validatePackageArgumentValues(orgDefinitions, values);
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+    setFormError(null);
+    onSave(install, packageArgumentBindingsFromValues(orgDefinitions, values));
+  };
+
+  return (
+    <form className="space-y-3" onSubmit={handleSubmit}>
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          Arguments
+        </h4>
+        {orgDefinitions.length ? (
+          <Button
+            type="submit"
+            size="sm"
+            variant="secondary"
+            isLoading={saving}
+            disabled={!hasChanges || missingRequired}
+          >
+            <Save className="h-4 w-4" />
+            Save
+          </Button>
+        ) : null}
+      </div>
+
+      {formError ? <Notice tone="error">{formError}</Notice> : null}
+
+      {orgDefinitions.length ? (
+        <PackageArgumentFields
+          definitions={orgDefinitions}
+          values={values}
+          inputIdPrefix={install.id}
+          onChange={(key, value) => {
+            setValues((current) => ({
+              ...current,
+              [key]: value,
+            }));
+            if (formError) setFormError(null);
+          }}
+        />
+      ) : (
+        <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
+          No org arguments for this package.
+        </p>
+      )}
+
+      {userDefinitions.length ? (
+        <div className="space-y-1.5">
+          {userDefinitions.map((definition) => (
+            <div
+              key={packageArgumentBindingKey(definition)}
+              className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-gray-800/60 dark:text-gray-300"
+            >
+              <span className="min-w-0 flex-1 truncate">
+                {definition.package}.{definition.name}
+              </span>
+              <span className="shrink-0 text-[11px] text-gray-400">
+                User runtime
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </form>
+  );
+}
+
+function PackageInstallArgumentsModal({
+  prompt,
+  onClose,
+  onInstall,
+}: {
+  prompt: PackageInstallArgumentPrompt | null;
+  onClose: () => void;
+  onInstall: (bindings: PackageArgumentBinding[]) => void;
+}) {
+  const orgDefinitions = useMemo(
+    () =>
+      (prompt?.definitions ?? []).filter(
+        (definition) => definition.scope === "org",
+      ),
+    [prompt],
+  );
+  const userDefinitions = useMemo(
+    () =>
+      (prompt?.definitions ?? []).filter(
+        (definition) => definition.scope === "user",
+      ),
+    [prompt],
+  );
+  const initialValues = useMemo(
+    () => packageArgumentInitialValues(orgDefinitions),
+    [orgDefinitions],
+  );
+  const [values, setValues] = useState<Record<string, string>>(
+    () => initialValues,
+  );
+  const [formError, setFormError] = useState<string | null>(null);
+
+  if (!prompt) return null;
+
+  const missingRequired = orgDefinitions.some((definition) => {
+    if (!definition.required) return false;
+    return !values[packageArgumentBindingKey(definition)]?.trim();
+  });
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const validationError = validatePackageArgumentValues(orgDefinitions, values);
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+    setFormError(null);
+    onInstall(packageArgumentBindingsFromValues(orgDefinitions, values));
+  };
+
+  return (
+    <Modal
+      open={Boolean(prompt)}
+      onClose={onClose}
+      title={`Install ${prompt.pkg.display_name ?? prompt.pkg.name}`}
+      className="!w-[min(94vw,720px)] !max-w-3xl"
+    >
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/60">
+          <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            Arguments
+          </div>
+          <div className="mt-1 text-sm text-gray-700 dark:text-gray-200">
+            {orgDefinitions.length} org
+            {userDefinitions.length ? `, ${userDefinitions.length} user runtime` : ""}
+          </div>
+        </div>
+
+        {formError ? <Notice tone="error">{formError}</Notice> : null}
+
+        <PackageArgumentFields
+          definitions={orgDefinitions}
+          values={values}
+          inputIdPrefix={`install-${prompt.pkg.id}`}
+          onChange={(key, value) => {
+            setValues((current) => ({
+              ...current,
+              [key]: value,
+            }));
+            if (formError) setFormError(null);
+          }}
+        />
+
+        {userDefinitions.length ? (
+          <div className="space-y-1.5">
+            {userDefinitions.map((definition) => (
+              <div
+                key={packageArgumentBindingKey(definition)}
+                className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-gray-800/60 dark:text-gray-300"
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  {definition.package}.{definition.name}
+                </span>
+                <span className="shrink-0 text-[11px] text-gray-400">
+                  User runtime
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={missingRequired}>
+            <Download className="h-4 w-4" />
+            Install
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -3364,6 +4220,7 @@ function InstalledTab({
   onOpenContextBlock,
   onOpenMcp,
   onUpdateInstall,
+  onSavePackageArguments,
   onUninstallInstall,
   onViewSkill,
   onUninstallSkill,
@@ -3383,6 +4240,10 @@ function InstalledTab({
   onOpenContextBlock: (name: string) => void;
   onOpenMcp: () => void;
   onUpdateInstall: (install: PackageInstall) => void;
+  onSavePackageArguments: (
+    install: PackageInstall,
+    bindings: PackageArgumentBinding[],
+  ) => void;
   onUninstallInstall: (install: PackageInstall) => void;
   onViewSkill: (ability: Ability) => void;
   onUninstallSkill: (ability: Ability) => void;
@@ -3473,9 +4334,11 @@ function InstalledTab({
             : undefined
         }
         dependencyInstallByRootPath={installsByRootPath}
+        busyKey={busyKey}
         onClose={() => setInspectingInstallId(null)}
         onOpenInstall={openInstall}
         onOpenResource={openResource}
+        onSavePackageArguments={onSavePackageArguments}
       />
 
       {abilities.length ? (
@@ -3743,7 +4606,10 @@ function PackageCatalogCard({
               size="sm"
               className="mt-2 w-full"
               onClick={() => onInstall(pkg)}
-              isLoading={busyKey === `install:${pkg.id}`}
+              isLoading={
+                busyKey === `install:${pkg.id}` ||
+                busyKey === `install-arguments:${pkg.id}`
+              }
             >
               <Download className="h-4 w-4" />
               Install
@@ -4014,7 +4880,10 @@ function PackageDetailsModal({
             {!packageInstalled && activePkg.id === pkg?.id ? (
               <Button
                 onClick={onInstall}
-                isLoading={busyKey === `install:${pkg.id}`}
+                isLoading={
+                  busyKey === `install:${pkg.id}` ||
+                  busyKey === `install-arguments:${pkg.id}`
+                }
               >
                 <Download className="h-4 w-4" />
                 Install
@@ -4831,7 +5700,10 @@ function SkillReviewModal({
               </Button>
               <Button
                 onClick={onInstall}
-                isLoading={busyKey === `install:${review.pkg.id}`}
+                isLoading={
+                  busyKey === `install:${review.pkg.id}` ||
+                  busyKey === `install-arguments:${review.pkg.id}`
+                }
               >
                 <Download className="h-4 w-4" />
                 Install
