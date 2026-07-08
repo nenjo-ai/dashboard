@@ -183,7 +183,7 @@ function detailPayloadForSpan(span: TraceSpan): Record<string, unknown> | undefi
       args: span.rawArgs,
       stdout: span.stdout,
       stderr: span.stderr,
-      output: span.outputPreview,
+      output: span.output ?? span.outputPreview,
       error: span.errorPreview,
     };
   }

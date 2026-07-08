@@ -93,6 +93,7 @@ function toolCompleted({
   callId,
   batchId,
   success = true,
+  output,
   providerNative = false,
   provider,
 }) {
@@ -103,6 +104,7 @@ function toolCompleted({
       batch_id: batchId,
       call_id: callId,
       success,
+      output,
       output_preview: success ? "done" : undefined,
       error_preview: success ? undefined : "failed",
       provider_native: providerNative,
@@ -502,6 +504,36 @@ test("reducer preserves provider-native metadata on completed tool spans", () =>
   assert.equal(span.provider, "xai");
   assert.equal(span.name, "x_search");
   assert.equal(span.status, "completed");
+});
+
+test("reducer preserves structured tool output on completed tool spans", () => {
+  const trace = reduceEvents([
+    runStarted(),
+    ...modelTurn(),
+    toolStarted({
+      callId: "search-call-1",
+      batchId: "search-batch-1",
+      name: "search_knowledge",
+    }),
+    toolCompleted({
+      callId: "search-call-1",
+      batchId: "search-batch-1",
+      output: [
+        {
+          document: {
+            selector: "classification.workflow_patterns",
+            title: "Workflow Pattern Classification",
+          },
+          matched: ["title"],
+          score: 7795,
+        },
+      ],
+    }),
+  ]);
+
+  const span = trace.spans.find((candidate) => candidate.id === "search-call-1");
+  assert.equal(span?.kind, "tool");
+  assert.equal(span.output?.[0]?.document?.selector, "classification.workflow_patterns");
 });
 
 test("history trace hides raw transcript echo rows while keeping named child tools", () => {

@@ -19,6 +19,7 @@ type TracePayload = {
   tool_name?: unknown;
   details?: unknown;
   text_preview?: unknown;
+  output?: unknown;
   output_preview?: unknown;
   error_preview?: unknown;
   task_preview?: unknown;
@@ -132,6 +133,7 @@ async function lifecycleEventFromEnvelope(
       toolArgs !== undefined ? normalizeToolCallArgs(toolArgs) : rawData.args_summary,
     text_preview:
       stringField(payload.text_preview) ?? stringField(rawData.text_preview),
+    output: payload.output !== undefined ? payload.output : rawData.output,
     output_preview:
       stringField(payload.output_preview) ?? stringField(rawData.output_preview),
     error_preview:
