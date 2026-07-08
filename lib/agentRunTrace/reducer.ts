@@ -413,6 +413,7 @@ export function reduceRunTrace(
             event.data.tool_args !== undefined
               ? (event.data.args_summary ?? span.argsSummary)
               : span.argsSummary,
+          output: event.data.output ?? span.output,
           outputPreview: event.data.output_preview ?? span.outputPreview,
           errorPreview: event.data.error_preview ?? span.errorPreview,
           providerNative:

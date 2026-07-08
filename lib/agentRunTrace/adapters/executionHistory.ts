@@ -99,6 +99,10 @@ function outputPreview(step: TaskStepProgress): string | undefined {
   );
 }
 
+function outputValue(step: TaskStepProgress): unknown {
+  return step.payload?.output ?? step.data?.output;
+}
+
 function errorPreview(step: TaskStepProgress): string | undefined {
   return textValue(step.payload?.error_preview) ?? textValue(step.data?.error_preview);
 }
@@ -258,6 +262,7 @@ function stepSpan(task: ExecutionTask, step: TaskStepProgress, index: number): T
     name: step.step_name,
     argsSummary: normalizeToolCallArgs(args),
     rawArgs: args,
+    output: outputValue(step),
     outputPreview: outputPreview(step),
     errorPreview: errorPreview(step),
     startedAt,

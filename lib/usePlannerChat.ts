@@ -74,6 +74,7 @@ type LifecyclePayload = {
   tool_name?: string;
   tool_args?: unknown;
   text_preview?: string;
+  output?: unknown;
   output_preview?: string;
   error_preview?: string;
   task_preview?: string;
@@ -759,6 +760,7 @@ async function resolveLifecycleEventPayload(
         : typeof data.text_preview === "string"
           ? data.text_preview
           : providerTextPreview,
+    output: payload.output !== undefined ? payload.output : data.output,
     output_preview:
       providerOutputPreview ??
       (typeof payload.output_preview === "string"

@@ -66,6 +66,7 @@ export interface ToolSpan extends TraceSpanBase {
   argsSummary?: string;
   rawArgs?: unknown;
   textPreview?: string;
+  output?: unknown;
   outputPreview?: string;
   errorPreview?: string;
   providerNative?: boolean;
@@ -254,6 +255,7 @@ export type AgentLifecycleEvent =
         tool_name?: string;
         tool_args?: unknown;
         args_summary?: string;
+        output?: unknown;
         output_preview?: string;
         error_preview?: string;
         provider_native?: boolean;

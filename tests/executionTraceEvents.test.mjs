@@ -54,6 +54,16 @@ function completedEvent() {
       call_id: "tool-1",
       success: true,
       payload: {
+        output: [
+          {
+            document: {
+              selector: "resources.agents",
+              title: "Agents",
+            },
+            matched: ["title"],
+            score: 100,
+          },
+        ],
         output_preview: "Written 128 bytes",
       },
     },
@@ -93,6 +103,7 @@ test("live execution trace events group by routine step run and preserve text pr
   assert.equal(group.trace.spans[0].kind, "tool");
   assert.equal(group.trace.spans[0].name, "file_write");
   assert.equal(group.trace.spans[0].textPreview, "Writing src/app.tsx");
+  assert.equal(group.trace.spans[0].output[0].document.selector, "resources.agents");
   assert.equal(group.trace.spans[0].outputPreview, "Written 128 bytes");
   assert.equal(group.trace.spans[0].status, "completed");
 });
