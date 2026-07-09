@@ -1,17 +1,37 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Cpu, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import {
+  Check,
+  Cpu,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 
 import { createModel, updateModel } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { useModelCatalog } from "@/lib/hooks";
 import { toast } from "@/lib/toast";
 import {
+  ASSIGNABLE_OPERATION_CAPABILITIES,
+  MODEL_MODALITY_OPTIONS,
   MODEL_PROVIDERS,
+  modelCatalogFeatureLabel,
+  modelCapabilityLabel,
   NATIVE_MODEL_TOOL_LABELS,
   type AgentDefinition,
   type CreateModelRequest,
   type Model,
+  type ModelCatalogModel,
+  type ModelCatalogProvider,
+  type ModelCapability,
+  type ModelModality,
   type ModelProvider,
   type NativeModelTool,
   type UpdateModelRequest,
@@ -35,15 +55,17 @@ interface FormState {
   description: string;
   provider: ModelProvider;
   model: string;
-  temperature: number;
+  contextWindow?: number;
   baseUrl: string;
   keyTag: string;
   nativeTools: NativeModelTool[];
+  capabilities: ModelCapability[];
+  inputModalities: ModelModality[];
+  outputModalities: ModelModality[];
 }
 
 interface FormErrors {
   model?: string;
-  temperature?: string;
   baseUrl?: string;
 }
 
@@ -51,13 +73,24 @@ const INITIAL_FORM: FormState = {
   description: "",
   provider: "openai",
   model: "gpt-4o",
-  temperature: 0.7,
+  contextWindow: undefined,
   baseUrl: "",
   keyTag: "",
   nativeTools: [],
+  capabilities: ["chat"],
+  inputModalities: ["text"],
+  outputModalities: ["text"],
 };
 
 const XAI_NATIVE_MODEL_TOOLS: NativeModelTool[] = ["web_search", "x_search"];
+const MODEL_MODALITIES = new Set<ModelModality>([
+  "text",
+  "audio",
+  "image",
+  "file",
+  "video",
+]);
+const OPENROUTER_CATALOG_LIMIT = 60;
 
 function providerLabel(provider: string): string {
   const found = MODEL_PROVIDERS.find((item) => item.id === provider);
@@ -84,16 +117,48 @@ function envVarFromTag(tag: string): string {
   return `${tag.toUpperCase().replace(/-/g, "_")}_API_KEY`;
 }
 
+function capabilityLabel(capability: string): string {
+  return modelCapabilityLabel(capability);
+}
+
+function catalogMetadataLabel(value: string): string {
+  return ASSIGNABLE_OPERATION_CAPABILITIES.some((item) => item.id === value)
+    ? capabilityLabel(value)
+    : modelCatalogFeatureLabel(value);
+}
+
+function modelOperations(values: ModelCapability[] | undefined): ModelCapability[] {
+  return (values ?? []).filter((value) =>
+    ASSIGNABLE_OPERATION_CAPABILITIES.some((item) => item.id === value),
+  );
+}
+
+function modelModalities(values: string[] | undefined): ModelModality[] {
+  return (values ?? []).filter((value): value is ModelModality =>
+    MODEL_MODALITIES.has(value as ModelModality),
+  );
+}
+
+function formatContextLength(value: number | null | undefined): string | null {
+  if (!value) return null;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M ctx`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}K ctx`;
+  return `${value} ctx`;
+}
+
 function formFromModel(model: Model): FormState {
   const provider = formProvider(model.model_provider);
   return {
     description: model.description ?? "",
     provider,
     model: model.model,
-    temperature: model.temperature,
+    contextWindow: model.context_window ?? undefined,
     baseUrl: model.base_url ?? "",
     keyTag: keyTag(model.model_provider),
     nativeTools: provider === "xai" ? model.native_tools ?? [] : [],
+    capabilities: modelOperations(model.capabilities),
+    inputModalities: model.input_modalities ?? [],
+    outputModalities: model.output_modalities ?? [],
   };
 }
 
@@ -115,11 +180,88 @@ export function ModelsSection({
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogCapabilities, setCatalogCapabilities] = useState<string[]>([]);
+  const [catalogFreeOnly, setCatalogFreeOnly] = useState(false);
+  const catalogProvider: ModelCatalogProvider | null =
+    form.provider === "openrouter" || form.provider === "xai"
+      ? form.provider
+      : null;
+  const hasProviderCatalog = catalogProvider !== null;
+  const catalogProviderLabel = catalogProvider === "xai" ? "xAI" : "OpenRouter";
+  const {
+    catalog: openRouterCatalog,
+    models: openRouterCatalogModels,
+    isLoading: openRouterCatalogLoading,
+    isError: openRouterCatalogError,
+    mutate: refreshOpenRouterCatalog,
+  } = useModelCatalog(catalogProvider ?? "openrouter", undefined, hasProviderCatalog);
 
   const providerData = useMemo(
     () => MODEL_PROVIDERS.find((provider) => provider.id === form.provider) ?? MODEL_PROVIDERS[0],
     [form.provider],
   );
+
+  const openRouterModelById = useMemo(() => {
+    return new Map(openRouterCatalogModels.map((model) => [model.id, model]));
+  }, [openRouterCatalogModels]);
+
+  const providerModelHints = useMemo(() => {
+    if (hasProviderCatalog && openRouterCatalogModels.length > 0) {
+      return openRouterCatalogModels
+        .filter((model) => model.configurable !== false)
+        .map((model) => model.id);
+    }
+    return providerData.models;
+  }, [hasProviderCatalog, openRouterCatalogModels, providerData.models]);
+
+  const selectedCatalogModel = hasProviderCatalog
+    ? openRouterModelById.get(form.model.trim())
+    : undefined;
+  const catalogModalitiesLocked = Boolean(selectedCatalogModel);
+
+  const catalogCapabilityFilters = useMemo(() => {
+    const capabilities = new Set<string>();
+    for (const model of openRouterCatalogModels) {
+      for (const capability of model.capabilities) {
+        capabilities.add(capability);
+      }
+      for (const feature of model.features) {
+        capabilities.add(feature);
+      }
+    }
+    return Array.from(capabilities).sort((left, right) =>
+      catalogMetadataLabel(left).localeCompare(catalogMetadataLabel(right)),
+    );
+  }, [openRouterCatalogModels]);
+
+  const filteredOpenRouterModels = useMemo(() => {
+    const search = catalogSearch.trim().toLowerCase();
+    return openRouterCatalogModels
+      .filter((model) => {
+        if (catalogFreeOnly && !model.free) return false;
+        if (
+          catalogCapabilities.length > 0 &&
+          !catalogCapabilities.every((capability) =>
+            model.capabilities.includes(capability) || model.features.includes(capability),
+          )
+        ) {
+          return false;
+        }
+        if (!search) return true;
+        return (
+          model.id.toLowerCase().includes(search) ||
+          model.name.toLowerCase().includes(search) ||
+          (model.description ?? "").toLowerCase().includes(search)
+        );
+      })
+      .slice(0, OPENROUTER_CATALOG_LIMIT);
+  }, [
+    catalogCapabilities,
+    catalogFreeOnly,
+    catalogSearch,
+    openRouterCatalogModels,
+  ]);
 
   const sortedModels = useMemo(
     () => [...(models ?? [])].sort((a, b) => a.model_provider.localeCompare(b.model_provider) || a.model.localeCompare(b.model)),
@@ -131,11 +273,51 @@ export function ModelsSection({
     setErrors((previous) => ({ ...previous, [key]: undefined }));
   }, []);
 
+  const applyCatalogModel = useCallback((model: ModelCatalogModel) => {
+    if (model.configurable === false) {
+      setErrors((previous) => ({
+        ...previous,
+        model:
+          model.unavailable_reason ??
+          "This catalog model is not supported by Nenjo yet.",
+      }));
+      return;
+    }
+    setForm((previous) => ({
+      ...previous,
+      model: model.id,
+      contextWindow:
+        model.context_length ?? model.top_provider?.context_length ?? undefined,
+      description: previous.description.trim() ? previous.description : model.name,
+      capabilities: model.capabilities,
+      inputModalities: modelModalities(model.input_modalities),
+      outputModalities: modelModalities(model.output_modalities),
+    }));
+    setErrors((previous) => ({ ...previous, model: undefined }));
+  }, []);
+
+  const handleModelChange = useCallback(
+    (value: string) => {
+      const catalogModel = hasProviderCatalog
+        ? openRouterModelById.get(value.trim())
+        : undefined;
+      if (catalogModel) {
+        applyCatalogModel(catalogModel);
+        return;
+      }
+      setField("model", value);
+    },
+    [applyCatalogModel, hasProviderCatalog, openRouterModelById, setField],
+  );
+
   const resetForm = useCallback(() => {
     setEditingId(null);
     setForm(INITIAL_FORM);
     setErrors({});
     setApiError(null);
+    setCatalogSearch("");
+    setCatalogCapabilities([]);
+    setCatalogFreeOnly(false);
   }, []);
 
   const handleEdit = useCallback((model: Model) => {
@@ -151,9 +333,20 @@ export function ModelsSection({
       ...previous,
       provider,
       model: nextProvider?.models[0] ?? "",
+      contextWindow: undefined,
       baseUrl: "",
       keyTag: "",
       nativeTools: provider === "xai" ? previous.nativeTools : [],
+      capabilities:
+        provider === "openrouter" || provider === "xai" ? [] : previous.capabilities,
+      inputModalities:
+        provider === "openrouter" || provider === "xai"
+          ? []
+          : previous.inputModalities,
+      outputModalities:
+        provider === "openrouter" || provider === "xai"
+          ? []
+          : previous.outputModalities,
     }));
     setErrors({});
   }, []);
@@ -170,12 +363,37 @@ export function ModelsSection({
     });
   }, []);
 
+  const toggleCapability = useCallback((capability: ModelCapability) => {
+    setForm((previous) => {
+      const selected = previous.capabilities.includes(capability);
+      return {
+        ...previous,
+        capabilities: selected
+          ? previous.capabilities.filter((item) => item !== capability)
+          : [...previous.capabilities, capability],
+      };
+    });
+  }, []);
+
+  const toggleModality = useCallback(
+    (field: "inputModalities" | "outputModalities", modality: ModelModality) => {
+      setForm((previous) => {
+        const current = previous[field];
+        const selected = current.includes(modality);
+        return {
+          ...previous,
+          [field]: selected
+            ? current.filter((item) => item !== modality)
+            : [...current, modality],
+        };
+      });
+    },
+    [],
+  );
+
   const validate = useCallback(() => {
     const nextErrors: FormErrors = {};
     if (!form.model.trim()) nextErrors.model = "Model is required.";
-    if (form.temperature < 0 || form.temperature > 2) {
-      nextErrors.temperature = "Temperature must be between 0.0 and 2.0.";
-    }
     if (form.provider === "openai-compatible" && !form.baseUrl.trim()) {
       nextErrors.baseUrl = "Base URL is required for OpenAI Compatible providers.";
     } else if (form.baseUrl.trim()) {
@@ -202,6 +420,7 @@ export function ModelsSection({
           ? `openai-compatible:${form.keyTag.trim()}`
           : form.provider;
       const nativeTools = form.provider === "xai" ? form.nativeTools : [];
+      const capabilities = form.capabilities;
       const baseUrl = form.baseUrl.trim();
 
       if (editingId) {
@@ -210,9 +429,12 @@ export function ModelsSection({
           description: form.description.trim() || null,
           model: modelName,
           model_provider: modelProvider,
-          temperature: form.temperature,
+          context_window: form.contextWindow ?? null,
           base_url: baseUrl || null,
           native_tools: nativeTools,
+          capabilities,
+          input_modalities: form.inputModalities,
+          output_modalities: form.outputModalities,
         };
         await updateModel(editingId, payload);
         toast.success("Model updated.");
@@ -222,9 +444,12 @@ export function ModelsSection({
           description: form.description.trim() || undefined,
           model: modelName,
           model_provider: modelProvider,
-          temperature: form.temperature,
+          context_window: form.contextWindow,
           base_url: baseUrl || undefined,
           native_tools: nativeTools,
+          capabilities,
+          input_modalities: form.inputModalities,
+          output_modalities: form.outputModalities,
           project_id: projectId || undefined,
         };
         await createModel(payload);
@@ -246,7 +471,9 @@ export function ModelsSection({
         <div>
           <h2 className="theme-text text-base font-semibold">Models</h2>
           <p className="theme-text-muted mt-1 max-w-3xl text-sm leading-6">
-            Configure chat model bindings and provider-native model tools used by agents.
+            Configure chat engines and native media capabilities (image, video,
+            audio) in one inventory. Assign non-chat ops to agents from the
+            agent Capabilities tab.
           </p>
         </div>
 
@@ -272,7 +499,10 @@ export function ModelsSection({
           <div className="space-y-3">
             {sortedModels.map((model) => {
               const nativeTools = model.native_tools ?? [];
+              const capabilities = model.capabilities ?? [];
               const assignments = assignedAgents(model, agents);
+              const inputMods = model.input_modalities ?? [];
+              const outputMods = model.output_modalities ?? [];
               return (
                 <article
                   key={model.id}
@@ -297,12 +527,36 @@ export function ModelsSection({
                         <span className="inline-flex items-center rounded-full border border-gray-200 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:border-gray-700 dark:text-gray-300">
                           temp {model.temperature.toFixed(2)}
                         </span>
+                        {inputMods.map((modality) => (
+                          <span
+                            key={`in-${modality}`}
+                            className="inline-flex items-center rounded-full border border-gray-200 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:border-gray-700 dark:text-gray-300"
+                          >
+                            in:{modality}
+                          </span>
+                        ))}
+                        {outputMods.map((modality) => (
+                          <span
+                            key={`out-${modality}`}
+                            className="inline-flex items-center rounded-full border border-gray-200 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:border-gray-700 dark:text-gray-300"
+                          >
+                            out:{modality}
+                          </span>
+                        ))}
                         {nativeTools.map((tool) => (
                           <span
                             key={tool}
                             className="inline-flex items-center rounded-full border border-deep-space-blue-200 bg-deep-space-blue-50 px-2 py-0.5 text-[11px] font-medium text-deep-space-blue-700 dark:border-deep-space-blue-800 dark:bg-deep-space-blue-950/40 dark:text-deep-space-blue-200"
                           >
                             {NATIVE_MODEL_TOOL_LABELS[tool] ?? tool}
+                          </span>
+                        ))}
+                        {capabilities.map((capability) => (
+                          <span
+                            key={capability}
+                            className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[11px] font-medium text-cyan-700 dark:border-cyan-900 dark:bg-cyan-950/30 dark:text-cyan-300"
+                          >
+                            {catalogMetadataLabel(capability)}
                           </span>
                         ))}
                         {assignments.length > 0 && (
@@ -384,7 +638,7 @@ export function ModelsSection({
                 <Label required>Model</Label>
                 <Input
                   value={form.model}
-                  onChange={(event) => setField("model", event.target.value)}
+                  onChange={(event) => handleModelChange(event.target.value)}
                   list="model-section-hints"
                   className="mt-1"
                   error={!!errors.model}
@@ -392,12 +646,22 @@ export function ModelsSection({
                   placeholder="Select or type a model"
                 />
                 <datalist id="model-section-hints">
-                  {providerData.models.map((model) => (
+                  {providerModelHints.map((model) => (
                     <option key={model} value={model} />
                   ))}
                 </datalist>
                 {errors.model ? (
                   <p className="mt-1 text-xs text-red-500">{errors.model}</p>
+                ) : hasProviderCatalog ? (
+                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    {openRouterCatalogLoading
+                      ? `Loading ${catalogProviderLabel} catalog`
+                      : openRouterCatalogError
+                        ? `${catalogProviderLabel} catalog unavailable`
+                        : openRouterCatalog
+                          ? `${openRouterCatalog.filtered_total} verified models`
+                          : `${catalogProviderLabel} catalog`}
+                  </p>
                 ) : (
                   <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                     {providerData.models.slice(0, 3).join(", ")}
@@ -405,6 +669,227 @@ export function ModelsSection({
                 )}
               </div>
             </div>
+
+            {hasProviderCatalog && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <Label>{catalogProviderLabel} catalog</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void refreshOpenRouterCatalog()}
+                    disabled={saving || openRouterCatalogLoading}
+                    title="Refresh catalog"
+                  >
+                    {openRouterCatalogLoading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    Refresh
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                    <Input
+                      value={catalogSearch}
+                      onChange={(event) => setCatalogSearch(event.target.value)}
+                      className="pl-8"
+                      disabled={saving}
+                      placeholder="Search catalog"
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-1.5 text-xs text-gray-400 dark:text-gray-500">
+                      Filter by operation or feature. Select multiple to show models
+                      that match all selected filters.
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {catalogCapabilityFilters.map((capability) => {
+                        const active = catalogCapabilities.includes(capability);
+                        return (
+                          <button
+                            key={capability}
+                            type="button"
+                            onClick={() =>
+                              setCatalogCapabilities((previous) =>
+                                previous.includes(capability)
+                                  ? previous.filter(
+                                      (item) => item !== capability,
+                                    )
+                                  : [...previous, capability],
+                              )
+                            }
+                            disabled={saving}
+                            className={cn(
+                              "theme-border rounded-md border px-2 py-1 text-xs font-medium transition-colors",
+                              active
+                                ? "bg-cyan-50 text-cyan-700 dark:bg-cyan-950/30 dark:text-cyan-200"
+                                : "theme-surface text-gray-600 hover:[background:var(--app-hover)] dark:text-gray-300",
+                            )}
+                          >
+                            {catalogMetadataLabel(capability)}
+                          </button>
+                        );
+                      })}
+                      <label
+                        className={cn(
+                          "theme-border flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium",
+                          catalogFreeOnly
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200"
+                            : "theme-surface text-gray-600 dark:text-gray-300",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={catalogFreeOnly}
+                          onChange={(event) => setCatalogFreeOnly(event.target.checked)}
+                          disabled={saving}
+                          className="h-3.5 w-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-400 dark:border-gray-600"
+                        />
+                        Free
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {selectedCatalogModel && (
+                  <div className="theme-border rounded-md border px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {selectedCatalogModel.capabilities.map((capability) => (
+                        <span
+                          key={capability}
+                          className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[11px] font-medium text-cyan-700 dark:border-cyan-900 dark:bg-cyan-950/30 dark:text-cyan-300"
+                        >
+                          {capabilityLabel(capability)}
+                        </span>
+                      ))}
+                      {selectedCatalogModel.features.map((feature) => (
+                        <span
+                          key={feature}
+                          className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:border-violet-900 dark:bg-violet-950/30 dark:text-violet-300"
+                        >
+                          {catalogMetadataLabel(feature)}
+                        </span>
+                      ))}
+                      {selectedCatalogModel.input_modalities.map((modality) => (
+                        <span
+                          key={`input-${modality}`}
+                          className="inline-flex items-center rounded-full border border-gray-200 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:border-gray-700 dark:text-gray-300"
+                        >
+                          in:{modality}
+                        </span>
+                      ))}
+                      {selectedCatalogModel.output_modalities.map((modality) => (
+                        <span
+                          key={`output-${modality}`}
+                          className="inline-flex items-center rounded-full border border-gray-200 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:border-gray-700 dark:text-gray-300"
+                        >
+                          out:{modality}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="theme-border max-h-72 overflow-y-auto rounded-md border">
+                  {openRouterCatalogLoading ? (
+                    <div className="flex items-center justify-center gap-2 px-3 py-6 text-sm text-gray-500">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading catalog
+                    </div>
+                  ) : openRouterCatalogError ? (
+                    <div className="px-3 py-6 text-center text-sm text-red-500">
+                      Failed to load {catalogProviderLabel} catalog.
+                    </div>
+                  ) : filteredOpenRouterModels.length === 0 ? (
+                    <div className="px-3 py-6 text-center text-sm text-gray-500">
+                      No catalog models match these filters.
+                    </div>
+                  ) : (
+                    filteredOpenRouterModels.map((catalogModel) => {
+                      const selected = catalogModel.id === form.model.trim();
+                      const contextLength = formatContextLength(
+                        catalogModel.context_length ??
+                          catalogModel.top_provider?.context_length,
+                      );
+                      const catalogMetadata = [
+                        ...catalogModel.capabilities,
+                        ...catalogModel.features,
+                      ];
+                      const visibleCapabilities = catalogMetadata.slice(0, 4);
+                      return (
+                        <button
+                          key={catalogModel.id}
+                          type="button"
+                          onClick={() => applyCatalogModel(catalogModel)}
+                          disabled={saving || catalogModel.configurable === false}
+                          className={cn(
+                            "theme-border block w-full border-b px-3 py-2 text-left transition-colors last:border-b-0 hover:[background:var(--app-hover)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent",
+                            selected &&
+                              "bg-cyan-50/70 dark:bg-cyan-950/20",
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <span className="theme-text truncate text-sm font-medium">
+                                  {catalogModel.name}
+                                </span>
+                                {catalogModel.free && (
+                                  <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
+                                    Free
+                                  </span>
+                                )}
+                                {catalogModel.configurable === false && (
+                                  <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+                                    Not available
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-0.5 truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">
+                                {catalogModel.id}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
+                              {contextLength && <span>{contextLength}</span>}
+                              {selected && <Check className="h-4 w-4 text-cyan-600" />}
+                            </div>
+                          </div>
+                          {visibleCapabilities.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {visibleCapabilities.map((capability) => (
+                                <span
+                                  key={capability}
+                                  className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                                >
+                                  {catalogMetadataLabel(capability)}
+                                </span>
+                              ))}
+                              {catalogMetadata.length >
+                                visibleCapabilities.length && (
+                                <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                                  +{catalogMetadata.length - visibleCapabilities.length}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {catalogModel.configurable === false &&
+                            catalogModel.unavailable_reason && (
+                              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                {catalogModel.unavailable_reason}
+                              </p>
+                            )}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
 
             <div>
               <Label>Description</Label>
@@ -415,24 +900,6 @@ export function ModelsSection({
                 disabled={saving}
                 placeholder="Optional label for this model"
               />
-            </div>
-
-            <div>
-              <Label>Temperature</Label>
-              <Input
-                type="number"
-                min={0}
-                max={2}
-                step={0.1}
-                value={form.temperature}
-                onChange={(event) => setField("temperature", Number(event.target.value))}
-                className="mt-1"
-                error={!!errors.temperature}
-                disabled={saving}
-              />
-              {errors.temperature && (
-                <p className="mt-1 text-xs text-red-500">{errors.temperature}</p>
-              )}
             </div>
 
             {(form.provider === "ollama" || form.provider === "openai-compatible") && (
@@ -474,6 +941,126 @@ export function ModelsSection({
                 </p>
               </div>
             )}
+
+            <fieldset>
+              <legend className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Assignable operations
+              </legend>
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                Choose the jobs this model can perform. Chat enables
+                conversations; other operations must also be assigned to an
+                agent on the Capabilities tab.
+              </p>
+              <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+                {ASSIGNABLE_OPERATION_CAPABILITIES.map((capability) => {
+                  const checked = form.capabilities.includes(capability.id);
+                  return (
+                    <label
+                      key={capability.id}
+                      className={cn(
+                        "theme-border flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-sm transition-colors",
+                        checked
+                          ? "bg-cyan-50 text-cyan-700 dark:bg-cyan-950/30 dark:text-cyan-200"
+                          : "theme-surface text-gray-600 hover:[background:var(--app-hover)] dark:text-gray-300",
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleCapability(capability.id)}
+                        disabled={saving}
+                        className="h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-400 dark:border-gray-600"
+                      />
+                      <span>{capability.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Modalities
+              </legend>
+              {catalogModalitiesLocked && (
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  Input and output modalities are supplied by the selected
+                  catalog model and cannot be changed.
+                </p>
+              )}
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Input
+                  </p>
+                  <div className="grid gap-1.5">
+                    {MODEL_MODALITY_OPTIONS.map((modality) => {
+                      const checked = form.inputModalities.includes(modality);
+                      return (
+                        <label
+                          key={`input-${modality}`}
+                          className={cn(
+                            "theme-border flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm transition-colors",
+                            catalogModalitiesLocked
+                              ? "cursor-not-allowed opacity-60"
+                              : "cursor-pointer",
+                            checked
+                              ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100"
+                              : "theme-surface text-gray-600 hover:[background:var(--app-hover)] dark:text-gray-300",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              toggleModality("inputModalities", modality)
+                            }
+                            disabled={saving || catalogModalitiesLocked}
+                            className="h-3.5 w-3.5 rounded border-gray-300 text-gray-700 focus:ring-gray-400 dark:border-gray-600"
+                          />
+                          <span className="capitalize">{modality}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Output
+                  </p>
+                  <div className="grid gap-1.5">
+                    {MODEL_MODALITY_OPTIONS.map((modality) => {
+                      const checked = form.outputModalities.includes(modality);
+                      return (
+                        <label
+                          key={`output-${modality}`}
+                          className={cn(
+                            "theme-border flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm transition-colors",
+                            catalogModalitiesLocked
+                              ? "cursor-not-allowed opacity-60"
+                              : "cursor-pointer",
+                            checked
+                              ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100"
+                              : "theme-surface text-gray-600 hover:[background:var(--app-hover)] dark:text-gray-300",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              toggleModality("outputModalities", modality)
+                            }
+                            disabled={saving || catalogModalitiesLocked}
+                            className="h-3.5 w-3.5 rounded border-gray-300 text-gray-700 focus:ring-gray-400 dark:border-gray-600"
+                          />
+                          <span className="capitalize">{modality}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </fieldset>
 
             {form.provider === "xai" && (
               <fieldset>

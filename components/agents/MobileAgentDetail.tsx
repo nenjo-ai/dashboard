@@ -198,7 +198,9 @@ export function MobileAgentDetail({
         </div>
       )}
 
-      {activeTab === "media" && <AgentMediaTab agentId={agent.id} />}
+      {activeTab === "media" && (
+        <AgentMediaTab agentId={agent.id} />
+      )}
 
       {activeTab === "mcp" && (
         <div className="space-y-3">

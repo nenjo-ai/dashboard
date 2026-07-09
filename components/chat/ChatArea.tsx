@@ -21,14 +21,27 @@ import type {
   ChatMessage,
   ChatSessionExtended,
   Domain,
+  EncryptedPayload,
+  VoiceInputJob,
 } from "@/lib/types";
-import { useAgent, useAgents, useAgentDomains, useChatCommands, useProjects } from "@/lib/hooks";
+import {
+  useAgent,
+  useAgents,
+  useAgentDomains,
+  useAgentModelAssignments,
+  useChatCommands,
+  useProjects,
+} from "@/lib/hooks";
 import {
   allChatSessionsUrl,
   createChatSession,
+  createVoiceInputJob,
+  fetchVoiceInputJob,
   fetcher,
 } from "@/lib/api";
 import { usePlannerChat } from "@/lib/usePlannerChat";
+import { decryptContentPayload } from "@/lib/cryptoContent";
+import { toast } from "@/lib/toast";
 import { useUser } from "@clerk/nextjs";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { DomainSlashCommandDropdown } from "@/components/project/DomainSlashCommandDropdown";
@@ -36,7 +49,7 @@ import { PendingDomainPill } from "@/components/project/PendingDomainPill";
 import { Button } from "@/components/ui/Button";
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Mic, Square } from "lucide-react";
 import { MobileInputBar } from "./MobileInputBar";
 import { MobileEmptyState } from "./MobileEmptyState";
 import { PendingCommandPill } from "./PendingCommandPill";
@@ -112,6 +125,140 @@ const CHAT_COMMANDS: ChatCommandOption[] = [
     source: "builtin",
   },
 ];
+const VOICE_INPUT_MAX_BYTES = 320 * 1024;
+const VOICE_INPUT_MAX_DURATION_MS = 60_000;
+const VOICE_INPUT_POLL_INTERVAL_MS = 800;
+const VOICE_INPUT_POLL_TIMEOUT_MS = 45_000;
+
+type VoiceInputState = "idle" | "requesting" | "recording" | "processing";
+
+function voiceInputSupported(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    typeof navigator.mediaDevices?.getUserMedia === "function" &&
+    typeof MediaRecorder !== "undefined"
+  );
+}
+
+async function queryMicrophonePermission(): Promise<PermissionState | null> {
+  if (
+    typeof navigator === "undefined" ||
+    typeof navigator.permissions?.query !== "function"
+  ) {
+    return null;
+  }
+
+  try {
+    const status = await navigator.permissions.query({
+      name: "microphone" as PermissionName,
+    });
+    return status.state;
+  } catch {
+    return null;
+  }
+}
+
+function voiceInputStartErrorMessage(error: unknown): string {
+  if (error instanceof DOMException) {
+    switch (error.name) {
+      case "NotAllowedError":
+      case "PermissionDeniedError":
+        return "Microphone access is blocked. Allow microphone permissions in your browser settings and try again.";
+      case "NotFoundError":
+      case "DevicesNotFoundError":
+        return "No microphone was found.";
+      case "NotReadableError":
+      case "TrackStartError":
+        return "The microphone is already in use or could not be started.";
+      case "SecurityError":
+        return "Microphone access requires a secure browser context.";
+      default:
+        break;
+    }
+  }
+
+  return "Microphone access is required to record audio.";
+}
+
+async function requestMicrophoneStream(): Promise<MediaStream> {
+  if (!voiceInputSupported()) {
+    throw new Error("Audio recording is unavailable in this browser.");
+  }
+
+  const permission = await queryMicrophonePermission();
+  if (permission === "denied") {
+    throw new DOMException("Microphone permission denied", "NotAllowedError");
+  }
+
+  return navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  });
+}
+
+function selectVoiceInputMimeType(): string | undefined {
+  if (typeof MediaRecorder === "undefined") return undefined;
+
+  const candidates = [
+    "audio/mp4",
+    "audio/aac",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+    "audio/webm;codecs=opus",
+    "audio/webm",
+  ];
+  return candidates.find((mimeType) =>
+    MediaRecorder.isTypeSupported(mimeType),
+  );
+}
+
+function isEncryptedPayload(value: unknown): value is EncryptedPayload {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const payload = value as Partial<EncryptedPayload>;
+  return (
+    typeof payload.account_id === "string" &&
+    typeof payload.object_id === "string" &&
+    typeof payload.object_type === "string" &&
+    typeof payload.algorithm === "string" &&
+    typeof payload.key_version === "number" &&
+    typeof payload.nonce === "string" &&
+    typeof payload.ciphertext === "string"
+  );
+}
+
+function encryptedVoiceTranscript(job: VoiceInputJob): EncryptedPayload | null {
+  const transcript = job.metadata?.encrypted_transcript;
+  return isEncryptedPayload(transcript) ? transcript : null;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function voiceInputErrorMessage(error: unknown): string {
+  if (!(error instanceof Error) || !error.message.trim()) {
+    return "Audio transcription failed.";
+  }
+
+  try {
+    const parsed = JSON.parse(error.message) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const detail = parsed as Record<string, unknown>;
+      if (typeof detail.message === "string") return detail.message;
+      if (typeof detail.error === "string") return detail.error;
+    }
+  } catch {
+    // The platform sometimes returns plain text errors.
+  }
+
+  return error.message;
+}
 
 function metadataText(
   metadata: Record<string, unknown>,
@@ -1372,6 +1519,10 @@ export function ChatArea({
     isAgentTarget ? agentId : undefined,
   );
   const { agentDomains } = useAgentDomains(isAgentTarget ? agentId : undefined);
+  const {
+    modelAssignments,
+    isLoading: isLoadingModelAssignments,
+  } = useAgentModelAssignments(isAgentTarget ? agentId : undefined);
   const { projects } = useProjects();
   const { commands: platformCommandRecords } = useChatCommands();
   const chatCommands = useMemo(
@@ -1514,11 +1665,18 @@ export function ChatArea({
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const voiceInputTimerRef = useRef<number | null>(null);
   const lastAssistantContentRef = useRef<Map<string, string>>(new Map());
   const seenAssistantContentRef = useRef<Map<string, string>>(new Map());
   const hasInitializedAssistantRef = useRef(false);
   const historyReadyRef = useRef(false);
   const pendingSessionScrollRef = useRef(false);
+  const [voiceInputState, setVoiceInputState] =
+    useState<VoiceInputState>("idle");
+  const [voiceInputAvailable, setVoiceInputAvailable] = useState(false);
   const [streamingAssistantId, setStreamingAssistantId] = useState<
     string | null
   >(null);
@@ -1547,6 +1705,260 @@ export function ChatArea({
     const timer = setTimeout(() => inputRef.current?.focus(), 100);
     return () => clearTimeout(timer);
   }, [isMobile]);
+
+  useEffect(() => {
+    setVoiceInputAvailable(voiceInputSupported());
+  }, []);
+
+  const clearVoiceInputTimer = useCallback(() => {
+    if (voiceInputTimerRef.current !== null) {
+      window.clearTimeout(voiceInputTimerRef.current);
+      voiceInputTimerRef.current = null;
+    }
+  }, []);
+
+  const stopVoiceInputTracks = useCallback(() => {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearVoiceInputTimer();
+      const recorder = mediaRecorderRef.current;
+      if (recorder) {
+        recorder.ondataavailable = null;
+        recorder.onstop = null;
+        if (recorder.state !== "inactive") {
+          recorder.stop();
+        }
+      }
+      stopVoiceInputTracks();
+    };
+  }, [clearVoiceInputTimer, stopVoiceInputTracks]);
+
+  const pollVoiceInputJob = useCallback(
+    async (initialJob: VoiceInputJob): Promise<VoiceInputJob> => {
+      let job = initialJob;
+      const startedAt = Date.now();
+
+      while (Date.now() - startedAt <= VOICE_INPUT_POLL_TIMEOUT_MS) {
+        if (job.status === "transcribed" || job.status === "completed") {
+          return job;
+        }
+
+        if (
+          job.status === "failed" ||
+          job.status === "expired" ||
+          job.status === "cancelled"
+        ) {
+          throw new Error(job.error_message || "Audio transcription failed.");
+        }
+
+        await wait(VOICE_INPUT_POLL_INTERVAL_MS);
+        job = await fetchVoiceInputJob(job.id);
+      }
+
+      throw new Error("Audio transcription timed out.");
+    },
+    [],
+  );
+
+  const handleVoiceInputBlob = useCallback(
+    async (audio: Blob) => {
+      if (!sessionId || !isAgentTarget) {
+        toast.error("Start an agent chat before recording audio.");
+        setVoiceInputState("idle");
+        return;
+      }
+
+      if (audio.size <= 0) {
+        toast.error("No audio was recorded.");
+        setVoiceInputState("idle");
+        return;
+      }
+
+      if (audio.size > VOICE_INPUT_MAX_BYTES) {
+        toast.error("Recording is too long. Try a shorter prompt.");
+        setVoiceInputState("idle");
+        return;
+      }
+
+      setVoiceInputState("processing");
+      try {
+        const uploaded = await createVoiceInputJob({
+          audio,
+          session_id: sessionId,
+          agent_id: agentId,
+          project_id: projectId,
+        });
+        const completed = await pollVoiceInputJob(uploaded);
+        const encryptedTranscript = encryptedVoiceTranscript(completed);
+        if (!encryptedTranscript) {
+          throw new Error("Transcription finished without a transcript.");
+        }
+
+        const transcript = (await decryptContentPayload(encryptedTranscript))
+          ?.trim();
+        if (!transcript) {
+          throw new Error("Transcription was empty.");
+        }
+
+        await sendMessage(transcript);
+      } catch (error) {
+        console.error("Voice input failed", error);
+        toast.error(voiceInputErrorMessage(error));
+      } finally {
+        setVoiceInputState("idle");
+      }
+    },
+    [
+      agentId,
+      isAgentTarget,
+      pollVoiceInputJob,
+      projectId,
+      sendMessage,
+      sessionId,
+    ],
+  );
+
+  const hasTranscriptionModel = Boolean(
+    modelAssignments?.assignments.some(
+      (assignment) => assignment.capability === "transcribe_audio",
+    ),
+  );
+  const voiceInputCapabilityNote =
+    !isLoadingModelAssignments && !hasTranscriptionModel
+      ? "Voice input requires a Transcribe audio model assignment. Configure the model in Agents → Capabilities."
+      : null;
+
+  const voiceInputDisabled =
+    !voiceInputAvailable ||
+    !hasTranscriptionModel ||
+    !sessionId ||
+    !isAgentTarget ||
+    isDomainPending ||
+    hasActiveTurn ||
+    Boolean(pendingCommand) ||
+    Boolean(pendingDomain);
+
+  const voiceInputControlDisabled =
+    voiceInputState === "recording"
+      ? false
+      : voiceInputDisabled || voiceInputState !== "idle";
+
+  const voiceInputTitle =
+    voiceInputState === "recording"
+      ? "Stop recording"
+      : voiceInputState === "requesting"
+        ? "Preparing microphone"
+        : voiceInputState === "processing"
+          ? "Transcribing audio"
+          : isLoadingModelAssignments
+            ? "Checking transcription model assignment"
+            : voiceInputCapabilityNote
+              ? voiceInputCapabilityNote
+          : !voiceInputAvailable
+            ? "Audio recording is unavailable in this browser"
+            : "Record audio";
+
+  const startVoiceRecording = useCallback(async () => {
+    if (voiceInputState !== "idle") return;
+
+    if (voiceInputDisabled) {
+      toast.error(
+        voiceInputCapabilityNote
+          ? voiceInputCapabilityNote
+          : voiceInputAvailable
+          ? "Audio can be recorded after the current chat action finishes."
+          : "Audio recording is unavailable in this browser.",
+      );
+      return;
+    }
+
+    setVoiceInputState("requesting");
+    try {
+      const stream = await requestMicrophoneStream();
+      setVoiceInputAvailable(true);
+      const mimeType = selectVoiceInputMimeType();
+      const recorder = new MediaRecorder(
+        stream,
+        mimeType
+          ? { mimeType, audioBitsPerSecond: 24_000 }
+          : { audioBitsPerSecond: 24_000 },
+      );
+
+      audioChunksRef.current = [];
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        clearVoiceInputTimer();
+        const chunks = audioChunksRef.current;
+        audioChunksRef.current = [];
+        mediaRecorderRef.current = null;
+        stopVoiceInputTracks();
+
+        const audio = new Blob(chunks, {
+          type: recorder.mimeType || mimeType || "audio/webm",
+        });
+        void handleVoiceInputBlob(audio);
+      };
+
+      recorder.addEventListener("error", (event) => {
+        console.error("Voice recorder error", event);
+        clearVoiceInputTimer();
+        if (recorder.state !== "inactive") {
+          recorder.stop();
+        }
+      });
+
+      recorder.start();
+      setVoiceInputState("recording");
+      voiceInputTimerRef.current = window.setTimeout(() => {
+        if (mediaRecorderRef.current?.state === "recording") {
+          toast.info("Recording stopped at 60 seconds.");
+          mediaRecorderRef.current.stop();
+        }
+      }, VOICE_INPUT_MAX_DURATION_MS);
+    } catch (error) {
+      console.error("Failed to start voice recording", error);
+      clearVoiceInputTimer();
+      stopVoiceInputTracks();
+      mediaRecorderRef.current = null;
+      setVoiceInputState("idle");
+      toast.error(voiceInputStartErrorMessage(error));
+    }
+  }, [
+    clearVoiceInputTimer,
+    handleVoiceInputBlob,
+    stopVoiceInputTracks,
+    voiceInputAvailable,
+    voiceInputCapabilityNote,
+    voiceInputDisabled,
+    voiceInputState,
+  ]);
+
+  const stopVoiceRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+    clearVoiceInputTimer();
+    recorder.stop();
+  }, [clearVoiceInputTimer]);
+
+  const handleVoiceInputPress = useCallback(() => {
+    if (voiceInputState === "recording") {
+      stopVoiceRecording();
+      return;
+    }
+    void startVoiceRecording();
+  }, [startVoiceRecording, stopVoiceRecording, voiceInputState]);
 
   // Desktop hold-to-cancel
   const [holdProgress, setHoldProgress] = useState(false);
@@ -2919,6 +3331,10 @@ export function ChatArea({
             onSelectAgent={handleSwitchAgent}
             onSelectDomain={handleEnterDomainFromChip}
             onCancelPress={cancelResponse}
+            onVoiceInputPress={handleVoiceInputPress}
+            voiceInputState={voiceInputState}
+            voiceInputDisabled={voiceInputControlDisabled}
+            voiceInputUnavailableReason={voiceInputCapabilityNote ?? undefined}
             agentColor={agentColor}
             isDomainPending={isDomainPending}
             inputRef={inputRef}
@@ -3377,6 +3793,30 @@ export function ChatArea({
                   </div>
                 )}
               </div>
+              <button
+                type="button"
+                onClick={handleVoiceInputPress}
+                disabled={voiceInputControlDisabled}
+                title={voiceInputTitle}
+                aria-label={voiceInputTitle}
+                className={cn(
+                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border transition-colors",
+                  voiceInputState === "recording"
+                    ? "border-flag-red-200 bg-flag-red-50 text-flag-red-600 hover:bg-flag-red-100 dark:border-flag-red-900/50 dark:bg-flag-red-950/40 dark:text-flag-red-300"
+                    : "theme-border theme-surface text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10",
+                  voiceInputControlDisabled &&
+                    "cursor-not-allowed opacity-50 hover:bg-transparent dark:hover:bg-transparent",
+                )}
+              >
+                {voiceInputState === "requesting" ||
+                voiceInputState === "processing" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : voiceInputState === "recording" ? (
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                ) : (
+                  <Mic className="h-4 w-4" />
+                )}
+              </button>
               <ChatCancelControl
                 visible={hasActiveTurn}
                 holdProgress={holdProgress}
@@ -3405,6 +3845,11 @@ export function ChatArea({
                 </svg>
               </Button>
             </div>
+            {voiceInputCapabilityNote && (
+              <p className="text-center text-xs text-amber-600 dark:text-amber-400">
+                {voiceInputCapabilityNote}
+              </p>
+            )}
             <AnimatePresence>
               {hasActiveTurn && (
                 <motion.p

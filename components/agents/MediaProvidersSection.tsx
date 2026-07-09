@@ -1,5 +1,8 @@
 "use client";
 
+// Soft-deprecated (PR-D3): Media inventory tab is hidden. Configure engines via
+// ModelsSection + agent model-assignments. Media inventory tab stays hidden (model-first).
+
 import { useCallback, useMemo, useState } from "react";
 import {
   ArrowDown,

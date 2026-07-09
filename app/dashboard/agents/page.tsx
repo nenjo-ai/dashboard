@@ -12,7 +12,6 @@ import { AgentsSection } from "@/components/agents/AgentsSection";
 import { MobileAgentList } from "@/components/agents/MobileAgentList";
 import { DomainsSection } from "@/components/agents/DomainsSection";
 import { McpServersSection } from "@/components/settings/McpServersSection";
-import { MediaProvidersSection } from "@/components/agents/MediaProvidersSection";
 import { ModelsSection } from "@/components/agents/ModelsSection";
 import { AbilitiesSection } from "@/components/agents/AbilitiesSection";
 import { CommandsSection } from "@/components/agents/CommandsSection";
@@ -22,7 +21,14 @@ import { PageContent } from "@/components/ui/PageContent";
 import { toast } from "@/lib/toast";
 import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
-type AgentsTab = "agents" | "domains" | "abilities" | "commands" | "context" | "mcp" | "media" | "models";
+type AgentsTab =
+  | "agents"
+  | "domains"
+  | "abilities"
+  | "commands"
+  | "context"
+  | "mcp"
+  | "models";
 
 export default function AgentsPage() {
   return (
@@ -38,7 +44,15 @@ function AgentsPageContent() {
   const { projects } = useProjects();
   const { agents } = useAgents();
 
-  const [activeTab, setActiveTab] = useTabParam<AgentsTab>("agents", ["agents", "domains", "abilities", "commands", "context", "mcp", "media", "models"]);
+  const [activeTab, setActiveTab] = useTabParam<AgentsTab>("agents", [
+    "agents",
+    "domains",
+    "abilities",
+    "commands",
+    "context",
+    "mcp",
+    "models",
+  ]);
   const [deletingModel, setDeletingModel] = useState<Model | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -75,7 +89,6 @@ function AgentsPageContent() {
     { id: "commands" as const, label: "Commands" },
     { id: "context" as const, label: "Context" },
     { id: "mcp" as const, label: "MCP" },
-    { id: "media" as const, label: "Media" },
     { id: "models" as const, label: "Models" },
   ];
 
@@ -144,19 +157,11 @@ function AgentsPageContent() {
             </>
           )}
 
-          {activeTab === "media" && (
-            <>
-              <p className="text-sm leading-6 text-gray-500 dark:text-gray-400">
-                Native media providers agents can use for image, video, and audio capabilities.
-              </p>
-              <MediaProvidersSection />
-            </>
-          )}
-
           {activeTab === "models" && (
             <>
               <p className="text-sm leading-6 text-gray-500 dark:text-gray-400">
-                LLM configurations assigned to agents for execution.
+                Chat and native media engines (image, video, audio) configured
+                once and assigned to agents.
               </p>
               <ModelsSection
                 models={models}
@@ -238,19 +243,11 @@ function AgentsPageContent() {
             </>
           )}
 
-          {activeTab === "media" && (
-            <>
-              <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-                Native media providers agents can use for image, video, and audio capabilities.
-              </p>
-              <MediaProvidersSection />
-            </>
-          )}
-
           {activeTab === "models" && (
             <>
               <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-                LLM configurations assigned to agents for execution.
+                Chat and native media engines (image, video, audio) configured
+                once and assigned to agents.
               </p>
               <ModelsSection
                 models={models}

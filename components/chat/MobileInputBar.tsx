@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { motion, AnimatePresence } from "motion/react";
+import { Loader2, Mic, Square } from "lucide-react";
 import type { AgentDefinition, Domain } from "@/lib/types";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { PendingDomainPill } from "@/components/project/PendingDomainPill";
@@ -14,6 +15,8 @@ import {
 } from "./PendingCommandPill";
 import { MobileTouchButton } from "./MobileTouchButton";
 import { MobileBottomSheet } from "./MobileBottomSheet";
+
+type VoiceInputState = "idle" | "requesting" | "recording" | "processing";
 
 interface MobileInputBarProps {
   input: string;
@@ -30,6 +33,10 @@ interface MobileInputBarProps {
   onSelectAgent: (agent: AgentDefinition) => void;
   onSelectDomain: (domain: Domain) => void;
   onCancelPress: () => void;
+  onVoiceInputPress?: () => void;
+  voiceInputState?: VoiceInputState;
+  voiceInputDisabled?: boolean;
+  voiceInputUnavailableReason?: string;
   agentColor?: string;
   isDomainPending?: boolean;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -57,6 +64,10 @@ export function MobileInputBar({
   onSelectAgent,
   onSelectDomain,
   onCancelPress,
+  onVoiceInputPress,
+  voiceInputState = "idle",
+  voiceInputDisabled,
+  voiceInputUnavailableReason,
   agentColor,
   isDomainPending,
   inputRef,
@@ -87,6 +98,16 @@ export function MobileInputBar({
   const currentAgentId = activeAgent?.id;
   const interruptActive = isTyping || hasActiveRunTrace;
   const canSend = input.trim().length > 0 || !!pendingCommand;
+  const voiceInputBusy =
+    voiceInputState === "requesting" || voiceInputState === "processing";
+  const voiceInputTitle =
+    voiceInputState === "recording"
+      ? "Stop recording"
+      : voiceInputState === "requesting"
+        ? "Preparing microphone"
+      : voiceInputState === "processing"
+        ? "Transcribing audio"
+        : voiceInputUnavailableReason ?? "Record audio";
   const shouldRenderComposer =
     isMobileViewport
     && pathname.startsWith("/dashboard/chat")
@@ -493,6 +514,28 @@ export function MobileInputBar({
                   </svg>
                 </button>
               </>
+            )}
+            {onVoiceInputPress && (
+              <MobileTouchButton
+                onPress={onVoiceInputPress}
+                disabled={voiceInputDisabled}
+                title={voiceInputTitle}
+                className={cn(
+                  "flex h-10 w-10 items-center justify-center rounded-full border border-black/5 transition-colors dark:border-white/10",
+                  voiceInputState === "recording"
+                    ? "bg-flag-red-100 text-flag-red-600 active:bg-flag-red-200 dark:bg-flag-red-900/40 dark:text-flag-red-300"
+                    : "bg-black/[0.04] text-gray-500 active:bg-black/[0.07] dark:bg-white/[0.06] dark:text-gray-400",
+                  voiceInputDisabled && "opacity-45",
+                )}
+              >
+                {voiceInputBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : voiceInputState === "recording" ? (
+                  <Square className="h-3.5 w-3.5 fill-current" />
+                ) : (
+                  <Mic className="h-4 w-4" />
+                )}
+              </MobileTouchButton>
             )}
             <MobileTouchButton
               onPress={handleSendPress}

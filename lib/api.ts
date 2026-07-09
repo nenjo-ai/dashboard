@@ -49,9 +49,16 @@ import type {
   TokenUsageSource,
   ConfigureMediaProvidersRequest,
   ConfigureMediaAssignmentsRequest,
+  ConfigureModelAssignmentsRequest,
   MediaCapabilitiesResponse,
   MediaConfig,
   MediaAssignmentsResponse,
+  ModelAssignmentsResponse,
+  VoiceInputJob,
+  VoiceInputJobResponse,
+  ModelCatalogProvider,
+  ModelCatalogQuery,
+  ModelCatalogResponse,
 } from "./types";
 import { mutate as mutateSWR } from "swr";
 import { readStoredActiveOrgId } from "./activeOrg";
@@ -360,6 +367,8 @@ function scopedCacheKey(orgId: string, url: string): string {
 function isCatalogUrl(url: string): boolean {
   if (url === projectsUrl()) return true;
   if (url === modelsUrl()) return true;
+  if (url === modelCatalogUrl("openrouter")) return true;
+  if (url.startsWith(`${modelCatalogUrl("openrouter")}?`)) return true;
   if (url === mediaConfigUrl()) return true;
   if (url.startsWith(`${modelsUrl()}?`)) return true;
   if (/\/api\/v1\/knowledge$/.test(url)) return true;
@@ -1081,6 +1090,53 @@ export function modelUrl(id: string): string {
   return `${API_V1}/models/${id}`;
 }
 
+function appendCatalogQueryValue(
+  search: URLSearchParams,
+  key: string,
+  value: string | string[] | undefined,
+): void {
+  if (Array.isArray(value)) {
+    const joined = value
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join(",");
+    if (joined) search.set(key, joined);
+    return;
+  }
+
+  const normalized = value?.trim();
+  if (normalized) search.set(key, normalized);
+}
+
+export function modelCatalogUrl(
+  provider: ModelCatalogProvider,
+  params?: ModelCatalogQuery,
+): string {
+  const search = new URLSearchParams();
+  appendCatalogQueryValue(search, "search", params?.search);
+  appendCatalogQueryValue(search, "capability", params?.capability);
+  appendCatalogQueryValue(search, "feature", params?.feature);
+  appendCatalogQueryValue(search, "input_modality", params?.input_modality);
+  appendCatalogQueryValue(search, "output_modality", params?.output_modality);
+  appendCatalogQueryValue(
+    search,
+    "supported_parameter",
+    params?.supported_parameter,
+  );
+  if (typeof params?.free === "boolean") {
+    search.set("free", String(params.free));
+  }
+  const qs = search.toString();
+  return `${API_V1}/model-catalog/${provider}${qs ? `?${qs}` : ""}`;
+}
+
+export async function fetchModelCatalog(
+  provider: ModelCatalogProvider,
+  params?: ModelCatalogQuery,
+): Promise<ModelCatalogResponse> {
+  return catalogFetcher<ModelCatalogResponse>(modelCatalogUrl(provider, params));
+}
+
 export async function fetchModels(projectId?: string): Promise<Model[]> {
   return catalogFetcher<Model[]>(modelsUrl({ project_id: projectId }));
 }
@@ -1167,6 +1223,31 @@ export async function configureAgentMedia(
     body: JSON.stringify(data),
   });
   return res.json() as Promise<MediaAssignmentsResponse>;
+}
+
+// ---------------------------------------------------------------------------
+// Agent model capability assignments (model-first; dual-writes media)
+// ---------------------------------------------------------------------------
+
+export function agentModelAssignmentsUrl(agentId: string): string {
+  return `${API_V1}/agents/${agentId}/model-assignments`;
+}
+
+export async function fetchAgentModelAssignments(
+  agentId: string,
+): Promise<ModelAssignmentsResponse> {
+  return fetcher<ModelAssignmentsResponse>(agentModelAssignmentsUrl(agentId));
+}
+
+export async function configureAgentModelAssignments(
+  agentId: string,
+  data: ConfigureModelAssignmentsRequest,
+): Promise<ModelAssignmentsResponse> {
+  const res = await authFetch(agentModelAssignmentsUrl(agentId), {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return res.json() as Promise<ModelAssignmentsResponse>;
 }
 
 export async function fetchAllTags(projectId?: string): Promise<string[]> {
@@ -3525,6 +3606,44 @@ export async function createChatSession(body: {
     }),
   });
   return res.json() as Promise<ChatSession>;
+}
+
+export async function createVoiceInputJob(body: {
+  audio: Blob;
+  session_id: string;
+  agent_id?: string | null;
+  project_id?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  language?: string | null;
+}): Promise<VoiceInputJob> {
+  const form = new FormData();
+  const contentType = body.audio.type || "application/octet-stream";
+  const extension = contentType.includes("mp4") ? "mp4" : "webm";
+  form.append("audio", body.audio, `voice-input.${extension}`);
+  form.append("session_id", body.session_id);
+
+  if (body.agent_id) form.append("agent_id", body.agent_id);
+
+  const projectId = normalizeOptionalProjectId(body.project_id);
+  if (projectId) form.append("project_id", projectId);
+  if (body.provider?.trim()) form.append("provider", body.provider.trim());
+  if (body.model?.trim()) form.append("model", body.model.trim());
+  if (body.language?.trim()) form.append("language", body.language.trim());
+
+  const res = await authFetch(`${API_V1}/voice-inputs`, {
+    method: "POST",
+    body: form,
+  });
+  const data = (await res.json()) as VoiceInputJobResponse;
+  return data.job;
+}
+
+export async function fetchVoiceInputJob(id: string): Promise<VoiceInputJob> {
+  const data = await fetcher<VoiceInputJobResponse>(
+    `${API_V1}/voice-inputs/${id}`,
+  );
+  return data.job;
 }
 
 export async function createChatStream(

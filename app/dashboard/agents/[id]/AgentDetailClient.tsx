@@ -71,7 +71,7 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   },
   {
     id: "media",
-    label: "Media",
+    label: "Capabilities",
     icon: <ImageIcon className="h-4 w-4" />,
   },
   {

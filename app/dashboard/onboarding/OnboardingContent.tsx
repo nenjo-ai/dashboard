@@ -1785,14 +1785,9 @@ export default function OnboardingContent() {
   const [, setCreatedAgent] = useState<Model | null>(null);
   const [createdKey, setCreatedKey] = useState<CreateApiKeyResponse | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<ModelProvider>("anthropic");
-  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+  const [selectedOrgIdOverride, setSelectedOrgId] = useState<string | null>(null);
+  const selectedOrgId = selectedOrgIdOverride ?? currentUser?.org_id ?? null;
   const accountUserId = currentUser?.user_id ?? undefined;
-
-  useEffect(() => {
-    if (!selectedOrgId && currentUser?.org_id) {
-      setSelectedOrgId(currentUser.org_id);
-    }
-  }, [currentUser?.org_id, selectedOrgId]);
 
   useEffect(() => {
     if (redirected.current) return;
