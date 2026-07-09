@@ -414,6 +414,45 @@ export interface EncryptedPayload {
   ciphertext: string;
 }
 
+export type VoiceInputJobStatus =
+  | "uploaded"
+  | "queued"
+  | "transcribing"
+  | "transcribed"
+  | "agent_running"
+  | "completed"
+  | "failed"
+  | "expired"
+  | "cancelled";
+
+export interface VoiceInputJob {
+  id: string;
+  org_id: string;
+  user_id: string;
+  chat_session_id: string;
+  agent_id: string;
+  worker_id: string | null;
+  object_key: string;
+  content_type: string;
+  byte_size: number;
+  encryption_metadata: Record<string, unknown>;
+  status: VoiceInputJobStatus;
+  transcript_message_id: string | null;
+  agent_run_id: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  expires_at: string;
+  completed_at: string | null;
+  deleted_at: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface VoiceInputJobResponse {
+  job: VoiceInputJob;
+}
+
 export interface WorkerStatus {
   worker_connected: boolean;
   workers?: Array<{
@@ -1035,10 +1074,16 @@ export interface Model {
   model: string;
   model_provider: string;
   temperature: number;
+  context_window?: number | null;
   tools: unknown[];
   tags: string[];
   base_url: string | null;
   native_tools?: NativeModelTool[];
+  capabilities?: ModelCapability[];
+  input_modalities?: ModelModality[];
+  output_modalities?: ModelModality[];
+  execution_modes?: ModelExecutionMode[];
+  voice_options?: Record<string, unknown>;
   project_id: string | null;
   created_at: string;
   updated_at: string;
@@ -1052,10 +1097,16 @@ export interface CreateModelRequest {
   model: string;
   model_provider: string;
   temperature?: number;
+  context_window?: number;
   tools?: unknown[];
   tags?: string[];
   base_url?: string;
   native_tools?: NativeModelTool[];
+  capabilities?: ModelCapability[];
+  input_modalities?: ModelModality[];
+  output_modalities?: ModelModality[];
+  execution_modes?: ModelExecutionMode[];
+  voice_options?: Record<string, unknown>;
   project_id?: string;
 }
 
@@ -1065,17 +1116,217 @@ export interface UpdateModelRequest {
   model?: string;
   model_provider?: string;
   temperature?: number;
+  context_window?: number | null;
   tags?: string[];
   base_url?: string | null;
   native_tools?: NativeModelTool[];
+  capabilities?: ModelCapability[];
+  input_modalities?: ModelModality[];
+  output_modalities?: ModelModality[];
+  execution_modes?: ModelExecutionMode[];
+  voice_options?: Record<string, unknown>;
 }
 
 export type NativeModelTool = "web_search" | "x_search";
+
+/** Assignable operation IDs on `models.capabilities`. */
+export type ModelCapability =
+  | "chat"
+  | "transcribe_audio"
+  | "generate_speech"
+  | "generate_image"
+  | "edit_image"
+  | "generate_video"
+  | "edit_video"
+  | "image_to_video"
+  | "reference_to_video"
+  | "extend_video"
+  | (string & {});
+
+/** Read-only behavioral metadata returned by a provider catalog. */
+export type ModelCatalogFeature =
+  | "tool_calling"
+  | "structured_outputs"
+  | "reasoning"
+  | (string & {});
+
+export type ModelModality = "text" | "audio" | "image" | "file" | "video";
+
+export type ModelExecutionMode =
+  | "immediate"
+  | "async_job"
+  | "realtime_session";
 
 export const NATIVE_MODEL_TOOL_LABELS: Record<NativeModelTool, string> = {
   web_search: "Web Search",
   x_search: "X Search",
 };
+
+/** Operations that may appear on models (includes chat). */
+export const ASSIGNABLE_OPERATION_CAPABILITIES: Array<{
+  id: ModelCapability;
+  label: string;
+}> = [
+  { id: "chat", label: "Chat" },
+  { id: "transcribe_audio", label: "Transcribe audio" },
+  { id: "generate_speech", label: "Generate speech" },
+  { id: "generate_image", label: "Generate image" },
+  { id: "edit_image", label: "Edit image" },
+  { id: "generate_video", label: "Generate video" },
+  { id: "edit_video", label: "Edit video" },
+  { id: "image_to_video", label: "Image to video" },
+  { id: "reference_to_video", label: "Reference to video" },
+  { id: "extend_video", label: "Extend video" },
+];
+
+/**
+ * Non-chat assignable ops for resource model assignments / package requirements.
+ * `chat` is primary conversation via `agents.model_id` only.
+ */
+export const ASSIGNMENT_CAPABILITIES: Array<{
+  id: ModelCapability;
+  label: string;
+  kind: "image" | "video" | "audio";
+}> = [
+  { id: "generate_image", label: "Generate image", kind: "image" },
+  { id: "edit_image", label: "Edit image", kind: "image" },
+  { id: "generate_video", label: "Generate video", kind: "video" },
+  { id: "edit_video", label: "Edit video", kind: "video" },
+  { id: "image_to_video", label: "Image to video", kind: "video" },
+  { id: "reference_to_video", label: "Reference to video", kind: "video" },
+  { id: "extend_video", label: "Extend video", kind: "video" },
+  { id: "generate_speech", label: "Generate speech", kind: "audio" },
+  { id: "transcribe_audio", label: "Transcribe audio", kind: "audio" },
+];
+
+/** Behavioral catalog features are separate from assignable operations. */
+export const MODEL_CATALOG_FEATURES: Array<{
+  id: ModelCatalogFeature;
+  label: string;
+}> = [
+  { id: "tool_calling", label: "Tool calling" },
+  { id: "structured_outputs", label: "Structured outputs" },
+  { id: "reasoning", label: "Reasoning" },
+];
+
+export const MODEL_MODALITY_OPTIONS: ModelModality[] = [
+  "text",
+  "audio",
+  "image",
+  "file",
+  "video",
+];
+
+const ASSIGNMENT_CAPABILITY_IDS = new Set(
+  ASSIGNMENT_CAPABILITIES.map((item) => item.id),
+);
+
+export function isAssignmentCapability(cap: string): boolean {
+  return ASSIGNMENT_CAPABILITY_IDS.has(cap as ModelCapability);
+}
+
+export function modelCapabilityLabel(cap: string): string {
+  return (
+    ASSIGNABLE_OPERATION_CAPABILITIES.find((item) => item.id === cap)?.label ??
+    ASSIGNMENT_CAPABILITIES.find((item) => item.id === cap)?.label ??
+    cap
+  );
+}
+
+export function modelCatalogFeatureLabel(feature: string): string {
+  return MODEL_CATALOG_FEATURES.find((item) => item.id === feature)?.label ?? feature;
+}
+
+// ---------------------------------------------------------------------------
+// Agent model capability assignments (non-chat ops)
+// ---------------------------------------------------------------------------
+
+export interface ModelAssignment {
+  id: string;
+  org_id?: string;
+  agent_id: string;
+  capability: string;
+  model_id: string;
+  assignment_source: "local" | "package" | string;
+  package_install_id?: string | null;
+  package_source_path?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModelAssignmentInput {
+  capability: string;
+  model_id: string;
+}
+
+export interface ConfigureModelAssignmentsRequest {
+  assignments: ModelAssignmentInput[];
+}
+
+export interface ModelAssignmentsResponse {
+  assignments: ModelAssignment[];
+}
+
+// ---------------------------------------------------------------------------
+// Provider model catalogs
+// ---------------------------------------------------------------------------
+
+export type ModelCatalogProvider = "openrouter" | "xai";
+
+export type ModelCatalogSource = "cache" | "upstream" | "static";
+
+export interface ModelCatalogTopProvider {
+  context_length?: number | null;
+  max_completion_tokens?: number | null;
+  is_moderated?: boolean | null;
+}
+
+export interface ModelCatalogModel {
+  id: string;
+  canonical_slug?: string | null;
+  name: string;
+  description?: string | null;
+  created?: number | null;
+  context_length?: number | null;
+  input_modalities: string[];
+  output_modalities: string[];
+  modality?: string | null;
+  tokenizer?: string | null;
+  instruct_type?: string | null;
+  capabilities: ModelCapability[];
+  features: ModelCatalogFeature[];
+  supported_parameters: string[];
+  supported_voices: string[];
+  pricing: Record<string, string>;
+  free: boolean;
+  top_provider?: ModelCatalogTopProvider | null;
+  knowledge_cutoff?: string | null;
+  expiration_date?: string | null;
+  endpoints_path?: string | null;
+  reasoning?: unknown;
+  /** False when the catalog documents a provider model Nenjo cannot execute yet. */
+  configurable?: boolean;
+  unavailable_reason?: string | null;
+}
+
+export interface ModelCatalogResponse {
+  provider: ModelCatalogProvider | string;
+  source: ModelCatalogSource;
+  fetched_at: string;
+  total: number;
+  filtered_total: number;
+  models: ModelCatalogModel[];
+}
+
+export interface ModelCatalogQuery {
+  search?: string;
+  capability?: string | string[];
+  feature?: string | string[];
+  input_modality?: string | string[];
+  output_modality?: string | string[];
+  supported_parameter?: string | string[];
+  free?: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Native media provider configuration
@@ -1194,12 +1445,29 @@ export const NATIVE_MEDIA_PROVIDERS: NativeMediaProviderInfo[] = [
   {
     id: "openai",
     label: "OpenAI",
-    models: ["gpt-image-1"],
-    capabilities: ["generate_image"],
+    models: [
+      "gpt-image-1",
+      "whisper-1",
+      "gpt-4o-transcribe",
+      "gpt-4o-mini-transcribe",
+    ],
+    capabilities: ["generate_image", "transcribe_audio"],
     model_capabilities: [
       {
         model: "gpt-image-1",
         capabilities: ["generate_image"],
+      },
+      {
+        model: "whisper-1",
+        capabilities: ["transcribe_audio"],
+      },
+      {
+        model: "gpt-4o-transcribe",
+        capabilities: ["transcribe_audio"],
+      },
+      {
+        model: "gpt-4o-mini-transcribe",
+        capabilities: ["transcribe_audio"],
       },
     ],
   },

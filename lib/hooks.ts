@@ -22,9 +22,11 @@ import {
   activityUrl,
   dependencyGraphUrl,
   modelsUrl,
+  modelCatalogUrl,
   mediaCapabilitiesUrl,
   mediaConfigUrl,
   agentMediaUrl,
+  agentModelAssignmentsUrl,
   knowledgeItemsUrl,
   knowledgePacksUrl,
   packageSourcesUrl,
@@ -65,6 +67,9 @@ import type {
   ExecutionTraceEvent,
   DependencyGraph,
   Model,
+  ModelCatalogQuery,
+  ModelCatalogProvider,
+  ModelCatalogResponse,
   KnowledgeItem,
   KnowledgePack,
   PackageInstall,
@@ -94,6 +99,7 @@ import type {
   MediaCapabilitiesResponse,
   MediaConfig,
   MediaAssignmentsResponse,
+  ModelAssignmentsResponse,
 } from "./types";
 import { useSafeRouter } from "./safeRouter";
 
@@ -446,6 +452,35 @@ export function useModels(projectId?: string) {
   };
 }
 
+export function useModelCatalog(
+  provider: ModelCatalogProvider,
+  params?: ModelCatalogQuery,
+  enabled = true,
+) {
+  const url = enabled ? modelCatalogUrl(provider, params) : null;
+  const { data, error, isLoading, mutate } = useSWR<ModelCatalogResponse>(
+    url,
+    catalogFetcher,
+    catalogSWROptions,
+  );
+
+  return {
+    catalog: data,
+    models: data?.models ?? [],
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useOpenRouterModelCatalog(
+  params?: ModelCatalogQuery,
+  enabled = true,
+) {
+  return useModelCatalog("openrouter", params, enabled);
+}
+
 export function useMediaConfig() {
   const { data, error, isLoading, mutate } = useSWR<MediaConfig>(
     mediaConfigUrl(),
@@ -488,6 +523,23 @@ export function useAgentMedia(agentId: string | undefined) {
 
   return {
     mediaAssignments: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useAgentModelAssignments(agentId: string | undefined) {
+  const url = agentId ? agentModelAssignmentsUrl(agentId) : null;
+  const { data, error, isLoading, mutate } = useSWR<ModelAssignmentsResponse>(
+    url,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5000 },
+  );
+
+  return {
+    modelAssignments: data,
     isLoading,
     isError: !!error,
     error,
