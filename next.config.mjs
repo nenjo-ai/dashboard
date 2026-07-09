@@ -1,10 +1,12 @@
 import { createMDX } from 'fumadocs-mdx/next';
 
 const apiProxyTarget = process.env.API_PROXY_TARGET;
+const distDir = process.env.NEXT_DIST_DIR;
 
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
+  ...(distDir ? { distDir } : {}),
   turbopack: {},
   allowedDevOrigins: ['192.168.1.228'],
   // Ship the OG/Twitter card fonts (read at runtime via fs) with their routes.

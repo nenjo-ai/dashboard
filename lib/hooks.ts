@@ -49,6 +49,7 @@ import {
   orgsUrl,
   orgMembersUrl,
   orgInvitationsUrl,
+  orgQuotasUrl,
   orgContentKeyRequestsUrl,
   bootstrapStatusUrl,
   currentOrgContentKeyRequestUrl,
@@ -84,6 +85,7 @@ import type {
   CurrentOrg,
   OrgMember,
   OrgInvitation,
+  QuotaStatus,
   OrgContentKeyAccessRequest,
   OrgContentKeyAccessRequestStatus,
   BootstrapStatus,
@@ -689,6 +691,22 @@ export function useOrgInvitations(orgId: string | undefined) {
 
   return {
     invitations: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useOrgQuotaStatus(orgId: string | undefined) {
+  const { data, error, isLoading, mutate } = useSWR<QuotaStatus>(
+    orgId ? orgQuotasUrl(orgId) : null,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5000 },
+  );
+
+  return {
+    quotaStatus: data,
     isLoading,
     isError: !!error,
     error,

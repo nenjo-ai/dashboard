@@ -16,12 +16,13 @@ import {
   revokeOrgInvitation,
   updateOrgMember,
 } from "@/lib/api";
-import { useCurrentUser, useCurrentOrgContentKeyAccessRequest, useOrgContentKeyRequests, useOrgInvitations, useOrgMembers } from "@/lib/hooks";
+import { useCurrentUser, useCurrentOrgContentKeyAccessRequest, useOrgContentKeyRequests, useOrgInvitations, useOrgMembers, useOrgQuotaStatus } from "@/lib/hooks";
 import { useOrgContext } from "@/lib/org-context";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/cn";
 import { syncCurrentUserAckToActiveWorkers } from "@/lib/workerAckSync";
-import type { CurrentOrgContentKeyStatus, OrgContentKeyAccessRequest, OrgInvitation, OrgMember } from "@/lib/types";
+import type { CurrentOrgContentKeyStatus, OrgContentKeyAccessRequest, OrgInvitation, OrgMember, QuotaStatus } from "@/lib/types";
+import { countOpenInvitations, inviteSeatGate, isOpenInvitation } from "@/lib/inviteQuotaPolicy.mjs";
 import {
   buildCurrentOrgContentKeyBootstrap,
   ensureDeviceEncryptionIdentity,
@@ -364,12 +365,16 @@ function MembersPanel({
 function InvitesPanel({
   orgId,
   invitations,
+  quotaStatus,
+  quotaLoading,
   canEdit,
   canRead,
   onRefresh,
 }: {
   orgId: string;
   invitations: OrgInvitation[];
+  quotaStatus?: QuotaStatus;
+  quotaLoading: boolean;
   canEdit: boolean;
   canRead: boolean;
   onRefresh: () => Promise<unknown>;
@@ -380,12 +385,27 @@ function InvitesPanel({
   const [inviteExpanded, setInviteExpanded] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null);
-  const openInvitations = invitations.filter(
-    (invite) =>
-      !invite.revoked_at &&
-      !invite.accepted_at &&
-      new Date(invite.expires_at).getTime() > Date.now(),
-  );
+  const openInvitations = invitations.filter((invite) => isOpenInvitation(invite));
+  const openInvitationCount = countOpenInvitations(invitations);
+  const memberQuota = quotaStatus?.resources.members;
+  const quotaGate = memberQuota
+    ? inviteSeatGate({
+        memberCount: memberQuota.count,
+        openInvitationCount,
+        memberLimit: memberQuota.limit,
+      })
+    : null;
+  const inviteBlockedByQuota = quotaGate ? !quotaGate.canInvite : true;
+  const inviteUnavailable = !quotaGate || inviteBlockedByQuota;
+  const inviteButtonDisabled =
+    inviteExpanded ||
+    quotaLoading ||
+    inviteUnavailable;
+  const tierLabel = quotaStatus?.tier ? `${quotaStatus.tier} tier` : "current tier";
+  const memberLimitText =
+    memberQuota && memberQuota.limit >= 0
+      ? `${quotaGate?.seatsUsed ?? memberQuota.count}/${memberQuota.limit} seats used`
+      : "Unlimited seats";
 
   const buildInviteLink = (token: string) => {
     if (typeof window === "undefined") return token;
@@ -412,12 +432,32 @@ function InvitesPanel({
               </p>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1">
-              <Button variant="primary" disabled>
-                Invite member
+              <Button
+                variant="primary"
+                disabled={inviteButtonDisabled}
+                onClick={() => setInviteExpanded(true)}
+              >
+                {quotaLoading
+                  ? "Loading tier..."
+                  : !quotaGate
+                    ? "Tier unavailable"
+                    : inviteBlockedByQuota
+                      ? "Seat limit reached"
+                      : "Invite member"}
               </Button>
-              <p className="theme-text-muted text-xs">Coming soon</p>
+              <p className="theme-text-muted text-xs">
+                {quotaGate
+                  ? `${tierLabel}: ${memberLimitText}`
+                  : "Checking tier limits"}
+              </p>
             </div>
           </div>
+
+          {quotaGate && inviteBlockedByQuota ? (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+              This organization has reached the member limit for the {tierLabel}. Revoke a pending invite, remove a member, or upgrade before inviting another member.
+            </div>
+          ) : null}
 
           {inviteExpanded && (
             <>
@@ -465,7 +505,12 @@ function InvitesPanel({
               <div className="mt-4 flex items-center gap-2">
                 <Button
                   isLoading={isSubmitting}
+                  disabled={inviteUnavailable}
                   onClick={async () => {
+                    if (inviteUnavailable) {
+                      toast.error("This organization does not have an available member seat.");
+                      return;
+                    }
                     try {
                       setIsSubmitting(true);
                       const created = await createOrgInvitation(orgId, {
@@ -873,6 +918,7 @@ export function OrgSettingsSection() {
   } = useOrgContext();
   const { members, isLoading: membersLoading, mutate: mutateMembers } = useOrgMembers(activeOrgId ?? undefined);
   const { invitations, isLoading: invitesLoading, mutate: mutateInvites } = useOrgInvitations(activeOrgId ?? undefined);
+  const { quotaStatus, isLoading: quotaLoading, mutate: mutateQuotaStatus } = useOrgQuotaStatus(activeOrgId ?? undefined);
   const { requests, isLoading: requestsLoading, mutate: mutateRequests } = useOrgContentKeyRequests(activeOrgId ?? undefined);
   const githubAccount = user?.externalAccounts?.find((account) => account.provider === "github");
   const currentUserDisplayName =
@@ -931,7 +977,7 @@ export function OrgSettingsSection() {
           currentUserDisplayName={currentUserDisplayName}
           currentUserEmail={currentUserEmail}
           onRefresh={async () => {
-            await mutateMembers();
+            await Promise.all([mutateMembers(), mutateQuotaStatus()]);
           }}
         />
       )}
@@ -961,10 +1007,12 @@ export function OrgSettingsSection() {
         <InvitesPanel
           orgId={activeOrgId}
           invitations={invitations ?? []}
+          quotaStatus={quotaStatus}
+          quotaLoading={quotaLoading}
           canRead={canReadInvites}
           canEdit={canWriteInvites}
           onRefresh={async () => {
-            await mutateInvites();
+            await Promise.all([mutateInvites(), mutateQuotaStatus()]);
           }}
         />
       )}

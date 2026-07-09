@@ -6,6 +6,7 @@
     "dev": "next dev --turbopack",
     "build": "next build --webpack",
     "test": "node --test tests/*.test.mjs",
+    "test:e2e:vault": "playwright test e2e/vault-unlock.spec.ts",
     "start": "next start",
     "lint": "eslint .",
     "license:check": "npx license-checker-rseidelsohn --production --excludePrivatePackages --onlyAllow \"MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;Zlib;0BSD;CC0-1.0;Unicode-3.0;Unicode-DFS-2016\""
@@ -44,6 +45,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.3",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4.2.1",
     "@tailwindcss/typography": "^0.5.19",
     "@types/d3": "^7.4.3",

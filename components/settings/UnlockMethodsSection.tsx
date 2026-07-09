@@ -19,7 +19,12 @@ import {
 import { UnlockMethodSetup } from "@/components/auth/UnlockMethodSetup";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/lib/toast";
-import { shouldShowUnlockMethodSetup } from "@/lib/unlockMethodVisibility.mjs";
+import {
+  canRemoveLocalPasskeyUnlock,
+  canRemovePasswordUnlock,
+  shouldShowUnlockMethodSetup,
+  unlockMethodSetupVisibility,
+} from "@/lib/unlockMethodVisibility.mjs";
 
 function methodLabel(credential: UnlockCredential): string {
   return credential.label || credential.credential_id;
@@ -53,6 +58,18 @@ export function UnlockMethodsSection() {
   };
 
   const handleRevoke = async (credential: UnlockCredential) => {
+    const isLocal = localPasskeyIds.has(credential.credential_id);
+    if (
+      isLocal &&
+      !canRemoveLocalPasskeyUnlock({
+        localPasskeyCount: localPasskeyIds.size,
+        hasPassword,
+      })
+    ) {
+      toast.error("Add a passphrase or another device unlock before removing this unlock method.");
+      return;
+    }
+
     setRevokingId(credential.id);
     try {
       await revokeUnlockCredential(credential.id);
@@ -67,6 +84,11 @@ export function UnlockMethodsSection() {
   };
 
   const handleRemovePassword = async () => {
+    if (!canRemovePasswordUnlock({ localPasskeyCount: localPasskeyIds.size })) {
+      toast.error("Add device unlock before removing your passphrase unlock.");
+      return;
+    }
+
     setRemovingPassword(true);
     try {
       await removePasswordUnlockMethod();
@@ -84,6 +106,13 @@ export function UnlockMethodsSection() {
     localPasskeyCount: localPasskeyIds.size,
     hasPassword,
   });
+  const setupVisibility = unlockMethodSetupVisibility({
+    localPasskeyCount: localPasskeyIds.size,
+    hasPassword,
+  });
+  const canRemovePassword = canRemovePasswordUnlock({
+    localPasskeyCount: localPasskeyIds.size,
+  });
 
   return (
     <section className="theme-border theme-surface overflow-hidden rounded-2xl border p-5">
@@ -99,8 +128,8 @@ export function UnlockMethodsSection() {
           <UnlockMethodSetup
             compact
             allowSkip={false}
-            showDeviceUnlock
-            showPasswordUnlock
+            showDeviceUnlock={setupVisibility.showDeviceUnlock}
+            showPasswordUnlock={setupVisibility.showPasswordUnlock}
             onComplete={() => void handleSetupComplete()}
           />
         ) : null}
@@ -124,7 +153,12 @@ export function UnlockMethodsSection() {
                   type="button"
                   variant="danger"
                   size="sm"
-                  disabled={removingPassword}
+                  disabled={removingPassword || !canRemovePassword}
+                  title={
+                    canRemovePassword
+                      ? undefined
+                      : "Add device unlock before removing your passphrase unlock."
+                  }
                   onClick={() => void handleRemovePassword()}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -158,6 +192,12 @@ export function UnlockMethodsSection() {
             <div className="divide-y divide-black/5 dark:divide-white/8">
               {credentials.map((credential) => {
                 const isLocal = localPasskeyIds.has(credential.credential_id);
+                const canRemoveDeviceUnlock =
+                  !isLocal ||
+                  canRemoveLocalPasskeyUnlock({
+                    localPasskeyCount: localPasskeyIds.size,
+                    hasPassword,
+                  });
                 return (
                   <div key={credential.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
                     <div className="min-w-0">
@@ -172,7 +212,12 @@ export function UnlockMethodsSection() {
                       type="button"
                       variant="danger"
                       size="sm"
-                      disabled={revokingId === credential.id}
+                      disabled={revokingId === credential.id || !canRemoveDeviceUnlock}
+                      title={
+                        canRemoveDeviceUnlock
+                          ? undefined
+                          : "Add a passphrase or another device unlock before removing this unlock method."
+                      }
                       onClick={() => void handleRevoke(credential)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />

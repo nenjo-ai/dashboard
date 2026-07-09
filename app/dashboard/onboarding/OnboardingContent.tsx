@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import useSWR from "swr";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
@@ -70,12 +71,17 @@ import {
   loadStoredAccountContentKey,
   loadStoredOrgContentKey,
   loadStoredRecoveryBundle,
+  resetLocalEncryptedWorkspaceForRestore,
   restoreFromRecoveryBundle,
   storeRecoveryBundle,
   wrapAccountContentKeyForWorker,
   wrapOrgContentKeyForWorker,
 } from "@/lib/cryptoContent";
 import { useSafeRouter } from "@/lib/safeRouter";
+import {
+  shouldRedirectExistingWorkspaceToDashboard,
+  shouldUseExistingWorkspaceRestoreMode,
+} from "@/lib/vaultRestoreGate.mjs";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1331,6 +1337,7 @@ function StepRestoreDevice({
     setError(null);
     setRegistering(true);
     try {
+      await resetLocalEncryptedWorkspaceForRestore();
       const enrollment = await buildDeviceEnrollmentPayload({
         deviceLabel:
           typeof navigator !== "undefined"
@@ -1401,6 +1408,7 @@ function StepRestoreDevice({
       const restored = await restoreFromRecoveryBundle({
         recoveryPhrase,
         bundle,
+        resetLocalVault: true,
       });
       await putWorkerApprovalKey(restored.publicKey);
       const trustedDevice = await buildTrustedDevicePayload({
@@ -1674,6 +1682,8 @@ function StepRestoreDevice({
 export default function OnboardingContent() {
   const { user, isLoaded } = useUser();
   const router = useSafeRouter();
+  const searchParams = useSearchParams();
+  const forceRestore = searchParams.get("restore") === "1";
   const redirected = useRef(false);
   const officialPackagesInstalledForOrg = useRef<string | null>(null);
   const { data: currentUser } = useSWR(user ? authMeUrl() : null, fetcher, {
@@ -1741,13 +1751,31 @@ export default function OnboardingContent() {
 
         const hasSignedInAccount = Boolean(me.user_id || me.clerk_id);
 
-        if (hasSignedInAccount && hasOrg && hasExistingWorkspace) {
-          if (localAckState.key || localAckState.lockedVault) {
-            redirected.current = true;
-            router.replace("/dashboard");
-            return;
-          }
+        if (
+          shouldRedirectExistingWorkspaceToDashboard({
+            hasSignedInAccount,
+            hasOrg,
+            hasExistingWorkspace,
+            hasLocalAccountContentKey: Boolean(localAckState.key),
+            lockedVault: localAckState.lockedVault,
+            forceRestore,
+          })
+        ) {
+          redirected.current = true;
+          router.replace("/dashboard");
+          return;
+        }
 
+        if (
+          shouldUseExistingWorkspaceRestoreMode({
+            hasSignedInAccount,
+            hasOrg,
+            hasExistingWorkspace,
+            hasLocalAccountContentKey: Boolean(localAckState.key),
+            lockedVault: localAckState.lockedVault,
+            forceRestore,
+          })
+        ) {
           setOnboardingMode("restore");
         } else {
           setOnboardingMode("fresh");
@@ -1768,7 +1796,7 @@ export default function OnboardingContent() {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, router, user]);
+  }, [forceRestore, isLoaded, router, user]);
 
   const maxWidth =
     onboardingMode === "restore"
