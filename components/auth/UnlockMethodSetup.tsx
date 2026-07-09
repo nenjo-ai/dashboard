@@ -6,7 +6,7 @@ import { KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { canUsePasskeyPrf, registerPasskeyUnlock } from "@/lib/localUnlock";
-import { setupPasswordUnlock } from "@/lib/cryptoContent";
+import { MIN_UNLOCK_PASSPHRASE_LENGTH, setupPasswordUnlock } from "@/lib/cryptoContent";
 
 export function UnlockMethodSetup({
   onComplete,
@@ -32,9 +32,10 @@ export function UnlockMethodSetup({
   const normalizedPassword = password.trim();
   const normalizedConfirmPassword = confirmPassword.trim();
   const passwordTooShort =
-    normalizedPassword.length > 0 && normalizedPassword.length < 12;
+    normalizedPassword.length > 0 && normalizedPassword.length < MIN_UNLOCK_PASSPHRASE_LENGTH;
   const confirmPasswordTooShort =
-    normalizedConfirmPassword.length > 0 && normalizedConfirmPassword.length < 12;
+    normalizedConfirmPassword.length > 0 &&
+    normalizedConfirmPassword.length < MIN_UNLOCK_PASSPHRASE_LENGTH;
 
   useEffect(() => {
     setPasskeyAvailable(canUsePasskeyPrf());
@@ -64,8 +65,11 @@ export function UnlockMethodSetup({
       setError("Sign in before setting up passphrase unlock.");
       return;
     }
-    if (normalizedPassword.length < 12 || normalizedConfirmPassword.length < 12) {
-      setError("Use a passphrase with at least 12 characters.");
+    if (
+      normalizedPassword.length < MIN_UNLOCK_PASSPHRASE_LENGTH ||
+      normalizedConfirmPassword.length < MIN_UNLOCK_PASSPHRASE_LENGTH
+    ) {
+      setError(`Use a passphrase with at least ${MIN_UNLOCK_PASSPHRASE_LENGTH} characters.`);
       return;
     }
     if (normalizedPassword !== normalizedConfirmPassword) {
@@ -168,7 +172,7 @@ export function UnlockMethodSetup({
               </div>
               {passwordTooShort || confirmPasswordTooShort ? (
                 <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
-                  Use at least 12 characters.
+                  Use at least {MIN_UNLOCK_PASSPHRASE_LENGTH} characters.
                 </p>
               ) : null}
               <div className="flex justify-end">

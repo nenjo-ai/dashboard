@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useUser } from "@clerk/nextjs";
-import { KeyRound, LockKeyhole } from "lucide-react";
+import { KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import {
@@ -18,9 +18,11 @@ import {
 } from "@/lib/cryptoContent";
 import { unlockWithAnyLocalPasskey } from "@/lib/localUnlock";
 import { retryEncryptedPushNotifications } from "@/lib/pushNotificationRetry";
+import { useSafeRouter } from "@/lib/safeRouter";
 
 export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }) {
   const { isLoaded, user } = useUser();
+  const router = useSafeRouter();
   const [checking, setChecking] = useState(true);
   const [locked, setLocked] = useState(false);
   const [passwordAvailable, setPasswordAvailable] = useState(false);
@@ -149,6 +151,11 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
     }
   }, [accountId, checkVault]);
 
+  const handleRestoreDevice = useCallback(() => {
+    setError(null);
+    router.push("/dashboard/onboarding?restore=1");
+  }, [router]);
+
   useEffect(() => {
     if (checking || !locked || !passkeyAvailable || autoPasskeyTried || busy !== null || !accountId) {
       return;
@@ -223,6 +230,17 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
               </Button>
             </div>
           ) : null}
+
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full"
+            disabled={busy !== null}
+            onClick={handleRestoreDevice}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Restore or approve this device
+          </Button>
         </div>
       </div>
     </div>

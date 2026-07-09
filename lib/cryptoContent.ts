@@ -9,6 +9,17 @@ import type {
   WrappedOrgContentKey,
 } from "./types";
 import { RECOVERY_WORDS } from "./recoveryWords";
+import {
+  MIN_UNLOCK_PASSPHRASE_LENGTH,
+  recordMatchesAccount,
+  shouldDeleteLocalEncryptedWorkspaceKeyForRestore,
+  shouldTryVaultKeyFallbackForStorageRecord,
+  unlockRecordMatchesAccount,
+  withStorageEncryptionMetadata,
+  type StorageEncryptionRecord,
+} from "./cryptoStoragePolicy";
+
+export { MIN_UNLOCK_PASSPHRASE_LENGTH } from "./cryptoStoragePolicy";
 
 const LEGACY_ACCOUNT_CONTENT_KEY_STORAGE_KEY = "nenjo:ack";
 const DB_NAME = "nenjo-crypto";
@@ -33,13 +44,7 @@ const RECOVERY_PBKDF2_ITERATIONS = 600_000;
 const UNLOCK_PBKDF2_ITERATIONS = 650_000;
 const VAULT_SESSION_DURATION_MS = 30 * 60 * 1000;
 
-type StoredEncryptedAck = {
-  version?: number;
-  wrap?: "device" | "vault";
-  account_id?: string;
-  nonce: string;
-  ciphertext: string;
-};
+type StoredEncryptedAck = StorageEncryptionRecord;
 
 export type LocalEncryptedStoragePayload = StoredEncryptedAck;
 
@@ -85,16 +90,12 @@ export type LocalPasskeyUnlockRecord = {
   updated_at: string;
 };
 
-type StoredEncryptedAccountSigningKey = {
-  nonce: string;
-  ciphertext: string;
+type StoredEncryptedAccountSigningKey = StoredEncryptedAck & {
   public_key: string;
 };
 
-type StoredEncryptedDeviceIdentity = {
+type StoredEncryptedDeviceIdentity = StoredEncryptedAck & {
   device_id: string;
-  nonce: string;
-  ciphertext: string;
   enc_public_key: string;
 };
 
@@ -265,10 +266,6 @@ async function isVaultEnabled(): Promise<boolean> {
   return config?.enabled === true;
 }
 
-function recordMatchesAccount(recordAccountId: string | undefined, accountId?: string | null): boolean {
-  return !accountId || !recordAccountId || recordAccountId === accountId;
-}
-
 async function requireVaultAccount(accountId: string): Promise<void> {
   const db = await openDb();
   const config = await idbGet<VaultConfig>(db, VAULT_CONFIG_ENTRY);
@@ -391,15 +388,32 @@ async function encryptBytesForStorage(bytes: Uint8Array): Promise<StoredEncrypte
 
 async function decryptBytesFromStorage(record: StoredEncryptedAck): Promise<Uint8Array> {
   const wrapKey = await storageWrapKeyForDecrypt(record);
-  const plaintext = await crypto.subtle.decrypt(
-    {
-      name: AES_ALGORITHM,
-      iv: asBufferSource(base64ToBytes(record.nonce)),
-    },
-    wrapKey,
-    asBufferSource(base64ToBytes(record.ciphertext)),
-  );
-  return new Uint8Array(plaintext);
+  const decryptWithKey = async (key: CryptoKey) => {
+    const plaintext = await crypto.subtle.decrypt(
+      {
+        name: AES_ALGORITHM,
+        iv: asBufferSource(base64ToBytes(record.nonce)),
+      },
+      key,
+      asBufferSource(base64ToBytes(record.ciphertext)),
+    );
+    return new Uint8Array(plaintext);
+  };
+
+  try {
+    return await decryptWithKey(wrapKey);
+  } catch (err) {
+    if (!shouldTryVaultKeyFallbackForStorageRecord(record)) {
+      throw err;
+    }
+    const vaultKey = await getVaultKey();
+    if (!vaultKey) {
+      throw err;
+    }
+    return decryptWithKey(vaultKey).catch(() => {
+      throw err;
+    });
+  }
 }
 
 export async function encryptLocalJsonForStorage(value: unknown): Promise<LocalEncryptedStoragePayload> {
@@ -677,7 +691,18 @@ export function lockLocalSecretVault(): void {
   accountSigningKeyPromise = null;
   accountSigningPublicKeyCache = null;
   deviceIdentityPromise = null;
+  deviceIdentityEnsurePromise = null;
   void clearLocalSecretVaultSession();
+}
+
+export async function resetLocalEncryptedWorkspaceForRestore(): Promise<void> {
+  if (typeof window === "undefined") return;
+  lockLocalSecretVault();
+  vaultSessionWrapKeyPromise = null;
+  const db = await openDb();
+  const keys = await idbGetAllKeys(db);
+  const deleteKeys = keys.filter(shouldDeleteLocalEncryptedWorkspaceKeyForRestore);
+  await Promise.all(deleteKeys.map((key) => idbDelete(db, key)));
 }
 
 export async function hasLocalSecretVault(): Promise<boolean> {
@@ -688,7 +713,7 @@ export async function hasPasswordUnlockMethod(accountId?: string | null): Promis
   if (typeof window === "undefined") return false;
   const db = await openDb();
   const record = await idbGet<LocalPasswordUnlockRecord>(db, PASSWORD_UNLOCK_ENTRY);
-  return record !== undefined && recordMatchesAccount(record.account_id, accountId);
+  return record !== undefined && unlockRecordMatchesAccount(record.account_id, accountId);
 }
 
 export async function listLocalPasskeyUnlockMethods(accountId?: string | null): Promise<LocalPasskeyUnlockRecord[]> {
@@ -702,7 +727,7 @@ export async function listLocalPasskeyUnlockMethods(accountId?: string | null): 
   );
   return records.filter(
     (record): record is LocalPasskeyUnlockRecord =>
-      record?.type === "passkey-prf" && recordMatchesAccount(record.account_id, accountId),
+      record?.type === "passkey-prf" && unlockRecordMatchesAccount(record.account_id, accountId),
   );
 }
 
@@ -748,7 +773,7 @@ export async function unlockWithPasskeyPrf(params: {
   if (!record) {
     throw new Error("No local passkey unlock record exists for that credential.");
   }
-  if (!recordMatchesAccount(record.account_id, params.accountId)) {
+  if (!unlockRecordMatchesAccount(record.account_id, params.accountId)) {
     throw new Error("This device unlock method belongs to a different signed-in account.");
   }
   const wrappingKey = await derivePrfUnlockKey(params.prfOutput);
@@ -775,8 +800,8 @@ export async function removePasswordUnlockMethod(): Promise<void> {
 
 export async function setupPasswordUnlock(password: string, accountId: string): Promise<void> {
   const normalized = password.trim();
-  if (normalized.length < 12) {
-    throw new Error("Use a password or passphrase with at least 12 characters.");
+  if (normalized.length < MIN_UNLOCK_PASSPHRASE_LENGTH) {
+    throw new Error(`Use a password or passphrase with at least ${MIN_UNLOCK_PASSPHRASE_LENGTH} characters.`);
   }
   const rawVaultKey = await getOrCreateVaultRawKey(accountId);
   await migrateLocalSecretsToVault(accountId);
@@ -810,7 +835,7 @@ export async function unlockWithPassword(password: string, accountId: string): P
   if (!record) {
     throw new Error("No passphrase unlock method is configured on this browser.");
   }
-  if (!recordMatchesAccount(record.account_id, accountId)) {
+  if (!unlockRecordMatchesAccount(record.account_id, accountId)) {
     throw new Error("This passphrase unlock method belongs to a different signed-in account.");
   }
   const wrappingKey = await derivePasswordUnlockKey({
@@ -939,6 +964,7 @@ export async function clearStoredAccountContentKey(): Promise<void> {
   await idbDelete(db, ENCRYPTED_ACK_ENTRY);
   window.localStorage.removeItem(LEGACY_ACCOUNT_CONTENT_KEY_STORAGE_KEY);
   ackSessionCache = null;
+  ackSessionAccountId = null;
 }
 
 export async function generateAccountContentKey(): Promise<string> {
@@ -1039,12 +1065,14 @@ async function persistDeviceIdentity(params: {
   );
   const encryptedPrivateKey = await encryptBytesForStorage(privateKeyPkcs8);
   const publicKey = bytesToBase64(publicKeyRaw);
-  await idbPut(db, ENCRYPTED_DEVICE_IDENTITY_ENTRY, {
-    device_id: params.deviceId,
-    nonce: encryptedPrivateKey.nonce,
-    ciphertext: encryptedPrivateKey.ciphertext,
-    enc_public_key: publicKey,
-  } satisfies StoredEncryptedDeviceIdentity);
+  await idbPut(
+    db,
+    ENCRYPTED_DEVICE_IDENTITY_ENTRY,
+    withStorageEncryptionMetadata(encryptedPrivateKey, {
+      device_id: params.deviceId,
+      enc_public_key: publicKey,
+    }) satisfies StoredEncryptedDeviceIdentity,
+  );
   const result = { deviceId: params.deviceId, keyPair: params.keyPair, publicKey };
   deviceIdentityPromise = Promise.resolve(result);
   return result;
@@ -1310,11 +1338,13 @@ async function persistAccountSigningKeyPair(keyPair: CryptoKeyPair): Promise<str
   );
   const encryptedPrivateKey = await encryptBytesForStorage(privateKeyPkcs8);
   const publicKeyBase64 = bytesToBase64(publicKeyRaw);
-  await idbPut(db, ENCRYPTED_ACCOUNT_SIGNING_KEY_ENTRY, {
-    nonce: encryptedPrivateKey.nonce,
-    ciphertext: encryptedPrivateKey.ciphertext,
-    public_key: publicKeyBase64,
-  } satisfies StoredEncryptedAccountSigningKey);
+  await idbPut(
+    db,
+    ENCRYPTED_ACCOUNT_SIGNING_KEY_ENTRY,
+    withStorageEncryptionMetadata(encryptedPrivateKey, {
+      public_key: publicKeyBase64,
+    }) satisfies StoredEncryptedAccountSigningKey,
+  );
   accountSigningPublicKeyCache = publicKeyBase64;
   accountSigningKeyPromise = Promise.resolve(keyPair);
   return publicKeyBase64;
@@ -1483,6 +1513,7 @@ async function persistAccountSigningKeyMaterial(params: {
 export async function restoreFromRecoveryBundle(params: {
   recoveryPhrase: string;
   bundle: RecoveryBundlePayload;
+  resetLocalVault?: boolean;
 }): Promise<{ accountContentKey: string; publicKey: string }> {
   const { recoveryPhrase, bundle } = params;
   const wrapKey = await deriveRecoveryKey(recoveryPhrase, base64ToBytes(bundle.salt));
@@ -1504,6 +1535,9 @@ export async function restoreFromRecoveryBundle(params: {
     throw new Error("Recovery bundle is missing required key material.");
   }
 
+  if (params.resetLocalVault) {
+    await resetLocalEncryptedWorkspaceForRestore();
+  }
   await setStoredAccountContentKey(parsed.account_content_key);
   await persistAccountSigningKeyMaterial({
     privateKeyPkcs8: parsed.account_signing_private_key_pkcs8,
@@ -1516,6 +1550,13 @@ export async function restoreFromRecoveryBundle(params: {
     publicKey: parsed.account_signing_public_key,
   };
 }
+
+export const __cryptoContentTest = {
+  MIN_UNLOCK_PASSPHRASE_LENGTH,
+  recordMatchesAccount,
+  unlockRecordMatchesAccount,
+  withStorageEncryptionMetadata,
+};
 
 export async function wrapAccountContentKeyForWorker(params: {
   workerPublicKey: string;

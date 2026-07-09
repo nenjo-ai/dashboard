@@ -3,13 +3,17 @@
 import {
   fetchPasskeyRegistrationOptions,
   registerPasskeyUnlockCredential,
+  revokeUnlockCredential,
 } from "./api";
 import {
   listLocalPasskeyUnlockMethods,
-  removeLocalPasskeyUnlock,
   setupPasskeyUnlock,
   unlockWithPasskeyPrf,
 } from "./cryptoContent";
+import { commitPasskeyUnlockRegistration } from "./passkeyRegistrationCommit";
+import { tryPasskeyUnlockMethods } from "./passkeyUnlockFlow";
+
+export { tryPasskeyUnlockMethods } from "./passkeyUnlockFlow";
 
 type PrfClientExtensionResults = AuthenticationExtensionsClientOutputs & {
   prf?: {
@@ -176,34 +180,33 @@ export async function registerPasskeyUnlock(accountId: string, label?: string | 
   const response = credential.response as AuthenticatorAttestationResponse;
   const credentialId = arrayBufferToBase64Url(credential.rawId);
 
-  await setupPasskeyUnlock({
-    accountId,
-    credentialId,
-    label: label?.trim() || null,
-    salt,
-    prfOutput,
+  await commitPasskeyUnlockRegistration({
+    registerRemote: () =>
+      registerPasskeyUnlockCredential({
+        credential_id: credentialId,
+        credential_type: "public-key",
+        transports: credentialTransports(response),
+        public_key: {
+          raw_id: credentialId,
+          attestation_object: arrayBufferToBase64Url(response.attestationObject),
+          client_data_json: arrayBufferToBase64Url(response.clientDataJSON),
+        },
+        label: label?.trim() || null,
+        client_response: {
+          id: credential.id,
+          type: credential.type,
+        },
+      }),
+    setupLocal: () =>
+      setupPasskeyUnlock({
+        accountId,
+        credentialId,
+        label: label?.trim() || null,
+        salt,
+        prfOutput,
+      }),
+    revokeRemote: (registered) => revokeUnlockCredential(registered.id),
   });
-
-  try {
-    await registerPasskeyUnlockCredential({
-      credential_id: credentialId,
-      credential_type: "public-key",
-      transports: credentialTransports(response),
-      public_key: {
-        raw_id: credentialId,
-        attestation_object: arrayBufferToBase64Url(response.attestationObject),
-        client_data_json: arrayBufferToBase64Url(response.clientDataJSON),
-      },
-      label: label?.trim() || null,
-      client_response: {
-        id: credential.id,
-        type: credential.type,
-      },
-    });
-  } catch (err) {
-    await removeLocalPasskeyUnlock(credentialId).catch(() => undefined);
-    throw err;
-  }
 }
 
 export async function unlockWithAnyLocalPasskey(accountId: string): Promise<void> {
@@ -216,10 +219,8 @@ export async function unlockWithAnyLocalPasskey(accountId: string): Promise<void
     throw new Error("No local device unlock method is configured on this browser.");
   }
 
-  let credential: PublicKeyCredentialWithPrf | null = null;
-  let credentialId = "";
-  for (const method of localMethods) {
-    credential = (await navigator.credentials.get({
+  await tryPasskeyUnlockMethods(localMethods, async (method) => {
+    const credential = (await navigator.credentials.get({
       publicKey: {
         challenge: randomChallenge(),
         rpId: window.location.hostname,
@@ -239,15 +240,15 @@ export async function unlockWithAnyLocalPasskey(accountId: string): Promise<void
         } as AuthenticationExtensionsClientInputs,
       },
     }).catch(() => null)) as PublicKeyCredentialWithPrf | null;
-    if (credential) {
-      credentialId = method.credential_id;
-      break;
+    if (!credential) {
+      return false;
     }
-  }
-
-  if (!credential || !credentialId) {
-    throw new Error("Device unlock was cancelled or no configured method was available.");
-  }
-  const prfOutput = requirePrfOutput(credential);
-  await unlockWithPasskeyPrf({ credentialId, prfOutput, accountId });
+    const prfOutput = requirePrfOutput(credential);
+    await unlockWithPasskeyPrf({
+      credentialId: method.credential_id,
+      prfOutput,
+      accountId,
+    });
+    return true;
+  });
 }
