@@ -30,6 +30,11 @@ const config = {
   async redirects() {
     return [
       {
+        source: '/dashboard/invitations/:token',
+        destination: '/dashboard/invitations?token=:token',
+        permanent: false,
+      },
+      {
         source: '/:path*',
         has: [{ type: 'host', value: 'www.nenjo.ai' }],
         destination: 'https://nenjo.ai/:path*',
