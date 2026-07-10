@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { ImageIcon } from "lucide-react";
 import { useAgent, useModels, useTabParam } from "@/lib/hooks";
 import { fetchAgentPrompt } from "@/lib/api";
-import type { PromptConfig } from "@/lib/types";
+import type { AgentDefinition, PromptConfig } from "@/lib/types";
 
 import { MobileAgentDetail } from "@/components/agents/MobileAgentDetail";
 import { TopBar } from "@/components/layout/TopBar";
@@ -128,23 +129,34 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
 // Page
 // ---------------------------------------------------------------------------
 
-export function AgentDetailClient({ agentId }: { agentId: string }) {
+function agentDashboardHref(agent: Pick<AgentDefinition, "id" | "slug">) {
+  const agentRef = agent.slug?.trim() || agent.id;
+  return `/dashboard/agents/${encodeURIComponent(agentRef)}`;
+}
+
+export function AgentDetailClient({ agentRef }: { agentRef: string }) {
+  const router = useRouter();
   const isMobileViewport = useIsMobileViewport();
 
   const [activeTab, setActiveTab] = useTabParam("prompts", TAB_IDS);
-  const { agent, isLoading, mutate: mutateAgent } = useAgent(agentId);
+  const { agent, isLoading, mutate: mutateAgent } = useAgent(agentRef);
   const { models } = useModels();
 
   // Prompt editor state — loaded from the dedicated prompt endpoint.
   const [promptConfig, setPromptConfig] = useState<PromptConfig | null>(null);
 
   useEffect(() => {
+    if (!agent?.slug || agentRef === agent.slug) return;
+    router.replace(`${agentDashboardHref(agent)}${window.location.search}`);
+  }, [agent, agentRef, router]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadPrompt() {
-      if (!agentId) return;
+      if (!agentRef) return;
       try {
-        const nextPromptConfig = await fetchAgentPrompt(agentId);
+        const nextPromptConfig = await fetchAgentPrompt(agentRef);
         if (!cancelled) {
           setPromptConfig(nextPromptConfig);
         }
@@ -157,7 +169,7 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [agentId]);
+  }, [agentRef]);
 
   // Initialize promptConfig when agent loads (only once)
   const effectivePromptConfig = promptConfig ?? {
@@ -173,6 +185,17 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
   const handlePromptSaved = useCallback(() => {
     mutateAgent();
   }, [mutateAgent]);
+
+  const handleAgentUpdated = useCallback(
+    (updatedAgent?: AgentDefinition) => {
+      if (updatedAgent?.slug && updatedAgent.slug !== agentRef) {
+        router.replace(`${agentDashboardHref(updatedAgent)}${window.location.search}`);
+        return;
+      }
+      mutateAgent();
+    },
+    [agentRef, mutateAgent, router],
+  );
 
   if (isLoading) {
     return isMobileViewport ? (
@@ -299,7 +322,7 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
             )}
 
             {activeTab === "settings" && agent && (
-              <AgentSettingsTab agent={agent} onUpdated={() => mutateAgent()} />
+              <AgentSettingsTab agent={agent} onUpdated={handleAgentUpdated} />
             )}
           </div>
         </PageContent>

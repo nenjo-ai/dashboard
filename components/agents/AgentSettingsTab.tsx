@@ -11,7 +11,7 @@ import type { AgentDefinition } from "@/lib/types";
 
 interface AgentSettingsTabProps {
   agent: AgentDefinition;
-  onUpdated: () => void;
+  onUpdated: (agent?: AgentDefinition) => void;
 }
 
 export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
@@ -35,7 +35,7 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
     setError(null);
     setSaved(false);
     try {
-      await updateAgent(agent.id, {
+      const updatedAgent = await updateAgent(agent.id, {
         name: name.trim() || undefined,
         display_name: displayName.trim() || undefined,
         description: description.trim() || undefined,
@@ -43,7 +43,7 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
         model_id: modelId,
       });
       setSaved(true);
-      onUpdated();
+      onUpdated(updatedAgent);
       void mutate(agentsUrl());
       setTimeout(() => setSaved(false), 1500);
     } catch (e) {

@@ -26,7 +26,7 @@ export default async function AgentDetailPage({
 
   return (
     <Suspense fallback={<AgentDetailFallback />}>
-      <AgentDetailClient agentId={id} />
+      <AgentDetailClient agentRef={id} />
     </Suspense>
   );
 }
