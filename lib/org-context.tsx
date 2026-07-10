@@ -3,16 +3,22 @@
 import {
   createContext,
   startTransition,
+  useCallback,
   useContext,
   useEffect,
-  useState,
+  useSyncExternalStore,
 } from "react";
 import { useSWRConfig } from "swr";
-import { authMeUrl, setActiveOrgIdGetter } from "@/lib/api";
+import { setActiveOrgIdGetter } from "@/lib/api";
+import {
+  readStoredActiveOrgId,
+  subscribeStoredActiveOrgId,
+  writeStoredActiveOrgId,
+} from "@/lib/activeOrg";
 import { useCurrentOrg, useCurrentUser, useOrganizations } from "@/lib/hooks";
 import type { OrganizationSummary } from "@/lib/types";
 
-const ORG_STORAGE_KEY = "nenjo.active-org-id";
+const PLATFORM_API_PREFIX = "/api/platform";
 
 interface OrgContextValue {
   activeOrgId: string | null;
@@ -39,52 +45,44 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   const { currentUser, isLoading: userLoading } = useCurrentUser();
   const { organizations, isLoading: orgsLoading } = useOrganizations();
   const { currentOrg, isLoading: currentOrgLoading } = useCurrentOrg();
-  const [hydrated, setHydrated] = useState(false);
-  const [activeOrgId, setActiveOrgIdState] = useState<string | null>(null);
+  const activeOrgId = useSyncExternalStore(
+    subscribeStoredActiveOrgId,
+    readStoredActiveOrgId,
+    () => null,
+  );
 
   useEffect(() => {
-    try {
-      setActiveOrgIdState(localStorage.getItem(ORG_STORAGE_KEY));
-    } catch {
-      setActiveOrgIdState(null);
-    } finally {
-      setHydrated(true);
-    }
+    setActiveOrgIdGetter(readStoredActiveOrgId);
+    return () => setActiveOrgIdGetter(null);
   }, []);
 
-  useEffect(() => {
-    setActiveOrgIdGetter(() => activeOrgId);
-    return () => setActiveOrgIdGetter(null);
-  }, [activeOrgId]);
+  const persistActiveOrgId = useCallback((orgId: string) => {
+    const normalizedOrgId = orgId.trim() || null;
+    writeStoredActiveOrgId(normalizedOrgId);
+  }, []);
 
-  const persistActiveOrgId = (orgId: string) => {
-    setActiveOrgIdState(orgId);
-    try {
-      localStorage.setItem(ORG_STORAGE_KEY, orgId);
-    } catch {
-      // Ignore storage failures.
-    }
-  };
-
-  const revalidateOrgScopedState = () => {
+  const revalidateOrgScopedState = useCallback(() => {
     startTransition(() => {
       void mutate(
         (key) =>
-          typeof key === "string" &&
-          (key.includes("/api/v1/") || key === authMeUrl()),
+          typeof key === "string" && key.startsWith(PLATFORM_API_PREFIX),
         undefined,
         { revalidate: true },
       );
     });
-  };
+  }, [mutate]);
 
   useEffect(() => {
-    if (!hydrated) return;
     if (orgsLoading) return;
 
     const availableOrgs = organizations ?? [];
     const isKnownSelection = !!activeOrgId && availableOrgs.some((org) => org.id === activeOrgId);
     if (isKnownSelection) {
+      return;
+    }
+
+    if (activeOrgId) {
+      revalidateOrgScopedState();
       return;
     }
 
@@ -104,38 +102,40 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
     activeOrgId,
     currentOrg?.org_id,
     currentUser?.org_id,
-    hydrated,
-    mutate,
     organizations,
     orgsLoading,
+    persistActiveOrgId,
+    revalidateOrgScopedState,
   ]);
 
-  const setActiveOrgId = (orgId: string) => {
+  const setActiveOrgId = useCallback((orgId: string) => {
     if (!orgId || orgId === activeOrgId) {
       return;
     }
     persistActiveOrgId(orgId);
     revalidateOrgScopedState();
-  };
+  }, [activeOrgId, persistActiveOrgId, revalidateOrgScopedState]);
 
   const orgList = organizations ?? [];
   const resolvedActiveOrgId = activeOrgId ?? currentUser?.org_id ?? currentOrg?.org_id ?? null;
   const activeOrganization =
     orgList.find((org) => org.id === resolvedActiveOrgId) ?? null;
+  const currentUserMatchesActiveOrg = currentUser?.org_id === resolvedActiveOrgId;
+  const currentOrgMatchesActiveOrg = currentOrg?.org_id === resolvedActiveOrgId;
   const activeOrgName =
     activeOrganization?.name ??
-    currentOrg?.org_name ??
-    currentUser?.org_name ??
+    (currentOrgMatchesActiveOrg ? currentOrg?.org_name : null) ??
+    (currentUserMatchesActiveOrg ? currentUser?.org_name : null) ??
     null;
   const currentRole =
-    currentUser?.org_role ??
-    currentOrg?.role ??
     activeOrganization?.role ??
+    (currentUserMatchesActiveOrg ? currentUser?.org_role : null) ??
+    (currentOrgMatchesActiveOrg ? currentOrg?.role : null) ??
     null;
   const currentScopes =
-    currentUser?.org_scopes ??
-    currentOrg?.scopes ??
     activeOrganization?.scopes ??
+    (currentUserMatchesActiveOrg ? currentUser?.org_scopes : null) ??
+    (currentOrgMatchesActiveOrg ? currentOrg?.scopes : null) ??
     [];
 
   return (
@@ -147,7 +147,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
         organizations: orgList,
         currentRole,
         currentScopes,
-        isLoading: !hydrated || userLoading || orgsLoading || currentOrgLoading,
+        isLoading: userLoading || orgsLoading || currentOrgLoading,
         setActiveOrgId,
         hasScope: (scope) => hasOrgScope(currentScopes, scope),
       }}

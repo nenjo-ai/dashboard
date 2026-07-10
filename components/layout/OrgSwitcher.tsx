@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Building2, Check, ChevronDown, Settings2 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -15,6 +16,7 @@ export function OrgSwitcher() {
     isLoading,
     setActiveOrgId,
   } = useOrgContext();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -75,6 +77,7 @@ export function OrgSwitcher() {
                   onClick={() => {
                     setActiveOrgId(org.id);
                     setOpen(false);
+                    router.refresh();
                   }}
                   className={cn(
                     "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition-colors",

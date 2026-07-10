@@ -54,6 +54,7 @@ import type {
   MediaAssignmentsResponse,
 } from "./types";
 import { mutate as mutateSWR } from "swr";
+import { readStoredActiveOrgId } from "./activeOrg";
 import {
   decryptContentPayload,
   encryptOrgContentPayload,
@@ -178,6 +179,36 @@ export function setActiveOrgIdGetter(getter: (() => string | null) | null) {
   _getActiveOrgId = getter;
 }
 
+function apiErrorMessageFromBody(body: string): string {
+  try {
+    const parsed = JSON.parse(body) as {
+      error?: { message?: unknown; request_id?: unknown };
+      message?: unknown;
+    };
+    const message =
+      typeof parsed.error?.message === "string"
+        ? parsed.error.message
+        : typeof parsed.message === "string"
+          ? parsed.message
+          : null;
+    const requestId =
+      typeof parsed.error?.request_id === "string"
+        ? parsed.error.request_id
+        : null;
+
+    if (message && requestId) {
+      return `${message} (request ${requestId})`;
+    }
+    if (message) {
+      return message;
+    }
+  } catch {
+    // Fall back to the raw response body below.
+  }
+
+  return body || "Unknown error";
+}
+
 /**
  * Build API request headers. Browser requests do not attach Clerk session
  * tokens; the dashboard BFF converts the Clerk cookie session into an
@@ -192,7 +223,7 @@ async function authHeaders(
     ...extra,
   };
 
-  const activeOrgId = _getActiveOrgId?.()?.trim();
+  const activeOrgId = (_getActiveOrgId?.() ?? readStoredActiveOrgId())?.trim();
   if (activeOrgId) {
     headers["X-Nenjo-Org-Id"] = activeOrgId;
   }
@@ -227,12 +258,17 @@ export async function authRequestHeaders(
  */
 async function authFetch(url: string, init?: RequestInit): Promise<Response> {
   const resolvedUrl = resolveApiUrl(url);
+  const isOrgInvitationTokenRoute =
+    /^\/api\/platform\/orgs\/invitations\/[^/]+(?:\/accept)?$/.test(
+      resolvedUrl,
+    );
   const includeOrgHeader =
     !resolvedUrl.endsWith("/api/platform/auth/me") &&
     !resolvedUrl.endsWith("/api/platform/auth/bootstrap-status") &&
     !resolvedUrl.endsWith("/api/platform/orgs") &&
     !resolvedUrl.endsWith("/api/platform/orgs/") &&
-    !resolvedUrl.endsWith("/api/platform/orgs/current");
+    !resolvedUrl.endsWith("/api/platform/orgs/current") &&
+    !isOrgInvitationTokenRoute;
   const initHeaders =
     init?.headers instanceof Headers
       ? Object.fromEntries(init.headers.entries())
@@ -299,7 +335,7 @@ async function authFetch(url: string, init?: RequestInit): Promise<Response> {
           res.status,
         );
       }
-      throw new ApiError(body, res.status);
+      throw new ApiError(apiErrorMessageFromBody(body), res.status);
     }
 
     return res;
@@ -2345,11 +2381,13 @@ export async function fetchCurrentOrgContentKeyRecovery(): Promise<
 
 export async function requestCurrentOrgContentKeyAccess(
   deviceId: string,
+  orgId?: string,
 ): Promise<import("./types").OrgContentKeyAccessRequestStatus> {
   const res = await authFetch(
     `${API_V1}/content-encryption/org-content-key/request`,
     {
       method: "POST",
+      headers: orgId ? { "X-Nenjo-Org-Id": orgId } : undefined,
       body: JSON.stringify({ device_id: deviceId }),
     },
   );
