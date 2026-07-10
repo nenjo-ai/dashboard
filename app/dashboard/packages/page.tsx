@@ -1706,6 +1706,7 @@ export default function KnowledgePage() {
     mutate: mutatePacks,
   } = useKnowledgePacks();
   const {
+    agents,
     mutate: mutateAgents,
   } = useAgents();
   const {
@@ -2554,7 +2555,12 @@ export default function KnowledgePage() {
             }
             onOpenPack={setSelectedPackId}
             onOpenAgent={(agentId) =>
-              router.push(`/dashboard/agents/${agentId}`)
+              router.push(
+                `/dashboard/agents/${encodeURIComponent(
+                  agents?.find((agent) => agent.id === agentId)?.slug?.trim() ||
+                    agentId,
+                )}`,
+              )
             }
             onOpenAbility={(abilityName) =>
               router.push(

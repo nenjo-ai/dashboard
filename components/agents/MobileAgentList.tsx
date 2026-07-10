@@ -31,10 +31,11 @@ function MobileAgentRow({ agent }: { agent: AgentDefinition }) {
   const domainCount = agentDomains?.filter((assignment) => assignment.enabled).length ?? 0;
   const abilityCount = abilities?.length ?? 0;
   const model = models?.find((item) => item.id === agent.model_id);
+  const agentRef = agent.slug?.trim() || agent.id;
 
   return (
     <Link
-      href={`/dashboard/agents/${agent.id}`}
+      href={`/dashboard/agents/${encodeURIComponent(agentRef)}`}
       className="group block rounded-[1.6rem] border border-black/10 bg-transparent p-4 transition-transform active:scale-[0.99] dark:border-white/10"
     >
       <div className="flex items-start gap-3">

@@ -41,6 +41,7 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
   const abilityCount = agentAbilities?.length ?? 0;
 
   const assignedModel = models?.find((m) => m.id === agent.model_id);
+  const agentRef = agent.slug?.trim() || agent.id;
 
   // Close picker on click outside
   useEffect(() => {
@@ -106,7 +107,7 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
         const target = e.target as HTMLElement;
         if (target.closest("button, select, input, textarea")) return;
         if (editing) return;
-        router.push(`/dashboard/agents/${agent.id}`);
+        router.push(`/dashboard/agents/${encodeURIComponent(agentRef)}`);
       }}
       className="theme-border theme-surface flex h-full cursor-pointer flex-col rounded-xl border p-5 shadow-xs transition-shadow hover:shadow-md"
     >
