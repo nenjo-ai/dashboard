@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import useSWR from "swr";
 import { SignIn, useAuth, useUser } from "@clerk/nextjs";
@@ -15,9 +15,7 @@ import { ensureDeviceEncryptionIdentity } from "@/lib/cryptoContent";
 
 const CLERK_ENABLED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
-export default function InvitationAcceptClient() {
-  const params = useParams<{ token: string }>();
-  const token = typeof params?.token === "string" ? params.token : "";
+export default function InvitationAcceptClient({ token }: { token: string }) {
   const invitePath = `/dashboard/invitations/${token}`;
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
