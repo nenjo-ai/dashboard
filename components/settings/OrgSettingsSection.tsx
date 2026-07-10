@@ -409,7 +409,7 @@ function InvitesPanel({
 
   const buildInviteLink = (token: string) => {
     if (typeof window === "undefined") return token;
-    return `${window.location.origin}/dashboard/invitations/${token}`;
+    return `${window.location.origin}/dashboard/invitations?token=${encodeURIComponent(token)}`;
   };
 
   if (!canRead) {
