@@ -2,6 +2,7 @@ import { createMDX } from 'fumadocs-mdx/next';
 
 const apiProxyTarget = process.env.API_PROXY_TARGET;
 const distDir = process.env.NEXT_DIST_DIR;
+const ogFontFiles = ['./app/_og/*.ttf'];
 
 /** @type {import('next').NextConfig} */
 const config = {
@@ -9,10 +10,12 @@ const config = {
   ...(distDir ? { distDir } : {}),
   turbopack: {},
   allowedDevOrigins: ['192.168.1.228'],
-  // Ship the OG/Twitter card fonts (read at runtime via fs) with their routes.
+  // Next resolves the root OG/Twitter metadata image module while rendering
+  // dynamic dashboard pages, so those serverless functions also read these fonts.
   outputFileTracingIncludes: {
-    '/opengraph-image': ['./app/_og/*.ttf'],
-    '/twitter-image': ['./app/_og/*.ttf'],
+    '/opengraph-image': ogFontFiles,
+    '/twitter-image': ogFontFiles,
+    '/dashboard/**': ogFontFiles,
   },
   async headers() {
     return [
