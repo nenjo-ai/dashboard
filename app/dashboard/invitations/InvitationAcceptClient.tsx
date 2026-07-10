@@ -2,9 +2,15 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import useSWR from "swr";
+import useSWR, { mutate as mutateSWR } from "swr";
 import { SignIn, useAuth, useUser } from "@clerk/nextjs";
-import { acceptOrgInvitation, fetchOrgInvitationPreview, requestCurrentOrgContentKeyAccess } from "@/lib/api";
+import {
+  acceptOrgInvitation,
+  fetchOrgInvitationPreview,
+  requestCurrentOrgContentKeyAccess,
+  setActiveOrgIdGetter,
+} from "@/lib/api";
+import { writeStoredActiveOrgId } from "@/lib/activeOrg";
 import type { OrgInvitationPreview } from "@/lib/types";
 import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
 import { SecureWorkspaceSetup } from "@/components/auth/SecureWorkspaceSetup";
@@ -170,10 +176,31 @@ export default function InvitationAcceptClient({ token: tokenProp }: { token?: s
                     try {
                       setIsAccepting(true);
                       const accepted = await acceptOrgInvitation(token);
-                      localStorage.setItem("nenjo.active-org-id", accepted.org_id);
-                      const identity = await ensureDeviceEncryptionIdentity();
-                      await requestCurrentOrgContentKeyAccess(identity.deviceId).catch(() => undefined);
-                      toast.success("Invitation accepted. Your device is now waiting for owner or admin approval.");
+                      writeStoredActiveOrgId(accepted.org_id);
+                      setActiveOrgIdGetter(() => accepted.org_id);
+                      void mutateSWR(
+                        (key) =>
+                          typeof key === "string" &&
+                          key.startsWith("/api/platform"),
+                        undefined,
+                        { revalidate: true },
+                      );
+                      let requestedDeviceApproval = false;
+                      try {
+                        const identity = await ensureDeviceEncryptionIdentity();
+                        await requestCurrentOrgContentKeyAccess(
+                          identity.deviceId,
+                          accepted.org_id,
+                        );
+                        requestedDeviceApproval = true;
+                      } catch {
+                        // Org membership is already accepted; settings can retry device access.
+                      }
+                      toast.success(
+                        requestedDeviceApproval
+                          ? "Invitation accepted. Your device is now waiting for owner or admin approval."
+                          : "Invitation accepted. You are now in the new org.",
+                      );
                       router.replace("/dashboard/settings?tab=org");
                     } catch (acceptError) {
                       toast.error(acceptError instanceof Error ? acceptError.message : "Failed to accept invitation.");
