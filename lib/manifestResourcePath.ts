@@ -13,6 +13,12 @@ export function manifestResourceDisplayPath(resource: ManifestPathResource): str
 export function packageResourceDisplayPath(resource: ManifestPathResource): string | null {
   if (!isPackageResource(resource)) return null;
 
+  // The persisted package path is the canonical runtime selector. Unlike a
+  // repository source path, it includes the package source and version, e.g.
+  // `pkg/nenjo_ai/packages/v1_1_0/nenji/capabilities/build`.
+  const canonicalPath = cleanPath(resource.path);
+  if (canonicalPath?.startsWith("pkg/")) return canonicalPath;
+
   const metadata = resource.metadata ?? {};
   const sourcePath =
     metadataText(metadata, ["package", "module_path"]) ??

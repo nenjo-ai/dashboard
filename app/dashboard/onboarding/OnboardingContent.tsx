@@ -45,6 +45,7 @@ import {
   workerEnrollmentUrl,
 } from "@/lib/api";
 import { useWorkerStatus } from "@/lib/hooks";
+import { findNenjiAgent } from "@/lib/nenjiAgent";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -115,7 +116,6 @@ const DEFAULT_NENJI_IDENTITY = {
   roleId: "nenji",
   color: NENJI_SEED_COLOR,
 };
-const NENJI_AGENT_SLUG = "nenji";
 const LOCKED_LOCAL_VAULT_MESSAGE =
   "Encrypted workspace vault is locked. Unlock it before using local secrets.";
 
@@ -137,15 +137,6 @@ async function loadOnboardingLocalAccountContentKey(): Promise<{
     }
     throw err;
   }
-}
-
-function findNenjiAgent(agents: AgentDefinition[]): AgentDefinition | undefined {
-  return agents.find(
-    (agent) =>
-      agent.slug === NENJI_AGENT_SLUG ||
-      agent.name === NENJI_AGENT_SLUG ||
-      agent.display_name?.toLowerCase() === NENJI_AGENT_SLUG,
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -963,10 +954,17 @@ function StepConnect({
   const [sendGreeting, setSendGreeting] = useState(true);
   const [greeting, setGreeting] = useState<"idle" | "priming" | "thinking" | "done">("idle");
   const [nenjiIdentity, setNenjiIdentity] = useState(DEFAULT_NENJI_IDENTITY);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [approvalBusy, setApprovalBusy] = useState(false);
   const hasHandledConnection = useRef(false);
   const approvalInFlight = useRef(false);
   const navigationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const enrollmentsRef = useRef(enrollments);
+  enrollmentsRef.current = enrollments;
 
+  const pendingEnrollment = (enrollments ?? []).find(
+    (item) => item.state === "pending" || (item.state === "active" && !item.wrapped_ock),
+  );
   const envVar = PROVIDER_ENV_VARS[provider];
   const maskedKey = keyPrefix ? `${keyPrefix}${"*".repeat(12)}` : "nen_sk_***";
   const snippet = `# Install the Nenjo CLI
@@ -979,35 +977,66 @@ export NENJO_API_KEY=${maskedKey}
 # Start the worker
 nenjo run`;
 
+  // Auto-approve the first harness during onboarding. Retry on a timer so a
+  // silent failure (or SWR returning a stable data reference) does not leave
+  // the worker stuck on "pending approval".
   useEffect(() => {
-    if (!accountOrgId || approvalInFlight.current) return;
-    const enrollmentsNeedingOck = (enrollments ?? []).find(
-      (item) => item.state === "pending" || (item.state === "active" && !item.wrapped_ock),
-    );
-    if (!enrollmentsNeedingOck) return;
+    if (!accountOrgId) return;
 
-    approvalInFlight.current = true;
-    void (async () => {
+    let cancelled = false;
+
+    const tryAutoApprove = async () => {
+      if (cancelled || approvalInFlight.current) return;
+      const enrollmentsNeedingOck = (enrollmentsRef.current ?? []).find(
+        (item) => item.state === "pending" || (item.state === "active" && !item.wrapped_ock),
+      );
+      if (!enrollmentsNeedingOck) {
+        setApprovalError(null);
+        setApprovalBusy(false);
+        return;
+      }
+
+      approvalInFlight.current = true;
+      setApprovalBusy(true);
       try {
         const [ack, signingPublicKey, orgContentStatus] = await Promise.all([
           loadStoredAccountContentKey(),
           loadAccountSigningPublicKey(),
-          fetchCurrentOrgContentKeyStatus().catch(() => null),
+          fetchCurrentOrgContentKeyStatus(),
         ]);
-        if (!ack || !signingPublicKey || !orgContentStatus) return;
+        if (!ack) {
+          throw new Error(
+            "This browser is missing the local account content key needed to approve the harness.",
+          );
+        }
+        if (!signingPublicKey) {
+          throw new Error(
+            "This browser is missing the account signing key needed to approve the harness.",
+          );
+        }
+        const orgId = orgContentStatus.org_id || accountOrgId;
+        if (!orgId) {
+          throw new Error("Could not resolve the organization id for harness approval.");
+        }
         const localOck = await loadStoredOrgContentKey(
           orgContentStatus.org_id,
           orgContentStatus.key_version,
         );
-        if (!localOck) return;
+        if (!localOck) {
+          throw new Error(
+            "This browser does not have the org content key needed to approve the harness. Re-secure the workspace or restore from recovery.",
+          );
+        }
 
-        const remoteApprovalKey = await fetchWorkerApprovalKey().catch(() => ({ public_key: null }));
+        const remoteApprovalKey = await fetchWorkerApprovalKey().catch(() => ({
+          public_key: null as string | null,
+        }));
         if (remoteApprovalKey.public_key !== signingPublicKey) {
           await putWorkerApprovalKey(signingPublicKey);
         }
 
         const certificate = await buildWorkerCertificate({
-          accountId: accountOrgId,
+          accountId: orgId,
           apiKeyId: enrollmentsNeedingOck.api_key_id,
           encPublicKey: enrollmentsNeedingOck.request.enc_public_key,
           signPublicKey: enrollmentsNeedingOck.request.sign_public_key,
@@ -1016,7 +1045,7 @@ nenjo run`;
           workerPublicKey: enrollmentsNeedingOck.request.enc_public_key,
         });
         const wrappedOck = await wrapOrgContentKeyForWorker({
-          orgId: accountOrgId,
+          orgId,
           keyVersion: orgContentStatus.key_version,
           workerPublicKey: enrollmentsNeedingOck.request.enc_public_key,
         });
@@ -1025,12 +1054,36 @@ nenjo run`;
           wrapped_ack: wrappedAck,
           wrapped_ock: wrappedOck,
         });
+        if (cancelled) return;
+        setApprovalError(null);
         await mutateEnrollments();
+      } catch (err) {
+        if (cancelled) return;
+        setApprovalError(
+          err instanceof Error ? err.message : "Failed to auto-approve the harness.",
+        );
       } finally {
         approvalInFlight.current = false;
+        if (!cancelled) setApprovalBusy(false);
       }
-    })();
-  }, [accountOrgId, enrollments, mutateEnrollments]);
+    };
+
+    void tryAutoApprove();
+    const intervalId = window.setInterval(() => {
+      void tryAutoApprove();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    accountOrgId,
+    mutateEnrollments,
+    // Re-arm immediately when a new pending harness appears (interval covers retries).
+    pendingEnrollment?.api_key_id,
+    pendingEnrollment?.state,
+  ]);
 
   // Handle successful worker connection
   useEffect(() => {
@@ -1179,6 +1232,16 @@ nenjo run`;
         </span>
       </label>
 
+      {approvalError ? (
+        <div className="rounded-lg border border-flag-red-200 bg-flag-red-50 p-3 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-400">
+          <p className="font-medium">Harness auto-approval failed</p>
+          <p className="mt-1">{approvalError}</p>
+          <p className="mt-2 text-xs opacity-90">
+            Keep this page open while the worker is running. Nenjo will keep retrying approval.
+          </p>
+        </div>
+      ) : null}
+
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
         {isConnected ? (
           <div className="relative p-5">
@@ -1239,8 +1302,20 @@ nenjo run`;
             </div>
             <div>
               <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Waiting for worker connection...
+                {pendingEnrollment
+                  ? approvalBusy
+                    ? "Approving harness..."
+                    : "Harness registered — auto-approving..."
+                  : "Waiting for worker connection..."}
               </p>
+              {pendingEnrollment?.request.verification_code ? (
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Verification code:{" "}
+                  <span className="font-mono font-semibold tracking-wider text-gray-700 dark:text-gray-200">
+                    {pendingEnrollment.request.verification_code}
+                  </span>
+                </p>
+              ) : null}
             </div>
           </div>
         )}
@@ -1712,6 +1787,12 @@ export default function OnboardingContent() {
   const [selectedProvider, setSelectedProvider] = useState<ModelProvider>("anthropic");
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const accountUserId = currentUser?.user_id ?? undefined;
+
+  useEffect(() => {
+    if (!selectedOrgId && currentUser?.org_id) {
+      setSelectedOrgId(currentUser.org_id);
+    }
+  }, [currentUser?.org_id, selectedOrgId]);
 
   useEffect(() => {
     if (redirected.current) return;

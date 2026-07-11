@@ -3239,10 +3239,6 @@ export function agentPromptUrl(agentId: string): string {
   return `${API_V1}/agents/${agentId}/prompt`;
 }
 
-export function agentPreviewUrl(agentId: string): string {
-  return `${API_V1}/agents/${agentId}/preview`;
-}
-
 export async function fetchAgentPrompt(
   agentId: string,
 ): Promise<import("./types").PromptConfig> {
@@ -3304,17 +3300,6 @@ export async function updateAgentPrompt(
     return response.prompt_config;
   }
   throw new ApiError("Updated agent prompt was not returned", 500);
-}
-
-export async function previewAgentPrompt(
-  agentId: string,
-  projectId?: string,
-): Promise<import("./types").PreviewPromptResponse> {
-  const url = projectId
-    ? `${agentPreviewUrl(agentId)}?project_id=${projectId}`
-    : agentPreviewUrl(agentId);
-  const res = await authFetch(url);
-  return res.json() as Promise<import("./types").PreviewPromptResponse>;
 }
 
 export async function resetAgentToDefault(

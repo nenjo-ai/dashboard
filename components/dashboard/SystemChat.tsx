@@ -17,16 +17,7 @@ import { DomainSlashCommandDropdown } from "@/components/project/DomainSlashComm
 import { DomainIndicator } from "@/components/project/DomainIndicator";
 import { PendingDomainPill } from "@/components/project/PendingDomainPill";
 import ChatSessionList from "@/components/project/ChatSessionList";
-
-const NENJI_AGENT_SLUG = "nenji";
-
-function isNenjiAgent(agent: AgentDefinition): boolean {
-  return (
-    agent.slug === NENJI_AGENT_SLUG ||
-    agent.name === NENJI_AGENT_SLUG ||
-    agent.display_name?.toLowerCase() === NENJI_AGENT_SLUG
-  );
-}
+import { findNenjiAgent, isNenjiAgent } from "@/lib/nenjiAgent";
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -177,14 +168,13 @@ export function SystemChat() {
   const { agents: allAgentDefs } = useAgents();
   const { domains: allDomains } = useDomains();
 
-  // Find Nenji, the default platform assistant, once a model is assigned.
-  const systemAgent = useMemo(
-    () =>
-      allAgentDefs?.find(
-        (agent: AgentDefinition) => isNenjiAgent(agent) && agent.model_id,
-      ),
-    [allAgentDefs],
-  );
+  // Find Nenji (versioned package slug or legacy), once a model is assigned.
+  const systemAgent = useMemo(() => {
+    const withModel = (allAgentDefs ?? []).filter(
+      (agent: AgentDefinition) => isNenjiAgent(agent) && agent.model_id,
+    );
+    return findNenjiAgent(withModel) ?? findNenjiAgent(allAgentDefs);
+  }, [allAgentDefs]);
 
   const systemAgentId = systemAgent?.id;
   const { agentDomains } = useAgentDomains(systemAgentId);
