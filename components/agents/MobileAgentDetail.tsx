@@ -10,7 +10,6 @@ import type { AgentDefinition, PromptConfig } from "@/lib/types";
 
 type MobileAgentTab =
   | "prompts"
-  | "preview"
   | "abilities"
   | "domains"
   | "media"
@@ -156,12 +155,6 @@ export function MobileAgentDetail({
               value={value}
             />
           ))}
-        </div>
-      )}
-
-      {activeTab === "preview" && (
-        <div className="rounded-[1.4rem] border border-black/10 bg-transparent p-4 text-sm text-gray-600 dark:border-white/10 dark:text-gray-300">
-          Prompt preview remains available on desktop. Mobile currently shows the stored prompts directly to keep this screen lightweight.
         </div>
       )}
 
