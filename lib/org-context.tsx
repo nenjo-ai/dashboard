@@ -16,6 +16,7 @@ import {
   writeStoredActiveOrgId,
 } from "@/lib/activeOrg";
 import { useCurrentOrg, useCurrentUser, useOrganizations } from "@/lib/hooks";
+import { firstNonEmptyScopes, hasOrgScope } from "@/lib/orgScopes.mjs";
 import type { OrganizationSummary } from "@/lib/types";
 
 const PLATFORM_API_PREFIX = "/api/platform";
@@ -33,12 +34,6 @@ interface OrgContextValue {
 }
 
 const OrgContext = createContext<OrgContextValue | null>(null);
-
-function hasOrgScope(scopes: string[], required: string) {
-  if (scopes.includes(required)) return true;
-  if (!required.endsWith(":read")) return false;
-  return scopes.includes(required.replace(":read", ":write"));
-}
 
 export function OrgProvider({ children }: { children: React.ReactNode }) {
   const { mutate } = useSWRConfig();
@@ -132,11 +127,15 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
     (currentUserMatchesActiveOrg ? currentUser?.org_role : null) ??
     (currentOrgMatchesActiveOrg ? currentOrg?.role : null) ??
     null;
-  const currentScopes =
-    activeOrganization?.scopes ??
-    (currentUserMatchesActiveOrg ? currentUser?.org_scopes : null) ??
-    (currentOrgMatchesActiveOrg ? currentOrg?.scopes : null) ??
-    [];
+  // Prefer auth-resolved scopes (/auth/me, /orgs/current). Those endpoints
+  // expand empty org_members.scopes to role defaults. GET /orgs returns raw DB
+  // scopes, so an empty array would otherwise shadow the real owner/admin set
+  // via `??` (empty is not nullish).
+  const currentScopes = firstNonEmptyScopes(
+    currentUserMatchesActiveOrg ? currentUser?.org_scopes : null,
+    currentOrgMatchesActiveOrg ? currentOrg?.scopes : null,
+    activeOrganization?.scopes,
+  );
 
   return (
     <OrgContext.Provider
