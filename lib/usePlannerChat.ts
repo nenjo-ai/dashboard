@@ -22,6 +22,7 @@ import {
   notifyChatSessionDelete,
 } from "./api";
 import { consumeSseStream } from "./chatStream";
+import { consumeChatStreamWithRetry } from "./chatStreamRetry";
 import {
   decryptContentPayload,
   encryptContentPayload,
@@ -56,6 +57,7 @@ import type { AgentLifecycleEvent, RunTrace } from "./agentRunTrace/types";
 import type {
   ChatMessage,
   ChatSession,
+  ChatStreamRequest,
   DomainSession,
   EncryptedPayload,
   PersistedChatMessage,
@@ -235,7 +237,7 @@ function isClearSnapshot(
 }
 
 function generateId(): string {
-  return Math.random().toString(36).substring(2, 15);
+  return crypto.randomUUID();
 }
 
 function readPendingAgentId(): string | null {
@@ -814,11 +816,7 @@ function isTerminalAssistantStatus(status: string | undefined): boolean {
 }
 
 function hasRestorableStreamProgress(snapshot: ChatStreamSnapshot): boolean {
-  if (snapshot.content.trim()) return true;
-  if (snapshot.livePreview?.trim()) return true;
-  if ((snapshot.activeTools?.length ?? 0) > 0) return true;
-  const trace = snapshot.activeRunTrace as RunTrace | undefined;
-  return !!trace && !isTerminalRunTrace(trace);
+  return snapshot.status === "streaming";
 }
 
 export function usePlannerChat(
@@ -924,6 +922,7 @@ export function usePlannerChat(
   const handleIncomingRef = useRef<(raw: unknown) => void>(() => {});
   const optimisticUserMessageIdRef = useRef<string | null>(null);
   const currentRequestIdRef = useRef<string | null>(null);
+  const activeChatRequestRef = useRef<ChatStreamRequest | undefined>(undefined);
   const awaitingDeliveryRef = useRef(false);
   const activeToolsRef = useRef<ActiveToolEntry[]>(activeTools);
   const livePreviewRef = useRef<string | undefined>(livePreview);
@@ -945,6 +944,7 @@ export function usePlannerChat(
       sessionId: activeSessionId,
       agentId,
       requestId,
+      request: activeChatRequestRef.current,
       responseId: responseIdRef.current ?? undefined,
       content: "",
       activeTools: activeToolsRef.current,
@@ -977,6 +977,7 @@ export function usePlannerChat(
       setIsTyping(false);
       setHasActiveChatRequest(false);
       currentRequestIdRef.current = null;
+      activeChatRequestRef.current = undefined;
       if (!preserveRunTraceForFinalMessage) {
         activeRunTraceRef.current = undefined;
       }
@@ -996,6 +997,7 @@ export function usePlannerChat(
   );
 
   const finishFinalizedLiveTurn = useCallback(() => {
+    activeChatRequestRef.current = undefined;
     activeRunTraceRef.current = undefined;
     activeRunEnvelopeIdRef.current = undefined;
     setActiveRunTrace(undefined);
@@ -1031,6 +1033,7 @@ export function usePlannerChat(
 
       const responseId = snapshot.responseId ?? snapshot.requestId;
       currentRequestIdRef.current = snapshot.requestId;
+      activeChatRequestRef.current = snapshot.request;
       responseIdRef.current = responseId;
       responsePersistedRef.current = false;
       suppressActiveRunTraceRef.current = false;
@@ -1046,9 +1049,9 @@ export function usePlannerChat(
       } else {
         setActiveRunTrace(undefined);
       }
-      setIsTyping(
-        snapshot.status === "streaming" && hasRestorableStreamProgress(snapshot),
-      );
+      const isStreaming = snapshot.status === "streaming";
+      setHasActiveChatRequest(isStreaming);
+      setIsTyping(isStreaming && hasRestorableStreamProgress(snapshot));
       setMessages((prev) => {
         const targetIndex = findLastIndexCompat(
           prev,
@@ -2429,24 +2432,109 @@ export function usePlannerChat(
 
   useEffect(() => {
     if (!activeSessionId) return;
-    void loadChatStreamSnapshot(activeSessionId).then((snapshot) => {
+    let cancelled = false;
+    let restoreController: AbortController | undefined;
+
+    void loadChatStreamSnapshot(activeSessionId).then(async (snapshot) => {
+      if (cancelled) return;
       if (
         !snapshot ||
         snapshot.status !== "streaming"
       ) {
         return;
       }
-      if (!hasRestorableStreamProgress(snapshot)) {
-        void clearChatStreamSnapshot(activeSessionId);
-        notifyChatStreamSnapshot({
-          sessionId: activeSessionId,
-          clear: true,
-        });
+      applyStreamSnapshot(snapshot);
+
+      // The worker may have completed while this view was unmounted. Confirm
+      // history before opening a new core-NATS subscription, whose events are
+      // intentionally not retained for late subscribers.
+      if (agentId) {
+        try {
+          const page = await fetchChatMessages(
+            projectId,
+            agentId,
+            { session_id: activeSessionId },
+            targetType,
+          );
+          if (cancelled) return;
+          const hasPersistedResponse = page.messages.some(
+            (message) =>
+              message.sender === "assistant" &&
+              new Date(message.created_at).getTime() >= snapshot.updatedAt,
+          );
+          if (hasPersistedResponse) {
+            const loaded: ChatMessage[] = await Promise.all(
+              page.messages.reverse().map(async (message) => ({
+                id: message.id,
+                persistedId: message.id,
+                role: message.sender,
+                content: await resolvePersistedMessageContent(message),
+                command: persistedMessageCommand(message),
+                timestamp: message.created_at,
+                status: message.sender === "user" ? "delivered" : undefined,
+              })),
+            );
+            if (cancelled) return;
+            const loadedWithEnvelopes = await hydrateRunEnvelopeLinks(loaded);
+            if (cancelled) return;
+            setMessages((prev) => mergeLoadedMessages(loadedWithEnvelopes, prev));
+            setHasMore(page.has_more);
+            clearLiveTurnIndicators();
+            return;
+          }
+        } catch (error) {
+          console.warn("Failed to check chat history during stream restore", error);
+        }
+      }
+
+      if (!snapshot.request) {
+        // Snapshots written by older dashboard builds still restore the active
+        // card, but do not contain enough encrypted data to reconnect.
         return;
       }
-      applyStreamSnapshot(snapshot);
+
+      restoreController = new AbortController();
+      streamAbortRef.current = restoreController;
+      const handleStreamEvent = (event: { event: string; data: unknown }) => {
+        if (event.event === "message_persisted" || event.event === "delivery_receipt") {
+          handleIncomingRef.current(event.data);
+          return;
+        }
+        const normalized = normalizeSseAgentEvent(event);
+        if (normalized) {
+          handleIncomingRef.current({
+            type: "agent_response",
+            payload: normalized,
+          });
+        }
+      };
+
+      void consumeChatStreamWithRetry(
+        () => createChatStream(snapshot.request!, restoreController!.signal),
+        (response) => consumeSseStream(response, handleStreamEvent),
+        restoreController.signal,
+      ).catch((error) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          console.warn("Failed to restore chat stream after navigation", error);
+        }
+      });
     });
-  }, [activeSessionId, applyStreamSnapshot]);
+
+    return () => {
+      cancelled = true;
+      restoreController?.abort();
+      if (streamAbortRef.current === restoreController) {
+        streamAbortRef.current = null;
+      }
+    };
+  }, [
+    activeSessionId,
+    agentId,
+    applyStreamSnapshot,
+    clearLiveTurnIndicators,
+    projectId,
+    targetType,
+  ]);
 
   useEffect(() => {
     if (!activeSessionId) return;
@@ -2646,32 +2734,6 @@ export function usePlannerChat(
           setActiveRunTrace(undefined);
           setIsTyping(false);
 
-          if (activeSessionId) {
-            void persistChatStreamSnapshot({
-              sessionId: activeSessionId,
-              agentId,
-              requestId: msgId,
-              responseId: responseIdRef.current ?? undefined,
-              content: "",
-              activeTools: activeToolsRef.current,
-              livePreview: livePreviewRef.current,
-              activeRunTrace: activeRunTraceRef.current,
-              status: "streaming",
-              updatedAt: Date.now(),
-            });
-            notifyChatStreamSnapshot({
-              sessionId: activeSessionId,
-              agentId,
-              requestId: msgId,
-              responseId: responseIdRef.current ?? undefined,
-              content: "",
-              activeTools: activeToolsRef.current,
-              livePreview: livePreviewRef.current,
-              activeRunTrace: activeRunTraceRef.current,
-              status: "streaming",
-              updatedAt: Date.now(),
-            });
-          }
         }
 
         controller = new AbortController();
@@ -2679,7 +2741,7 @@ export function usePlannerChat(
           streamAbortRef.current = controller;
         }
 
-        const streamBody = {
+        const streamBody: ChatStreamRequest = {
           id: msgId,
           message: "[Encrypted message]",
           encrypted_message: encryptedMessage,
@@ -2700,6 +2762,25 @@ export function usePlannerChat(
           target_id: agentId!,
           ...(projectId ? { project_id: projectId } : {}),
         };
+        activeChatRequestRef.current = streamBody;
+
+        if (!queueIntoActiveTurn && activeSessionId) {
+          const snapshot: ChatStreamSnapshot = {
+            sessionId: activeSessionId,
+            agentId,
+            requestId: msgId,
+            request: streamBody,
+            responseId: responseIdRef.current ?? undefined,
+            content: "",
+            activeTools: activeToolsRef.current,
+            livePreview: livePreviewRef.current,
+            activeRunTrace: activeRunTraceRef.current,
+            status: "streaming",
+            updatedAt: Date.now(),
+          };
+          void persistChatStreamSnapshot(snapshot);
+          notifyChatStreamSnapshot(snapshot);
+        }
 
         const handleStreamEvent = (event: { event: string; data: unknown }) => {
           if (event.event === "message_persisted") {
@@ -2720,12 +2801,11 @@ export function usePlannerChat(
           });
         };
 
-        streamPromise = createChatStream(
-          streamBody,
+        streamPromise = consumeChatStreamWithRetry(
+          () => createChatStream(streamBody, controller.signal),
+          (response) => consumeSseStream(response, handleStreamEvent),
           controller.signal,
-        ).then((response) => {
-          return consumeSseStream(response, handleStreamEvent);
-        });
+        );
       } catch (error) {
         console.error("Failed to prepare chat stream:", error);
         failOptimisticMessage();

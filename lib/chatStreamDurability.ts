@@ -1,5 +1,7 @@
 "use client";
 
+import type { ChatStreamRequest } from "./types";
+
 const DB_NAME = "nenjo-chat-streams";
 const STORE_NAME = "snapshots";
 const CHANNEL_NAME = "nenjo-chat-stream";
@@ -22,6 +24,8 @@ export type ChatStreamSnapshot = {
   sessionId: string;
   agentId?: string;
   requestId: string;
+  /** The encrypted, idempotent request body used to reconnect after navigation. */
+  request?: ChatStreamRequest;
   responseId?: string;
   content: string;
   activeTools?: ChatStreamToolSnapshot[];
