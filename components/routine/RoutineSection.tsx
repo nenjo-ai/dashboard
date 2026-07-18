@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useRoutines } from "@/lib/hooks";
 import { createRoutine, deleteRoutine } from "@/lib/api";
-import type { RoutineSummary, RoutineTrigger, CreateRoutineRequest } from "@/lib/types";
-import { ROUTINE_TRIGGERS } from "@/lib/types";
+import type { RoutineSummary, CreateRoutineRequest } from "@/lib/types";
 import { RoutineCard } from "./RoutineCard";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -13,44 +12,25 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { MotionList, MotionItem } from "@/components/ui/motion";
 import { toast } from "@/lib/toast";
 
-function browserTimezone(): string {
-  if (typeof window === "undefined") return "UTC";
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-}
-
 // ---------------------------------------------------------------------------
-// RoutineSection — card grid of routines, optionally filtered by trigger type
+// RoutineSection — card grid of task-targetable routines
 // ---------------------------------------------------------------------------
 
 interface RoutineSectionProps {
-  triggerFilter?: RoutineTrigger[];
   allowCreate?: boolean;
 }
 
-export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSectionProps) {
+export function RoutineSection({ allowCreate = true }: RoutineSectionProps) {
   const router = useRouter();
   const { routines: allRoutines, isLoading, isError, error, mutate } = useRoutines();
 
-  const routines = triggerFilter && allRoutines
-    ? allRoutines.filter((r) => triggerFilter.includes(r.trigger as RoutineTrigger))
-    : allRoutines;
+  const routines = allRoutines;
 
   // ── Create form ─────────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const availableTriggers = triggerFilter
-    ? ROUTINE_TRIGGERS.filter((t) => triggerFilter.includes(t.id))
-    : ROUTINE_TRIGGERS;
-  const defaultTrigger = availableTriggers[0]?.id ?? "task";
-  const [newTrigger, setNewTrigger] = useState<RoutineTrigger>(defaultTrigger);
-  const [newSchedule, setNewSchedule] = useState("");
-  const [newTimezone, setNewTimezone] = useState("UTC");
-
-  useEffect(() => {
-    setNewTimezone(browserTimezone());
-  }, []);
 
   // ── Delete state ────────────────────────────────────────────────────────
   const [confirmDelete, setConfirmDelete] = useState<RoutineSummary | null>(null);
@@ -59,11 +39,8 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
   const resetForm = useCallback(() => {
     setNewName("");
     setNewDescription("");
-    setNewTrigger(defaultTrigger);
-    setNewSchedule("");
-    setNewTimezone(browserTimezone());
     setShowCreate(false);
-  }, [defaultTrigger]);
+  }, []);
 
   const handleCreate = useCallback(async () => {
     if (!newName.trim()) return;
@@ -72,10 +49,6 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
       const data: CreateRoutineRequest = {
         name: newName.trim(),
         description: newDescription.trim() || undefined,
-        trigger: newTrigger,
-        metadata: newTrigger === "cron" && newSchedule.trim()
-          ? { schedule: newSchedule.trim(), timezone: newTimezone.trim() || browserTimezone() }
-          : undefined,
       };
       const created = await createRoutine(data);
       resetForm();
@@ -87,7 +60,7 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
     } finally {
       setCreating(false);
     }
-  }, [newName, newDescription, newTrigger, newSchedule, newTimezone, resetForm, mutate, router]);
+  }, [newName, newDescription, resetForm, mutate, router]);
 
   const handleDelete = useCallback(async () => {
     if (!confirmDelete) return;
@@ -143,9 +116,7 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
       {/* Header with create button */}
       <div className="mb-4 flex items-center justify-between gap-4">
         <p className="theme-text-muted text-sm">
-          {triggerFilter?.includes("cron") && triggerFilter.length === 1
-            ? "Scheduled routines that run agents automatically on a cron schedule."
-            : "Manage agent execution routines. Routines define the sequence of steps agents follow when processing tasks."}
+          Manage routine definitions. Assign routines and recurring schedules from tasks.
         </p>
         {allowCreate ? (
           <Button
@@ -195,54 +166,6 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
               />
             </div>
 
-            {availableTriggers.length > 1 && (
-              <div>
-                <label className="theme-text-muted mb-1 block text-xs font-medium">
-                  Trigger Type
-                </label>
-                <select
-                  value={newTrigger}
-                  onChange={(e) => setNewTrigger(e.target.value as RoutineTrigger)}
-                  className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
-                >
-                  {availableTriggers.map((t) => (
-                    <option key={t.id} value={t.id}>{t.label}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {newTrigger === "cron" && (
-              <div className="space-y-3">
-                <div>
-                  <label className="theme-text-muted mb-1 block text-xs font-medium">
-                    Schedule
-                  </label>
-                  <input
-                    type="text"
-                    value={newSchedule}
-                    onChange={(e) => setNewSchedule(e.target.value)}
-                    placeholder='e.g., "30m", "1h", or "0 9 * * *"'
-                    className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm font-mono placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
-                  />
-                  <p className="theme-text-muted mt-1 text-[10px]">
-                    Interval (30s, 5m, 1h) or cron expression. Can be set later.
-                  </p>
-                </div>
-                <div>
-                  <label className="theme-text-muted mb-1 block text-xs font-medium">
-                    Timezone
-                  </label>
-                  <input
-                    type="text"
-                    value={newTimezone}
-                    onChange={(e) => setNewTimezone(e.target.value)}
-                    placeholder="America/Chicago"
-                    className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
-                  />
-                </div>
-              </div>
-            )}
 
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="secondary" size="sm" onClick={resetForm} disabled={creating}>
@@ -283,14 +206,10 @@ export function RoutineSection({ triggerFilter, allowCreate = true }: RoutineSec
             </svg>
           </div>
           <p className="theme-text text-sm font-medium">
-            {triggerFilter?.includes("cron") && triggerFilter.length === 1
-              ? "No scheduled routines yet"
-              : "No routines yet"}
+            No routines yet
           </p>
           <p className="theme-text-muted mt-1 text-xs">
-            {triggerFilter?.includes("cron") && triggerFilter.length === 1
-              ? "Create a scheduled routine to run agents on a cron schedule."
-              : "Create your first routine to define how agents process work."}
+            Create your first routine to define how agents process work.
           </p>
           <Button
             className="mt-6 !bg-deep-space-blue-500 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"

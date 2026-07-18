@@ -337,8 +337,8 @@ export function executionTasksToRunTrace(
         status: statusFromStep({
           step_name: task.title,
           step_type: "message",
-          status: task.status === "done" ? "passed" : "running",
-          event_type: task.status === "done" ? "step_completed" : "step_started",
+          status: task.status === "completed" ? "passed" : "running",
+          event_type: task.status === "completed" ? "step_completed" : "step_started",
           started_at: task.started_at,
           completed_at: task.completed_at,
           duration_ms: null,

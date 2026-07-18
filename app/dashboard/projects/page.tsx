@@ -41,7 +41,7 @@ export default function ProjectsPage() {
         <PageContent>
           <div className="mb-4 flex items-start justify-between gap-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Manage your projects. Each project contains tasks, routines, and agent executions.
+              Manage optional project context for tasks, routines, and executions.
             </p>
             <Button
               className="h-10 w-10 shrink-0 !bg-deep-space-blue-500 !px-0 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"

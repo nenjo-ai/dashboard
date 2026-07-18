@@ -1,10 +1,10 @@
 import type {
   ExecutionTask,
   ExecutionTaskCurrentStep,
+  ExecutionStatus,
   EncryptedPayload,
   StepAgent,
   StepStatus,
-  TaskStatus,
   TaskStepProgress,
 } from "./types";
 import { EXECUTION_EVENT_TYPE, ExecutionEventKind } from "./executionEvents.ts";
@@ -33,12 +33,6 @@ function executionEventPayload(data: EventRecord): Record<string, unknown> | nul
 function workflowStepEventData(data: EventRecord): EventRecord | null {
   const event = executionEventPayload(data);
   if (!event || event.kind !== ExecutionEventKind.WorkflowStep) return null;
-  return recordField(event.data);
-}
-
-function taskCompletedEventData(data: EventRecord): EventRecord | null {
-  const event = executionEventPayload(data);
-  if (!event || event.kind !== ExecutionEventKind.TaskCompleted) return null;
   return recordField(event.data);
 }
 
@@ -71,8 +65,24 @@ function stepStatus(eventType: string): StepStatus {
   }
 }
 
-function taskStatusFromCompleted(success: boolean): TaskStatus {
-  return success ? "done" : "failed";
+function taskExecutionState(data: EventRecord): ExecutionStatus | null {
+  if (data.type !== "task.execution_state") return null;
+  const state = recordField(data.state);
+  switch (stringField(state?.status)) {
+    case "queued":
+      return "queued";
+    case "running":
+      return "running";
+    case "completed":
+      return "completed";
+    case "failed":
+    case "rejected":
+      return "failed";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return null;
+  }
 }
 
 function isTerminalStepEvent(eventType: string): boolean {
@@ -224,17 +234,19 @@ export function mergeExecutionRealtimeEventIntoTasks(
   const taskId = stringField(data.task_id);
   if (!type || !taskId) return tasks;
 
-  const completed = taskCompletedEventData(data);
-  if (completed) {
-    const source = completed;
-    const success = source.success === true;
+  const executionState = taskExecutionState(data);
+  if (executionState) {
     return tasks.map((task) =>
       task.id === taskId
         ? {
             ...task,
-            status: taskStatusFromCompleted(success),
-            current_step: null,
-            completed_at: stringField(data.created_at) ?? new Date().toISOString(),
+            status: executionState,
+            current_step: ["completed", "failed", "cancelled"].includes(executionState)
+              ? null
+              : task.current_step,
+            completed_at: ["completed", "failed", "cancelled"].includes(executionState)
+              ? stringField(data.created_at) ?? new Date().toISOString()
+              : task.completed_at,
           }
         : task,
     );
@@ -252,12 +264,11 @@ export function mergeExecutionRealtimeEventIntoTasks(
     const currentStep = clearCurrentStep
       ? null
       : currentStepFromStep(step) ?? task.current_step ?? null;
-    const taskIsStarted =
-      task.status === "ready" || task.status === "assigned";
+    const taskIsStarted = task.status === "pending" || task.status === "queued";
 
     return {
       ...task,
-      status: taskIsStarted ? "in_progress" : task.status,
+      status: taskIsStarted ? "running" : task.status,
       current_step: currentStep,
       steps: nextSteps,
       started_at: task.started_at ?? step.started_at,

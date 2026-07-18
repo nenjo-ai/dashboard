@@ -5,7 +5,7 @@ Date: 2026-06-11
 Scope:
 
 - Dashboard working tree on `refactor/manifest-contract`, including the new local passkey/password unlock files.
-- Dashboard sensitive-content request paths for agent prompts, ability prompts, domain prompts, context block content, document content, task content, project settings, heartbeat instructions, routine cron tasks, and chat messages.
+- Dashboard sensitive-content request paths for agent prompts, ability prompts, domain prompts, context block content, document content, task content, project settings, and chat messages.
 - Platform passkey metadata endpoints were read only to verify the dashboard contract.
 
 Method:
@@ -114,7 +114,7 @@ Recommendation:
 
 - I did not find plaintext passkey PRF output, vault key, password/passphrase, trusted device private key, or account signing private key being posted by the new passkey unlock dashboard code.
 - `registerPasskeyUnlock` sends credential metadata/attestation material only; PRF output is passed only into local wrapping (`dashboard/lib/localUnlock.ts:131` through `dashboard/lib/localUnlock.ts:156`).
-- Sensitive content write paths for agent prompts, ability prompts, domain prompts, context block content, document bodies, task descriptions/acceptance criteria, project context/metadata settings, heartbeat instructions, and routine cron task payloads use `encrypted_payload` in the reviewed dashboard API paths.
+- Sensitive content write paths for agent prompts, ability prompts, domain prompts, context block content, document bodies, task content, project context/metadata settings, and chat messages use `encrypted_payload` in the reviewed dashboard API paths.
 - Account signing private key material is included only inside the recovery bundle ciphertext before backend upload. I did not find raw private key material sent to the backend.
 
 ## Notes

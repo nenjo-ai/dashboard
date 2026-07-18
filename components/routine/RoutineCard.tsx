@@ -8,32 +8,13 @@ import { Badge } from "@/components/ui/Badge";
 // Trigger visual config
 // ---------------------------------------------------------------------------
 
-const triggerConfig: Record<string, { icon: string; color: string; bg: string; border: string; label: string }> = {
-  cron: {
-    icon: "clock",
-    color: "text-cyan-600 dark:text-cyan-400",
-    bg: "bg-cyan-50 dark:bg-cyan-950/30",
-    border: "border-cyan-200 dark:border-cyan-800",
-    label: "Cron / Scheduled",
-  },
-  task: {
-    icon: "bolt",
-    color: "text-deep-space-blue-600 dark:text-deep-space-blue-400",
-    bg: "bg-deep-space-blue-50 dark:bg-deep-space-blue-950/30",
-    border: "border-deep-space-blue-200 dark:border-deep-space-blue-800",
-    label: "Task",
-  },
+const triggerConfig = {
+  color: "text-deep-space-blue-600 dark:text-deep-space-blue-400",
+  bg: "bg-deep-space-blue-50 dark:bg-deep-space-blue-950/30",
+  label: "Task",
 };
 
-function TriggerIcon({ trigger, className }: { trigger: string; className?: string }) {
-  const cfg = triggerConfig[trigger] ?? triggerConfig.task;
-  if (cfg.icon === "clock") {
-    return (
-      <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    );
-  }
+function TriggerIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
@@ -53,15 +34,14 @@ interface RoutineCardProps {
 
 export function RoutineCard({ routine, onDelete, isDeleting }: RoutineCardProps) {
   const router = useRouter();
-  const cfg = triggerConfig[routine.trigger] ?? triggerConfig.task;
+  const cfg = triggerConfig;
 
   return (
     <div
       onClick={(e) => {
         const target = e.target as HTMLElement;
         if (target.closest("button")) return;
-        const tab = routine.trigger === "cron" ? "?tab=run" : "";
-        router.push(`/dashboard/routines/${routine.id}${tab}`);
+        router.push(`/dashboard/routines/${routine.id}`);
       }}
       className="theme-surface theme-border theme-text flex h-full cursor-pointer flex-col rounded-xl border p-5 shadow-xs transition-shadow hover:shadow-md"
     >
@@ -69,7 +49,7 @@ export function RoutineCard({ routine, onDelete, isDeleting }: RoutineCardProps)
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-3 flex-1 min-w-0">
           <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${cfg.bg}`}>
-            <TriggerIcon trigger={routine.trigger} className={`h-4.5 w-4.5 ${cfg.color}`} />
+            <TriggerIcon className={`h-4.5 w-4.5 ${cfg.color}`} />
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate">

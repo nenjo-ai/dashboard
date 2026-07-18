@@ -65,7 +65,7 @@ function normalizeCurrentStep(
 }
 
 function taskIsTerminal(task: ExecutionTask): boolean {
-  return task.status === "done" || task.status === "failed";
+  return ["completed", "failed", "cancelled"].includes(task.status);
 }
 
 function isRunningDisplayStep(step: TaskStepProgress): boolean {

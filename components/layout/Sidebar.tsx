@@ -12,7 +12,7 @@ import type { Project } from "@/lib/types";
 import { clearLocalSecretVaultSession, lockLocalSecretVault } from "@/lib/cryptoContent";
 import { CreateProjectModal } from "@/components/dashboard/CreateProjectModal";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
-import { Bot, GitBranch, LibraryBig, Package } from "lucide-react";
+import { Bot, GitBranch, LibraryBig, ListTodo, Package, Users } from "lucide-react";
 
 
 interface NavItem {
@@ -52,6 +52,11 @@ const navigation: NavItem[] = [
     ),
   },
   {
+    label: "Tasks",
+    href: "/dashboard/tasks",
+    icon: <ListTodo className="h-5 w-5" />,
+  },
+  {
     label: "Library",
     href: "/dashboard/library",
     icon: <LibraryBig className="h-5 w-5" />,
@@ -65,6 +70,11 @@ const navigation: NavItem[] = [
     label: "Routines",
     href: "/dashboard/routines",
     icon: <GitBranch className="h-5 w-5" />,
+  },
+  {
+    label: "Councils",
+    href: "/dashboard/councils",
+    icon: <Users className="h-5 w-5" />,
   },
   {
     label: "Agents",

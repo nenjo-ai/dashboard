@@ -481,6 +481,14 @@ test("chat finalization preserves run trace until it is attached to the final me
   );
   assert.match(
     source,
-    /clearLiveTurnIndicators\(\{\s*preserveRunTraceForFinalMessage: true,\s*broadcastClear: false,\s*\}\);\s*await lifecycleQueueRef\.current;[\s\S]*?const traceForFinal =[\s\S]*?runTrace: m\.runTrace \?\? traceForFinal[\s\S]*?finishFinalizedLiveTurn\(\);/,
+    /streamWorkQueueRef\.current\.enqueue\(async \(\) => \{[\s\S]*?clearLiveTurnIndicators\(\{\s*preserveRunTraceForFinalMessage: true,\s*broadcastClear: false,\s*\}\);[\s\S]*?const traceForFinal =[\s\S]*?runTrace: m\.runTrace \?\? traceForFinal[\s\S]*?finishFinalizedLiveTurn\(\);/,
+  );
+  assert.match(
+    source,
+    /lifecycleEvent\.event_type === "RunStarted"[\s\S]*?linkEnvelopeToInputMessage\(\{[\s\S]*?inputMessageId: receivedInputMessageId/,
+  );
+  assert.match(
+    source,
+    /streamPromise[\s\S]*?\.then\(async \(\) => \{\s*await streamWorkQueueRef\.current\.drain\(\);[\s\S]*?fetchChatMessages/,
   );
 });

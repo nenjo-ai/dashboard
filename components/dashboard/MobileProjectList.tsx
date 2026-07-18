@@ -67,7 +67,7 @@ export function MobileProjectList({
       <div className="rounded-[1.8rem] border border-dashed border-black/10 bg-transparent px-6 py-12 text-center dark:border-white/10">
         <p className="text-base font-semibold text-gray-950 dark:text-gray-50">No projects yet</p>
         <p className="mt-2 text-sm leading-6 text-gray-500 dark:text-gray-400">
-          Create a project to organize tasks, routines, and agent runs in one place.
+          Create a project when related tasks, routines, and runs benefit from shared context.
         </p>
         {onCreateProject ? (
           <button

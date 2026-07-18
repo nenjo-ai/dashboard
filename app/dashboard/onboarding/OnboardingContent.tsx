@@ -80,7 +80,9 @@ import {
 } from "@/lib/cryptoContent";
 import { useSafeRouter } from "@/lib/safeRouter";
 import {
+  onboardingEntryGateKey,
   shouldRedirectExistingWorkspaceToDashboard,
+  shouldRunOnboardingEntryGate,
   shouldUseExistingWorkspaceRestoreMode,
 } from "@/lib/vaultRestoreGate.mjs";
 
@@ -1760,6 +1762,7 @@ export default function OnboardingContent() {
   const searchParams = useSearchParams();
   const forceRestore = searchParams.get("restore") === "1";
   const redirected = useRef(false);
+  const resolvedEntryGateKey = useRef<string | null>(null);
   const officialPackagesInstalledForOrg = useRef<string | null>(null);
   const { data: currentUser } = useSWR(user ? authMeUrl() : null, fetcher, {
     revalidateOnFocus: false,
@@ -1788,19 +1791,33 @@ export default function OnboardingContent() {
   const [selectedOrgIdOverride, setSelectedOrgId] = useState<string | null>(null);
   const selectedOrgId = selectedOrgIdOverride ?? currentUser?.org_id ?? null;
   const accountUserId = currentUser?.user_id ?? undefined;
+  const signedInUserId = user?.id ?? null;
+  const entryGateKey = onboardingEntryGateKey({
+    accountId: signedInUserId,
+    forceRestore,
+  });
 
   useEffect(() => {
     if (redirected.current) return;
     if (!isLoaded) return;
 
-    if (!user) {
+    if (!signedInUserId) {
       const timeout = setTimeout(() => {
-        if (!user && !redirected.current) {
+        if (!signedInUserId && !redirected.current) {
           redirected.current = true;
           router.replace("/dashboard/login");
         }
       }, 2000);
       return () => clearTimeout(timeout);
+    }
+
+    if (
+      !shouldRunOnboardingEntryGate({
+        resolvedKey: resolvedEntryGateKey.current,
+        nextKey: entryGateKey,
+      })
+    ) {
+      return;
     }
 
     let cancelled = false;
@@ -1837,6 +1854,7 @@ export default function OnboardingContent() {
             forceRestore,
           })
         ) {
+          resolvedEntryGateKey.current = entryGateKey;
           redirected.current = true;
           router.replace("/dashboard");
           return;
@@ -1857,6 +1875,7 @@ export default function OnboardingContent() {
           setOnboardingMode("fresh");
         }
 
+        resolvedEntryGateKey.current = entryGateKey;
         setGateStatus("ready");
       } catch (err) {
         if (cancelled || redirected.current) return;
@@ -1872,7 +1891,7 @@ export default function OnboardingContent() {
     return () => {
       cancelled = true;
     };
-  }, [forceRestore, isLoaded, router, user]);
+  }, [entryGateKey, forceRestore, isLoaded, router, signedInUserId]);
 
   const maxWidth =
     onboardingMode === "restore"

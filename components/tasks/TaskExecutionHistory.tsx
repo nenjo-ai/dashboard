@@ -1,0 +1,121 @@
+"use client";
+
+import { useState } from "react";
+import { ChevronDown, ChevronRight, History } from "lucide-react";
+
+import { TaskRunActivity } from "@/components/tasks/TaskRunActivity";
+import { Badge } from "@/components/ui/Badge";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { cn } from "@/lib/cn";
+import {
+  executionHistoryLabel,
+  formatExecutionRelativeTime,
+} from "@/lib/executionHistory";
+import type { ExecutionDetails } from "@/lib/types";
+
+interface TaskExecutionHistoryProps {
+  executions: ExecutionDetails[] | undefined;
+  isError?: boolean;
+  isLoading: boolean;
+  onRefresh: () => void;
+  title?: string;
+}
+
+/**
+ * Compact task-run history with the shared persisted and live trace surface.
+ * It is intentionally target-agnostic so task, routine, and agent views can
+ * all present the canonical execution record without duplicating SSE logic.
+ */
+export function TaskExecutionHistory({
+  executions,
+  isError = false,
+  isLoading,
+  onRefresh,
+  title = "Task activity",
+}: TaskExecutionHistoryProps) {
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+
+  if (isLoading) {
+    return (
+      <div className="theme-surface theme-border space-y-3 rounded-xl border p-5">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-14 w-full" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="theme-surface theme-border rounded-xl border p-6 text-center">
+        <p className="theme-text-muted text-sm">Task activity is unavailable.</p>
+      </div>
+    );
+  }
+
+  if (!executions?.length) {
+    return (
+      <div className="theme-surface theme-border rounded-xl border p-6 text-center">
+        <History className="theme-text-muted mx-auto mb-2 h-5 w-5" />
+        <p className="theme-text text-sm font-medium">No task activity yet</p>
+        <p className="theme-text-muted mt-1 text-sm">
+          Run a task assigned to this routine to see its live agent trace here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="theme-surface theme-border overflow-hidden rounded-xl border">
+      <div className="theme-border border-b px-4 py-3">
+        <h2 className="theme-text text-sm font-semibold">{title}</h2>
+      </div>
+      <div className="theme-border divide-y">
+        {executions.map((execution) => {
+          const expanded = expandedRunId === execution.id;
+          return (
+            <section key={execution.id}>
+              <button
+                aria-expanded={expanded}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:[background:var(--app-hover)]"
+                onClick={() => setExpandedRunId(expanded ? null : execution.id)}
+                type="button"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  {expanded ? (
+                    <ChevronDown className="theme-text-muted h-4 w-4 shrink-0" />
+                  ) : (
+                    <ChevronRight className="theme-text-muted h-4 w-4 shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="theme-text truncate text-sm font-medium">
+                      {executionHistoryLabel(execution)}
+                    </p>
+                    <p className="theme-text-muted text-xs">
+                      {formatExecutionRelativeTime(execution.created_at)}
+                    </p>
+                  </div>
+                </div>
+                <Badge
+                  className={cn(execution.status === "running" && "animate-pulse")}
+                  showDot
+                  variant={execution.status}
+                >
+                  {execution.status}
+                </Badge>
+              </button>
+              {expanded ? (
+                <div className="theme-border border-t p-4">
+                  <TaskRunActivity
+                    executionId={execution.id}
+                    onTerminal={onRefresh}
+                    status={execution.status}
+                  />
+                </div>
+              ) : null}
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

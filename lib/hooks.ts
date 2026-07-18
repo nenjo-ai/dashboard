@@ -13,14 +13,25 @@ import {
   fetchChatCommands,
   fetcher,
   fetchTasks,
+  fetchTask,
+  fetchTaskAttachments,
+  fetchTaskExecutions,
+  fetchTaskLabels,
+  fetchTaskSchedule,
+  fetchTaskStatuses,
   projectsUrl,
   projectUrl,
   tasksUrl,
+  taskUrl,
+  taskAttachmentsUrl,
+  taskExecutionsUrl,
+  taskLabelsUrl,
+  taskScheduleUrl,
+  taskStatusesUrl,
   executionsUrl,
   executionTasksUrl,
   executionTraceEventsUrl,
   activityUrl,
-  dependencyGraphUrl,
   modelsUrl,
   modelCatalogUrl,
   mediaCapabilitiesUrl,
@@ -61,11 +72,14 @@ import type {
   Project,
   ContextBlock,
   Task,
+  TaskAttachment,
+  TaskExecutionRun,
+  TaskLabel,
+  TaskSchedule,
+  TaskWorkflowStatus,
   ExecutionDetails,
-  AgentHeartbeat,
   ExecutionTask,
   ExecutionTraceEvent,
-  DependencyGraph,
   Model,
   ModelCatalogQuery,
   ModelCatalogProvider,
@@ -101,6 +115,7 @@ import type {
   MediaAssignmentsResponse,
   ModelAssignmentsResponse,
 } from "./types";
+import type { TaskFilters } from "./api";
 import { useSafeRouter } from "./safeRouter";
 
 // ---------------------------------------------------------------------------
@@ -266,13 +281,13 @@ export function useProject(id: string | undefined) {
   };
 }
 
-export function useTasks(projectId: string | undefined, status?: string) {
-  const url = projectId ? tasksUrl(projectId, { status }) : null;
+export function useTasks(filters: TaskFilters = {}, refreshInterval = 0) {
+  const url = tasksUrl(filters);
 
   const { data, error, isLoading, mutate } = useSWR<Task[]>(
     url,
-    () => fetchTasks(projectId!, status),
-    { revalidateOnFocus: false, dedupingInterval: 3000 },
+    () => fetchTasks(filters),
+    { revalidateOnFocus: false, dedupingInterval: 3000, refreshInterval },
   );
 
   return {
@@ -284,9 +299,84 @@ export function useTasks(projectId: string | undefined, status?: string) {
   };
 }
 
+export function useTask(id: string | undefined) {
+  const { data, error, isLoading, mutate } = useSWR<Task>(
+    id ? taskUrl(id) : null,
+    () => fetchTask(id!),
+    { revalidateOnFocus: false },
+  );
+  return { task: data, isLoading, isError: Boolean(error), error, mutate };
+}
+
+export function useTaskExecutions(taskId: string | undefined) {
+  const { data, error, isLoading, mutate } = useSWR<TaskExecutionRun[]>(
+    taskId ? taskExecutionsUrl(taskId) : null,
+    () => fetchTaskExecutions(taskId!),
+    { revalidateOnFocus: false },
+  );
+  return { executions: data, isLoading, isError: Boolean(error), error, mutate };
+}
+
+export function useTaskAttachments(taskId: string | undefined) {
+  const { data, error, isLoading, mutate } = useSWR<TaskAttachment[]>(
+    taskId ? taskAttachmentsUrl(taskId) : null,
+    () => fetchTaskAttachments(taskId!),
+    { revalidateOnFocus: false },
+  );
+  return { attachments: data, isLoading, isError: Boolean(error), error, mutate };
+}
+
+export function useTaskSchedule(taskId: string | undefined) {
+  const { data, error, isLoading, mutate } = useSWR<TaskSchedule | null>(
+    taskId ? taskScheduleUrl(taskId) : null,
+    () => fetchTaskSchedule(taskId!),
+    { revalidateOnFocus: false },
+  );
+  return { schedule: data, isLoading, isError: Boolean(error), error, mutate };
+}
+
+export function useTaskLabels() {
+  const { data, error, isLoading, mutate } = useSWR<TaskLabel[]>(
+    taskLabelsUrl(),
+    fetchTaskLabels,
+    { revalidateOnFocus: false },
+  );
+  return { labels: data, isLoading, isError: Boolean(error), error, mutate };
+}
+
+export function useTaskStatuses() {
+  const { data, error, isLoading, mutate } = useSWR<TaskWorkflowStatus[]>(
+    taskStatusesUrl(),
+    fetchTaskStatuses,
+    { revalidateOnFocus: false },
+  );
+  return { statuses: data, isLoading, isError: Boolean(error), error, mutate };
+}
+
 export function useExecutions(projectId: string | undefined, limit = 20) {
   const url = projectId
     ? executionsUrl({ project_id: projectId, limit })
+    : null;
+
+  const { data, error, isLoading, mutate } = useSWR<ExecutionDetails[]>(
+    url,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+
+  return {
+    executions: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+/** Load task executions assigned to one routine for its activity view. */
+export function useRoutineExecutions(routineId: string | undefined, limit = 50) {
+  const url = routineId
+    ? executionsUrl({ routine_id: routineId, limit })
     : null;
 
   const { data, error, isLoading, mutate } = useSWR<ExecutionDetails[]>(
@@ -341,7 +431,7 @@ export function useExecutionTraceEvents(executionId: string | undefined) {
 }
 
 export function useRecentExecutions(projectId?: string, limit = 10) {
-  // When no projectId, fetch all user-scoped executions (includes cron runs)
+  // When no projectId, fetch all user-scoped execution history.
   const url = executionsUrl({ project_id: projectId, limit });
 
   const { data, error, isLoading } = useSWR<ExecutionDetails[]>(
@@ -540,24 +630,6 @@ export function useAgentModelAssignments(agentId: string | undefined) {
 
   return {
     modelAssignments: data,
-    isLoading,
-    isError: !!error,
-    error,
-    mutate,
-  };
-}
-
-export function useDependencyGraph(projectId: string | undefined) {
-  const url = projectId ? dependencyGraphUrl(projectId) : null;
-
-  const { data, error, isLoading, mutate } = useSWR<DependencyGraph>(
-    url,
-    fetcher,
-    { revalidateOnFocus: false },
-  );
-
-  return {
-    graph: data,
     isLoading,
     isError: !!error,
     error,
@@ -1046,24 +1118,6 @@ export function useAgent(id: string | undefined) {
 
   return {
     agent: data,
-    isLoading,
-    isError: !!error,
-    error,
-    mutate,
-  };
-}
-
-export function useAgentHeartbeat(agentId: string | undefined) {
-  const url = agentId ? `${agentUrl(agentId)}/heartbeat` : null;
-
-  const { data, error, isLoading, mutate } = useSWR<AgentHeartbeat | null>(
-    url,
-    fetcher,
-    { revalidateOnFocus: false, refreshInterval: 10000 },
-  );
-
-  return {
-    heartbeat: data,
     isLoading,
     isError: !!error,
     error,

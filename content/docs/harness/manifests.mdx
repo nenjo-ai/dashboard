@@ -21,9 +21,9 @@ The SDK does not reach into the dashboard database directly. It receives manifes
 | Resource | What the runtime uses it for |
 |----------|------------------------------|
 | Projects | Project identity, slug, description, settings, and runtime context |
-| Agents | Prompt config, model assignment, platform scopes, assigned domains, abilities, MCP servers, and heartbeat settings |
+| Agents | Prompt config, model assignment, platform scopes, assigned domains, abilities, and MCP servers |
 | Models | Provider name, model name, temperature, and optional base URL |
-| Routines | Trigger, schedule metadata, steps, and directed edges |
+| Routines | Task-targetable workflow graphs: steps and directed edges |
 | Councils | Multi-agent groups with a leader and delegation strategy |
 | Domains | Activatable execution modes with prompt addons, scopes, abilities, and MCP server assignments |
 | MCP servers | External tool servers and transport details |
@@ -72,14 +72,13 @@ An agent manifest contains the fields the runtime needs to build an `AgentRunner
 
 | Field | Runtime meaning |
 |-------|-----------------|
-| `prompt_config` | System prompt, developer prompt, task/chat/gate/cron/heartbeat templates, and memory profile |
+| `prompt_config` | System prompt, developer prompt, task/chat/gate templates, and memory profile |
 | `model_id` | Points to the model manifest used for LLM calls |
 | `platform_scopes` | Controls which platform tools are added to the agent |
 | `domain_ids` | Domains available to the agent |
 | `ability_ids` | Abilities exposed as sub-execution tools |
 | `mcp_servers` | External MCP server names assigned to the agent |
 | `prompt_locked` | Indicates whether prompt updates should be blocked by platform tooling |
-| `heartbeat` | Optional recurring agent heartbeat schedule metadata |
 
 ## Routine Manifest Shape
 
@@ -87,14 +86,12 @@ A routine manifest is a graph:
 
 | Part | Runtime meaning |
 |------|-----------------|
-| `trigger` | `task` or `cron` |
-| `metadata.schedule` | Schedule expression for cron-triggered routines |
 | `metadata.entry_steps` | Explicit entry step slugs when present |
 | `steps` | Agent, council, gate, terminal, and terminal-fail nodes |
 | `edges` | Directed connections between steps |
 | `edge.condition` | `always`, `on_pass`, or `on_fail` |
 
-The routine executor validates and walks this graph, then builds the needed agents from the same provider.
+The routine executor validates and walks this graph, then builds the needed agents from the same provider. Manual and scheduled tasks both target this same manifest shape; scheduling is task state, not routine metadata.
 
 ## Local Context Loader
 

@@ -1,20 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { MotionList, MotionItem } from "@/components/ui/motion";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import type { RoutineSummary, CreateRoutineRequest } from "@/lib/types";
-import { ROUTINE_TRIGGERS } from "@/lib/types";
-import { createRoutine, deleteRoutine, triggerRoutine } from "@/lib/api";
-
-function browserTimezone(): string {
-  if (typeof window === "undefined") return "UTC";
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-}
+import type { RoutineSummary } from "@/lib/types";
+import { createRoutine, deleteRoutine } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -41,23 +35,12 @@ export function RoutineList({
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [newTrigger, setNewTrigger] = useState("task");
-  const [newSchedule, setNewSchedule] = useState("");
-  const [newTimezone, setNewTimezone] = useState("UTC");
   const [error, setError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    setNewTimezone(browserTimezone());
-  }, []);
-
   const handleCreate = async () => {
     if (!newName.trim()) return;
-    if (newTrigger === "cron" && !newSchedule.trim()) {
-      setError("Schedule is required for cron triggers");
-      return;
-    }
     setCreating(true);
     setError(null);
 
@@ -65,15 +48,9 @@ export function RoutineList({
       const routine = await createRoutine({
         name: newName.trim(),
         description: newDescription.trim() || undefined,
-        trigger: newTrigger as CreateRoutineRequest["trigger"],
-        ...(newTrigger === "cron" && newSchedule.trim()
-          ? { metadata: { schedule: newSchedule.trim(), timezone: newTimezone.trim() || browserTimezone() } }
-          : {}),
       });
       setNewName("");
       setNewDescription("");
-      setNewSchedule("");
-      setNewTimezone(browserTimezone());
       setShowCreateForm(false);
       onRefresh();
       // Open the newly created routine
@@ -82,21 +59,6 @@ export function RoutineList({
       setError(err instanceof Error ? err.message : "Failed to create routine");
     } finally {
       setCreating(false);
-    }
-  };
-
-  const [triggering, setTriggering] = useState<string | null>(null);
-
-  const handleTrigger = async (routineId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setTriggering(routineId);
-    setError(null);
-    try {
-      await triggerRoutine(routineId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to trigger routine");
-    } finally {
-      setTriggering(null);
     }
   };
 
@@ -189,54 +151,6 @@ export function RoutineList({
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               />
             </div>
-            <div>
-              <label className="theme-text-muted mb-1 block text-xs font-medium">
-                Trigger
-              </label>
-              <select
-                value={newTrigger}
-                onChange={(e) => setNewTrigger(e.target.value)}
-                className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
-              >
-                {ROUTINE_TRIGGERS.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {newTrigger === "cron" && (
-              <div className="space-y-3">
-                <div>
-                  <label className="theme-text-muted mb-1 block text-xs font-medium">
-                    Schedule
-                  </label>
-                  <input
-                    type="text"
-                    value={newSchedule}
-                    onChange={(e) => setNewSchedule(e.target.value)}
-                    placeholder="e.g., 0 9 * * * or 30m"
-                    className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
-                    onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                  />
-                  <p className="theme-text-muted mt-1 text-xs">
-                    Cron expression (e.g. &quot;0 9 * * *&quot;) or interval (e.g. &quot;30m&quot;, &quot;6h&quot;)
-                  </p>
-                </div>
-                <div>
-                  <label className="theme-text-muted mb-1 block text-xs font-medium">
-                    Timezone
-                  </label>
-                  <input
-                    type="text"
-                    value={newTimezone}
-                    onChange={(e) => setNewTimezone(e.target.value)}
-                    placeholder="America/Chicago"
-                    className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
-                  />
-                </div>
-              </div>
-            )}
             <div className="flex gap-2">
               <Button onClick={handleCreate} size="sm" disabled={creating || !newName.trim()}>
                 {creating ? "Creating..." : "Create"}
@@ -248,8 +162,6 @@ export function RoutineList({
                   setShowCreateForm(false);
                   setNewName("");
                   setNewDescription("");
-                  setNewSchedule("");
-                  setNewTimezone(browserTimezone());
                 }}
               >
                 Cancel
@@ -274,7 +186,6 @@ export function RoutineList({
       ) : (
         <MotionList className="space-y-2">
           {routines?.map((p) => {
-            const triggerInfo = ROUTINE_TRIGGERS.find((t) => t.id === p.trigger);
             return (
               <MotionItem key={p.id}>
               <Card
@@ -284,15 +195,9 @@ export function RoutineList({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-deep-space-blue-50 dark:bg-deep-space-blue-900/30">
-                      {p.trigger === "cron" ? (
-                        <svg className="h-5 w-5 text-deep-space-blue-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      ) : (
-                        <svg className="h-5 w-5 text-deep-space-blue-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-                        </svg>
-                      )}
+                      <svg className="h-5 w-5 text-deep-space-blue-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                      </svg>
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
@@ -308,7 +213,7 @@ export function RoutineList({
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {triggerInfo?.label ?? p.trigger}
+                          Task target
                         </span>
                         <span className="text-xs text-gray-400 dark:text-gray-500">&bull;</span>
                         <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -319,25 +224,6 @@ export function RoutineList({
                   </div>
 
                   <div className="flex items-center gap-1">
-                    {p.trigger === "cron" && (
-                      <button
-                        onClick={(e) => handleTrigger(p.id, e)}
-                        disabled={triggering === p.id}
-                        className="text-gray-400 hover:text-emerald-500 transition-colors p-1 disabled:opacity-50"
-                        title="Run now"
-                      >
-                        {triggering === p.id ? (
-                          <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                        ) : (
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 010 1.972l-11.54 6.347a1.125 1.125 0 01-1.667-.986V5.653z" />
-                          </svg>
-                        )}
-                      </button>
-                    )}
                     <button
                       onClick={(e) => handleDelete(p.id, e)}
                       className="text-gray-400 hover:text-red-500 transition-colors p-1"

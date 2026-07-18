@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import matter from "gray-matter";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
@@ -53,7 +53,6 @@ import {
 } from "@/lib/hooks";
 import {
   createPackageSource,
-  ensureOfficialNenjoPackageSource,
   fetchPackageCatalog,
   fetchPackageInstallDetail,
   installKnowledgePack,
@@ -1728,7 +1727,6 @@ export default function KnowledgePage() {
     isLoading: installsLoading,
     mutate: mutateInstalls,
   } = usePackageInstalls();
-  const officialSourceEnsureInFlight = useRef(false);
 
   const [activeTab, setActiveTab] = useTabParam<LibraryTab>(
     "installed",
@@ -1892,40 +1890,6 @@ export default function KnowledgePage() {
   useEffect(() => {
     if (!sourceId && sources?.length) setSourceId(sources[0].id);
   }, [sourceId, sources]);
-
-  useEffect(() => {
-    if (sourcesLoading || !sources || officialSourceEnsureInFlight.current)
-      return;
-    const hasOfficialSource = sources.some((source) => {
-      const info = sourceGitHubInfo(source);
-      return (
-        source.status === "active" &&
-        source.source_type === "registry" &&
-        source.adapter === "nenjo_packages" &&
-        info?.owner === "nenjo-ai" &&
-        info.repo === "packages" &&
-        info.marketplacePath === "packages.yaml"
-      );
-    });
-    if (hasOfficialSource) return;
-
-    officialSourceEnsureInFlight.current = true;
-    ensureOfficialNenjoPackageSource()
-      .then((source) => {
-        setSourceId((current) => current ?? source.id);
-        mutateSources();
-      })
-      .catch((err) => {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to add Nenjo official package source",
-        );
-      })
-      .finally(() => {
-        officialSourceEnsureInFlight.current = false;
-      });
-  }, [mutateSources, sources, sourcesLoading]);
 
   useEffect(() => {
     if (!selectedPackId) return;

@@ -267,7 +267,7 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
 
             {/* Dropdown picker */}
             {pickerOpen && models && (
-              <div className="theme-border theme-surface absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-lg border shadow-lg">
+              <div className="theme-surface-elevated theme-border absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border shadow-xl">
                 {assignedModel && (
                   <button
                     onClick={() => handleAssignModel(null)}

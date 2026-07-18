@@ -45,7 +45,7 @@ function EmptyState({ onCreateProject }: { onCreateProject: () => void }) {
       </div>
       <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">No projects yet</h3>
       <p className="mt-2 max-w-sm text-center text-sm text-gray-500 dark:text-gray-400">
-        Get started by creating your first project. Projects organize your AI agents, tasks, and execution runs.
+        Projects provide optional shared context for related tasks, agents, and execution runs.
       </p>
       <Button
         onClick={onCreateProject}
