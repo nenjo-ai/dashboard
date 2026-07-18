@@ -15,7 +15,7 @@ function task(overrides = {}) {
     id: "task-1",
     title: "Implement OAuth",
     slug: "implement-oauth",
-    status: "assigned",
+    status: "queued",
     routine_id: "routine-1",
     current_step: null,
     steps: [],
@@ -64,22 +64,30 @@ function workflowStepEvent(step) {
   };
 }
 
-function taskCompletedEvent(event) {
+function taskArtifactsEvent(event) {
   return {
     type: EXECUTION_EVENT_TYPE,
     execution_run_id: event.execution_run_id ?? "execution-1",
     task_id: event.task_id,
     created_at: event.created_at ?? event.completed_at,
     event: {
-      kind: ExecutionEventKind.TaskCompleted,
+      kind: ExecutionEventKind.TaskArtifacts,
       data: {
-        success: event.success,
-        error: event.error,
-        merge_error: event.merge_error,
         total_input_tokens: event.total_input_tokens ?? 0,
         total_output_tokens: event.total_output_tokens ?? 0,
       },
     },
+  };
+}
+
+function taskExecutionState(event) {
+  return {
+    type: "task.execution_state",
+    execution_run_id: event.execution_run_id ?? "execution-1",
+    task_id: event.task_id,
+    state: { status: event.state },
+    origin: { kind: "manual" },
+    created_at: event.created_at,
   };
 }
 
@@ -122,7 +130,7 @@ test("workflow step event updates the visible task list immediately", () => {
     }),
   );
 
-  assert.equal(updated?.[0].status, "in_progress");
+  assert.equal(updated?.[0].status, "running");
   assert.equal(updated?.[0].steps.length, 1);
   assert.equal(updated?.[0].steps[0].step_name, "plan");
   assert.equal(updated?.[0].current_step?.step_name, "plan");
@@ -155,16 +163,16 @@ test("early workflow step event can be replayed after task hydration", () => {
     afterHydration.replayable,
   );
 
-  assert.equal(updated?.[0].status, "in_progress");
+  assert.equal(updated?.[0].status, "running");
   assert.equal(updated?.[0].current_step?.step_name, "plan");
   assert.equal(updated?.[0].steps[0].event_type, "step_started");
 });
 
-test("task completed event updates task status without dropping steps", () => {
+test("task artifact enrichment does not own execution status", () => {
   const updated = mergeExecutionRealtimeEventIntoTasks(
     [
       task({
-        status: "in_progress",
+        status: "running",
         steps: [
           {
             step_name: "plan",
@@ -183,21 +191,34 @@ test("task completed event updates task status without dropping steps", () => {
         ],
       }),
     ],
-    taskCompletedEvent({
+    taskArtifactsEvent({
       task_id: "task-1",
-      success: true,
       completed_at: "2026-01-01T00:00:03.000Z",
     }),
   );
 
-  assert.equal(updated?.[0].status, "done");
-  assert.equal(updated?.[0].current_step, null);
+  assert.equal(updated?.[0].status, "running");
   assert.equal(updated?.[0].steps.length, 1);
+});
+
+test("worker inbox terminal state updates execution status without dropping steps", () => {
+  const updated = mergeExecutionRealtimeEventIntoTasks(
+    [task({ status: "running", steps: [] })],
+    taskExecutionState({
+      task_id: "task-1",
+      state: "completed",
+      created_at: "2026-01-01T00:00:03.000Z",
+    }),
+  );
+
+  assert.equal(updated?.[0].status, "completed");
+  assert.equal(updated?.[0].current_step, null);
+  assert.equal(updated?.[0].completed_at, "2026-01-01T00:00:03.000Z");
 });
 
 test("scoped tool event updates current step to the parent routine step", () => {
   const updated = mergeExecutionRealtimeEventIntoTasks(
-    [task({ status: "in_progress" })],
+    [task({ status: "running" })],
     workflowStepEvent({
       task_id: "task-1",
       event_type: "tool_started",
@@ -255,7 +276,7 @@ test("tool completion updates the matching realtime tool row", () => {
   ];
 
   const updated = replayExecutionRealtimeEventsIntoTasks(
-    [task({ status: "in_progress" })],
+    [task({ status: "running" })],
     events,
   );
 
@@ -308,7 +329,7 @@ test("batched tool completion updates the matching realtime tool batch row", () 
   ];
 
   const updated = replayExecutionRealtimeEventsIntoTasks(
-    [task({ status: "in_progress" })],
+    [task({ status: "running" })],
     events,
   );
 
@@ -328,7 +349,7 @@ test("completed parent step clears stale current step badge", () => {
   const updated = mergeExecutionRealtimeEventIntoTasks(
     [
       task({
-        status: "in_progress",
+        status: "running",
         current_step: {
           step_name: "plan",
           step_type: "agent",
@@ -356,7 +377,7 @@ test("started event after a terminal step run is kept as a new visible attempt",
   const updated = mergeExecutionRealtimeEventIntoTasks(
     [
       task({
-        status: "in_progress",
+        status: "running",
         steps: [
           {
             step_name: "review_gate",

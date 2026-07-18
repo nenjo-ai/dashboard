@@ -22,7 +22,6 @@ const SOURCE_OPTIONS: Array<{ value: TokenUsageSource | ""; label: string }> = [
   { value: "chat", label: "Chat" },
   { value: "task", label: "Tasks" },
   { value: "routine", label: "Routines" },
-  { value: "heartbeat", label: "Heartbeats" },
 ];
 
 type DailyUsagePoint = {

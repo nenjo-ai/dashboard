@@ -588,6 +588,24 @@ test("history trace hides raw transcript echo rows while keeping named child too
   );
 });
 
+test("history trace keeps a provider tool when no named sibling replaces it", () => {
+  const history = filterHistorySpans([
+    {
+      kind: "tool",
+      id: "provider-tool-only",
+      status: "completed",
+      name: "tool",
+      providerNative: true,
+      textPreview: "Searching the web",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:00:01.000Z",
+    },
+  ]);
+
+  assert.equal(history.length, 1);
+  assert.equal(history[0].id, "provider-tool-only");
+});
+
 test("history trace keeps completed model spans with assistant text or child tools", () => {
   const history = filterHistorySpans([
     {

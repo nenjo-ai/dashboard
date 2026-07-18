@@ -43,15 +43,22 @@ import {
 import { chatStreamEventToLifecycleEvent } from "./agentRunTrace/adapters/chatStream";
 import {
   appendEnvelopeEvent,
-  deleteEnvelopeForMessage,
+  deleteEnvelopeForInputMessage,
   deleteEnvelopesForSession,
-  getEnvelopeLinksForMessages,
-  linkEnvelopeToMessage,
+  getEnvelopeLinksForInputMessages,
+  linkEnvelopeToInputMessage,
   markEnvelopeOrphaned,
   runEnvelopeGc,
 } from "./agentRunTrace/envelopeStore";
 import { reduceRunTrace } from "./agentRunTrace/reducer";
-import { retainedLiveChatRunTrace } from "./chatInterfaceState";
+import {
+  assistantActivityInputMessageId,
+  createSerialChatWorkQueue,
+  lifecycleTraceBase,
+  lifecycleRunIdentity,
+  resolveAssistantMessageIdentity,
+  retainedLiveChatRunTrace,
+} from "./chatInterfaceState";
 import { normalizeToolCallArgs } from "./toolCallDisplay";
 import type { AgentLifecycleEvent, RunTrace } from "./agentRunTrace/types";
 import type {
@@ -448,14 +455,18 @@ function mergeLoadedMessages(
 async function hydrateRunEnvelopeLinks(
   messages: ChatMessage[],
 ): Promise<ChatMessage[]> {
-  const messageIds = messages.map(
-    (message) => message.persistedId ?? message.id,
-  );
-  const links = await getEnvelopeLinksForMessages(messageIds);
+  const inputMessageIds = messages.reduce<string[]>((ids, message) => {
+    const inputMessageId = assistantActivityInputMessageId(message);
+    if (inputMessageId) ids.push(inputMessageId);
+    return ids;
+  }, []);
+  const links = await getEnvelopeLinksForInputMessages(inputMessageIds);
   if (links.size === 0) return messages;
   return messages.map((message) => {
-    const key = message.persistedId ?? message.id;
-    const link = links.get(key);
+    const inputMessageId = assistantActivityInputMessageId(message);
+    const link = inputMessageId
+      ? links.get(inputMessageId)
+      : undefined;
     return link ? { ...message, runEnvelopeId: link.envelopeId } : message;
   });
 }
@@ -524,6 +535,8 @@ function mergeChatMessageIdentity(
       incoming.persistedId ??
       existing.persistedId ??
       (existing.id !== incoming.id ? incoming.id : undefined),
+    replyToMessageId:
+      incoming.replyToMessageId ?? existing.replyToMessageId,
     content: incoming.content || existing.content,
     timestamp: incoming.timestamp || existing.timestamp,
     status: incoming.status ?? existing.status,
@@ -838,7 +851,11 @@ export function usePlannerChat(
   const pendingFinalTraceTargetRef = useRef<
     { id?: string; content: string } | undefined
   >(undefined);
-  const lifecycleQueueRef = useRef(Promise.resolve());
+  const streamWorkQueueRef = useRef(
+    createSerialChatWorkQueue((error) => {
+      console.error("Failed to process ordered chat stream work", error);
+    }),
+  );
   const status = "connected";
   const isAgentTarget = targetType === "agent";
 
@@ -1261,6 +1278,7 @@ export function usePlannerChat(
             page.messages.reverse().map(async (m) => ({
               id: m.id,
               persistedId: m.id,
+              replyToMessageId: m.reply_to_message_id ?? undefined,
               role: m.sender,
               content: await resolvePersistedMessageContent(m),
               command: persistedMessageCommand(m),
@@ -1433,6 +1451,7 @@ export function usePlannerChat(
           page.messages.reverse().map(async (m) => ({
             id: m.id,
             persistedId: m.id,
+            replyToMessageId: m.reply_to_message_id ?? undefined,
             role: m.sender,
             content: await resolvePersistedMessageContent(m),
             command: persistedMessageCommand(m),
@@ -1478,8 +1497,8 @@ export function usePlannerChat(
 
       // ── Handle persisted message from backend ────────────────────────────
       // The backend persists chat messages (user + assistant) and pushes the
-      // DB row back. We store the server UUID as `persistedId` rather than
-      // replacing the client-generated ID for optimistic user messages.
+      // DB row back. The user UUID remains stable; assistant rows reconcile
+      // their worker-owned UUID through `persistedId`.
       if (inner.type === "chat.message_persisted") {
         const msg = inner.message as {
           id: string;
@@ -1488,35 +1507,25 @@ export function usePlannerChat(
           created_at: string;
           metadata?: PersistedChatMessage["metadata"];
           encrypted_payload?: EncryptedPayload | null;
+          reply_to_message_id?: string | null;
         };
         if (!msg?.id) return;
-        void (async () => {
+        streamWorkQueueRef.current.enqueue(async () => {
           const resolvedContent = await resolvePersistedMessageContent({
             content: msg.content,
             metadata: msg.metadata ?? null,
             encrypted_payload: msg.encrypted_payload ?? null,
           });
-          const persistedRunEnvelopeId =
-            msg.sender === "assistant"
-              ? (activeRunEnvelopeIdRef.current ?? lastRunEnvelopeIdRef.current)
-              : undefined;
+          const persistedRunEnvelopeId = msg.reply_to_message_id
+            ? (
+                await getEnvelopeLinksForInputMessages([
+                  msg.reply_to_message_id,
+                ])
+              ).get(msg.reply_to_message_id)?.envelopeId
+            : undefined;
           const persistedCommand = persistedMessageCommand({
             metadata: msg.metadata ?? null,
           });
-          if (persistedRunEnvelopeId && activeSessionId) {
-            void linkEnvelopeToMessage({
-              sessionId: activeSessionId,
-              messageId: msg.id,
-              messageCreatedAt: msg.created_at,
-              envelopeId: persistedRunEnvelopeId,
-              finalContent: resolvedContent,
-            }).catch((error) => {
-              console.warn(
-                "Failed to link persisted assistant message to run envelope",
-                error,
-              );
-            });
-          }
 
           setMessages((prev) => {
             const role = msg.sender as "user" | "assistant";
@@ -1534,6 +1543,8 @@ export function usePlannerChat(
                       ? {
                           ...m,
                           persistedId: msg.id,
+                          replyToMessageId:
+                            msg.reply_to_message_id ?? m.replyToMessageId,
                           content: isEncryptedUserMessagePlaceholder(
                             resolvedContent,
                           )
@@ -1560,12 +1571,14 @@ export function usePlannerChat(
                   prev.map((m, i) =>
                     i === responseIdx
                       ? {
-                        ...m,
-                        persistedId: msg.id,
-                        content: resolvedContent,
-                        command: persistedCommand ?? m.command,
-                        timestamp: msg.created_at,
-                        runEnvelopeId:
+                          ...m,
+                          persistedId: msg.id,
+                          replyToMessageId:
+                            msg.reply_to_message_id ?? m.replyToMessageId,
+                          content: resolvedContent,
+                          command: persistedCommand ?? m.command,
+                          timestamp: msg.created_at,
+                          runEnvelopeId:
                             persistedRunEnvelopeId ?? m.runEnvelopeId,
                         }
                       : m,
@@ -1589,6 +1602,8 @@ export function usePlannerChat(
                       ? {
                           ...m,
                           persistedId: msg.id,
+                          replyToMessageId:
+                            msg.reply_to_message_id ?? m.replyToMessageId,
                           content: resolvedContent,
                           timestamp: msg.created_at,
                           runEnvelopeId:
@@ -1621,6 +1636,8 @@ export function usePlannerChat(
                     ? {
                         ...m,
                         persistedId: msg.id,
+                        replyToMessageId:
+                          msg.reply_to_message_id ?? m.replyToMessageId,
                         content: resolvedContent,
                         command: persistedCommand ?? m.command,
                         timestamp: msg.created_at,
@@ -1652,6 +1669,7 @@ export function usePlannerChat(
               {
                 id: msg.id,
                 persistedId: msg.id,
+                replyToMessageId: msg.reply_to_message_id ?? undefined,
                 role,
                 content: resolvedContent,
                 command: persistedCommand,
@@ -1661,7 +1679,7 @@ export function usePlannerChat(
               },
             ]);
           });
-        })();
+        });
         return;
       }
 
@@ -1720,17 +1738,40 @@ export function usePlannerChat(
           event_type: string;
           data: Record<string, unknown>;
         };
+        // Capture identity before terminal handlers clear the live refs. Some
+        // providers omit run_id from lifecycle events, so the request/trace ID
+        // is also the durable local envelope identity for that turn.
+        const receivedRunId = lifecycleRunIdentity(
+          activeRunEnvelopeIdRef.current,
+          activeRunTraceRef.current?.id,
+          currentRequestIdRef.current ?? undefined,
+          responseIdRef.current ?? undefined,
+          lastRunEnvelopeIdRef.current,
+          lastRunTraceRef.current?.id,
+        );
+        const receivedTrace =
+          activeRunTraceRef.current ??
+          (lastRunTraceRef.current?.id === receivedRunId
+            ? lastRunTraceRef.current
+            : undefined);
+        const receivedInputMessageId =
+          streamEvent.event_type === "RunStarted" &&
+          typeof streamEvent.data.input_message_id === "string"
+            ? streamEvent.data.input_message_id
+            : (currentRequestIdRef.current ?? undefined);
 
-        lifecycleQueueRef.current = lifecycleQueueRef.current.then(async () => {
+        streamWorkQueueRef.current.enqueue(async () => {
           const lifecycleEvent =
             await resolveLifecycleEventPayload(streamEvent);
           if (!lifecycleEvent) return;
           const eventRunId = lifecycleRunId(lifecycleEvent);
           const eventSessionId = lifecycleSessionId(lifecycleEvent);
-          const envelopeId =
-            eventRunId ??
-            activeRunEnvelopeIdRef.current ??
-            lastRunEnvelopeIdRef.current;
+          const envelopeId = lifecycleRunIdentity(
+            eventRunId,
+            activeRunEnvelopeIdRef.current,
+            receivedRunId,
+            lastRunEnvelopeIdRef.current,
+          );
           const envelopeSessionId = eventSessionId ?? activeSessionId;
           if (lifecycleEvent.event_type === "RunStarted") {
             activeRunEnvelopeIdRef.current = lifecycleEvent.data.run_id;
@@ -1738,6 +1779,9 @@ export function usePlannerChat(
             finalizedRunEnvelopeIdsRef.current.delete(
               lifecycleEvent.data.run_id,
             );
+          } else if (envelopeId) {
+            activeRunEnvelopeIdRef.current ??= envelopeId;
+            lastRunEnvelopeIdRef.current = envelopeId;
           }
           if (envelopeId && envelopeSessionId) {
             await appendEnvelopeEvent({
@@ -1748,9 +1792,30 @@ export function usePlannerChat(
             }).catch((error) => {
               console.warn("Failed to append agent run envelope event", error);
             });
+            if (
+              lifecycleEvent.event_type === "RunStarted" &&
+              receivedInputMessageId
+            ) {
+              await linkEnvelopeToInputMessage({
+                sessionId: envelopeSessionId,
+                inputMessageId: receivedInputMessageId,
+                messageCreatedAt: new Date().toISOString(),
+                envelopeId,
+              }).catch((error) => {
+                console.warn(
+                  "Failed to link agent run envelope to its input message",
+                  error,
+                );
+              });
+            }
           }
           const next = reduceRunTrace(
-            activeRunTraceRef.current,
+            lifecycleTraceBase({
+              activeTrace: activeRunTraceRef.current,
+              receivedTrace,
+              lastTrace: lastRunTraceRef.current,
+              eventRunId: eventRunId ?? envelopeId,
+            }),
             lifecycleEvent,
             {
               defaultRunId:
@@ -1814,16 +1879,24 @@ export function usePlannerChat(
 
         switch (streamEvent.event_type) {
           case "AssistantResponse": {
+            const inputMessageId = currentRequestIdRef.current ?? undefined;
             const data = streamEvent.data as {
-              payload?: { message?: string; status?: string };
+              payload?: {
+                message?: string;
+                status?: string;
+                message_id?: string;
+                input_message_id?: string;
+              };
               encrypted_payload?: EncryptedPayload;
               message?: string;
               status?: string;
             };
-            void (async () => {
+            streamWorkQueueRef.current.enqueue(async () => {
               const encryptedData = await resolveEncryptedPayloadJson<{
                 message?: string;
                 status?: string;
+                message_id?: string;
+                input_message_id?: string;
               }>(data.encrypted_payload);
               const payload = encryptedData ?? data.payload ?? {};
               const message =
@@ -1839,6 +1912,12 @@ export function usePlannerChat(
                     ? data.status
                     : "completed";
               const terminal = isTerminalAssistantStatus(status);
+              const eventMessageId = typeof payload.message_id === "string"
+                ? payload.message_id
+                : undefined;
+              const responseInputMessageId = typeof payload.input_message_id === "string"
+                ? payload.input_message_id
+                : inputMessageId;
               if (!message.trim()) {
                 if (terminal) {
                   const finalizingEnvelopeId =
@@ -1851,13 +1930,12 @@ export function usePlannerChat(
                   }
                   suppressActiveRunTraceRef.current = true;
                   clearLiveTurnIndicators();
-                  await lifecycleQueueRef.current;
                 }
                 return;
               }
-              let id = responseIdRef.current;
-              if (!id) {
-                id = generateId();
+              let id = terminal ? responseIdRef.current : eventMessageId;
+              if (!id) id = generateId();
+              if (terminal) {
                 responseIdRef.current = id;
               }
               const now = new Date().toISOString();
@@ -1870,11 +1948,9 @@ export function usePlannerChat(
                       m.id === id
                         ? {
                             ...m,
-                            content: terminal
-                              ? message
-                              : m.content
-                                ? `${m.content}\n\n${message}`
-                                : message,
+                            replyToMessageId:
+                              responseInputMessageId ?? m.replyToMessageId,
+                            content: message,
                           }
                         : m,
                     ),
@@ -1885,6 +1961,7 @@ export function usePlannerChat(
                   {
                     id,
                     role: "assistant" as const,
+                    replyToMessageId: responseInputMessageId,
                     content: message,
                     timestamp: now,
                   },
@@ -1906,24 +1983,21 @@ export function usePlannerChat(
                   preserveRunTraceForFinalMessage: true,
                   broadcastClear: false,
                 });
-                await lifecycleQueueRef.current;
                 const traceForFinal =
                   activeRunTraceRef.current ?? lastRunTraceRef.current;
                 const envelopeIdForFinal =
                   activeRunEnvelopeIdRef.current ??
                   lastRunEnvelopeIdRef.current;
-                let linkMessageId = id;
-                let linkMessageTimestamp = now;
                 setMessages((prev) => {
                   const existing = prev.find((m) => m.id === id);
                   if (!existing) return prev;
-                  linkMessageId = existing.persistedId ?? existing.id;
-                  linkMessageTimestamp = existing.timestamp;
                   return compactDuplicateChatMessages(
                     prev.map((m) =>
                       m.id === id
                         ? {
                             ...m,
+                            replyToMessageId:
+                              responseInputMessageId ?? m.replyToMessageId,
                             runTrace: m.runTrace ?? traceForFinal,
                             runEnvelopeId: m.runEnvelopeId ?? envelopeIdForFinal,
                           }
@@ -1931,35 +2005,28 @@ export function usePlannerChat(
                     ),
                   );
                 });
-                if (envelopeIdForFinal && activeSessionId) {
-                  void linkEnvelopeToMessage({
-                    sessionId: activeSessionId,
-                    messageId: linkMessageId,
-                    messageCreatedAt: linkMessageTimestamp,
-                    envelopeId: envelopeIdForFinal,
-                    finalContent: message,
-                  }).catch((error) => {
-                    console.warn(
-                      "Failed to link agent run envelope to final message",
-                      error,
-                    );
-                  });
-                }
                 pendingFinalTraceTargetRef.current = undefined;
                 finishFinalizedLiveTurn();
               }
-            })();
+            });
             break;
           }
 
           case "Done": {
             optimisticUserMessageIdRef.current = null;
-            const { payload, encrypted_payload, session_id } =
-              streamEvent.data as {
+            const {
+              payload,
+              encrypted_payload,
+              session_id,
+              run_id,
+              input_message_id,
+            } = streamEvent.data as {
                 payload?: string;
                 encrypted_payload?: EncryptedPayload;
                 session_id?: string;
-              };
+                run_id?: string;
+                input_message_id?: string;
+            };
             if (
               session_id &&
               activeSessionId &&
@@ -1967,9 +2034,11 @@ export function usePlannerChat(
             ) {
               break;
             }
-            void (async () => {
+            streamWorkQueueRef.current.enqueue(async () => {
               const finalizingEnvelopeId =
-                activeRunEnvelopeIdRef.current ?? lastRunEnvelopeIdRef.current;
+                run_id ??
+                activeRunEnvelopeIdRef.current ??
+                lastRunEnvelopeIdRef.current;
               if (finalizingEnvelopeId) {
                 finalizedRunEnvelopeIdsRef.current.add(finalizingEnvelopeId);
               }
@@ -1984,33 +2053,46 @@ export function usePlannerChat(
                     metadata: { encrypted_payload },
                   })
                 : (payload ?? "");
-              await lifecycleQueueRef.current;
               const traceForFinal =
                 activeRunTraceRef.current ?? lastRunTraceRef.current;
               const envelopeIdForFinal =
-                activeRunEnvelopeIdRef.current ?? lastRunEnvelopeIdRef.current;
-              let id = responseIdRef.current;
-              if (!id) {
-                id = generateId();
-              }
+                run_id ??
+                activeRunEnvelopeIdRef.current ??
+                lastRunEnvelopeIdRef.current;
+              const replyToMessageId =
+                input_message_id ?? currentRequestIdRef.current ?? undefined;
+              const localResponseId = responseIdRef.current;
+              const messageIdentity = resolveAssistantMessageIdentity({
+                localResponseId: localResponseId ?? undefined,
+                workerMessageId: encrypted_payload?.object_id,
+                fallbackId: generateId(),
+              });
+              const id = messageIdentity.renderId;
+              const persistedAssistantId = messageIdentity.persistedId;
               responseIdRef.current = null;
               pendingFinalTraceTargetRef.current = {
                 id,
                 content: resolvedFinalOutput,
               };
-              let linkMessageId = id;
-              let linkMessageTimestamp = new Date().toISOString();
               setMessages((prev) => {
-                const existing = prev.find((m) => m.id === id);
+                const existing = prev.find(
+                  (m) =>
+                    m.id === id ||
+                    (persistedAssistantId != null &&
+                      m.persistedId === persistedAssistantId) ||
+                    (localResponseId != null && m.id === localResponseId),
+                );
                 if (existing) {
-                  linkMessageId = existing.persistedId ?? existing.id;
-                  linkMessageTimestamp = existing.timestamp;
                   return compactDuplicateChatMessages(
                     prev.map((m) =>
-                      m.id === id
+                      m.id === existing.id
                         ? {
                             ...m,
                             content: resolvedFinalOutput,
+                            persistedId:
+                              persistedAssistantId ?? m.persistedId,
+                            replyToMessageId:
+                              replyToMessageId ?? m.replyToMessageId,
                             runTrace: traceForFinal,
                             runEnvelopeId: envelopeIdForFinal,
                           }
@@ -2029,15 +2111,16 @@ export function usePlannerChat(
                     ),
                 );
                 if (partialIdx >= 0) {
-                  const partial = prev[partialIdx];
-                  linkMessageId = partial.persistedId ?? partial.id;
-                  linkMessageTimestamp = partial.timestamp;
                   return compactDuplicateChatMessages(
                     prev.map((m, i) =>
                       i === partialIdx
                         ? {
                             ...m,
                             content: resolvedFinalOutput,
+                            persistedId:
+                              persistedAssistantId ?? m.persistedId,
+                            replyToMessageId:
+                              replyToMessageId ?? m.replyToMessageId,
                             runTrace: traceForFinal,
                             runEnvelopeId: envelopeIdForFinal,
                           }
@@ -2051,14 +2134,15 @@ export function usePlannerChat(
                     m.role === "assistant" && m.content === resolvedFinalOutput,
                 );
                 if (existingPersisted) {
-                  linkMessageId =
-                    existingPersisted.persistedId ?? existingPersisted.id;
-                  linkMessageTimestamp = existingPersisted.timestamp;
                   return compactDuplicateChatMessages(
                     prev.map((m) =>
                       m.id === existingPersisted.id
                         ? {
                             ...m,
+                            persistedId:
+                              persistedAssistantId ?? m.persistedId,
+                            replyToMessageId:
+                              replyToMessageId ?? m.replyToMessageId,
                             runTrace: m.runTrace ?? traceForFinal,
                             runEnvelopeId:
                               m.runEnvelopeId ?? envelopeIdForFinal,
@@ -2067,53 +2151,39 @@ export function usePlannerChat(
                     ),
                   );
                 }
-                linkMessageTimestamp = new Date().toISOString();
                 return compactDuplicateChatMessages([
                   ...prev,
                   {
                     id: id!,
+                    persistedId: persistedAssistantId,
+                    replyToMessageId,
                     role: "assistant" as const,
                     content: resolvedFinalOutput,
-                    timestamp: linkMessageTimestamp,
+                    timestamp: new Date().toISOString(),
                     runTrace: traceForFinal,
                     runEnvelopeId: envelopeIdForFinal,
                   },
                 ]);
               });
-              if (envelopeIdForFinal && activeSessionId) {
-                void linkEnvelopeToMessage({
-                  sessionId: activeSessionId,
-                  messageId: linkMessageId,
-                  messageCreatedAt: linkMessageTimestamp,
-                  envelopeId: envelopeIdForFinal,
-                  finalContent: resolvedFinalOutput,
-                }).catch((error) => {
-                  console.warn(
-                    "Failed to link agent run envelope to final message",
-                    error,
-                  );
-                });
-              }
               if (traceForFinal) {
                 pendingFinalTraceTargetRef.current = undefined;
               }
               finishFinalizedLiveTurn();
-            })();
+            });
             break;
           }
 
           case "Error": {
+            const inputMessageId = currentRequestIdRef.current ?? undefined;
             optimisticUserMessageIdRef.current = null;
-            currentRequestIdRef.current = null;
             responsePersistedRef.current = false;
-            responseIdRef.current = null;
             const { message, payload, encrypted_payload } =
               streamEvent.data as {
                 message: string;
                 payload?: { message?: string };
                 encrypted_payload?: EncryptedPayload;
               };
-            void (async () => {
+            streamWorkQueueRef.current.enqueue(async () => {
               const encryptedData = await resolveEncryptedPayloadJson<{
                 message?: string;
               }>(encrypted_payload);
@@ -2123,43 +2193,39 @@ export function usePlannerChat(
                   ? String(payload.message)
                   : await resolveEncryptedPreview(message, encrypted_payload);
               const displayError = resolvedErrorMessage ?? message;
+              const content =
+                displayError === "Request cancelled"
+                  ? displayError
+                  : `Error: ${displayError}`;
+              const id = responseIdRef.current ?? generateId();
+              const timestamp = new Date().toISOString();
+              const envelopeIdForFinal =
+                activeRunEnvelopeIdRef.current ?? lastRunEnvelopeIdRef.current;
+              const traceForFinal =
+                activeRunTraceRef.current ?? lastRunTraceRef.current;
+              if (envelopeIdForFinal) {
+                finalizedRunEnvelopeIdsRef.current.add(envelopeIdForFinal);
+              }
               setMessages((prev) => [
                 ...prev,
                 {
-                  id: generateId(),
+                  id,
                   role: "assistant" as const,
-                  content:
-                    displayError === "Request cancelled"
-                      ? displayError
-                      : `Error: ${displayError}`,
-                  timestamp: new Date().toISOString(),
+                  replyToMessageId: inputMessageId,
+                  content,
+                  timestamp,
+                  runTrace: traceForFinal,
+                  runEnvelopeId: envelopeIdForFinal,
                 },
               ]);
-            })();
-            if (clearTypingUiTimeoutRef.current) {
-              clearTimeout(clearTypingUiTimeoutRef.current);
-            }
-            clearTypingUiTimeoutRef.current = setTimeout(() => {
-              setActiveTools([]);
-              setLivePreview(undefined);
-              setIsTyping(false);
               pendingFinalTraceTargetRef.current = undefined;
               suppressActiveRunTraceRef.current = true;
-              if (activeRunEnvelopeIdRef.current) {
-                void markEnvelopeOrphaned(activeRunEnvelopeIdRef.current);
-              }
-              activeRunTraceRef.current = undefined;
-              activeRunEnvelopeIdRef.current = undefined;
-              setActiveRunTrace(undefined);
-              clearTypingUiTimeoutRef.current = null;
-            }, 0);
-            if (activeSessionId) {
-              void clearChatStreamSnapshot(activeSessionId);
-              notifyChatStreamSnapshot({
-                sessionId: activeSessionId,
-                clear: true,
+              clearLiveTurnIndicators({
+                preserveRunTraceForFinalMessage: true,
               });
-            }
+              responseIdRef.current = null;
+              finishFinalizedLiveTurn();
+            });
             break;
           }
 
@@ -2467,6 +2533,8 @@ export function usePlannerChat(
               page.messages.reverse().map(async (message) => ({
                 id: message.id,
                 persistedId: message.id,
+                replyToMessageId:
+                  message.reply_to_message_id ?? undefined,
                 role: message.sender,
                 content: await resolvePersistedMessageContent(message),
                 command: persistedMessageCommand(message),
@@ -2710,7 +2778,7 @@ export function usePlannerChat(
 
         const encryptedMessage = await encryptContentPayload({
           accountId: userId,
-          objectId: crypto.randomUUID(),
+          objectId: msgId,
           objectType: "chat.message",
           plaintext: trimmed,
         });
@@ -2731,6 +2799,8 @@ export function usePlannerChat(
           suppressActiveRunTraceRef.current = false;
           activeRunTraceRef.current = undefined;
           activeRunEnvelopeIdRef.current = undefined;
+          lastRunTraceRef.current = undefined;
+          lastRunEnvelopeIdRef.current = undefined;
           setActiveRunTrace(undefined);
           setIsTyping(false);
 
@@ -2822,6 +2892,7 @@ export function usePlannerChat(
 
       void streamPromise
         .then(async () => {
+          await streamWorkQueueRef.current.drain();
           const sessionId = activeSessionId;
           const resolvedAgentId = agentId;
           if (!sessionId || !resolvedAgentId) return;
@@ -2837,6 +2908,7 @@ export function usePlannerChat(
             page.messages.reverse().map(async (message) => ({
               id: message.id,
               persistedId: message.id,
+              replyToMessageId: message.reply_to_message_id ?? undefined,
               role: message.sender,
               content: await resolvePersistedMessageContent(message),
               command: persistedMessageCommand(message),
@@ -2849,7 +2921,8 @@ export function usePlannerChat(
           setHasMore(page.has_more);
           void gcSessionRunEnvelopes(sessionId, currentUser?.org_id);
         })
-        .catch((err) => {
+        .catch(async (err) => {
+          await streamWorkQueueRef.current.drain();
           console.error("Failed to stream chat:", err);
           if (!queueIntoActiveTurn) {
             optimisticUserMessageIdRef.current = null;
@@ -3047,9 +3120,11 @@ export function usePlannerChat(
       // Fall back to messageId itself for messages loaded from the API
       // (which already use the server UUID as their id).
       const deleteId = dbId ?? messageId;
-      void deleteEnvelopeForMessage(deleteId);
-      if (deleteId !== messageId) {
-        void deleteEnvelopeForMessage(messageId);
+      const envelopeInputMessageId =
+        target?.replyToMessageId ??
+        (target?.role === "user" ? deleteId : undefined);
+      if (envelopeInputMessageId) {
+        void deleteEnvelopeForInputMessage(envelopeInputMessageId);
       }
       const isUuid =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(

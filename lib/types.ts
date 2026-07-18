@@ -29,7 +29,7 @@ export interface CurrentOrg {
   scopes: string[];
 }
 
-export type TokenUsageSource = "chat" | "task" | "routine" | "heartbeat";
+export type TokenUsageSource = "chat" | "task" | "routine";
 
 export interface TokenUsageBreakdown {
   key: string;
@@ -101,32 +101,30 @@ export interface PromptContextVariableGroup {
 
 export type ExecutionStatus =
   | "pending"
+  | "queued"
   | "running"
   | "paused"
   | "cancelled"
-  | "completed";
-
-export type TaskStatus =
-  | "open"
-  | "ready"
-  | "backlog"
-  | "assigned"
-  | "in_progress"
-  | "done"
+  | "completed"
   | "failed";
 
 export type TaskPriority = "low" | "medium" | "high" | "critical";
 
-export type TaskType = "bug" | "feature" | "task" | "improvement";
+export type TaskStatusCategory =
+  | "backlog"
+  | "unstarted"
+  | "started"
+  | "completed"
+  | "canceled";
 
-export interface TaskStatusCounts {
-  ready: number;
-  backlog: number;
-  assigned: number;
-  open: number;
-  in_progress: number;
-  done: number;
+export interface ExecutionStatusCounts {
+  pending: number;
+  queued: number;
+  running: number;
+  paused: number;
+  completed: number;
   failed: number;
+  cancelled: number;
   total: number;
 }
 
@@ -146,10 +144,12 @@ export interface ExecutionRun {
   created_by: string | null;
   routine_id: string | null;
   routine_name: string | null;
+  task_id: string | null;
+  task_title: string | null;
 }
 
 export interface ExecutionDetails extends ExecutionRun {
-  task_counts: TaskStatusCounts;
+  task_counts: ExecutionStatusCounts;
   completion_percentage: number;
 }
 
@@ -197,8 +197,8 @@ export interface ExecutionTaskCurrentStep {
 export interface ExecutionTask {
   id: string | null;
   title: string;
-  slug: string | null;
-  status: TaskStatus;
+  slug: string;
+  status: ExecutionStatus;
   routine_id: string | null;
   current_step?: ExecutionTaskCurrentStep | null;
   steps: TaskStepProgress[];
@@ -245,52 +245,164 @@ export interface ExecutionTraceEvent {
 
 export interface Task {
   id: string;
-  project_id: string;
+  org_id: string;
+  task_number: number;
+  identifier: string;
+  project_id: string | null;
+  project_slug: string | null;
   external_id: string | null;
   title: string;
-  description: string | null;
-  acceptance_criteria: string | null;
-  status: TaskStatus;
+  instructions: string | null;
+  status: TaskWorkflowStatus;
   priority: TaskPriority;
-  type: TaskType;
   metadata: Record<string, unknown>;
   encrypted_payload?: EncryptedPayload | null;
-  tags: string[];
-  slug: string | null;
-  complexity: number | null;
-  routine_id: string | null;
-  order_index: number;
-  execution_run_id: string | null;
+  labels: TaskLabel[];
+  slug: string;
+  assignee_user_id: string | null;
+  execution_target: TaskExecutionTarget | null;
+  dispatch: TaskDispatch;
   created_at: string;
   updated_at: string;
-  resolved_at: string | null;
-  closed_at: string | null;
+  completed_at: string | null;
   created_by: string | null;
-  assigned_agent_id: string | null;
+}
+
+export interface TaskWorkflowStatus {
+  id: string;
+  org_id: string;
+  name: string;
+  category: TaskStatusCategory;
+  color: string;
+  position: number;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskLabel {
+  id: string;
+  org_id: string;
+  name: string;
+  normalized_name: string;
+  color: string;
+  description: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TaskExecutionTarget =
+  | { type: "agent"; id: string }
+  | { type: "routine"; id: string };
+
+export type TaskDispatch =
+  | { mode: "manual" }
+  | { mode: "scheduled"; state: "queued" | "paused" | "running" };
+
+export interface TaskExecutionRun {
+  id: string;
+  org_id: string;
+  task_id: string | null;
+  schedule_id: string | null;
+  parent_execution_run_id: string | null;
+  trigger: "manual" | "schedule" | "retry" | null;
+  project_id: string | null;
+  agent_id: string | null;
+  routine_id: string | null;
+  status: ExecutionStatus;
+  scheduled_for: string | null;
+  dispatched_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error_code: string | null;
+  error_summary: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskSchedule {
+  id: string;
+  org_id: string;
+  task_id: string;
+  definition: TaskScheduleDefinition;
+  occurrence_count: number;
+  next_run_at: string;
+  enabled: boolean;
+  overlap_policy: "skip";
+  misfire_policy: "run_once";
+  last_run_at: string | null;
+  authorized_by_user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TaskScheduleIntervalUnit = "seconds" | "minutes" | "hours" | "days";
+export type TaskScheduleWeekday =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+  | "sunday";
+
+export type TaskScheduleRecurrence =
+  | { frequency: "interval"; every: number; unit: TaskScheduleIntervalUnit }
+  | { frequency: "daily"; interval: number }
+  | { frequency: "weekly"; interval: number; weekdays: TaskScheduleWeekday[] }
+  | { frequency: "monthly"; interval: number; day_of_month: number }
+  | { frequency: "yearly"; interval: number; month: number; day: number }
+  | { frequency: "cron"; expression: string };
+
+export type TaskScheduleEnd =
+  | { type: "never" }
+  | { type: "on"; date: string }
+  | { type: "after"; occurrences: number };
+
+/** Canonical schedule returned by the platform. `starts_at` is UTC. */
+export interface TaskScheduleDefinition {
+  starts_at: string;
+  timezone: string;
+  recurrence: TaskScheduleRecurrence;
+  end: TaskScheduleEnd;
+}
+
+/** Calendar wall-clock input sent to the platform for timezone resolution. */
+export interface TaskScheduleDefinitionInput {
+  starts_at: string;
+  timezone: string;
+  recurrence: TaskScheduleRecurrence;
+  end: TaskScheduleEnd;
+}
+
+export interface TaskSchedulePreview {
+  occurrences: string[];
+}
+
+export interface TaskAttachment {
+  id: string;
+  org_id: string;
+  task_id: string;
+  execution_run_id: string;
+  kind: string;
+  name: string;
+  content_type: string;
+  storage_kind: "database" | "s3";
+  encrypted_payload: EncryptedPayload | null;
+  size_bytes: number;
+  content_digest: string;
+  source_routine_id: string | null;
+  source_step_slug: string | null;
+  destination_step_slug: string | null;
+  edge_condition: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 // ---------------------------------------------------------------------------
 // Dependency Graph
 // ---------------------------------------------------------------------------
-
-export interface GraphNode {
-  id: string;
-  title: string;
-  slug: string | null;
-  status: string;
-  complexity: number | null;
-  order_index: number;
-}
-
-export interface GraphEdge {
-  source: string;
-  target: string;
-}
-
-export interface DependencyGraph {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
 
 // ---------------------------------------------------------------------------
 // Routine Events (WebSocket)
@@ -339,8 +451,10 @@ export interface ChatMessage {
   status?: MessageStatus;
   runTrace?: import("./agentRunTrace/types").RunTrace;
   runEnvelopeId?: string;
-  /** Server-generated UUID set when the backend confirms persistence. */
+  /** Durable UUID used by the backend row, normally supplied by the worker. */
   persistedId?: string;
+  /** Durable user-message UUID this assistant response answers. */
+  replyToMessageId?: string;
 }
 
 // Outbound: frontend → worker
@@ -699,6 +813,7 @@ export type ChatMessageInbound =
 // Persisted chat message (from database)
 export interface PersistedChatMessage {
   id: string;
+  reply_to_message_id: string | null;
   project_id: string | null;
   agent_id: string | null;
   user_id: string;
@@ -859,14 +974,13 @@ export interface GenerateTasksResponse {
 
 export interface UpdateTaskRequest {
   title?: string;
-  description?: string;
-  acceptance_criteria?: string;
-  status?: TaskStatus;
+  instructions?: string;
+  status_id?: string;
   priority?: TaskPriority;
-  type?: TaskType;
-  complexity?: number;
-  routine_id?: string | null;
-  assigned_agent_id?: string | null;
+  project_id?: string | null;
+  assignee_user_id?: string | null;
+  execution_target?: TaskExecutionTarget | null;
+  label_ids?: string[];
 }
 
 export type ExecutionCommand = "start" | "pause" | "resume" | "cancel";
@@ -1945,13 +2059,6 @@ export interface CreateApiKeyResponse {
 // Routines
 // ---------------------------------------------------------------------------
 
-export type RoutineTrigger = "task" | "cron";
-
-export const ROUTINE_TRIGGERS: { id: RoutineTrigger; label: string }[] = [
-  { id: "task", label: "Task" },
-  { id: "cron", label: "Cron / Scheduled" },
-];
-
 export type RoutineStepType =
   | "agent"
   | "gate"
@@ -1983,7 +2090,6 @@ export interface Routine {
   project_id: string | null;
   name: string;
   description: string | null;
-  trigger: string;
   is_active: boolean;
   is_default: boolean;
   max_retries: number;
@@ -2034,7 +2140,6 @@ export interface RoutineSummary {
   id: string;
   project_id: string | null;
   name: string;
-  trigger: string;
   is_active: boolean;
   is_default: boolean;
   step_count: number;
@@ -2042,12 +2147,6 @@ export interface RoutineSummary {
   next_run_at: string | null;
   created_at: string;
   updated_at: string;
-}
-
-export interface RoutineCronTaskPayload {
-  title: string;
-  description?: string | null;
-  acceptance_criteria?: string | null;
 }
 
 export interface RoutineStepInstructionsPayload {
@@ -2059,7 +2158,6 @@ export interface CreateRoutineRequest {
   name: string;
   description?: string | null;
   project_id?: string | null;
-  trigger?: RoutineTrigger;
   is_active?: boolean;
   max_retries?: number;
   metadata?: Record<string, unknown>;
@@ -2070,7 +2168,6 @@ export interface UpdateRoutineRequest {
   name?: string;
   description?: string | null;
   project_id?: string | null;
-  trigger?: RoutineTrigger;
   is_active?: boolean;
   max_retries?: number;
   metadata?: Record<string, unknown>;
@@ -2141,7 +2238,6 @@ export interface ConfigureRoutineMetadataRequest {
   name?: string;
   description?: string | null;
   project_id?: string | null;
-  trigger?: RoutineTrigger;
   is_active?: boolean;
   max_retries?: number;
 }
@@ -2233,30 +2329,11 @@ export interface AgentDefinition {
   mcp_servers?: string[];
   script_tools?: string[];
   abilities?: string[];
-  heartbeat?: AgentHeartbeat | null;
 }
 
 export interface PromptConfigResponse {
   prompt_config?: PromptConfig | null;
   encrypted_payload?: EncryptedPayload | null;
-}
-
-export interface AgentHeartbeat {
-  id: string;
-  agent_id: string;
-  interval: string;
-  is_active: boolean;
-  last_run_at: string | null;
-  next_run_at: string | null;
-  metadata: Record<string, unknown>;
-  encrypted_payload?: EncryptedPayload | null;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface HeartbeatInstructionsPayload {
-  instructions: string;
 }
 
 export interface CreateAgentRequest {
@@ -2310,7 +2387,7 @@ export interface PromptConfig {
   /** Developer prompt — sent as a separate `developer` message to OpenAI-spec models, combined with system prompt for others. */
   developer_prompt: string;
   /** Task-specific templates keyed by Nenjo's accepted wire names:
-   * `task`, `chat`, `gate`, `heartbeat`.
+   * `task`, `chat`, `gate`.
    */
   templates: Record<string, string>;
   /** Memory profile — guides what agents remember and retrieval priorities. */
@@ -2413,35 +2490,6 @@ export interface UpdateCouncilRequest {
 export interface AddCouncilMemberRequest {
   agent: string;
   priority?: number;
-  config?: Record<string, unknown>;
-}
-
-// ---------------------------------------------------------------------------
-// Project Routine Assignments
-// ---------------------------------------------------------------------------
-
-export interface ProjectRoutineAssignment {
-  id: string;
-  project_id: string;
-  routine_id: string;
-  trigger_type: RoutineTrigger;
-  is_active: boolean;
-  config: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-  created_by: string | null;
-}
-
-export interface CreateProjectRoutineAssignmentRequest {
-  project_id: string;
-  routine_id: string;
-  trigger_type: RoutineTrigger;
-  config?: Record<string, unknown>;
-}
-
-export interface UpdateProjectRoutineAssignmentRequest {
-  routine_id?: string;
-  is_active?: boolean;
   config?: Record<string, unknown>;
 }
 

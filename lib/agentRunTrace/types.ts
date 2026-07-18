@@ -12,7 +12,7 @@ export type RunPhase =
   | "failed"
   | "cancelled";
 
-export type RunTraceSource = "chat" | "execution" | "routine" | "heartbeat";
+export type RunTraceSource = "chat" | "execution" | "routine";
 
 export type TraceStatus =
   | "queued"
@@ -148,6 +148,7 @@ export type AgentLifecycleEvent =
       data: {
         run_id: string;
         session_id: string;
+        input_message_id?: string;
         parent_run_id?: string;
         agent_id?: string;
         agent_name?: string;

@@ -6,7 +6,11 @@ import {
   traceEnvelopeFromPersistedEvent,
   traceEnvelopeFromRealtimeEvent,
 } from "../lib/executionTraceEvents.ts";
-import { EXECUTION_EVENT_TYPE, ExecutionEventKind } from "../lib/executionEvents.ts";
+import {
+  executionRealtimeEventIsTerminal,
+  EXECUTION_EVENT_TYPE,
+  ExecutionEventKind,
+} from "../lib/executionEvents.ts";
 
 const routineStep = {
   step_slug: "implement",
@@ -137,5 +141,29 @@ test("non execution trace realtime events are ignored by the trace adapter", () 
       },
     }),
     null,
+  );
+});
+
+test("only canonical lifecycle state triggers terminal execution refresh", () => {
+  assert.equal(
+    executionRealtimeEventIsTerminal({
+      type: EXECUTION_EVENT_TYPE,
+      event: { kind: ExecutionEventKind.TaskArtifacts, data: {} },
+    }),
+    false,
+  );
+  assert.equal(
+    executionRealtimeEventIsTerminal({
+      type: EXECUTION_EVENT_TYPE,
+      event: { kind: ExecutionEventKind.AgentTrace, data: {} },
+    }),
+    false,
+  );
+  assert.equal(
+    executionRealtimeEventIsTerminal({
+      type: "task.execution_state",
+      state: { status: "completed" },
+    }),
+    true,
   );
 });

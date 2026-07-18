@@ -1,6 +1,6 @@
 ---
 title: Routines
-description: Build routines visually, schedule them, and dispatch project tasks to them from the dashboard.
+description: Build reusable routine graphs that manual and scheduled tasks can dispatch from the dashboard.
 slug: platform/pages/routines
 order: 5
 ---
@@ -11,17 +11,14 @@ The **Routines** area is where you author and run [routines](/docs/building-bloc
 
 | Resource | What it manages |
 |----------|-----------------|
-| Routines (schedules) | Cron-scheduled routines |
-| Routines (tasks) | Routines registered as handlers for project task dispatch |
+| Routines | Reusable workflow graphs that tasks can target |
 | Councils | Multi-agent groups (leader + members + strategy) usable as routine steps |
 
 It's organized into:
 
-| Tab | What it's for |
-|-----|---------------|
-| Schedules | Routines that own a `cron` schedule and run periodically |
-| Tasks | Routines triggered by a project task being dispatched to them |
-| Councils | The [councils](/docs/platform/pages/councils) available as steps inside routines |
+Schedules live on tasks, not routines. A manual or scheduled task chooses the
+routine it dispatches, so the same graph works for both one-off and recurring
+work. Councils remain available as routine steps.
 
 ## The visual editor
 

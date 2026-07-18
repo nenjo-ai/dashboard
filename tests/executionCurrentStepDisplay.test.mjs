@@ -37,7 +37,7 @@ function task(overrides) {
     id: "task-1",
     title: "Implement OAuth",
     slug: "implement-oauth",
-    status: "in_progress",
+    status: "running",
     routine_id: "routine-1",
     current_step: null,
     steps: [],
@@ -133,7 +133,7 @@ test("current step display derives the routine step from scoped tool activity", 
 test("current step display hides for terminal tasks", () => {
   const current = currentExecutionTaskStep(
     task({
-      status: "done",
+      status: "completed",
       current_step: {
         step_name: "done",
         step_type: "terminal",
@@ -155,7 +155,7 @@ test("current step display hides for terminal tasks", () => {
 test("current step display ignores pending routine placeholders", () => {
   const current = currentExecutionTaskStep(
     task({
-      status: "assigned",
+      status: "queued",
       steps: [],
     }),
     routine(),

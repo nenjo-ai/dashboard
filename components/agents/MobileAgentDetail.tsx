@@ -1,11 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Cpu, Globe, PlugZap, ShieldCheck, TimerReset } from "lucide-react";
+import { Cpu, Globe, PlugZap, ShieldCheck } from "lucide-react";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { Tabs } from "@/components/ui/Tabs";
 import { AgentMediaTab } from "@/components/agents/AgentMediaTab";
-import { useAgentAbilities, useAgentDomains, useAgentExecutions, useAgentMcpServers } from "@/lib/hooks";
+import { useAgentAbilities, useAgentDomains, useAgentMcpServers } from "@/lib/hooks";
 import type { AgentDefinition, PromptConfig } from "@/lib/types";
 
 type MobileAgentTab =
@@ -14,7 +14,6 @@ type MobileAgentTab =
   | "domains"
   | "media"
   | "mcp"
-  | "heartbeat"
   | "scopes"
   | "settings";
 
@@ -98,7 +97,6 @@ export function MobileAgentDetail({
   const { abilities } = useAgentAbilities(agent.id);
   const { agentDomains } = useAgentDomains(agent.id);
   const { mcpServers } = useAgentMcpServers(agent.id);
-  const { executions } = useAgentExecutions(agent.id, 5);
   const assignedModel = models?.find((item) => item.id === agent.model_id);
   const enabledDomains = agentDomains?.filter((item) => item.enabled) ?? [];
 
@@ -216,32 +214,6 @@ export function MobileAgentDetail({
             </div>
           )}
         </div>
-      )}
-
-      {activeTab === "heartbeat" && (
-        <section className="rounded-[1.4rem] border border-black/10 bg-transparent p-4 dark:border-white/10">
-          <div className="flex flex-wrap gap-2">
-            <StatChip
-              icon={<TimerReset className="h-3 w-3" />}
-              label={agent.heartbeat?.is_active ? "Heartbeat active" : "Heartbeat inactive"}
-            />
-            <StatChip icon={<TimerReset className="h-3 w-3" />} label={agent.heartbeat?.interval ?? "No interval"} />
-          </div>
-          <div className="mt-4 space-y-3 text-sm text-gray-600 dark:text-gray-300">
-            <MetadataRow label="Last run" value={formatTimestamp(agent.heartbeat?.last_run_at)} />
-            <MetadataRow label="Next run" value={formatTimestamp(agent.heartbeat?.next_run_at)} />
-          </div>
-          <div className="mt-4 space-y-2">
-            {(executions ?? []).slice(0, 3).map((execution) => (
-              <div key={execution.id} className="rounded-[1rem] border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/10">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="font-medium text-gray-900 dark:text-gray-100">{execution.status}</span>
-                  <span className="text-xs text-gray-400 dark:text-gray-500">{formatTimestamp(execution.created_at)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
       )}
 
       {activeTab === "scopes" && (

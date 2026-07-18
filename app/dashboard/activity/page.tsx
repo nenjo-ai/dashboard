@@ -77,7 +77,7 @@ function EventIcon({ entry }: { entry: ActivityEntry }) {
   const { event_type, category } = entry;
 
   if (category === "execution") {
-    if (event_type === "task_completed" || event_type === "step_completed" || event_type === "execution_completed") {
+    if (event_type === "task_completed" || event_type === "step_completed") {
       return (
         <svg className="h-4 w-4 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

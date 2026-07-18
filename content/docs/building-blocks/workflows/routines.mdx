@@ -1,34 +1,28 @@
 ---
 title: Routines
-description: Routines are directed workflow graphs — steps, edges, and a trigger — that run a process the same way every time, with a full audit trail.
+description: Routines are directed workflow graphs that tasks can run the same way every time, with a full audit trail.
 slug: building-blocks/workflows/routines
 order: 2
 ---
 
 A routine is a **directed graph** that orchestrates agents, gates, and councils into a deterministic, auditable process. Where a single agent improvises every step, a routine fixes the shape of the work: which steps run, in what order, with what checks, and where it can branch or stop.
 
-A routine is made of three things:
+A routine is made of two things:
 
 - **Steps** — the units of work (an agent, a gate, a council, or a terminal).
 - **Edges** — directed connections that define flow and dependencies.
-- **A trigger** — what starts the routine (a task, or a schedule).
+
+Tasks start routines. A manual or scheduled task can target the same routine;
+the task owns dispatch and scheduling state while the routine owns only the
+workflow graph.
 
 <Mermaid chart={`
 flowchart LR
-  T([trigger]) --> A[agent: draft]
+  T([task]) --> A[agent: draft]
   A --> G{gate: review}
   G -->|on_pass| D([terminal])
   G -->|on_fail| A
 `} />
-
-## Triggers
-
-| Trigger | Starts when… | Common use |
-|---------|--------------|------------|
-| `task` | A project task is dispatched to the routine | Project work that needs a reusable workflow |
-| `cron` | A schedule on the routine fires | Periodic maintenance, monitoring, reports |
-
-Use `task` for normal user or project work. Use `cron` only when the routine owns its own schedule.
 
 ## Step types
 

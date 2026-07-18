@@ -35,11 +35,9 @@ import type {
   RoutineEdge as RoutineEdgeType,
   RoutineStepType,
   RoutineEdgeCondition,
-  RoutineTrigger,
   CouncilDetail,
   AgentDefinition,
 } from "@/lib/types";
-import { ROUTINE_TRIGGERS } from "@/lib/types";
 import {
   saveRoutineGraph,
   fetchAgents,
@@ -131,8 +129,7 @@ function stepsToNodes(
   });
 }
 
-function makeTriggerNode(trigger: RoutineTrigger): Node {
-  const triggerInfo = ROUTINE_TRIGGERS.find((t) => t.id === trigger);
+function makeTriggerNode(): Node {
   return {
     id: TRIGGER_NODE_ID,
     type: "triggerNode",
@@ -141,8 +138,7 @@ function makeTriggerNode(trigger: RoutineTrigger): Node {
     selectable: false,
     deletable: false,
     data: {
-      triggerLabel: triggerInfo?.label ?? trigger,
-      triggerType: trigger,
+      label: "Task",
     } satisfies TriggerNodeData,
   };
 }
@@ -274,12 +270,10 @@ function RoutineEditorInner({
   onSaved,
 }: RoutineEditorProps) {
   // ── State ──────────────────────────────────────────────────────────────
-  const initialTrigger = routine.trigger as RoutineTrigger;
-
   // Load roles for displaying role names in nodes
   const [roles, setRoles] = useState<AgentDefinition[]>([]);
   const [loadingRoles, setLoadingRoles] = useState(true);
-  const [nodes, setNodes, onNodesChange] = useNodesState([makeTriggerNode(initialTrigger)]);
+  const [nodes, setNodes, onNodesChange] = useNodesState([makeTriggerNode()]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([
     ...triggerEdgesFromMetadata(routine.metadata),
     ...routineEdgesToFlowEdges(routine.edges, routine.steps),
@@ -309,7 +303,6 @@ function RoutineEditorInner({
     }
   }, [loadingRoles, roles, routine.steps, agents, councils, setNodes]);
 
-  const [trigger, setTrigger] = useState<RoutineTrigger>(initialTrigger);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -348,34 +341,10 @@ function RoutineEditorInner({
         ...triggerEdgesFromMetadata(routine.metadata),
         ...routineEdgesToFlowEdges(routine.edges, routine.steps),
       ]);
-      setTrigger(routine.trigger as RoutineTrigger);
       setIsDirty(false);
       setPendingStepUpdates(new Map());
     }
-  }, [routine.updated_at, routine.metadata, routine.edges, routine.steps, routine.trigger, setEdges]);
-
-  // ── Update trigger node when trigger changes ───────────────────────────
-  const handleTriggerChange = useCallback(
-    (newTrigger: RoutineTrigger) => {
-      setTrigger(newTrigger);
-      setIsDirty(true);
-      const triggerInfo = ROUTINE_TRIGGERS.find((t) => t.id === newTrigger);
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === TRIGGER_NODE_ID
-            ? {
-                ...n,
-                data: {
-                  triggerLabel: triggerInfo?.label ?? newTrigger,
-                  triggerType: newTrigger,
-                } satisfies TriggerNodeData,
-              }
-            : n,
-        ),
-      );
-    },
-    [setNodes],
-  );
+  }, [routine.updated_at, routine.metadata, routine.edges, routine.steps, setEdges]);
 
   // ── Selected node data ─────────────────────────────────────────────────
   const selectedNode = useMemo(
@@ -735,7 +704,6 @@ function RoutineEditorInner({
         .map((e) => e.target);
 
       await saveRoutineGraph(routine.id, {
-        trigger,
         metadata: routine.metadata,
         entry_steps: entrySteps,
         steps: stepPayload,
@@ -752,7 +720,7 @@ function RoutineEditorInner({
     } finally {
       setSaving(false);
     }
-  }, [nodes, edges, trigger, routine, pendingStepUpdates, onSaved, agents, councils]);
+  }, [nodes, edges, routine, pendingStepUpdates, onSaved, agents, councils]);
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -760,23 +728,10 @@ function RoutineEditorInner({
     <div className="flex flex-col h-full overflow-hidden">
       {/* Toolbar */}
       <div className="theme-border theme-surface flex shrink-0 items-center justify-between gap-2 overflow-hidden border-b px-3 py-2.5 md:px-4">
-        {/* Left: trigger + add step */}
+        {/* Left: task entry + add step */}
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
-            <label className="text-xs font-medium text-gray-600 dark:text-gray-400 shrink-0">
-              Trigger:
-            </label>
-            <select
-              value={trigger}
-              onChange={(e) => handleTriggerChange(e.target.value as RoutineTrigger)}
-              className="theme-border theme-surface min-w-0 rounded-lg border px-2.5 py-1.5 text-sm text-gray-900 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:text-gray-100"
-            >
-              {ROUTINE_TRIGGERS.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+            <span className="theme-text-muted text-xs font-medium">Task entry</span>
           </div>
 
           <Button

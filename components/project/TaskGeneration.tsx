@@ -66,7 +66,7 @@ export function TaskGeneration({
         </h3>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
           Paste your specification or PRD document. The AI will parse it into
-          atomic, actionable tasks with priorities and dependencies.
+          atomic, actionable tasks with clear priorities.
         </p>
       </div>
 

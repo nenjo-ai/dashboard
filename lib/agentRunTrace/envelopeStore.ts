@@ -19,8 +19,7 @@ export type ToolEnvelopeIndex = {
   envelopeId: string;
   runId: string;
   sessionId: string;
-  assistantMessageId?: string;
-  finalContentHash?: string;
+  inputMessageId?: string;
   status: EnvelopeStatus;
   attachState: EnvelopeAttachState;
   createdAt: string;
@@ -31,7 +30,7 @@ export type StoredToolEnvelope = ToolEnvelopeIndex & {
   encryptedEvents: LocalEncryptedStoragePayload;
 };
 
-export type MessageEnvelopeLink = {
+export type InputMessageEnvelopeLink = {
   sessionId: string;
   messageId: string;
   messageCreatedAt: string;
@@ -40,15 +39,6 @@ export type MessageEnvelopeLink = {
 
 function nowIso(): string {
   return new Date().toISOString();
-}
-
-export function finalContentHash(content: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < content.length; index += 1) {
-    hash ^= content.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -144,8 +134,7 @@ export async function appendEnvelopeEvent(params: {
     envelopeId: params.envelopeId,
     runId: existing?.runId ?? params.runId,
     sessionId: existing?.sessionId ?? params.sessionId,
-    assistantMessageId: existing?.assistantMessageId,
-    finalContentHash: existing?.finalContentHash,
+    inputMessageId: existing?.inputMessageId,
     status: nextStatus,
     attachState: existing?.attachState ?? (completed ? "awaiting_message" : "running"),
     createdAt: existing?.createdAt ?? timestamp,
@@ -167,7 +156,13 @@ export async function loadEnvelopeEvents(envelopeId: string): Promise<AgentLifec
   return decryptEvents(envelope);
 }
 
-export async function linkEnvelopeToMessage(link: MessageEnvelopeLink & { finalContent?: string }): Promise<void> {
+/** Link a run envelope to the durable user message that initiated it. */
+export async function linkEnvelopeToInputMessage(link: {
+  sessionId: string;
+  inputMessageId: string;
+  messageCreatedAt: string;
+  envelopeId: string;
+}): Promise<void> {
   if (typeof indexedDB === "undefined") return;
   const db = await openDb();
   const readTx = db.transaction(ENVELOPES_STORE, "readonly");
@@ -180,15 +175,14 @@ export async function linkEnvelopeToMessage(link: MessageEnvelopeLink & { finalC
   const links = writeTx.objectStore(LINKS_STORE);
   links.put({
     sessionId: link.sessionId,
-    messageId: link.messageId,
+    messageId: link.inputMessageId,
     messageCreatedAt: link.messageCreatedAt,
     envelopeId: link.envelopeId,
-  } satisfies MessageEnvelopeLink);
+  } satisfies InputMessageEnvelopeLink);
   if (existing) {
     envelopes.put({
       ...existing,
-      assistantMessageId: link.messageId,
-      finalContentHash: link.finalContent ? finalContentHash(link.finalContent) : existing.finalContentHash,
+      inputMessageId: link.inputMessageId,
       attachState: "attached",
       updatedAt: nowIso(),
     } satisfies StoredToolEnvelope);
@@ -196,30 +190,42 @@ export async function linkEnvelopeToMessage(link: MessageEnvelopeLink & { finalC
   await txDone(writeTx);
 }
 
-export async function getEnvelopeLinksForMessages(messageIds: string[]): Promise<Map<string, MessageEnvelopeLink>> {
-  const links = new Map<string, MessageEnvelopeLink>();
+export async function getEnvelopeLinksForInputMessages(
+  messageIds: string[],
+): Promise<Map<string, InputMessageEnvelopeLink>> {
+  const links = new Map<string, InputMessageEnvelopeLink>();
   if (typeof indexedDB === "undefined" || messageIds.length === 0) return links;
   const db = await openDb();
   const tx = db.transaction(LINKS_STORE, "readonly");
   const store = tx.objectStore(LINKS_STORE);
   await Promise.all(
     messageIds.map(async (messageId) => {
-      const link = await requestResult(store.get(messageId) as IDBRequest<MessageEnvelopeLink | undefined>);
+      const link = await requestResult(
+        store.get(messageId) as IDBRequest<
+          InputMessageEnvelopeLink | undefined
+        >,
+      );
       if (link) links.set(messageId, link);
     }),
   );
   return links;
 }
 
-export async function deleteEnvelopeForMessage(messageId: string): Promise<void> {
+export async function deleteEnvelopeForInputMessage(messageId: string): Promise<void> {
   if (typeof indexedDB === "undefined") return;
   const db = await openDb();
   const readTx = db.transaction(LINKS_STORE, "readonly");
   const readLinks = readTx.objectStore(LINKS_STORE);
-  const link = await requestResult(readLinks.get(messageId) as IDBRequest<MessageEnvelopeLink | undefined>);
+  const link = await requestResult(
+    readLinks.get(messageId) as IDBRequest<
+      InputMessageEnvelopeLink | undefined
+    >,
+  );
   const remaining = link
     ? await requestResult(
-        readLinks.index("envelopeId").getAll(link.envelopeId) as IDBRequest<MessageEnvelopeLink[]>,
+        readLinks.index("envelopeId").getAll(link.envelopeId) as IDBRequest<
+          InputMessageEnvelopeLink[]
+        >,
       )
     : [];
   if (link) {
@@ -238,7 +244,7 @@ export async function deleteEnvelopesForSession(sessionId: string): Promise<void
   if (typeof indexedDB === "undefined") return;
   const db = await openDb();
   const readTx = db.transaction(LINKS_STORE, "readonly");
-  const sessionLinks = await getAllFromIndex<MessageEnvelopeLink>(
+  const sessionLinks = await getAllFromIndex<InputMessageEnvelopeLink>(
     readTx.objectStore(LINKS_STORE),
     "sessionId",
     sessionId,
@@ -277,7 +283,7 @@ export async function runEnvelopeGc(params: {
   if (typeof indexedDB === "undefined" || params.keepRecent < 0) return;
   const db = await openDb();
   const readTx = db.transaction(LINKS_STORE, "readonly");
-  const sessionLinks = await getAllFromIndex<MessageEnvelopeLink>(
+  const sessionLinks = await getAllFromIndex<InputMessageEnvelopeLink>(
     readTx.objectStore(LINKS_STORE),
     "sessionId",
     params.sessionId,

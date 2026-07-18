@@ -5,9 +5,7 @@ import type {
   CreateProjectRequest,
   GenerateTasksRequest,
   GenerateTasksResponse,
-  DependencyGraph,
   UpdateTaskRequest,
-  ExecutionCommand,
   Model,
   CreateModelRequest,
   UpdateModelRequest,
@@ -17,7 +15,6 @@ import type {
   AddCouncilMemberRequest,
   AgentSummary,
   AgentDefinition,
-  AgentHeartbeat,
   PromptConfig,
   CreateAgentRequest,
   UpdateAgentRequest,
@@ -41,11 +38,9 @@ import type {
   ChatCommand,
   ConfigureChatCommandRequest,
   EncryptedPayload,
-  HeartbeatInstructionsPayload,
   RoutineStepInstructionsPayload,
   PackageInstallProgress,
   PromptConfigResponse,
-  RoutineCronTaskPayload,
   TokenUsageSource,
   ConfigureMediaProvidersRequest,
   ConfigureMediaAssignmentsRequest,
@@ -59,6 +54,14 @@ import type {
   ModelCatalogProvider,
   ModelCatalogQuery,
   ModelCatalogResponse,
+  TaskAttachment,
+  TaskExecutionRun,
+  TaskExecutionTarget,
+  TaskLabel,
+  TaskSchedule,
+  TaskScheduleDefinitionInput,
+  TaskSchedulePreview,
+  TaskWorkflowStatus,
 } from "./types";
 import { mutate as mutateSWR } from "swr";
 import { readStoredActiveOrgId } from "./activeOrg";
@@ -67,6 +70,7 @@ import {
   encryptOrgContentPayload,
 } from "./cryptoContent";
 import { packageInstallJobRunning } from "./packageInstalls";
+import { OFFICIAL_NENJO_PACKAGE_SOURCE } from "./officialNenjoPackageSource";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -697,20 +701,23 @@ export async function disconnectRepo(projectId: string): Promise<void> {
 // Tasks
 // ---------------------------------------------------------------------------
 
-export function tasksUrl(
-  project: string,
-  params?: {
-    status?: string;
-    limit?: number;
-    offset?: number;
-  },
-): string {
+export interface TaskFilters {
+  project_id?: string;
+  status_id?: string;
+  label_id?: string;
+  assignee_user_id?: string;
+  assigned_agent_id?: string;
+  routine_id?: string;
+  limit?: number;
+}
+
+export function tasksUrl(params: TaskFilters = {}): string {
   const search = new URLSearchParams();
-  search.set("project", project);
-  if (params?.status) search.set("status", params.status);
-  if (params?.limit) search.set("limit", String(params.limit));
-  if (params?.offset) search.set("offset", String(params.offset));
-  return `${API_V1}/tasks?${search.toString()}`;
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") search.set(key, String(value));
+  }
+  const query = search.toString();
+  return `${API_V1}/tasks${query ? `?${query}` : ""}`;
 }
 
 export function taskUrl(id: string): string {
@@ -718,8 +725,9 @@ export function taskUrl(id: string): string {
 }
 
 type TaskContentPayload = {
+  instructions?: string | null;
+  // Read-only compatibility with task ciphertext written before the cutover.
   description?: string | null;
-  acceptance_criteria?: string | null;
 };
 
 function extractTaskEncryptedPayload(task: Task): EncryptedPayload | null {
@@ -738,8 +746,7 @@ async function resolveTask(task: Task): Promise<Task> {
     const payload = JSON.parse(plaintext) as TaskContentPayload;
     return {
       ...task,
-      description: payload.description ?? null,
-      acceptance_criteria: payload.acceptance_criteria ?? null,
+      instructions: payload.instructions ?? payload.description ?? null,
     };
   } catch (error) {
     console.warn("Failed to decrypt task content", {
@@ -753,15 +760,13 @@ async function resolveTask(task: Task): Promise<Task> {
 
 async function encryptTaskContent(params: {
   taskId: string;
-  description?: string;
-  acceptanceCriteria?: string;
+  instructions?: string;
 }): Promise<EncryptedPayload | null> {
   const currentUser = await fetchCurrentUser();
   if (!currentUser.org_id) return null;
 
   const payload: TaskContentPayload = {
-    description: params.description ?? null,
-    acceptance_criteria: params.acceptanceCriteria ?? null,
+    instructions: params.instructions ?? null,
   };
 
   return encryptOrgContentPayload({
@@ -772,34 +777,31 @@ async function encryptTaskContent(params: {
   });
 }
 
-export async function fetchTasks(
-  projectId: string,
-  status?: string,
-): Promise<Task[]> {
-  const tasks = await fetcher<Task[]>(tasksUrl(projectId, { status }));
+export async function fetchTasks(filters: TaskFilters = {}): Promise<Task[]> {
+  const tasks = await fetcher<Task[]>(tasksUrl(filters));
   return Promise.all(tasks.map(resolveTask));
 }
 
+export async function fetchTask(id: string): Promise<Task> {
+  return resolveTask(await fetcher<Task>(taskUrl(id)));
+}
+
 export async function createTask(data: {
-  project_id: string;
+  project_id?: string | null;
   title: string;
-  description?: string;
-  acceptance_criteria?: string;
-  status?: string;
+  instructions?: string;
+  status_id?: string;
   priority?: Task["priority"];
-  type?: Task["type"];
-  complexity?: number | null;
-  tags?: string[];
+  assignee_user_id?: string | null;
+  execution_target?: TaskExecutionTarget | null;
+  label_ids?: string[];
 }): Promise<Task> {
   const taskId = crypto.randomUUID();
-  const needsEncryptedContent =
-    Boolean(data.description?.trim()) ||
-    Boolean(data.acceptance_criteria?.trim());
+  const needsEncryptedContent = Boolean(data.instructions?.trim());
   const encryptedPayload = needsEncryptedContent
     ? await encryptTaskContent({
         taskId,
-        description: data.description,
-        acceptanceCriteria: data.acceptance_criteria,
+        instructions: data.instructions,
       })
     : null;
   if (needsEncryptedContent && !encryptedPayload) {
@@ -812,13 +814,13 @@ export async function createTask(data: {
     method: "POST",
     body: JSON.stringify({
       id: taskId,
-      project: data.project_id,
+      project_id: data.project_id,
       title: data.title,
-      status: data.status,
+      status_id: data.status_id,
       priority: data.priority,
-      type: data.type,
-      complexity: data.complexity,
-      tags: data.tags,
+      assignee_user_id: data.assignee_user_id,
+      execution_target: data.execution_target,
+      label_ids: data.label_ids,
       encrypted_payload: encryptedPayload,
     }),
   });
@@ -830,8 +832,7 @@ export async function updateTask(
   data: UpdateTaskRequest,
   currentTask?: Task,
 ): Promise<Task> {
-  const needsEncryptedContent =
-    data.description !== undefined || data.acceptance_criteria !== undefined;
+  const needsEncryptedContent = data.instructions !== undefined;
   if (needsEncryptedContent && !currentTask) {
     throw new ApiError(
       "Encrypted task updates require the current task content",
@@ -841,11 +842,7 @@ export async function updateTask(
   const encryptedPayload = needsEncryptedContent
     ? await encryptTaskContent({
         taskId: id,
-        description: data.description ?? currentTask?.description ?? undefined,
-        acceptanceCriteria:
-          data.acceptance_criteria ??
-          currentTask?.acceptance_criteria ??
-          undefined,
+        instructions: data.instructions ?? currentTask?.instructions ?? undefined,
       })
     : undefined;
   if (needsEncryptedContent && !encryptedPayload) {
@@ -858,12 +855,14 @@ export async function updateTask(
     method: "PATCH",
     body: JSON.stringify({
       title: data.title,
-      status: data.status,
+      // Replacing legacy plaintext content also clears its server-side fallback.
+      instructions: needsEncryptedContent ? null : undefined,
+      status_id: data.status_id,
       priority: data.priority,
-      type: data.type,
-      complexity: data.complexity,
-      routine_id: data.routine_id,
-      assigned_agent_id: data.assigned_agent_id,
+      project_id: data.project_id,
+      assignee_user_id: data.assignee_user_id,
+      execution_target: data.execution_target,
+      label_ids: data.label_ids,
       encrypted_payload: encryptedPayload,
     }),
   });
@@ -872,6 +871,114 @@ export async function updateTask(
 
 export async function deleteTask(id: string): Promise<void> {
   await authFetch(taskUrl(id), { method: "DELETE" });
+}
+
+export const taskStatusesUrl = () => `${API_V1}/task-statuses`;
+export const taskLabelsUrl = () => `${API_V1}/labels`;
+export const taskExecutionsUrl = (taskId: string) => `${taskUrl(taskId)}/executions`;
+export const taskAttachmentsUrl = (taskId: string) => `${taskUrl(taskId)}/attachments`;
+export const taskAttachmentUrl = (taskId: string, attachmentId: string) =>
+  `${taskAttachmentsUrl(taskId)}/${attachmentId}`;
+export const taskScheduleUrl = (taskId: string) => `${taskUrl(taskId)}/schedule`;
+export const taskSchedulePreviewUrl = (taskId: string) => `${taskScheduleUrl(taskId)}/preview`;
+
+export const fetchTaskStatuses = () => fetcher<TaskWorkflowStatus[]>(taskStatusesUrl());
+export const fetchTaskLabels = () => fetcher<TaskLabel[]>(taskLabelsUrl());
+export const fetchTaskExecutions = (taskId: string) =>
+  fetcher<TaskExecutionRun[]>(taskExecutionsUrl(taskId));
+export const fetchTaskAttachments = (taskId: string) =>
+  fetcher<TaskAttachment[]>(taskAttachmentsUrl(taskId));
+export const fetchTaskAttachmentContent = (taskId: string, attachmentId: string) =>
+  fetcher<EncryptedPayload>(taskAttachmentUrl(taskId, attachmentId));
+export const fetchTaskSchedule = (taskId: string) =>
+  fetcher<TaskSchedule | null>(taskScheduleUrl(taskId));
+
+export async function executeTask(taskId: string): Promise<TaskExecutionRun> {
+  const response = await authFetch(`${taskUrl(taskId)}/execute`, {
+    method: "POST",
+    body: JSON.stringify({ idempotency_key: crypto.randomUUID() }),
+  });
+  return response.json() as Promise<TaskExecutionRun>;
+}
+
+/** Create an organization label for immediate inline task assignment. */
+export async function createTaskLabel(data: {
+  name: string;
+  color?: string;
+  description?: string | null;
+}): Promise<TaskLabel> {
+  const response = await authFetch(taskLabelsUrl(), {
+    method: "POST",
+    body: JSON.stringify({
+      name: data.name,
+      color: data.color ?? "#64748b",
+      description: data.description,
+    }),
+  });
+  return response.json() as Promise<TaskLabel>;
+}
+
+/** Update a reusable organization label definition. */
+export async function updateTaskLabel(
+  id: string,
+  data: { name?: string; color?: string; description?: string | null },
+): Promise<TaskLabel> {
+  const response = await authFetch(`${taskLabelsUrl()}/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return response.json() as Promise<TaskLabel>;
+}
+
+export async function retryTaskExecution(executionId: string): Promise<TaskExecutionRun> {
+  const response = await authFetch(`${API_V1}/executions/${executionId}/retry`, {
+    method: "POST",
+    body: JSON.stringify({ idempotency_key: crypto.randomUUID() }),
+  });
+  return response.json() as Promise<TaskExecutionRun>;
+}
+
+/** Cancel an active task run and return its updated platform projection. */
+export async function cancelTaskExecution(executionId: string): Promise<TaskExecutionRun> {
+  const response = await authFetch(`${API_V1}/executions/${executionId}/cancel`, {
+    method: "POST",
+  });
+  return response.json() as Promise<TaskExecutionRun>;
+}
+
+export async function putTaskSchedule(
+  taskId: string,
+  schedule: { definition: TaskScheduleDefinitionInput; enabled: boolean },
+): Promise<TaskSchedule> {
+  const response = await authFetch(taskScheduleUrl(taskId), {
+    method: "PUT",
+    body: JSON.stringify(schedule),
+  });
+  return response.json() as Promise<TaskSchedule>;
+}
+
+/** Validate calendar input and return the next three worker occurrences. */
+export async function previewTaskSchedule(
+  taskId: string,
+  definition: TaskScheduleDefinitionInput,
+): Promise<TaskSchedulePreview> {
+  const response = await authFetch(taskSchedulePreviewUrl(taskId), {
+    method: "POST",
+    body: JSON.stringify({ definition }),
+  });
+  return response.json() as Promise<TaskSchedulePreview>;
+}
+
+export async function setTaskScheduleEnabled(taskId: string, enabled: boolean): Promise<TaskSchedule> {
+  const response = await authFetch(taskScheduleUrl(taskId), {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+  return response.json() as Promise<TaskSchedule>;
+}
+
+export async function deleteTaskSchedule(taskId: string): Promise<void> {
+  await authFetch(taskScheduleUrl(taskId), { method: "DELETE" });
 }
 
 // ---------------------------------------------------------------------------
@@ -892,43 +999,6 @@ export async function generateTasks(
   });
 
   return res.json() as Promise<GenerateTasksResponse>;
-}
-
-// ---------------------------------------------------------------------------
-// Dependency Graph
-// ---------------------------------------------------------------------------
-
-export function dependencyGraphUrl(projectId: string): string {
-  return `${API_V1}/projects/${projectId}/dependency-graph`;
-}
-
-export async function fetchDependencyGraph(
-  projectId: string,
-): Promise<DependencyGraph> {
-  return fetcher<DependencyGraph>(dependencyGraphUrl(projectId));
-}
-
-// ---------------------------------------------------------------------------
-// Task Dependencies
-// ---------------------------------------------------------------------------
-
-export async function addDependency(
-  taskId: string,
-  dependsOnId: string,
-): Promise<void> {
-  await authFetch(`${API_V1}/tasks/${taskId}/dependencies`, {
-    method: "POST",
-    body: JSON.stringify({ depends_on_id: dependsOnId }),
-  });
-}
-
-export async function removeDependency(
-  taskId: string,
-  depId: string,
-): Promise<void> {
-  await authFetch(`${API_V1}/tasks/${taskId}/dependencies/${depId}`, {
-    method: "DELETE",
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1014,19 +1084,6 @@ export async function fetchExecutions(
   );
 }
 
-export async function createExecution(data: {
-  project: string;
-  parallel_count: number;
-  config?: Record<string, unknown>;
-}): Promise<ExecutionDetails> {
-  const res = await authFetch(`${API_V1}/executions`, {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-
-  return res.json() as Promise<ExecutionDetails>;
-}
-
 export function executionTasksUrl(executionId: string): string {
   return `${API_V1}/executions/${executionId}/tasks`;
 }
@@ -1061,18 +1118,6 @@ export async function fetchExecutionTraceEvents(
   return fetcher<import("./types").ExecutionTraceEvent[]>(
     executionTraceEventsUrl(executionId),
   );
-}
-
-export async function sendExecutionCommand(
-  executionId: string,
-  command: ExecutionCommand,
-): Promise<ExecutionDetails> {
-  const res = await authFetch(`${API_V1}/executions/${executionId}/command`, {
-    method: "POST",
-    body: JSON.stringify({ command }),
-  });
-
-  return res.json() as Promise<ExecutionDetails>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1444,20 +1489,6 @@ export async function createPackageSource(
   invalidatePackageCatalogCache();
   return source;
 }
-
-const OFFICIAL_NENJO_PACKAGE_SOURCE = {
-  name: "Nenjo Official Packages",
-  source_type: "registry" as const,
-  adapter: "nenjo_packages" as const,
-    metadata: {
-      source: {
-        kind: "git",
-        url: "https://github.com/nenjo-ai/packages.git",
-        reference: "main",
-        manifest_path: "packages.yaml",
-      },
-    },
-  };
 
 function officialNenjoPackageSourceNeedsUpdate(
   source: import("./types").PackageSource,
@@ -2636,7 +2667,6 @@ function routineConfigureMetadata(
   if (hasOwn(data, "name")) metadata.name = data.name;
   if (hasOwn(data, "description")) metadata.description = data.description;
   if (hasOwn(data, "project_id")) metadata.project_id = data.project_id;
-  if (hasOwn(data, "trigger")) metadata.trigger = data.trigger;
   if (hasOwn(data, "is_active")) metadata.is_active = data.is_active;
   if (hasOwn(data, "max_retries")) metadata.max_retries = data.max_retries;
   return metadata;
@@ -3115,32 +3145,6 @@ async function decryptJsonPayload<T>(
   }
 }
 
-export async function encryptHeartbeatInstructionsPayload(
-  agentId: string,
-  instructions: string,
-): Promise<EncryptedPayload | null> {
-  const trimmed = instructions.trim();
-  if (!trimmed) return null;
-
-  return encryptOrgJsonPayload({
-    objectId: agentId,
-    objectType: "agent.heartbeat.instructions",
-    value: { instructions: trimmed } satisfies HeartbeatInstructionsPayload,
-    label: "Heartbeat instructions",
-  });
-}
-
-export async function decryptHeartbeatInstructionsPayload(
-  payload: unknown,
-): Promise<string> {
-  const decrypted = await decryptJsonPayload<Partial<HeartbeatInstructionsPayload> | null>(
-    payload,
-    null,
-    "heartbeat instructions",
-  );
-  return typeof decrypted?.instructions === "string" ? decrypted.instructions : "";
-}
-
 export async function encryptRoutineStepInstructionsPayload(
   stepId: string,
   instructions: string,
@@ -3165,50 +3169,6 @@ export async function decryptRoutineStepInstructionsPayload(
     "routine step instructions",
   );
   return typeof decrypted?.instructions === "string" ? decrypted.instructions : "";
-}
-
-export async function encryptRoutineCronTaskPayload(
-  routineId: string,
-  task: RoutineCronTaskPayload,
-): Promise<EncryptedPayload> {
-  const title = task.title.trim();
-  if (!title) {
-    throw new ApiError("Cron task title is required", 400);
-  }
-
-  return encryptOrgJsonPayload({
-    objectId: routineId,
-    objectType: "routine.cron_task",
-    value: {
-      title,
-      description: task.description?.trim() || null,
-      acceptance_criteria: task.acceptance_criteria?.trim() || null,
-    } satisfies RoutineCronTaskPayload,
-    label: "Cron task",
-  });
-}
-
-export async function decryptRoutineCronTaskPayload(
-  payload: unknown,
-): Promise<RoutineCronTaskPayload | null> {
-  const decrypted = await decryptJsonPayload<Partial<RoutineCronTaskPayload> | null>(
-    payload,
-    null,
-    "cron task",
-  );
-  if (!decrypted || typeof decrypted.title !== "string" || !decrypted.title.trim()) {
-    return null;
-  }
-
-  return {
-    title: decrypted.title,
-    description:
-      typeof decrypted.description === "string" ? decrypted.description : null,
-    acceptance_criteria:
-      typeof decrypted.acceptance_criteria === "string"
-        ? decrypted.acceptance_criteria
-        : null,
-  };
 }
 
 async function encryptContextBlockTemplate(
@@ -3260,40 +3220,6 @@ export async function updateAgent(
 export async function deleteAgent(agentId: string): Promise<void> {
   await authFetch(agentUrl(agentId), { method: "DELETE" });
   invalidateAgentsCatalogCache();
-}
-
-export async function fetchAgentHeartbeat(
-  agentId: string,
-): Promise<AgentHeartbeat | null> {
-  return fetcher<AgentHeartbeat | null>(`${agentUrl(agentId)}/heartbeat`);
-}
-
-export async function updateAgentHeartbeat(
-  agentId: string,
-  data: {
-    interval: string;
-    metadata?: Record<string, unknown>;
-    encrypted_payload?: EncryptedPayload | null;
-  },
-): Promise<AgentDefinition> {
-  const res = await authFetch(`${agentUrl(agentId)}/heartbeat`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
-  invalidateAgentsCatalogCache();
-  return res.json() as Promise<AgentDefinition>;
-}
-
-export async function startAgentHeartbeat(agentId: string): Promise<void> {
-  await authFetch(`${agentUrl(agentId)}/heartbeat/start`, { method: "POST" });
-}
-
-export async function stopAgentHeartbeat(agentId: string): Promise<void> {
-  await authFetch(`${agentUrl(agentId)}/heartbeat/stop`, { method: "POST" });
-}
-
-export async function triggerAgentHeartbeat(agentId: string): Promise<void> {
-  await authFetch(`${agentUrl(agentId)}/heartbeat/trigger`, { method: "POST" });
 }
 
 // ---------------------------------------------------------------------------
@@ -3432,83 +3358,6 @@ export async function setAgentPromptLock(
     body: JSON.stringify({ locked }),
   });
   return res.json() as Promise<import("./types").AgentDefinition>;
-}
-
-// ---------------------------------------------------------------------------
-// Project Routine Assignments
-// ---------------------------------------------------------------------------
-
-export function projectRoutineAssignmentsUrl(projectId: string): string {
-  return `${API_V1}/projects/${projectId}/routine-assignments`;
-}
-
-export function projectRoutineAssignmentUrl(
-  projectId: string,
-  assignmentId: string,
-): string {
-  return `${API_V1}/projects/${projectId}/routine-assignments/${assignmentId}`;
-}
-
-export async function fetchProjectRoutineAssignments(
-  projectId: string,
-): Promise<import("./types").ProjectRoutineAssignment[]> {
-  return fetcher(projectRoutineAssignmentsUrl(projectId));
-}
-
-export async function fetchProjectRoutineAssignment(
-  projectId: string,
-  assignmentId: string,
-): Promise<import("./types").ProjectRoutineAssignment> {
-  return fetcher(projectRoutineAssignmentUrl(projectId, assignmentId));
-}
-
-export async function createProjectRoutineAssignment(
-  projectId: string,
-  data: import("./types").CreateProjectRoutineAssignmentRequest,
-): Promise<import("./types").ProjectRoutineAssignment> {
-  const res = await authFetch(projectRoutineAssignmentsUrl(projectId), {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-  return res.json() as Promise<import("./types").ProjectRoutineAssignment>;
-}
-
-export async function updateProjectRoutineAssignment(
-  projectId: string,
-  assignmentId: string,
-  data: import("./types").UpdateProjectRoutineAssignmentRequest,
-): Promise<import("./types").ProjectRoutineAssignment> {
-  const res = await authFetch(
-    projectRoutineAssignmentUrl(projectId, assignmentId),
-    {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    },
-  );
-  return res.json() as Promise<import("./types").ProjectRoutineAssignment>;
-}
-
-export async function deleteProjectRoutineAssignment(
-  projectId: string,
-  assignmentId: string,
-): Promise<void> {
-  await authFetch(projectRoutineAssignmentUrl(projectId, assignmentId), {
-    method: "DELETE",
-  });
-}
-
-export async function triggerRoutineAssignment(
-  projectId: string,
-  assignmentId: string,
-): Promise<void> {
-  await authFetch(
-    `${projectRoutineAssignmentUrl(projectId, assignmentId)}/trigger`,
-    { method: "POST" },
-  );
-}
-
-export async function triggerRoutine(routineId: string): Promise<void> {
-  await authFetch(`${routineUrl(routineId)}/trigger`, { method: "POST" });
 }
 
 // ---------------------------------------------------------------------------

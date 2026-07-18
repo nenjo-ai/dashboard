@@ -250,17 +250,11 @@ function formatTokens(count: number): string {
   return count.toString();
 }
 
-function isCronExecution(exec: ExecutionDetails): boolean {
-  const config = exec.config as Record<string, unknown> | undefined;
-  return config?.trigger_source === "cron" || config?.trigger_source === "manual";
-}
-
 function ExecutionRow({ exec }: { exec: ExecutionDetails }) {
   const [expanded, setExpanded] = useState(false);
   const { tasks, isLoading: tasksLoading } = useExecutionTasks(
     expanded ? exec.id : undefined,
   );
-  const isCron = isCronExecution(exec);
 
   return (
     <div>
@@ -272,9 +266,6 @@ function ExecutionRow({ exec }: { exec: ExecutionDetails }) {
           <Badge variant={exec.status} showDot>
             {exec.status}
           </Badge>
-          {isCron && (
-            <Badge variant="inactive">Cron</Badge>
-          )}
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
               Execution #{exec.id.slice(0, 8)}
@@ -339,7 +330,7 @@ function ExecutionRow({ exec }: { exec: ExecutionDetails }) {
             </div>
           ) : !tasks || tasks.length === 0 ? (
             <p className="py-2 text-xs text-gray-400 dark:text-gray-500">
-              {isCron ? "No step events recorded." : "No tasks in this execution."}
+              No tasks in this execution.
             </p>
           ) : (
             <AgentRunTrace

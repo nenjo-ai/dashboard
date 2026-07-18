@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  onboardingEntryGateKey,
   shouldRedirectExistingWorkspaceToDashboard,
+  shouldRunOnboardingEntryGate,
   shouldUseExistingWorkspaceRestoreMode,
 } from "../lib/vaultRestoreGate.mjs";
 
@@ -65,4 +67,40 @@ test("fresh accounts do not enter existing-workspace restore mode", () => {
 
   assert.equal(shouldRedirectExistingWorkspaceToDashboard(state), false);
   assert.equal(shouldUseExistingWorkspaceRestoreMode(state), false);
+});
+
+test("onboarding entry gate runs once for a user and mode", () => {
+  const nextKey = onboardingEntryGateKey({
+    accountId: "user-1",
+    forceRestore: false,
+  });
+
+  assert.equal(
+    shouldRunOnboardingEntryGate({ resolvedKey: null, nextKey }),
+    true,
+  );
+  assert.equal(
+    shouldRunOnboardingEntryGate({ resolvedKey: nextKey, nextKey }),
+    false,
+  );
+});
+
+test("explicit restore mode gets its own onboarding entry gate resolution", () => {
+  const defaultKey = onboardingEntryGateKey({
+    accountId: "user-1",
+    forceRestore: false,
+  });
+  const restoreKey = onboardingEntryGateKey({
+    accountId: "user-1",
+    forceRestore: true,
+  });
+
+  assert.notEqual(defaultKey, restoreKey);
+  assert.equal(
+    shouldRunOnboardingEntryGate({
+      resolvedKey: defaultKey,
+      nextKey: restoreKey,
+    }),
+    true,
+  );
 });

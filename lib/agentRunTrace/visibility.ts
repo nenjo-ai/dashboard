@@ -138,9 +138,15 @@ export function chatDisplaySpans(spans: TraceSpan[]): TraceSpan[] {
 }
 
 export function filterHistorySpans(spans: TraceSpan[]): TraceSpan[] {
+  const hasNamedToolSibling = spans.some(
+    (span) => span.kind === "tool" && !isRawProviderEchoToolSpan(span),
+  );
   return spans.flatMap((span) => {
     if (isEmptyCompletedModelSpan(span)) return [];
-    if (isRawTranscriptMessageSpan(span) || isRawProviderEchoToolSpan(span)) {
+    if (
+      isRawTranscriptMessageSpan(span) ||
+      (hasNamedToolSibling && isRawProviderEchoToolSpan(span))
+    ) {
       return [];
     }
     if (!("children" in span) || !span.children) return [span];
