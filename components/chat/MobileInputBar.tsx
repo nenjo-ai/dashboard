@@ -36,7 +36,6 @@ interface MobileInputBarProps {
   onVoiceInputPress?: () => void;
   voiceInputState?: VoiceInputState;
   voiceInputDisabled?: boolean;
-  voiceInputUnavailableReason?: string;
   agentColor?: string;
   isDomainPending?: boolean;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -67,7 +66,6 @@ export function MobileInputBar({
   onVoiceInputPress,
   voiceInputState = "idle",
   voiceInputDisabled,
-  voiceInputUnavailableReason,
   agentColor,
   isDomainPending,
   inputRef,
@@ -107,7 +105,7 @@ export function MobileInputBar({
         ? "Preparing microphone"
       : voiceInputState === "processing"
         ? "Transcribing audio"
-        : voiceInputUnavailableReason ?? "Record audio";
+        : "Record audio";
   const shouldRenderComposer =
     isMobileViewport
     && pathname.startsWith("/dashboard/chat")

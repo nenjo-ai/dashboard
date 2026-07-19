@@ -8,6 +8,38 @@ export interface SerialChatWorkQueue {
 }
 
 /**
+ * Gate recording only on client-side chat constraints. Transcription model
+ * selection is server-owned so agent assignments can fall back to org defaults.
+ */
+export function isVoiceInputDisabled({
+  voiceInputAvailable,
+  hasSession,
+  isAgentTarget,
+  isDomainPending,
+  hasActiveTurn,
+  hasPendingCommand,
+  hasPendingDomain,
+}: {
+  voiceInputAvailable: boolean;
+  hasSession: boolean;
+  isAgentTarget: boolean;
+  isDomainPending: boolean;
+  hasActiveTurn: boolean;
+  hasPendingCommand: boolean;
+  hasPendingDomain: boolean;
+}): boolean {
+  return (
+    !voiceInputAvailable ||
+    !hasSession ||
+    !isAgentTarget ||
+    isDomainPending ||
+    hasActiveTurn ||
+    hasPendingCommand ||
+    hasPendingDomain
+  );
+}
+
+/**
  * Create a non-poisoning FIFO for async chat stream processing.
  *
  * SSE parsers invoke callbacks synchronously and do not await async handlers.

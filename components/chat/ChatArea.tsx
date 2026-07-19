@@ -28,7 +28,6 @@ import {
   useAgent,
   useAgents,
   useAgentDomains,
-  useAgentModelAssignments,
   useChatCommands,
   useProjects,
 } from "@/lib/hooks";
@@ -63,6 +62,7 @@ import { loadEnvelopeEvents } from "@/lib/agentRunTrace/envelopeStore";
 import { reduceRunTraceEvents } from "@/lib/agentRunTrace/reducer";
 import type { RunTrace } from "@/lib/agentRunTrace/types";
 import {
+  isVoiceInputDisabled,
   shouldShowChatCancelControl,
   visibleLiveChatRunTrace,
 } from "@/lib/chatInterfaceState";
@@ -1519,10 +1519,6 @@ export function ChatArea({
     isAgentTarget ? agentId : undefined,
   );
   const { agentDomains } = useAgentDomains(isAgentTarget ? agentId : undefined);
-  const {
-    modelAssignments,
-    isLoading: isLoadingModelAssignments,
-  } = useAgentModelAssignments(isAgentTarget ? agentId : undefined);
   const { projects } = useProjects();
   const { commands: platformCommandRecords } = useChatCommands();
   const chatCommands = useMemo(
@@ -1822,25 +1818,15 @@ export function ChatArea({
     ],
   );
 
-  const hasTranscriptionModel = Boolean(
-    modelAssignments?.assignments.some(
-      (assignment) => assignment.capability === "transcribe_audio",
-    ),
-  );
-  const voiceInputCapabilityNote =
-    !isLoadingModelAssignments && !hasTranscriptionModel
-      ? "Voice input requires a Transcribe audio model assignment. Configure the model in Agents → Capabilities."
-      : null;
-
-  const voiceInputDisabled =
-    !voiceInputAvailable ||
-    !hasTranscriptionModel ||
-    !sessionId ||
-    !isAgentTarget ||
-    isDomainPending ||
-    hasActiveTurn ||
-    Boolean(pendingCommand) ||
-    Boolean(pendingDomain);
+  const voiceInputDisabled = isVoiceInputDisabled({
+    voiceInputAvailable,
+    hasSession: Boolean(sessionId),
+    isAgentTarget,
+    isDomainPending,
+    hasActiveTurn,
+    hasPendingCommand: Boolean(pendingCommand),
+    hasPendingDomain: Boolean(pendingDomain),
+  });
 
   const voiceInputControlDisabled =
     voiceInputState === "recording"
@@ -1854,10 +1840,6 @@ export function ChatArea({
         ? "Preparing microphone"
         : voiceInputState === "processing"
           ? "Transcribing audio"
-          : isLoadingModelAssignments
-            ? "Checking transcription model assignment"
-            : voiceInputCapabilityNote
-              ? voiceInputCapabilityNote
           : !voiceInputAvailable
             ? "Audio recording is unavailable in this browser"
             : "Record audio";
@@ -1867,9 +1849,7 @@ export function ChatArea({
 
     if (voiceInputDisabled) {
       toast.error(
-        voiceInputCapabilityNote
-          ? voiceInputCapabilityNote
-          : voiceInputAvailable
+        voiceInputAvailable
           ? "Audio can be recorded after the current chat action finishes."
           : "Audio recording is unavailable in this browser.",
       );
@@ -1940,7 +1920,6 @@ export function ChatArea({
     handleVoiceInputBlob,
     stopVoiceInputTracks,
     voiceInputAvailable,
-    voiceInputCapabilityNote,
     voiceInputDisabled,
     voiceInputState,
   ]);
@@ -3334,7 +3313,6 @@ export function ChatArea({
             onVoiceInputPress={handleVoiceInputPress}
             voiceInputState={voiceInputState}
             voiceInputDisabled={voiceInputControlDisabled}
-            voiceInputUnavailableReason={voiceInputCapabilityNote ?? undefined}
             agentColor={agentColor}
             isDomainPending={isDomainPending}
             inputRef={inputRef}
@@ -3845,11 +3823,6 @@ export function ChatArea({
                 </svg>
               </Button>
             </div>
-            {voiceInputCapabilityNote && (
-              <p className="text-center text-xs text-amber-600 dark:text-amber-400">
-                {voiceInputCapabilityNote}
-              </p>
-            )}
             <AnimatePresence>
               {hasActiveTurn && (
                 <motion.p
