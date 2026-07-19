@@ -6,6 +6,7 @@ import { reduceRunTrace } from "../lib/agentRunTrace/reducer.ts";
 import {
   assistantActivityInputMessageId,
   createSerialChatWorkQueue,
+  isVoiceInputDisabled,
   lifecycleRunIdentity,
   lifecycleTraceBase,
   resolveAssistantMessageIdentity,
@@ -14,6 +15,48 @@ import {
   shouldShowLiveToolPreview,
   visibleLiveChatRunTrace,
 } from "../lib/chatInterfaceState.ts";
+
+test("voice input availability does not depend on an agent model assignment", () => {
+  assert.equal(
+    isVoiceInputDisabled({
+      voiceInputAvailable: true,
+      hasSession: true,
+      isAgentTarget: true,
+      isDomainPending: false,
+      hasActiveTurn: false,
+      hasPendingCommand: false,
+      hasPendingDomain: false,
+    }),
+    false,
+  );
+});
+
+test("voice input remains disabled by chat and browser constraints", () => {
+  const available = {
+    voiceInputAvailable: true,
+    hasSession: true,
+    isAgentTarget: true,
+    isDomainPending: false,
+    hasActiveTurn: false,
+    hasPendingCommand: false,
+    hasPendingDomain: false,
+  };
+
+  for (const constraint of [
+    { voiceInputAvailable: false },
+    { hasSession: false },
+    { isAgentTarget: false },
+    { isDomainPending: true },
+    { hasActiveTurn: true },
+    { hasPendingCommand: true },
+    { hasPendingDomain: true },
+  ]) {
+    assert.equal(
+      isVoiceInputDisabled({ ...available, ...constraint }),
+      true,
+    );
+  }
+});
 
 test("assistant activity hydrates through its durable input message", () => {
   assert.equal(
