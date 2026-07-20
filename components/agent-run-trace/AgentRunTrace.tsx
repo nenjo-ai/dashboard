@@ -41,6 +41,7 @@ import {
   visibleAsyncOperationResultPreview,
   visibleHistoryTranscriptEntries,
 } from "@/lib/agentRunTrace/visibility";
+import { toolDisplaySignature } from "@/lib/agentRunTrace/toolDisplay";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import type { AgentDefinition } from "@/lib/types";
 
@@ -344,18 +345,12 @@ function PreviewMarkdown({ children }: { children: string | undefined }) {
 
 function ToolTraceRow({
   span,
-  compact,
-  showPreview = true,
 }: {
   span: ToolSpan;
-  compact: boolean;
-  showPreview?: boolean;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsPayload = useMemo(() => detailPayloadForSpan(span), [span]);
-  const inlinePreview =
-    span.textPreview ??
-    (span.providerNative ? (span.outputPreview ?? span.errorPreview) : undefined);
+  const signature = toolDisplaySignature(span.name, span.rawArgs ?? span.argsSummary);
   const originLabel = span.providerNative
     ? [span.provider, "provider"].filter(Boolean).join(" ")
     : undefined;
@@ -367,8 +362,8 @@ function ToolTraceRow({
     <div className="min-w-0">
       <div className="flex min-h-8 items-center gap-2">
         <span className="shrink-0">{statusIcon(span.status)}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-700 dark:text-gray-300" title={span.name}>
-          {span.name}
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-700 dark:text-gray-300" title={signature}>
+          {signature}
         </span>
         {originLabel && (
           <span className="shrink-0 rounded-sm bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
@@ -378,7 +373,7 @@ function ToolTraceRow({
         <span className="shrink-0 text-[10px] font-medium text-gray-400">
           {statusLabel(span.status)}
         </span>
-        {!compact && hasDetails && (
+        {hasDetails && (
           <button
             type="button"
             onClick={() => setDetailsOpen((value) => !value)}
@@ -388,13 +383,7 @@ function ToolTraceRow({
           </button>
         )}
       </div>
-      {!compact && showPreview && (
-        <>
-          <PreviewText>{inlinePreview}</PreviewText>
-          {detailsOpen && detailsPayload && <JsonCodeBlock value={detailsPayload} />}
-        </>
-      )}
-      {!compact && !showPreview && detailsOpen && detailsPayload && (
+      {detailsOpen && detailsPayload && (
         <JsonCodeBlock value={detailsPayload} />
       )}
     </div>
@@ -707,7 +696,6 @@ function ModelTraceBlock({
                 span={child}
                 compact={compact}
                 nested
-                suppressToolPreview
               />
             ))}
           </div>
@@ -721,12 +709,10 @@ function TraceSpanRow({
   span,
   compact,
   nested = false,
-  suppressToolPreview = false,
 }: {
   span: TraceSpan;
   compact: boolean;
   nested?: boolean;
-  suppressToolPreview?: boolean;
 }) {
   const content = (() => {
     switch (span.kind) {
@@ -735,13 +721,7 @@ function TraceSpanRow({
       case "routine_step":
         return <RoutineStepTraceBlock span={span} compact={compact} />;
       case "tool":
-        return (
-          <ToolTraceRow
-            span={span}
-            compact={compact}
-            showPreview={!suppressToolPreview}
-          />
-        );
+        return <ToolTraceRow span={span} />;
       case "ability":
         return <AbilityTraceBlock span={span} compact={compact} />;
       case "async_operation":
