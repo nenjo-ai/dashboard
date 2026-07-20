@@ -40,7 +40,10 @@ import {
   notifyChatStreamSnapshot,
   persistChatStreamSnapshot,
 } from "./chatStreamDurability";
-import { chatStreamEventToLifecycleEvent } from "./agentRunTrace/adapters/chatStream";
+import {
+  chatStreamEventToLifecycleEvent,
+  mergeAsyncOperationPayload,
+} from "./agentRunTrace/adapters/chatStream";
 import {
   appendEnvelopeEvent,
   deleteEnvelopeForInputMessage,
@@ -76,6 +79,9 @@ type NormalizedStreamEvent = {
 };
 
 type LifecyclePayload = {
+  label?: string;
+  summary?: string;
+  event?: Record<string, unknown>;
   message?: string;
   delta?: string;
   status?: string;
@@ -748,8 +754,8 @@ async function resolveLifecycleEventPayload(
           toolFailed ? "failed" : "completed",
         )
       : undefined;
-  const withPayloadData = {
-    ...data,
+  const withPayloadData: Record<string, unknown> = {
+    ...mergeAsyncOperationPayload(event.event_type, data, payload),
     message:
       typeof payload.message === "string"
         ? payload.message

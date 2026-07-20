@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   canonicalLifecycleEventTypes,
   chatStreamEventToLifecycleEvent,
+  mergeAsyncOperationPayload,
 } from "../lib/agentRunTrace/adapters/chatStream.ts";
 import { reduceRunTrace } from "../lib/agentRunTrace/reducer.ts";
 
@@ -168,6 +169,48 @@ test("chat stream adapter rejects malformed hook lifecycle events", () => {
     }),
     undefined,
   );
+});
+
+test("decrypted async operation payload restores sensitive lifecycle fields", () => {
+  const merged = mergeAsyncOperationPayload(
+    "AsyncOperationEvent",
+    {
+      operation_id: "shell-1",
+      kind: "shell",
+      label: "shell",
+      summary: undefined,
+    },
+    {
+      label: "cargo test --workspace",
+      summary: "Shell command completed successfully",
+    },
+  );
+
+  assert.equal(merged.label, "cargo test --workspace");
+  assert.equal(merged.summary, "Shell command completed successfully");
+});
+
+test("decrypted async transcript payload restores the protected event", () => {
+  const protectedEvent = {
+    kind: "output_chunk",
+    summary: "[stdout] secret output",
+  };
+  const merged = mergeAsyncOperationPayload(
+    "AsyncOperationTranscript",
+    {
+      operation_id: "shell-1",
+      kind: "shell",
+      label: "shell",
+      event: { kind: "output_chunk", summary: "" },
+    },
+    {
+      label: "cargo test --workspace",
+      event: protectedEvent,
+    },
+  );
+
+  assert.equal(merged.label, "cargo test --workspace");
+  assert.deepEqual(merged.event, protectedEvent);
 });
 
 const renderCases = [

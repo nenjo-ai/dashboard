@@ -28,6 +28,39 @@ export const canonicalLifecycleEventTypes = [
 
 const canonicalLifecycleEvents = new Set<string>(canonicalLifecycleEventTypes);
 
+function recordField(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+export function mergeAsyncOperationPayload(
+  eventType: string,
+  data: Record<string, unknown>,
+  payload: object,
+): Record<string, unknown> {
+  const fields = payload as Record<string, unknown>;
+  if (eventType === "AsyncOperationEvent") {
+    return {
+      ...data,
+      label: nonEmptyString(fields.label) ?? data.label,
+      summary: nonEmptyString(fields.summary) ?? data.summary,
+    };
+  }
+  if (eventType === "AsyncOperationTranscript") {
+    return {
+      ...data,
+      label: nonEmptyString(fields.label) ?? data.label,
+      event: recordField(fields.event) ?? data.event,
+    };
+  }
+  return data;
+}
+
 export function chatStreamEventToLifecycleEvent(
   event: NormalizedTraceStreamEvent,
 ): AgentLifecycleEvent | undefined {

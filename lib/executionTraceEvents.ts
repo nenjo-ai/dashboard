@@ -1,4 +1,7 @@
-import { chatStreamEventToLifecycleEvent } from "./agentRunTrace/adapters/chatStream.ts";
+import {
+  chatStreamEventToLifecycleEvent,
+  mergeAsyncOperationPayload,
+} from "./agentRunTrace/adapters/chatStream.ts";
 import { EXECUTION_EVENT_TYPE, ExecutionEventKind } from "./executionEvents.ts";
 import { reduceRunTraceEvents } from "./agentRunTrace/reducer.ts";
 import type { AgentLifecycleEvent, RunTrace } from "./agentRunTrace/types";
@@ -12,6 +15,9 @@ import type {
 type EventRecord = Record<string, unknown>;
 
 type TracePayload = {
+  label?: unknown;
+  summary?: unknown;
+  event?: unknown;
   message?: unknown;
   delta?: unknown;
   status?: unknown;
@@ -118,7 +124,7 @@ async function lifecycleEventFromEnvelope(
     payload.tool_args !== undefined ? payload.tool_args : rawData.tool_args;
 
   const data: EventRecord = {
-    ...rawData,
+    ...mergeAsyncOperationPayload(type, rawData, payload),
     run_id: runId,
     session_id: stringField(rawData.session_id) ?? runId,
     execution_run_id: envelope.executionRunId,
