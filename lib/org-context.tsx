@@ -18,7 +18,7 @@ import {
 } from "@/lib/activeOrg";
 import { isOrgScopedPlatformApiUrl } from "@/lib/apiScope";
 import { useCurrentOrg, useCurrentUser, useOrganizations } from "@/lib/hooks";
-import { firstNonEmptyScopes, hasOrgScope } from "@/lib/orgScopes.mjs";
+import { firstDefinedScopes, hasOrgScope } from "@/lib/orgScopes.mjs";
 import type { OrganizationSummary } from "@/lib/types";
 
 interface OrgContextValue {
@@ -121,11 +121,9 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
     (currentUserMatchesActiveOrg ? currentUser?.org_role : null) ??
     (currentOrgMatchesActiveOrg ? currentOrg?.role : null) ??
     null;
-  // Prefer auth-resolved scopes (/auth/me, /orgs/current). Those endpoints
-  // expand empty org_members.scopes to role defaults. GET /orgs returns raw DB
-  // scopes, so an empty array would otherwise shadow the real owner/admin set
-  // via `??` (empty is not nullish).
-  const currentScopes = firstNonEmptyScopes(
+  // Prefer the most authoritative auth response. Empty effective scopes are
+  // intentional and must not fall through to an older cached grant.
+  const currentScopes = firstDefinedScopes(
     currentUserMatchesActiveOrg ? currentUser?.org_scopes : null,
     currentOrgMatchesActiveOrg ? currentOrg?.scopes : null,
     activeOrganization?.scopes,

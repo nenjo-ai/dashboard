@@ -19,6 +19,7 @@ export interface OrganizationSummary {
   name: string;
   slug: string;
   role: string;
+  scope_mode: "role_default" | "custom";
   scopes: string[];
 }
 
@@ -27,6 +28,16 @@ export interface CurrentOrg {
   org_name: string;
   role: string;
   scopes: string[];
+}
+
+export interface OrgRoleScopeDefaults {
+  role: string;
+  scopes: string[];
+}
+
+export interface OrgScopeCatalog {
+  scopes: string[];
+  role_defaults: OrgRoleScopeDefaults[];
 }
 
 export type TokenUsageSource = "chat" | "task" | "routine";
@@ -53,9 +64,11 @@ export interface BootstrapStatus {
 
 export interface OrgMember {
   user_id: string;
+  is_owner: boolean;
   email: string;
   name: string;
   role: string;
+  scope_mode: "role_default" | "custom";
   scopes: string[];
   created_at: string;
   updated_at: string;
@@ -66,6 +79,7 @@ export interface OrgInvitation {
   org_id: string;
   email: string;
   role: string;
+  scope_mode: "role_default" | "custom";
   scopes: string[];
   invited_by: string;
   expires_at: string;
@@ -83,6 +97,7 @@ export interface OrgInvitationPreview {
   org_slug: string;
   email: string;
   role: string;
+  scope_mode: "role_default" | "custom";
   scopes: string[];
   expires_at: string;
   invited_by: string;

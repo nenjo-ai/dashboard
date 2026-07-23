@@ -2027,6 +2027,10 @@ export function currentOrgUrl(): string {
   return `${API_V1}/orgs/current`;
 }
 
+export function orgScopeCatalogUrl(): string {
+  return `${API_V1}/orgs/scope-catalog`;
+}
+
 export function bootstrapStatusUrl(): string {
   return `${API_V1}/auth/bootstrap-status`;
 }

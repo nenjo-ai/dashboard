@@ -16,12 +16,12 @@ import {
   revokeOrgInvitation,
   updateOrgMember,
 } from "@/lib/api";
-import { useCurrentUser, useCurrentOrgContentKeyAccessRequest, useOrgContentKeyRequests, useOrgInvitations, useOrgMembers, useOrgQuotaStatus } from "@/lib/hooks";
+import { useCurrentOrg, useCurrentUser, useCurrentOrgContentKeyAccessRequest, useOrganizations, useOrgContentKeyRequests, useOrgInvitations, useOrgMembers, useOrgQuotaStatus, useOrgScopeCatalog } from "@/lib/hooks";
 import { useOrgContext } from "@/lib/org-context";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/cn";
 import { syncCurrentUserAckToActiveWorkers } from "@/lib/workerAckSync";
-import type { CurrentOrgContentKeyStatus, OrgContentKeyAccessRequest, OrgInvitation, OrgMember, QuotaStatus } from "@/lib/types";
+import type { CurrentOrgContentKeyStatus, OrgContentKeyAccessRequest, OrgInvitation, OrgMember, OrgScopeCatalog, QuotaStatus } from "@/lib/types";
 import { countOpenInvitations, inviteSeatGate, isOpenInvitation } from "@/lib/inviteQuotaPolicy.mjs";
 import {
   buildCurrentOrgContentKeyBootstrap,
@@ -32,105 +32,29 @@ import {
   wrapOrgContentKeyForWorker,
 } from "@/lib/cryptoContent";
 
-const ROLE_OPTIONS = ["owner", "admin", "member", "viewer"] as const;
-const SCOPE_OPTIONS = [
-  "org:read",
-  "org:write",
-  "org_members:read",
-  "org_members:write",
-  "org_invites:read",
-  "org_invites:write",
-  "workers:read",
-  "workers:approve",
-  "workers:write",
-  "api_keys:read",
-  "api_keys:write",
-  "projects:read",
-  "projects:write",
-  "library:write",
-  "agents:read",
-  "agents:write",
-  "models:read",
-  "models:write",
-  "routines:read",
-  "routines:write",
-  "councils:read",
-  "councils:write",
-  "domains:read",
-  "domains:write",
-  "abilities:read",
-  "abilities:write",
-  "context_blocks:read",
-  "context_blocks:write",
-  "commands:read",
-  "commands:write",
-  "mcp_servers:read",
-  "mcp_servers:write",
-  "notify:read",
-  "notify:write",
-] as const;
+function defaultScopes(catalog: OrgScopeCatalog, role: string): string[] {
+  const defaults = catalog.role_defaults.find((entry) => entry.role === role);
+  return defaults ? [...defaults.scopes] : [];
+}
 
-function defaultScopes(role: (typeof ROLE_OPTIONS)[number]) {
-  if (role === "owner" || role === "admin") return [...SCOPE_OPTIONS];
-  if (role === "member") {
-    return [
-      "org:read",
-      "org_members:read",
-      "workers:read",
-      "projects:read",
-      "projects:write",
-      "library:write",
-      "agents:read",
-      "agents:write",
-      "models:read",
-      "models:write",
-      "routines:read",
-      "routines:write",
-      "councils:read",
-      "councils:write",
-      "domains:read",
-      "domains:write",
-      "abilities:read",
-      "abilities:write",
-      "context_blocks:read",
-      "context_blocks:write",
-      "commands:read",
-      "commands:write",
-      "mcp_servers:read",
-      "mcp_servers:write",
-      "notify:read",
-    ];
-  }
-  return [
-    "org:read",
-    "org_members:read",
-    "workers:read",
-    "projects:read",
-    "agents:read",
-    "models:read",
-    "routines:read",
-    "councils:read",
-    "domains:read",
-    "abilities:read",
-    "context_blocks:read",
-    "commands:read",
-    "mcp_servers:read",
-    "notify:read",
-  ];
+function assignableRoleDefaults(catalog: OrgScopeCatalog) {
+  return catalog.role_defaults.filter((entry) => entry.role !== "owner");
 }
 
 function ScopeChecklist({
+  options,
   value,
   onChange,
   disabled,
 }: {
+  options: string[];
   value: string[];
   onChange: (scopes: string[]) => void;
   disabled?: boolean;
 }) {
   return (
     <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-      {SCOPE_OPTIONS.map((scope) => {
+      {options.map((scope) => {
         const checked = value.includes(scope);
         return (
           <label
@@ -183,6 +107,7 @@ function ScopeSummary({ scopes }: { scopes: string[] }) {
 function MembersPanel({
   orgId,
   members,
+  scopeCatalog,
   canEdit,
   canRead,
   onRefresh,
@@ -192,6 +117,7 @@ function MembersPanel({
 }: {
   orgId: string;
   members: OrgMember[];
+  scopeCatalog: OrgScopeCatalog;
   canEdit: boolean;
   canRead: boolean;
   onRefresh: () => Promise<unknown>;
@@ -200,20 +126,20 @@ function MembersPanel({
   currentUserEmail?: string | null;
 }) {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [draftRole, setDraftRole] = useState<(typeof ROLE_OPTIONS)[number]>("member");
-  const [draftScopes, setDraftScopes] = useState<string[]>(defaultScopes("member"));
+  const [draftRole, setDraftRole] = useState("member");
+  const [draftScopes, setDraftScopes] = useState<string[]>(() => defaultScopes(scopeCatalog, "member"));
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
 
   const startEditing = (member: OrgMember) => {
-    if (member.role === "owner") {
+    if (member.is_owner) {
       return;
     }
-    const role = ROLE_OPTIONS.includes(member.role as (typeof ROLE_OPTIONS)[number])
-      ? (member.role as (typeof ROLE_OPTIONS)[number])
+    const role = assignableRoleDefaults(scopeCatalog).some((entry) => entry.role === member.role)
+      ? member.role
       : "member";
     setEditingUserId(member.user_id);
     setDraftRole(role);
-    setDraftScopes(member.scopes);
+    setDraftScopes(role === member.role ? member.scopes : defaultScopes(scopeCatalog, role));
   };
 
   if (!canRead) {
@@ -233,7 +159,7 @@ function MembersPanel({
       <div className="divide-y divide-black/5 dark:divide-white/8">
         {members.map((member) => {
           const editing = editingUserId === member.user_id;
-          const isOwner = member.role === "owner";
+          const isOwner = member.is_owner;
           const isCurrentUser = !!currentUserId && member.user_id === currentUserId;
           const primaryText = isCurrentUser
             ? currentUserDisplayName || currentUserEmail || member.email
@@ -304,15 +230,15 @@ function MembersPanel({
                       <select
                         value={draftRole}
                         onChange={(event) => {
-                          const role = event.target.value as (typeof ROLE_OPTIONS)[number];
+                          const role = event.target.value;
                           setDraftRole(role);
-                          setDraftScopes(defaultScopes(role));
+                          setDraftScopes(defaultScopes(scopeCatalog, role));
                         }}
                         className="theme-border theme-surface w-full border px-3 py-2 text-sm"
                       >
-                        {ROLE_OPTIONS.map((role) => (
-                          <option key={role} value={role}>
-                            {role}
+                        {assignableRoleDefaults(scopeCatalog).map((entry) => (
+                          <option key={entry.role} value={entry.role}>
+                            {entry.role}
                           </option>
                         ))}
                       </select>
@@ -321,7 +247,7 @@ function MembersPanel({
                       <span className="theme-text-muted text-xs font-semibold uppercase tracking-[0.14em]">
                         Explicit scopes
                       </span>
-                      <ScopeChecklist value={draftScopes} onChange={setDraftScopes} />
+                      <ScopeChecklist options={scopeCatalog.scopes} value={draftScopes} onChange={setDraftScopes} />
                     </div>
                   </div>
 
@@ -365,6 +291,7 @@ function MembersPanel({
 function InvitesPanel({
   orgId,
   invitations,
+  scopeCatalog,
   quotaStatus,
   quotaLoading,
   canEdit,
@@ -373,6 +300,7 @@ function InvitesPanel({
 }: {
   orgId: string;
   invitations: OrgInvitation[];
+  scopeCatalog: OrgScopeCatalog;
   quotaStatus?: QuotaStatus;
   quotaLoading: boolean;
   canEdit: boolean;
@@ -380,8 +308,8 @@ function InvitesPanel({
   onRefresh: () => Promise<unknown>;
 }) {
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<(typeof ROLE_OPTIONS)[number]>("member");
-  const [scopes, setScopes] = useState<string[]>(defaultScopes("member"));
+  const [role, setRole] = useState("member");
+  const [scopes, setScopes] = useState<string[]>(() => defaultScopes(scopeCatalog, "member"));
   const [inviteExpanded, setInviteExpanded] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null);
@@ -480,15 +408,15 @@ function InvitesPanel({
                   <select
                     value={role}
                     onChange={(event) => {
-                      const nextRole = event.target.value as (typeof ROLE_OPTIONS)[number];
+                      const nextRole = event.target.value;
                       setRole(nextRole);
-                      setScopes(defaultScopes(nextRole));
+                      setScopes(defaultScopes(scopeCatalog, nextRole));
                     }}
                     className="theme-border theme-surface w-full border px-3 py-2 text-sm"
                   >
-                    {ROLE_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
+                    {assignableRoleDefaults(scopeCatalog).map((entry) => (
+                      <option key={entry.role} value={entry.role}>
+                        {entry.role}
                       </option>
                     ))}
                   </select>
@@ -499,7 +427,7 @@ function InvitesPanel({
                 <span className="theme-text-muted text-xs font-semibold uppercase tracking-[0.14em]">
                   Explicit scopes
                 </span>
-                <ScopeChecklist value={scopes} onChange={setScopes} />
+                <ScopeChecklist options={scopeCatalog.scopes} value={scopes} onChange={setScopes} />
               </div>
 
               <div className="mt-4 flex items-center gap-2">
@@ -521,7 +449,7 @@ function InvitesPanel({
                       await navigator.clipboard.writeText(buildInviteLink(created.invite_token));
                       setEmail("");
                       setRole("member");
-                      setScopes(defaultScopes("member"));
+                      setScopes(defaultScopes(scopeCatalog, "member"));
                       setInviteExpanded(false);
                       await onRefresh();
                       toast.success("Invite email sent and link copied.");
@@ -908,7 +836,9 @@ function AccessRequestsPanel({
 
 export function OrgSettingsSection() {
   const { user } = useUser();
-  const { currentUser } = useCurrentUser();
+  const { currentUser, mutate: mutateCurrentUser } = useCurrentUser();
+  const { mutate: mutateCurrentOrg } = useCurrentOrg();
+  const { mutate: mutateOrganizations } = useOrganizations();
   const {
     activeOrgId,
     activeOrganization,
@@ -920,6 +850,7 @@ export function OrgSettingsSection() {
   const { invitations, isLoading: invitesLoading, mutate: mutateInvites } = useOrgInvitations(activeOrgId ?? undefined);
   const { quotaStatus, isLoading: quotaLoading, mutate: mutateQuotaStatus } = useOrgQuotaStatus(activeOrgId ?? undefined);
   const { requests, isLoading: requestsLoading, mutate: mutateRequests } = useOrgContentKeyRequests(activeOrgId ?? undefined);
+  const { scopeCatalog, isLoading: scopeCatalogLoading, isError: scopeCatalogError } = useOrgScopeCatalog();
   const githubAccount = user?.externalAccounts?.find((account) => account.provider === "github");
   const currentUserDisplayName =
     githubAccount?.username ??
@@ -937,6 +868,22 @@ export function OrgSettingsSection() {
     return (
       <div className="rounded-2xl border border-black/10 px-4 py-5 dark:border-white/10">
         <p className="theme-text text-sm">No active organization is selected.</p>
+      </div>
+    );
+  }
+
+  if (scopeCatalogLoading) {
+    return (
+      <div className="rounded-2xl border border-black/10 px-4 py-5 dark:border-white/10">
+        <p className="theme-text-muted text-sm">Loading organization access catalog...</p>
+      </div>
+    );
+  }
+
+  if (scopeCatalogError || !scopeCatalog) {
+    return (
+      <div className="rounded-2xl border border-red-200 px-4 py-5 dark:border-red-900/60">
+        <p className="text-sm text-red-700 dark:text-red-300">Unable to load organization roles and scopes.</p>
       </div>
     );
   }
@@ -971,13 +918,20 @@ export function OrgSettingsSection() {
         <MembersPanel
           orgId={activeOrgId}
           members={members ?? []}
+          scopeCatalog={scopeCatalog}
           canRead={canReadMembers}
           canEdit={canWriteMembers}
           currentUserId={currentUser?.user_id ?? undefined}
           currentUserDisplayName={currentUserDisplayName}
           currentUserEmail={currentUserEmail}
           onRefresh={async () => {
-            await Promise.all([mutateMembers(), mutateQuotaStatus()]);
+            await Promise.allSettled([
+              mutateMembers(),
+              mutateQuotaStatus(),
+              mutateCurrentUser(),
+              mutateCurrentOrg(),
+              mutateOrganizations(),
+            ]);
           }}
         />
       )}
@@ -1007,6 +961,7 @@ export function OrgSettingsSection() {
         <InvitesPanel
           orgId={activeOrgId}
           invitations={invitations ?? []}
+          scopeCatalog={scopeCatalog}
           quotaStatus={quotaStatus}
           quotaLoading={quotaLoading}
           canRead={canReadInvites}
