@@ -130,7 +130,7 @@ export function MobileChatContainer({
           return;
         }
 
-        const agentLabel = agent.display_name || agent.name;
+        const agentLabel = agent.name;
         const newSession = await createChatSession({
           agent_id: agent.id,
           title: `${agentLabel.charAt(0).toUpperCase() + agentLabel.slice(1)} #1`,

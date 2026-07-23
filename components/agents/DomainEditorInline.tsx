@@ -6,7 +6,7 @@ import {
   updateDomain,
   updateDomainManifest,
 } from "@/lib/api";
-import { useAbilities, useMcpServers, useContextBlocks } from "@/lib/hooks";
+import { useAbilities, useApiKeyCatalog, useMcpServers, useContextBlocks } from "@/lib/hooks";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference } from "./TemplateVariableReference";
 import { LibraryReferenceList } from "./LibraryReferenceList";
@@ -16,7 +16,6 @@ import {
   SourceManagedResourcePanel,
   type SourceManagedDetailSection,
 } from "@/components/resources/SourceManagedResourcePanel";
-import { MCP_RESOURCE_SCOPES } from "@/lib/types";
 import { manifestResourceDisplayPath } from "@/lib/manifestResourcePath";
 import type { Domain, DomainManifest, Ability, McpServer } from "@/lib/types";
 
@@ -89,7 +88,7 @@ function ManagedDomainDetails({ domain }: { domain: Domain }) {
     return () => {
       cancelled = true;
     };
-  }, [domain.id, domain.display_name, domain.manifest]);
+  }, [domain.id, domain.manifest]);
 
   const prompt = manifest?.prompt?.developer_prompt_addon ?? "";
   const sections = useMemo<SourceManagedDetailSection[]>(
@@ -97,8 +96,8 @@ function ManagedDomainDetails({ domain }: { domain: Domain }) {
       {
         title: "Domain",
         fields: [
-          { label: "Name", value: domain.name, mono: true },
-          { label: "Display name", value: domain.display_name },
+          { label: "Name", value: domain.name },
+          { label: "Slug", value: domain.slug, mono: true },
           { label: "Command", value: domain.command, mono: true },
           { label: "Path", value: manifestResourceDisplayPath(domain), mono: true },
           { label: "Source type", value: domain.source_type ?? "native" },
@@ -146,7 +145,7 @@ function ManagedDomainDetails({ domain }: { domain: Domain }) {
       JSON.stringify(
         {
           name: domain.name,
-          display_name: domain.display_name,
+          slug: domain.slug,
           command: domain.command,
           path: manifestResourceDisplayPath(domain),
           description: domain.description,
@@ -162,7 +161,7 @@ function ManagedDomainDetails({ domain }: { domain: Domain }) {
   return (
     <SourceManagedResourcePanel
       resource={domain}
-      title={domain.display_name || domain.name}
+      title={domain.name}
       description={domain.description}
       fallbackContent={fallbackContent}
       fallbackLanguage="yaml"
@@ -178,7 +177,7 @@ function EditableDomainEditorInline({
   onDelete,
 }: DomainEditorInlineProps) {
   const [activeTab, setActiveTab] = useState<TabId>("prompt");
-  const [displayName, setDisplayName] = useState(domain.display_name ?? "");
+  const [name, setName] = useState(domain.name);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -197,13 +196,13 @@ function EditableDomainEditorInline({
 
   // Reset when domain changes
   useEffect(() => {
-    setDisplayName(domain.display_name ?? "");
+    setName(domain.name);
     setManifest(domain.manifest ?? null);
     setSystemAddon(domain.manifest?.prompt?.developer_prompt_addon ?? "");
     setActiveTab("prompt");
     setError(null);
     setSaved(false);
-  }, [domain.id, domain.display_name, domain.manifest]);
+  }, [domain.id, domain.name, domain.manifest]);
 
   useEffect(() => {
     let cancelled = false;
@@ -237,9 +236,9 @@ function EditableDomainEditorInline({
     setError(null);
     setSaved(false);
     try {
-      if (displayName !== (domain.display_name ?? "")) {
+      if (name !== domain.name) {
         await updateDomain(domain.id, {
-          display_name: displayName || undefined,
+          name: name || undefined,
         });
       }
       const currentManifest = manifest ?? domain.manifest;
@@ -262,8 +261,8 @@ function EditableDomainEditorInline({
       setSaving(false);
     }
   }, [
-    displayName,
-    domain.display_name,
+    name,
+    domain.name,
     domain.id,
     domain.manifest,
     manifest,
@@ -297,14 +296,14 @@ function EditableDomainEditorInline({
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <input
             type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             placeholder={domain.name}
             className="theme-text min-w-0 flex-1 truncate border-0 bg-transparent text-sm font-semibold outline-none placeholder:text-[var(--app-text-muted)] focus:ring-0"
           />
           <input
             type="text"
-            value={domain.name}
+            value={domain.slug}
             readOnly
             className="theme-surface-muted theme-text-muted w-36 shrink-0 rounded px-1.5 py-0.5 text-xs font-mono outline-none"
           />
@@ -478,7 +477,6 @@ function buildBlockTree(
     name: string;
     path: string;
     description?: string | null;
-    display_name?: string | null;
   }[],
 ): BlockTreeNode[] {
   const root: BlockTreeNode[] = [];
@@ -506,7 +504,7 @@ function buildBlockTree(
     parent.push({
       name: b.name,
       dottedPath: dottedName,
-      description: b.description || b.display_name || undefined,
+      description: b.description || undefined,
       children: [],
     });
   }
@@ -756,6 +754,7 @@ function ScopesTab({
   onManifestChange: (manifest: DomainManifest) => void;
   onSaved: () => void;
 }) {
+  const { catalog, isLoading, isError } = useApiKeyCatalog();
   const [saving, setSaving] = useState(false);
   const scopes = manifest?.platform_scopes ?? [];
   const scopeSet = new Set(scopes);
@@ -781,9 +780,12 @@ function ScopesTab({
     }
   };
 
+  if (isLoading) return <LoadingSkeleton />;
+  if (isError) return <EmptyMessage text="Unable to load platform scopes." />;
+
   return (
     <div className="space-y-1.5">
-      {MCP_RESOURCE_SCOPES.map((scope) => (
+      {(catalog?.scopes ?? []).map((scope) => (
         <ToggleRow
           key={scope}
           label={scope}
@@ -911,7 +913,7 @@ function McpTab({
       {externalServers.map((server) => (
         <ToggleRow
           key={server.id}
-          label={server.display_name}
+          label={server.name}
           sublabel={server.description ?? undefined}
           badge={server.transport}
           isOn={activeMcp.has(server.name)}

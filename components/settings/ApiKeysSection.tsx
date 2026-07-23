@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useApiKeys, useCurrentUser } from "@/lib/hooks";
+import { useApiKeyCatalog, useApiKeys, useCurrentUser } from "@/lib/hooks";
 import { createApiKey, deleteApiKey } from "@/lib/api";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import type { CreateApiKeyResponse } from "@/lib/types";
-import { MCP_RESOURCE_SCOPES, WORKER_CAPABILITIES, EXCLUSIVE_CAPABILITIES } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Expiration presets
@@ -80,6 +79,10 @@ function summarizeScopes(scopes: string[]): { resource: string; access: string }
 export function ApiKeysSection() {
   const { userId } = useCurrentUser();
   const { apiKeys, isLoading, mutate } = useApiKeys(userId);
+  const { catalog, isLoading: isCatalogLoading, isError: isCatalogError } = useApiKeyCatalog();
+  const resourceScopes = catalog?.scopes ?? [];
+  const workerCapabilities = catalog?.capabilities ?? [];
+  const exclusiveCapabilities = catalog?.exclusive_capabilities ?? [];
 
   // Create modal state
   const [showCreate, setShowCreate] = useState(false);
@@ -367,8 +370,8 @@ export function ApiKeysSection() {
               Select which worker capabilities this key grants. Leave empty for full access.
             </p>
             <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {WORKER_CAPABILITIES.map((cap) => {
-                const isExclusive = (EXCLUSIVE_CAPABILITIES as readonly string[]).includes(cap);
+              {workerCapabilities.map((cap) => {
+                const isExclusive = exclusiveCapabilities.includes(cap);
                 const checked = selectedCapabilities.includes(cap);
                 // Check if another key already holds this exclusive capability
                 const takenByKey = isExclusive
@@ -445,7 +448,7 @@ export function ApiKeysSection() {
               <button
                 type="button"
                 onClick={() => {
-                  const allReads = MCP_RESOURCE_SCOPES.filter((s) => s.endsWith(":read"));
+                  const allReads = resourceScopes.filter((s) => s.endsWith(":read"));
                   const hasAll = allReads.every((s) => selectedScopes.includes(s));
                   setSelectedScopes((prev) =>
                     hasAll
@@ -454,7 +457,7 @@ export function ApiKeysSection() {
                   );
                 }}
                 className={`rounded-lg border px-3 py-1 text-xs font-medium transition-colors ${
-                  MCP_RESOURCE_SCOPES.filter((s) => s.endsWith(":read")).every((s) => selectedScopes.includes(s))
+                  resourceScopes.length > 0 && resourceScopes.filter((s) => s.endsWith(":read")).every((s) => selectedScopes.includes(s))
                     ? "border-deep-space-blue-500 bg-deep-space-blue-50 text-deep-space-blue-700 dark:bg-deep-space-blue-900/30 dark:text-deep-space-blue-300"
                     : "theme-border theme-surface text-gray-600 hover:[border-color:var(--app-border-strong)] hover:[background:var(--app-hover)] dark:text-gray-300"
                 }`}
@@ -464,7 +467,7 @@ export function ApiKeysSection() {
               <button
                 type="button"
                 onClick={() => {
-                  const allWrites = MCP_RESOURCE_SCOPES.filter((s) => s.endsWith(":write"));
+                  const allWrites = resourceScopes.filter((s) => s.endsWith(":write"));
                   const hasAll = allWrites.every((s) => selectedScopes.includes(s));
                   setSelectedScopes((prev) =>
                     hasAll
@@ -473,7 +476,7 @@ export function ApiKeysSection() {
                   );
                 }}
                 className={`rounded-lg border px-3 py-1 text-xs font-medium transition-colors ${
-                  MCP_RESOURCE_SCOPES.filter((s) => s.endsWith(":write")).every((s) => selectedScopes.includes(s))
+                  resourceScopes.length > 0 && resourceScopes.filter((s) => s.endsWith(":write")).every((s) => selectedScopes.includes(s))
                     ? "border-vivid-tangerine-500 bg-vivid-tangerine-50 text-vivid-tangerine-700 dark:bg-vivid-tangerine-900/30 dark:text-vivid-tangerine-300"
                     : "theme-border theme-surface text-gray-600 hover:[border-color:var(--app-border-strong)] hover:[background:var(--app-hover)] dark:text-gray-300"
                 }`}
@@ -491,7 +494,13 @@ export function ApiKeysSection() {
               )}
             </div>
             <div className="theme-border theme-surface-muted mt-2 grid max-h-48 grid-cols-2 gap-x-4 gap-y-1.5 overflow-y-auto rounded-lg border p-3">
-              {MCP_RESOURCE_SCOPES.map((scope) => {
+              {isCatalogLoading && (
+                <p className="col-span-2 text-xs text-gray-500 dark:text-gray-400">Loading available scopes...</p>
+              )}
+              {isCatalogError && (
+                <p className="col-span-2 text-xs text-red-600 dark:text-red-400">Unable to load available scopes.</p>
+              )}
+              {resourceScopes.map((scope) => {
                 const checked = selectedScopes.includes(scope);
                 return (
                   <label key={scope} className="flex items-center gap-2 text-sm cursor-pointer">

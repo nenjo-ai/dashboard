@@ -54,7 +54,7 @@ export function MobileChatShell({
           title={mobileShowChat && activeSession
             ? activeSession.target_type === "council"
               ? activeSession.council_name ?? activeSession.title
-              : activeSession.agent_display_name ?? activeSession.agent_name
+              : activeSession.agent_name
             : "Chat"}
           leading={mobileShowChat && activeSession ? (
             <MobileTouchButton

@@ -18,6 +18,7 @@ import { createModel, updateModel } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useModelCatalog } from "@/lib/hooks";
 import { toast } from "@/lib/toast";
+import { resourceSlug } from "@/lib/resourceSlug";
 import {
   ASSIGNABLE_OPERATION_CAPABILITIES,
   MODEL_MODALITY_OPTIONS,
@@ -52,6 +53,7 @@ interface ModelsSectionProps {
 }
 
 interface FormState {
+  slug: string;
   description: string;
   provider: ModelProvider;
   model: string;
@@ -65,11 +67,13 @@ interface FormState {
 }
 
 interface FormErrors {
+  slug?: string;
   model?: string;
   baseUrl?: string;
 }
 
 const INITIAL_FORM: FormState = {
+  slug: "gpt-4o",
   description: "",
   provider: "openai",
   model: "gpt-4o",
@@ -149,6 +153,7 @@ function formatContextLength(value: number | null | undefined): string | null {
 function formFromModel(model: Model): FormState {
   const provider = formProvider(model.model_provider);
   return {
+    slug: model.slug,
     description: model.description ?? "",
     provider,
     model: model.model,
@@ -177,6 +182,7 @@ export function ModelsSection({
 }: ModelsSectionProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
+  const [slugEdited, setSlugEdited] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -285,6 +291,7 @@ export function ModelsSection({
     }
     setForm((previous) => ({
       ...previous,
+      slug: slugEdited ? previous.slug : resourceSlug(model.id),
       model: model.id,
       contextWindow:
         model.context_length ?? model.top_provider?.context_length ?? undefined,
@@ -294,7 +301,7 @@ export function ModelsSection({
       outputModalities: modelModalities(model.output_modalities),
     }));
     setErrors((previous) => ({ ...previous, model: undefined }));
-  }, []);
+  }, [slugEdited]);
 
   const handleModelChange = useCallback(
     (value: string) => {
@@ -305,14 +312,20 @@ export function ModelsSection({
         applyCatalogModel(catalogModel);
         return;
       }
-      setField("model", value);
+      setForm((previous) => ({
+        ...previous,
+        model: value,
+        slug: slugEdited ? previous.slug : resourceSlug(value),
+      }));
+      setErrors((previous) => ({ ...previous, model: undefined }));
     },
-    [applyCatalogModel, hasProviderCatalog, openRouterModelById, setField],
+    [applyCatalogModel, hasProviderCatalog, openRouterModelById, slugEdited],
   );
 
   const resetForm = useCallback(() => {
     setEditingId(null);
     setForm(INITIAL_FORM);
+    setSlugEdited(false);
     setErrors({});
     setApiError(null);
     setCatalogSearch("");
@@ -323,6 +336,7 @@ export function ModelsSection({
   const handleEdit = useCallback((model: Model) => {
     setEditingId(model.id);
     setForm(formFromModel(model));
+    setSlugEdited(true);
     setErrors({});
     setApiError(null);
   }, []);
@@ -333,6 +347,9 @@ export function ModelsSection({
       ...previous,
       provider,
       model: nextProvider?.models[0] ?? "",
+      slug: slugEdited
+        ? previous.slug
+        : resourceSlug(nextProvider?.models[0] ?? ""),
       contextWindow: undefined,
       baseUrl: "",
       keyTag: "",
@@ -349,7 +366,7 @@ export function ModelsSection({
           : previous.outputModalities,
     }));
     setErrors({});
-  }, []);
+  }, [slugEdited]);
 
   const toggleNativeTool = useCallback((tool: NativeModelTool) => {
     setForm((previous) => {
@@ -394,6 +411,7 @@ export function ModelsSection({
   const validate = useCallback(() => {
     const nextErrors: FormErrors = {};
     if (!form.model.trim()) nextErrors.model = "Model is required.";
+    if (!resourceSlug(form.slug)) nextErrors.slug = "Stable slug is required.";
     if (form.provider === "openai-compatible" && !form.baseUrl.trim()) {
       nextErrors.baseUrl = "Base URL is required for OpenAI Compatible providers.";
     } else if (form.baseUrl.trim()) {
@@ -440,6 +458,7 @@ export function ModelsSection({
         toast.success("Model updated.");
       } else {
         const payload: CreateModelRequest = {
+          slug: resourceSlug(form.slug),
           name: modelName,
           description: form.description.trim() || undefined,
           model: modelName,
@@ -668,6 +687,28 @@ export function ModelsSection({
                   </p>
                 )}
               </div>
+            </div>
+
+            <div>
+              <Label required>Stable slug</Label>
+              <Input
+                value={form.slug}
+                onChange={(event) => {
+                  setField("slug", resourceSlug(event.target.value));
+                  setSlugEdited(true);
+                }}
+                className="mt-1 font-mono"
+                error={!!errors.slug}
+                disabled={saving || !!editingId}
+                placeholder="gpt-4o"
+              />
+              {errors.slug ? (
+                <p className="mt-1 text-xs text-red-500">{errors.slug}</p>
+              ) : (
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  Permanent reference used by agents; the provider model ID may change independently.
+                </p>
+              )}
             </div>
 
             {hasProviderCatalog && (

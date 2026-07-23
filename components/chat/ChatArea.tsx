@@ -1635,7 +1635,7 @@ export function ChatArea({
     return availableDomains.filter(
       (m) =>
         m.command.toLowerCase().includes(lower) ||
-        m.display_name.toLowerCase().includes(lower) ||
+        m.name.toLowerCase().includes(lower) ||
         m.name.toLowerCase().includes(lower),
     );
   }, [showDomainDropdown, domainFilter, availableDomains]);
@@ -3650,7 +3650,7 @@ export function ChatArea({
                           }
                         >
                           {activeDomain?.command ?? "#domain"} ·{" "}
-                          {activeDomain?.display_name ?? "Domain"}
+                          {activeDomain?.name ?? "Domain"}
                         </span>
                         <button
                           type="button"

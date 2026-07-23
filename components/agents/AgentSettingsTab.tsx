@@ -19,7 +19,6 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
   const { mutate } = useSWRConfig();
   const { models } = useModels();
 
-  const [displayName, setDisplayName] = useState(agent.display_name ?? "");
   const [name, setName] = useState(agent.name);
   const [description, setDescription] = useState(agent.description ?? "");
   const [color, setColor] = useState(agent.color);
@@ -37,7 +36,6 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
     try {
       const updatedAgent = await updateAgent(agent.id, {
         name: name.trim() || undefined,
-        display_name: displayName.trim() || undefined,
         description: description.trim() || undefined,
         color,
         model_id: modelId,
@@ -51,7 +49,7 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
     } finally {
       setSaving(false);
     }
-  }, [agent.id, name, displayName, description, color, modelId, mutate, onUpdated]);
+  }, [agent.id, name, description, color, modelId, mutate, onUpdated]);
 
   const handleDelete = useCallback(async () => {
     setDeleting(true);
@@ -74,12 +72,12 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
 
         <div>
           <label className="theme-text mb-1 block text-sm font-medium">
-            Display Name
+            Name
           </label>
           <input
             type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             className="theme-border theme-surface theme-text w-full rounded-lg border px-3 py-2 text-sm focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400/20"
             placeholder="Human-readable name"
           />
@@ -87,16 +85,16 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
 
         <div>
           <label className="theme-text mb-1 block text-sm font-medium">
-            Identifier
+            Slug
           </label>
           <input
             type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={agent.slug ?? ""}
+            readOnly
             className="theme-border theme-surface theme-text w-full rounded-lg border px-3 py-2 font-mono text-sm focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400/20"
-            placeholder="machine-readable-name"
+            placeholder="stable-agent-slug"
           />
-          <p className="theme-text-muted mt-1 text-xs">Used in templates as the role identifier.</p>
+          <p className="theme-text-muted mt-1 text-xs">Stable agent-facing reference.</p>
         </div>
 
         <div>

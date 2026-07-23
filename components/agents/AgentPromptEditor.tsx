@@ -27,7 +27,7 @@ interface TreeNode {
   children: TreeNode[];
 }
 
-function buildBlockTree(blocks: { name: string; path: string; description?: string | null; display_name?: string | null }[]): TreeNode[] {
+function buildBlockTree(blocks: { name: string; path: string; description?: string | null }[]): TreeNode[] {
   const root: TreeNode[] = [];
 
   for (const b of blocks) {
@@ -51,7 +51,7 @@ function buildBlockTree(blocks: { name: string; path: string; description?: stri
     parent.push({
       name: b.name,
       dottedPath: dottedName,
-      description: b.description || b.display_name || undefined,
+      description: b.description || undefined,
       children: [],
     });
   }
@@ -296,8 +296,8 @@ function managedAgentPromptSections(
     {
       title: "Agent",
       fields: [
-        { label: "Name", value: role.name, mono: true },
-        { label: "Display name", value: role.display_name },
+        { label: "Name", value: role.name },
+        { label: "Slug", value: role.slug, mono: true },
         { label: "Path", value: manifestResourceDisplayPath(role), mono: true },
         { label: "Model", value: role.model_name ?? role.model_id ?? "Not assigned" },
         { label: "Source type", value: role.source_type },
@@ -596,7 +596,7 @@ export function AgentPromptEditor({
     return (
       <SourceManagedResourcePanel
         resource={role}
-        title={role.display_name || role.name}
+        title={role.name}
         description={role.description}
         fallbackContent={JSON.stringify(promptConfig, null, 2)}
         fallbackLanguage="yaml"
@@ -1083,7 +1083,7 @@ export function AgentPromptEditorContent(props: AgentPromptEditorContentProps) {
     return (
       <SourceManagedResourcePanel
         resource={role}
-        title={role.display_name || role.name}
+        title={role.name}
         description={role.description}
         fallbackContent={JSON.stringify(promptConfig, null, 2)}
         fallbackLanguage="yaml"

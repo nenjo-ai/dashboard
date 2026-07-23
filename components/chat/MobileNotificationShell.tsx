@@ -41,7 +41,7 @@ export function MobileNotificationShell({
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
               </svg>
               <span className="block min-w-0 truncate text-[15px] font-semibold tracking-[-0.01em]">
-                {activeSession.agent_display_name ?? activeSession.agent_name}
+                {activeSession.agent_name}
               </span>
             </MobileTouchButton>
 
@@ -100,7 +100,7 @@ export function MobileNotificationShell({
                     <NotificationArea
                       agentId={activeSession.agent_id!}
                       sessionId={activeSession.id}
-                      agentName={activeSession.agent_display_name ?? activeSession.agent_name}
+                      agentName={activeSession.agent_name}
                       variant="mobile"
                     />
                   </div>

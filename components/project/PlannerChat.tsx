@@ -333,7 +333,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
     return availableDomains.filter(
       (m) =>
         m.command.toLowerCase().includes(lower) ||
-        m.display_name.toLowerCase().includes(lower) ||
+        m.name.toLowerCase().includes(lower) ||
         m.name.toLowerCase().includes(lower),
     );
   }, [showDomainDropdown, domainFilter, availableDomains]);
@@ -761,7 +761,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
               session={activeDomainSession}
               domainName={
                 availableDomains.find((m) => m.id === activeDomainSession.domain_id)
-                  ?.display_name ?? "Domain"
+                  ?.name ?? "Domain"
               }
               domainCommand={
                 availableDomains.find((m) => m.id === activeDomainSession.domain_id)

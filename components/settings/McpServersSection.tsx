@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { toast } from "@/lib/toast";
 import type { McpServer } from "@/lib/types";
+import { resourceSlug } from "@/lib/resourceSlug";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -169,7 +170,7 @@ function McpServerCard({
       {/* Header: title + actions */}
       <div className="flex items-center justify-between gap-2">
         <h3 className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
-          {server.display_name}
+          {server.name}
         </h3>
         <div className="flex items-center gap-0.5 shrink-0">
           {!server.is_system && onEdit && (
@@ -240,7 +241,8 @@ function McpServerFormModal({
   const isEdit = !!server;
 
   const [name, setName] = useState(server?.name ?? "");
-  const [displayName, setDisplayName] = useState(server?.display_name ?? "");
+  const [slug, setSlug] = useState(server?.slug ?? "");
+  const [slugEdited, setSlugEdited] = useState(Boolean(server));
   const [description, setDescription] = useState(server?.description ?? "");
   const [transport, setTransport] = useState<"stdio" | "http">(server?.transport ?? "stdio");
   const [command, setCommand] = useState(server?.command ?? "");
@@ -256,7 +258,7 @@ function McpServerFormModal({
     try {
       if (isEdit && server) {
         await updateMcpServer(server.id, {
-          display_name: displayName.trim() || undefined,
+          name: name.trim() || undefined,
           description: description.trim() || undefined,
           transport: transport || undefined,
           command: transport === "stdio" ? command.trim() || undefined : undefined,
@@ -265,8 +267,8 @@ function McpServerFormModal({
         });
       } else {
         await createMcpServer({
+          slug,
           name: name.trim(),
-          display_name: displayName.trim(),
           transport,
           command: transport === "stdio" ? command.trim() : undefined,
           args: transport === "stdio" && args.trim() ? args.trim().split(/\s+/) : undefined,
@@ -281,7 +283,7 @@ function McpServerFormModal({
     } finally {
       setSaving(false);
     }
-  }, [isEdit, server, name, displayName, description, transport, command, args, url, onSaved]);
+  }, [isEdit, server, slug, name, description, transport, command, args, url, onSaved]);
 
   return (
     <Modal
@@ -291,26 +293,36 @@ function McpServerFormModal({
       title={isEdit ? "Edit MCP Server" : "Add MCP Server"}
     >
       <div className="space-y-4">
-        {!isEdit && (
-          <div>
-            <Label className="block mb-1.5">Name</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. github-mcp"
-              autoFocus
-            />
-          </div>
-        )}
-
         <div>
-          <Label className="block mb-1.5">Display Name</Label>
+          <Label className="block mb-1.5">Name</Label>
           <Input
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            value={name}
+            onChange={(e) => {
+              const nextName = e.target.value;
+              setName(nextName);
+              if (!slugEdited) setSlug(resourceSlug(nextName));
+            }}
             placeholder="e.g. GitHub"
+            autoFocus
           />
         </div>
+        {!isEdit && (
+          <div>
+            <Label className="block mb-1.5">Slug</Label>
+            <Input
+              value={slug}
+              onChange={(e) => {
+                setSlug(resourceSlug(e.target.value));
+                setSlugEdited(true);
+              }}
+              placeholder="e.g. github-mcp"
+              className="font-mono"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Stable agent-facing reference.
+            </p>
+          </div>
+        )}
 
         <div>
           <Label className="block mb-1.5">Description</Label>
@@ -385,7 +397,7 @@ function McpServerFormModal({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={saving || (!isEdit && !name.trim()) || !displayName.trim()}
+            disabled={saving || !name.trim()}
             isLoading={saving}
           >
             {isEdit ? "Save" : "Add Server"}
@@ -543,8 +555,8 @@ function McpRegistryModal({
         }
 
         await createMcpServer({
-          name: server.name.replace(/[^a-zA-Z0-9_-]/g, "-"),
-          display_name: server.title || server.name,
+          slug: resourceSlug(server.name),
+          name: server.title || server.name,
           description: server.description || undefined,
           transport,
           command,

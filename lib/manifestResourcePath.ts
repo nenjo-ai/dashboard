@@ -15,7 +15,7 @@ export function packageResourceDisplayPath(resource: ManifestPathResource): stri
 
   // The persisted package path is the canonical runtime selector. Unlike a
   // repository source path, it includes the package source and version, e.g.
-  // `pkg/nenjo_ai/packages/v1_1_0/nenji/capabilities/build`.
+  // `pkg/nenjo_ai/packages/nenji/v1_1_0/capabilities/build`.
   const canonicalPath = cleanPath(resource.path);
   if (canonicalPath?.startsWith("pkg/")) return canonicalPath;
 

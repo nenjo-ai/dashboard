@@ -276,7 +276,7 @@ export function ChatView() {
                   <h2 className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
                     {activeSession.target_type === "council"
                       ? activeSession.council_name ?? activeSession.title
-                      : activeSession.agent_display_name ?? activeSession.agent_name}
+                      : activeSession.agent_name}
                   </h2>
                   <p className="truncate text-xs text-gray-500 dark:text-gray-400">
                     {isNotificationView
@@ -294,7 +294,7 @@ export function ChatView() {
                   <NotificationArea
                     agentId={activeSession.agent_id!}
                     sessionId={activeSession.id}
-                    agentName={activeSession.agent_display_name ?? activeSession.agent_name}
+                    agentName={activeSession.agent_name}
                     variant="desktop"
                   />
                 ) : (

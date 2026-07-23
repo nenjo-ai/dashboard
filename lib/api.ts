@@ -65,6 +65,7 @@ import type {
 } from "./types";
 import { mutate as mutateSWR } from "swr";
 import { readStoredActiveOrgId } from "./activeOrg";
+import { isOrgScopedPlatformApiUrl } from "./apiScope";
 import {
   decryptContentPayload,
   encryptOrgContentPayload,
@@ -78,9 +79,7 @@ import { OFFICIAL_NENJO_PACKAGE_SOURCE } from "./officialNenjoPackageSource";
 
 const API_V1 = "/api/platform";
 const FETCH_TIMEOUT_MS = 15000;
-const RATE_LIMIT_MAX_ATTEMPTS = 3;
-const RATE_LIMIT_FALLBACK_DELAY_MS = 1000;
-const RATE_LIMIT_MAX_DELAY_MS = 10000;
+const AUTH_RETRY_MAX_ATTEMPTS = 3;
 const DOCUMENT_CONTENT_CACHE_TTL_MS = 5 * 60 * 1000;
 const PACKAGE_INSTALL_POLL_INTERVAL_MS = 2000;
 const PACKAGE_INSTALL_POLL_TIMEOUT_MS = 5 * 60 * 1000;
@@ -137,29 +136,6 @@ export class ApiError extends Error {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function retryDelayFromResponse(response: Response, attempt: number): number {
-  const retryAfter = response.headers.get("retry-after")?.trim();
-  if (retryAfter) {
-    const retryAfterSeconds = Number(retryAfter);
-    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
-      return Math.min(retryAfterSeconds * 1000, RATE_LIMIT_MAX_DELAY_MS);
-    }
-
-    const retryAt = Date.parse(retryAfter);
-    if (Number.isFinite(retryAt)) {
-      return Math.min(
-        Math.max(retryAt - Date.now(), 0),
-        RATE_LIMIT_MAX_DELAY_MS,
-      );
-    }
-  }
-
-  return Math.min(
-    RATE_LIMIT_FALLBACK_DELAY_MS * 2 ** Math.max(attempt - 1, 0),
-    RATE_LIMIT_MAX_DELAY_MS,
-  );
 }
 
 /**
@@ -269,17 +245,7 @@ export async function authRequestHeaders(
  */
 async function authFetch(url: string, init?: RequestInit): Promise<Response> {
   const resolvedUrl = resolveApiUrl(url);
-  const isOrgInvitationTokenRoute =
-    /^\/api\/platform\/orgs\/invitations\/[^/]+(?:\/accept)?$/.test(
-      resolvedUrl,
-    );
-  const includeOrgHeader =
-    !resolvedUrl.endsWith("/api/platform/auth/me") &&
-    !resolvedUrl.endsWith("/api/platform/auth/bootstrap-status") &&
-    !resolvedUrl.endsWith("/api/platform/orgs") &&
-    !resolvedUrl.endsWith("/api/platform/orgs/") &&
-    !resolvedUrl.endsWith("/api/platform/orgs/current") &&
-    !isOrgInvitationTokenRoute;
+  const includeOrgHeader = isOrgScopedPlatformApiUrl(resolvedUrl);
   const initHeaders =
     init?.headers instanceof Headers
       ? Object.fromEntries(init.headers.entries())
@@ -287,7 +253,7 @@ async function authFetch(url: string, init?: RequestInit): Promise<Response> {
         ? Object.fromEntries(init.headers)
         : init?.headers;
 
-  for (let attempt = 1; attempt <= RATE_LIMIT_MAX_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= AUTH_RETRY_MAX_ATTEMPTS; attempt += 1) {
     const headers = await authHeadersWithOptions({
       includeOrgHeader,
       skipTokenCache: attempt > 1,
@@ -321,17 +287,12 @@ async function authFetch(url: string, init?: RequestInit): Promise<Response> {
       clearTimeout(timeout);
     }
 
-    if (res.status === 429 && attempt < RATE_LIMIT_MAX_ATTEMPTS) {
-      await sleep(retryDelayFromResponse(res, attempt));
-      continue;
-    }
-
     if (!res.ok) {
       const body = await res.text().catch(() => "Unknown error");
       const invalidToken =
         res.status === 401 &&
         body.includes('"code":"invalid_token"') &&
-        attempt < RATE_LIMIT_MAX_ATTEMPTS;
+        attempt < AUTH_RETRY_MAX_ATTEMPTS;
       if (invalidToken) {
         continue;
       }
@@ -352,7 +313,7 @@ async function authFetch(url: string, init?: RequestInit): Promise<Response> {
     return res;
   }
 
-  throw new ApiError("Rate limit exceeded", 429);
+  throw new ApiError("Authentication failed after retry", 401);
 }
 
 export async function fetcher<T>(url: string): Promise<T> {
@@ -462,7 +423,7 @@ export async function catalogFetcher<T>(url: string): Promise<T> {
 
 export const catalogSWROptions = {
   revalidateOnFocus: true,
-  dedupingInterval: 0,
+  dedupingInterval: 2000,
 };
 
 function invalidateProjectCatalogCache(): void {
@@ -2248,6 +2209,10 @@ export function apiKeysUrl(): string {
   return `${API_V1}/api-keys`;
 }
 
+export function apiKeyCatalogUrl(): string {
+  return `${API_V1}/api-keys/catalog`;
+}
+
 export function apiKeyUrl(id: string): string {
   return `${API_V1}/api-keys/${id}`;
 }
@@ -3334,7 +3299,6 @@ export interface PendingUpdate {
   id: string;
   name: string;
   resource_type: string;
-  display_name: string | null;
 }
 
 export async function applyAllSystemUpdates(): Promise<SystemUpdateResult> {
@@ -3735,9 +3699,9 @@ export async function createDomain(data: CreateDomainRequest): Promise<Domain> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      slug: data.slug,
       name: data.name,
       path: data.path ?? "",
-      display_name: data.display_name,
       description: data.description,
       command: data.command,
       platform_scopes: manifest?.platform_scopes,
@@ -3982,8 +3946,8 @@ export async function fetchMcpServers(): Promise<
 }
 
 export async function createMcpServer(data: {
+  slug: string;
   name: string;
-  display_name: string;
   description?: string;
   transport: "stdio" | "http";
   command?: string;
@@ -4005,7 +3969,7 @@ export async function createMcpServer(data: {
 export async function updateMcpServer(
   id: string,
   data: Partial<{
-    display_name: string;
+    name: string;
     description: string;
     transport: "stdio" | "http";
     command: string;
@@ -4144,6 +4108,7 @@ export async function configureChatCommand(
     method: "POST",
     body: JSON.stringify({
       id,
+      ...(data.slug ? { slug: data.slug } : {}),
       ...(data.name ? { name: data.name } : {}),
       path: data.path ?? "",
       command: data.command,

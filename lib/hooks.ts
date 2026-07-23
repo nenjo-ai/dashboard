@@ -43,6 +43,7 @@ import {
   packageSourcesUrl,
   packageInstallsUrl,
   chatCommandsUrl,
+  apiKeyCatalogUrl,
   apiKeysUrl,
   authMeUrl,
   currentOrgUrl,
@@ -90,6 +91,7 @@ import type {
   ChatCommand,
   PackageSource,
   ApiKey,
+  ApiKeyCatalog,
   RoutineSummary,
   RoutineDetail,
   CouncilDetail,
@@ -906,6 +908,21 @@ export function useApiKeys(userId: string | undefined) {
     isError: !!error,
     error,
     mutate,
+  };
+}
+
+export function useApiKeyCatalog() {
+  const { data, error, isLoading } = useSWR<ApiKeyCatalog>(
+    apiKeyCatalogUrl(),
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60_000 },
+  );
+
+  return {
+    catalog: data,
+    isLoading,
+    isError: !!error,
+    error,
   };
 }
 

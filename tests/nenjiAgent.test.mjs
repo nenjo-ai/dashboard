@@ -12,7 +12,6 @@ function agent(partial) {
     id: partial.id ?? "id",
     slug: partial.slug,
     name: partial.name ?? "Agent",
-    display_name: partial.display_name ?? null,
     description: null,
     created_by: null,
     is_system: false,

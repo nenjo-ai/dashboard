@@ -103,11 +103,11 @@ export function MobileEmptyState({
               <RoleIdenticon roleId={agent.id} color={agent.color} size={32} className="shrink-0" name={agent.name} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                  @{agent.name}
+                  {agent.name}
                 </p>
-                {agent.display_name && agent.display_name !== agent.name && (
+                {agent.slug && (
                   <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                    {agent.display_name}
+                    @{agent.slug}
                   </p>
                 )}
               </div>
@@ -145,7 +145,7 @@ export function MobileEmptyState({
                   {domain.command}
                 </p>
                 <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                  {domain.display_name}
+                  {domain.name}
                 </p>
               </div>
             </MobileTouchButton>

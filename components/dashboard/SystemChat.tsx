@@ -465,7 +465,7 @@ export function SystemChat() {
               session={chat.activeDomainSession}
               domainName={
                 availableDomains.find((m) => m.id === chat.activeDomainSession?.domain_id)
-                  ?.display_name ?? "Domain"
+                  ?.name ?? "Domain"
               }
               domainCommand={
                 availableDomains.find((m) => m.id === chat.activeDomainSession?.domain_id)

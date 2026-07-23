@@ -113,7 +113,7 @@ export function MobileAgentDetail({
           />
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-lg font-semibold text-gray-950 dark:text-gray-50">
-              {agent.display_name || agent.name}
+              {agent.name}
             </h2>
             <p className="mt-0.5 truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
               {agent.name}
@@ -181,7 +181,7 @@ export function MobileAgentDetail({
           {enabledDomains.map((assignment) => (
             <section key={assignment.id} className="rounded-[1.4rem] border border-black/10 bg-transparent p-4 dark:border-white/10">
               <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
-                {assignment.domain?.display_name || assignment.domain?.name || assignment.domain_id}
+                {assignment.domain?.name || assignment.domain_id}
               </h3>
               {assignment.domain?.description && (
                 <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-300">{assignment.domain.description}</p>
@@ -204,7 +204,7 @@ export function MobileAgentDetail({
         <div className="space-y-3">
           {(mcpServers ?? []).map((server) => (
             <section key={server.id} className="rounded-[1.4rem] border border-black/10 bg-transparent p-4 dark:border-white/10">
-              <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">{server.display_name}</h3>
+              <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">{server.name}</h3>
               <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-300">{server.url}</p>
             </section>
           ))}

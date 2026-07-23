@@ -122,7 +122,7 @@ export function DomainSlashCommandDropdown({
           <div className="min-w-0 flex-1">
             <div className="font-medium">{domain.command}</div>
             <div className="truncate text-xs text-gray-500 dark:text-gray-400">
-              {domain.display_name}
+              {domain.name}
               {domain.description && ` — ${domain.description}`}
             </div>
           </div>
