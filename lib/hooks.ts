@@ -47,6 +47,7 @@ import {
   apiKeysUrl,
   authMeUrl,
   currentOrgUrl,
+  orgScopeCatalogUrl,
   workerStatusUrl,
   routinesUrl,
   routineUrl,
@@ -104,6 +105,7 @@ import type {
   PromptContextVariableGroup,
   OrganizationSummary,
   CurrentOrg,
+  OrgScopeCatalog,
   OrgMember,
   OrgInvitation,
   QuotaStatus,
@@ -789,6 +791,21 @@ export function useCurrentOrg() {
     isError: !!error,
     error,
     mutate,
+  };
+}
+
+export function useOrgScopeCatalog() {
+  const { data, error, isLoading } = useSWR<OrgScopeCatalog>(
+    orgScopeCatalogUrl(),
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60000 },
+  );
+
+  return {
+    scopeCatalog: data,
+    isLoading,
+    isError: !!error,
+    error,
   };
 }
 
