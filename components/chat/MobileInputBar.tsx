@@ -578,7 +578,7 @@ export function MobileInputBar({
               <RoleIdenticon roleId={agent.id} color={agent.color} size={28} className="shrink-0" name={agent.name} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                  {agent.display_name || agent.name}
+                  {agent.name}
                 </p>
                 <p className="truncate text-xs text-gray-500 dark:text-gray-400">
                   @{agent.name}
@@ -617,7 +617,7 @@ export function MobileInputBar({
                   {domain.command}
                 </p>
                 <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                  {domain.display_name}
+                  {domain.name}
                 </p>
               </div>
             </MobileTouchButton>

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Label } from "@/components/ui/Label";
 import { createDomain, updateDomain } from "@/lib/api";
+import { resourceSlug } from "@/lib/resourceSlug";
 import type { Domain, DomainManifest } from "@/lib/types";
 
 interface DomainFormModalProps {
@@ -25,8 +26,8 @@ const DEFAULT_MANIFEST: DomainManifest = {
 export function DomainFormModal({ open, onClose, onSaved, domain }: DomainFormModalProps) {
   const isEditing = !!domain;
 
+  const [slug, setSlug] = useState("");
   const [name, setName] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [command, setCommand] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -36,13 +37,13 @@ export function DomainFormModal({ open, onClose, onSaved, domain }: DomainFormMo
   useEffect(() => {
     if (open) {
       if (domain) {
+        setSlug(domain.slug);
         setName(domain.name);
-        setDisplayName(domain.display_name);
         setCommand(domain.command);
         setDescription(domain.description ?? "");
       } else {
+        setSlug("");
         setName("");
-        setDisplayName("");
         setCommand("");
         setDescription("");
       }
@@ -50,17 +51,14 @@ export function DomainFormModal({ open, onClose, onSaved, domain }: DomainFormMo
     }
   }, [open, domain]);
 
-  // Auto-generate name and command from display_name when creating
-  const handleDisplayNameChange = useCallback(
+  // Auto-generate the stable slug and command from the human-readable name.
+  const handleNameChange = useCallback(
     (value: string) => {
-      setDisplayName(value);
+      setName(value);
       if (!isEditing) {
-        const slug = value
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "_")
-          .replace(/^_|_$/g, "");
-        setName(slug);
-        setCommand("/" + slug);
+        const nextSlug = resourceSlug(value);
+        setSlug(nextSlug);
+        setCommand("#" + nextSlug);
       }
     },
     [isEditing],
@@ -70,8 +68,8 @@ export function DomainFormModal({ open, onClose, onSaved, domain }: DomainFormMo
     e.preventDefault();
     setError(null);
 
-    if (!displayName.trim() || !command.trim()) {
-      setError("Display name and command are required.");
+    if (!slug.trim() || !name.trim() || !command.trim()) {
+      setError("Name, slug, and command are required.");
       return;
     }
 
@@ -85,14 +83,13 @@ export function DomainFormModal({ open, onClose, onSaved, domain }: DomainFormMo
       if (isEditing) {
         await updateDomain(domain.id, {
           name: name.trim(),
-          display_name: displayName.trim(),
           description: description.trim() || undefined,
           command: command.trim(),
         });
       } else {
         await createDomain({
+          slug: slug.trim(),
           name: name.trim(),
-          display_name: displayName.trim(),
           description: description.trim() || undefined,
           command: command.trim(),
           manifest: DEFAULT_MANIFEST,
@@ -124,12 +121,12 @@ export function DomainFormModal({ open, onClose, onSaved, domain }: DomainFormMo
         <div className="grid grid-cols-2 gap-4">
           <div>
             <Label className="mb-1.5 block" required>
-              Display Name
+              Name
             </Label>
             <Input
               type="text"
-              value={displayName}
-              onChange={(e) => handleDisplayNameChange(e.target.value)}
+              value={name}
+              onChange={(e) => handleNameChange(e.target.value)}
               placeholder="e.g. PRD Authoring"
             />
           </div>
@@ -150,19 +147,23 @@ export function DomainFormModal({ open, onClose, onSaved, domain }: DomainFormMo
           </div>
         </div>
 
-        {/* Name */}
+        {/* Slug */}
         <div>
           <div>
             <Label className="mb-1.5 block">
-              Name (identifier)
+              Slug
             </Label>
             <Input
               type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="prd_authoring"
+              value={slug}
+              onChange={(e) => setSlug(resourceSlug(e.target.value))}
+              placeholder="prd-authoring"
               className="font-mono"
+              disabled={isEditing}
             />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Stable agent-facing reference; it cannot be changed after creation.
+            </p>
           </div>
         </div>
 

@@ -165,7 +165,7 @@ export function DomainPromptEditor({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="truncate text-base font-semibold text-gray-900 dark:text-gray-100">
-                  {domain.display_name}
+                  {domain.name}
                 </h2>
                 <span className="theme-surface-muted theme-text-muted shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-xs">
                   {domain.command}

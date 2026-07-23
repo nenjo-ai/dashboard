@@ -4,6 +4,38 @@ type ActiveOrgListener = () => void;
 
 const listeners = new Set<ActiveOrgListener>();
 
+export interface ActiveOrgSelection {
+  storedOrgId: string | null;
+  availableOrgIds: string[];
+  currentUserOrgId?: string | null;
+  currentOrgId?: string | null;
+}
+
+/** Resolve a stored selection against the organizations the user can access. */
+export function resolveActiveOrgId({
+  storedOrgId,
+  availableOrgIds,
+  currentUserOrgId,
+  currentOrgId,
+}: ActiveOrgSelection): string | null {
+  if (storedOrgId && availableOrgIds.includes(storedOrgId)) {
+    return storedOrgId;
+  }
+
+  if (availableOrgIds.length > 0) {
+    return (
+      [currentUserOrgId, currentOrgId].find(
+        (candidate): candidate is string =>
+          Boolean(candidate && availableOrgIds.includes(candidate)),
+      ) ??
+      availableOrgIds[0] ??
+      null
+    );
+  }
+
+  return currentUserOrgId?.trim() || currentOrgId?.trim() || null;
+}
+
 function emitStoredActiveOrgIdChange(): void {
   listeners.forEach((listener) => listener());
 }

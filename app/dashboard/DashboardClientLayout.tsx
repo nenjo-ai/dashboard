@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
+import { SWRConfig } from "swr";
 import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
 import { LocalVaultUnlockGate } from "@/components/auth/LocalVaultUnlockGate";
 import { MobileTabBar } from "@/components/layout/MobileTabBar";
@@ -13,11 +14,15 @@ import { cn } from "@/lib/cn";
 import { bindLocalSecretVaultSession, loadStoredAccountContentKey } from "@/lib/cryptoContent";
 import { MobileMenuProvider } from "@/lib/MobileMenuContext";
 import { OrgProvider } from "@/lib/org-context";
+import { shouldRetryDashboardRequest } from "@/lib/apiRetryPolicy";
 import { useSafeRouter } from "@/lib/safeRouter";
 
 /** Routes under /dashboard that should NOT show the sidebar chrome. */
 const CHROMELESS_ROUTES = ["/dashboard/login", "/dashboard/signup", "/dashboard/onboarding", "/dashboard/invitations"];
 const CLERK_ENABLED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+const DASHBOARD_SWR_CONFIG = {
+  shouldRetryOnError: shouldRetryDashboardRequest,
+};
 
 export function DashboardClientLayout({
   children,
@@ -33,7 +38,13 @@ export function DashboardClientLayout({
     return <ClerkConfigurationNotice />;
   }
 
-  return <DashboardLayoutWithClerk pathname={pathname}>{children}</DashboardLayoutWithClerk>;
+  return (
+    <SWRConfig value={DASHBOARD_SWR_CONFIG}>
+      <DashboardLayoutWithClerk pathname={pathname}>
+        {children}
+      </DashboardLayoutWithClerk>
+    </SWRConfig>
+  );
 }
 
 function DashboardLayoutWithClerk({

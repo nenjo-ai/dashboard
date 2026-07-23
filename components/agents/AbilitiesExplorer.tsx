@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Label } from "@/components/ui/Label";
 import { manifestResourceDisplayPath } from "@/lib/manifestResourcePath";
+import { resourceSlug } from "@/lib/resourceSlug";
 import type { Ability } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -1230,6 +1231,8 @@ function CreateAbilityModal({
   folders: string[];
 }) {
   const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [slugEdited, setSlugEdited] = useState(false);
   const [path, setPath] = useState("");
   const [description, setDescription] = useState("");
   const [activationCondition, setActivationCondition] = useState("");
@@ -1237,20 +1240,19 @@ function CreateAbilityModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const slug = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "");
-    if (!slug) return;
+    if (!name.trim() || !slug) return;
     setSaving(true);
     try {
       await createAbility({
-        name: slug,
+        slug,
+        name: name.trim(),
         path: path || undefined,
         description: description.trim() || undefined,
         activation_condition: activationCondition.trim() || undefined,
       });
       setName("");
+      setSlug("");
+      setSlugEdited(false);
       setPath("");
       setDescription("");
       setActivationCondition("");
@@ -1274,20 +1276,30 @@ function CreateAbilityModal({
           <Input
             id="ab-name"
             value={name}
-            onChange={(e) =>
-              setName(
-                e.target.value
-                  .toLowerCase()
-                  .replace(/[^a-z0-9]+/g, "_")
-                  .replace(/^_+|_+$/g, ""),
-              )
-            }
-            placeholder="code_review"
+            onChange={(e) => {
+              const nextName = e.target.value;
+              setName(nextName);
+              if (!slugEdited) setSlug(resourceSlug(nextName));
+            }}
+            placeholder="Code Review"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="ab-slug">Slug</Label>
+          <Input
+            id="ab-slug"
+            value={slug}
+            onChange={(e) => {
+              setSlug(resourceSlug(e.target.value));
+              setSlugEdited(true);
+            }}
+            placeholder="code-review"
             required
             className="font-mono"
           />
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Stable ability slug.
+            Stable agent-facing reference.
           </p>
         </div>
         <div>
@@ -1334,7 +1346,7 @@ function CreateAbilityModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={saving || !name.trim()}>
+          <Button type="submit" disabled={saving || !name.trim() || !slug}>
             {saving ? "Creating..." : "Create Ability"}
           </Button>
         </div>

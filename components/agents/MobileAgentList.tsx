@@ -50,7 +50,7 @@ function MobileAgentRow({ agent }: { agent: AgentDefinition }) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="truncate text-base font-semibold text-gray-950 dark:text-gray-50">
-                {agent.display_name || agent.name}
+                {agent.name}
               </h2>
               <p className="mt-0.5 truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
                 {agent.name}

@@ -450,7 +450,7 @@ function DomainRow({
 
       <div className="min-w-0 flex-1">
         <span className="theme-text block truncate text-xs font-medium">
-          {domain.display_name || domain.name}
+          {domain.name}
         </span>
         {domain.category && (
           <span className="theme-text-muted line-clamp-1 block text-[10px]">

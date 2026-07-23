@@ -83,19 +83,16 @@ function parseSemverLike(version: string | null): number[] {
  * - stable scoped slug `nenjo_ai-nenji` (and other scopes ending in `-nenji`)
  * - legacy bare `nenji`
  * - transitional versioned `nenji-v1_1_0`
- * - package metadata / display name
+ * - package metadata / human-readable name
  */
 export function isNenjiAgent(
-  agent: Pick<AgentDefinition, "slug" | "name" | "display_name" | "metadata" | "source_type">,
+  agent: Pick<AgentDefinition, "slug" | "name" | "metadata" | "source_type">,
 ): boolean {
   const slug = agent.slug?.trim().toLowerCase() ?? "";
   if (slug && NENJI_SLUG_RE.test(slug)) return true;
 
   const name = agent.name?.trim().toLowerCase() ?? "";
   if (name === NENJI_LOGICAL_SLUG) return true;
-
-  const display = agent.display_name?.trim().toLowerCase() ?? "";
-  if (display === NENJI_LOGICAL_SLUG) return true;
 
   const packageName = packageNameFromMetadata(agent.metadata)?.toLowerCase() ?? "";
   if (

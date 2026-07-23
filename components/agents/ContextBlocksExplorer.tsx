@@ -31,6 +31,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Label } from "@/components/ui/Label";
 import JSZip from "jszip";
 import { isContextBlockLocked, type ContextBlock } from "@/lib/types";
+import { resourceSlug } from "@/lib/resourceSlug";
 
 // ---------------------------------------------------------------------------
 // Tree structure types
@@ -1026,6 +1027,8 @@ function CreateContextBlockModal({
   folders: string[];
 }) {
   const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [slugEdited, setSlugEdited] = useState(false);
   const [path, setPath] = useState("");
 
   const [description, setDescription] = useState("");
@@ -1033,16 +1036,19 @@ function CreateContextBlockModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || !slug) return;
     setSaving(true);
     try {
       await createContextBlock({
+        slug,
         name: name.trim(),
         path: path || undefined,
         description: description.trim() || undefined,
         template: "",
       });
       setName("");
+      setSlug("");
+      setSlugEdited(false);
       setPath("");
       setDescription("");
       onSaved();
@@ -1064,11 +1070,31 @@ function CreateContextBlockModal({
           <Input
             id="cb-name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="coding_standards"
+            onChange={(e) => {
+              const nextName = e.target.value;
+              setName(nextName);
+              if (!slugEdited) setSlug(resourceSlug(nextName));
+            }}
+            placeholder="Coding Standards"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="cb-slug">Slug</Label>
+          <Input
+            id="cb-slug"
+            value={slug}
+            onChange={(e) => {
+              setSlug(resourceSlug(e.target.value));
+              setSlugEdited(true);
+            }}
+            placeholder="coding-standards"
             required
             className="font-mono"
           />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Stable agent-facing reference.
+          </p>
         </div>
         <div>
           <Label htmlFor="cb-path">Folder</Label>
@@ -1087,7 +1113,7 @@ function CreateContextBlockModal({
           </select>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Reference: <code className="font-mono text-teal-600 dark:text-teal-400">
-              {"{{ " + pathToDotted(path, name || "name") + " }}"}
+              {"{{ " + (slug || "resource-slug") + " }}"}
             </code>
           </p>
         </div>
@@ -1107,7 +1133,7 @@ function CreateContextBlockModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={saving || !name.trim()}>
+          <Button type="submit" disabled={saving || !name.trim() || !slug}>
             {saving ? "Creating..." : "Create Block"}
           </Button>
         </div>

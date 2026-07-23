@@ -71,7 +71,7 @@ export function MobileNewChatSheet({
             <option value="">Select an agent...</option>
             {availableAgents.map((agent) => (
               <option key={agent.id} value={agent.id}>
-                {agent.display_name || agent.name}
+                {agent.name}
               </option>
             ))}
           </select>

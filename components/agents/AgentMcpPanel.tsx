@@ -99,7 +99,7 @@ export function AgentMcpPanel({ agentId }: AgentMcpPanelProps) {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {server.display_name}
+                    {server.name}
                   </span>
                   <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium ${
                     server.transport === "stdio"

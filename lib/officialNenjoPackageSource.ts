@@ -7,7 +7,7 @@ export const OFFICIAL_NENJO_PACKAGE_SOURCE = {
     source: {
       kind: "git",
       url: "https://github.com/nenjo-ai/packages.git",
-      reference: "feat/improved-tasks",
+      reference: "main",
       manifest_path: "packages.yaml",
     },
   },

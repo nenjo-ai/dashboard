@@ -115,7 +115,7 @@ export function TokenUsagePanel() {
             <option value="">All agents</option>
             {agents?.map((agent) => (
               <option key={agent.id} value={agent.id}>
-                {agent.display_name || agent.name}
+                {agent.name}
               </option>
             ))}
           </Select>

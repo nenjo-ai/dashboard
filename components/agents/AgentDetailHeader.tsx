@@ -19,11 +19,11 @@ export function AgentDetailHeader({ agent, models }: AgentDetailHeaderProps) {
         {/* Name row */}
         <div className="flex items-center gap-2.5">
           <h1 className="theme-text text-xl font-semibold">
-            {agent.display_name || agent.name}
+            {agent.name}
           </h1>
-          {agent.display_name && (
+          {agent.slug && (
             <span className="theme-text-muted font-mono text-sm">
-              {agent.name}
+              {agent.slug}
             </span>
           )}
           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${

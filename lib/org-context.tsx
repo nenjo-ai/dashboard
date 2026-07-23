@@ -12,14 +12,14 @@ import { useSWRConfig } from "swr";
 import { setActiveOrgIdGetter } from "@/lib/api";
 import {
   readStoredActiveOrgId,
+  resolveActiveOrgId,
   subscribeStoredActiveOrgId,
   writeStoredActiveOrgId,
 } from "@/lib/activeOrg";
+import { isOrgScopedPlatformApiUrl } from "@/lib/apiScope";
 import { useCurrentOrg, useCurrentUser, useOrganizations } from "@/lib/hooks";
 import { firstNonEmptyScopes, hasOrgScope } from "@/lib/orgScopes.mjs";
 import type { OrganizationSummary } from "@/lib/types";
-
-const PLATFORM_API_PREFIX = "/api/platform";
 
 interface OrgContextValue {
   activeOrgId: string | null;
@@ -38,21 +38,34 @@ const OrgContext = createContext<OrgContextValue | null>(null);
 export function OrgProvider({ children }: { children: React.ReactNode }) {
   const { mutate } = useSWRConfig();
   const { currentUser, isLoading: userLoading } = useCurrentUser();
-  const { organizations, isLoading: orgsLoading } = useOrganizations();
+  const {
+    organizations,
+    isLoading: orgsLoading,
+    isError: orgsError,
+  } = useOrganizations();
   const { currentOrg, isLoading: currentOrgLoading } = useCurrentOrg();
   const activeOrgId = useSyncExternalStore(
     subscribeStoredActiveOrgId,
     readStoredActiveOrgId,
     () => null,
   );
+  const orgList = organizations ?? [];
+  const reconciledOrgId = resolveActiveOrgId({
+    storedOrgId: activeOrgId,
+    availableOrgIds: orgList.map((org) => org.id),
+    currentUserOrgId: currentUser?.org_id,
+    currentOrgId: currentOrg?.org_id,
+  });
+  const orgSelectionPending =
+    !orgsLoading && !orgsError && reconciledOrgId !== activeOrgId;
 
   useEffect(() => {
     setActiveOrgIdGetter(readStoredActiveOrgId);
     return () => setActiveOrgIdGetter(null);
   }, []);
 
-  const persistActiveOrgId = useCallback((orgId: string) => {
-    const normalizedOrgId = orgId.trim() || null;
+  const persistActiveOrgId = useCallback((orgId: string | null) => {
+    const normalizedOrgId = orgId?.trim() || null;
     writeStoredActiveOrgId(normalizedOrgId);
   }, []);
 
@@ -60,7 +73,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
     startTransition(() => {
       void mutate(
         (key) =>
-          typeof key === "string" && key.startsWith(PLATFORM_API_PREFIX),
+          typeof key === "string" && isOrgScopedPlatformApiUrl(key),
         undefined,
         { revalidate: true },
       );
@@ -68,38 +81,20 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
   }, [mutate]);
 
   useEffect(() => {
-    if (orgsLoading) return;
+    if (orgsLoading || orgsError) return;
 
-    const availableOrgs = organizations ?? [];
-    const isKnownSelection = !!activeOrgId && availableOrgs.some((org) => org.id === activeOrgId);
-    if (isKnownSelection) {
+    if (reconciledOrgId === activeOrgId) {
       return;
     }
 
-    if (activeOrgId) {
-      revalidateOrgScopedState();
-      return;
-    }
-
-    const fallbackOrgId =
-      currentUser?.org_id ??
-      currentOrg?.org_id ??
-      availableOrgs[0]?.id ??
-      null;
-
-    if (!fallbackOrgId) {
-      return;
-    }
-
-    persistActiveOrgId(fallbackOrgId);
+    persistActiveOrgId(reconciledOrgId);
     revalidateOrgScopedState();
   }, [
     activeOrgId,
-    currentOrg?.org_id,
-    currentUser?.org_id,
-    organizations,
+    orgsError,
     orgsLoading,
     persistActiveOrgId,
+    reconciledOrgId,
     revalidateOrgScopedState,
   ]);
 
@@ -111,7 +106,6 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
     revalidateOrgScopedState();
   }, [activeOrgId, persistActiveOrgId, revalidateOrgScopedState]);
 
-  const orgList = organizations ?? [];
   const resolvedActiveOrgId = activeOrgId ?? currentUser?.org_id ?? currentOrg?.org_id ?? null;
   const activeOrganization =
     orgList.find((org) => org.id === resolvedActiveOrgId) ?? null;
@@ -151,7 +145,9 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
         hasScope: (scope) => hasOrgScope(currentScopes, scope),
       }}
     >
-      {children}
+      {userLoading || orgsLoading || currentOrgLoading || orgSelectionPending
+        ? null
+        : children}
     </OrgContext.Provider>
   );
 }

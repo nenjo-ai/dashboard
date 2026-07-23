@@ -222,7 +222,7 @@ export function AgentDetailClient({ agentRef }: { agentRef: string }) {
     <>
       {isMobileViewport ? (
       <MobilePageShell
-        title={agent.display_name || agent.name}
+        title={agent.name}
         backHref="/dashboard/agents"
         backLabel="Agents"
       >
@@ -243,7 +243,7 @@ export function AgentDetailClient({ agentRef }: { agentRef: string }) {
           <Breadcrumbs
             items={[
               { label: "Agents", href: "/dashboard/agents" },
-              { label: agent.display_name || agent.name },
+              { label: agent.name },
             ]}
           />
 

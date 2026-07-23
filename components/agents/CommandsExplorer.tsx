@@ -16,6 +16,7 @@ import {
   type SourceManagedDetailSection,
 } from "@/components/resources/SourceManagedResourcePanel";
 import { manifestResourceDisplayPath } from "@/lib/manifestResourcePath";
+import { resourceSlug } from "@/lib/resourceSlug";
 import { TreeResourcePromptEditor } from "./TreeResourcePromptEditor";
 
 interface FolderNode {
@@ -416,6 +417,10 @@ function CommandMetadataModal({
 }) {
   const [path, setPath] = useState("");
   const [slashCommand, setSlashCommand] = useState("/");
+  const [slug, setSlug] = useState("");
+  const [slugEdited, setSlugEdited] = useState(false);
+  const [name, setName] = useState("");
+  const [nameEdited, setNameEdited] = useState(false);
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -425,9 +430,21 @@ function CommandMetadataModal({
     if (!open) return;
     setPath(cleanPath(command?.path));
     setSlashCommand(command?.command ?? "/");
+    setSlug(command?.slug ?? "");
+    setSlugEdited(Boolean(command?.id));
+    setName(command?.name ?? "");
+    setNameEdited(Boolean(command?.id));
     setDescription(command?.description ?? "");
     setError(null);
-  }, [command?.command, command?.description, command?.id, command?.path, open]);
+  }, [
+    command?.command,
+    command?.description,
+    command?.id,
+    command?.name,
+    command?.path,
+    command?.slug,
+    open,
+  ]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -436,12 +453,24 @@ function CommandMetadataModal({
       setError("Slash command is required.");
       return;
     }
+    const normalizedSlug = resourceSlug(slug || normalizedCommand.slice(1));
+    if (!normalizedSlug) {
+      setError("Stable slug is required.");
+      return;
+    }
+    const normalizedName = name.trim();
+    if (!normalizedName) {
+      setError("Name is required.");
+      return;
+    }
 
     setSaving(true);
     setError(null);
     try {
       const saved = await configureChatCommand({
         id: command?.id,
+        slug: isEditing ? undefined : normalizedSlug,
+        name: normalizedName,
         path: cleanPath(path),
         command: normalizedCommand,
         description: description.trim(),
@@ -465,6 +494,41 @@ function CommandMetadataModal({
           </div>
         ) : null}
         <div>
+          <Label htmlFor="cmd-name" required>
+            Name
+          </Label>
+          <Input
+            id="cmd-name"
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+              setNameEdited(true);
+            }}
+            placeholder="Summarize"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="cmd-slug" required>
+            Stable slug
+          </Label>
+          <Input
+            id="cmd-slug"
+            value={slug}
+            onChange={(event) => {
+              setSlug(resourceSlug(event.target.value));
+              setSlugEdited(true);
+            }}
+            placeholder="summarize"
+            required
+            disabled={isEditing}
+            className="font-mono"
+          />
+          <p className="theme-text-muted mt-1 text-xs">
+            Permanent resource reference; it does not change when the command label changes.
+          </p>
+        </div>
+        <div>
           <Label htmlFor="cmd-path">Path</Label>
           <Input
             id="cmd-path"
@@ -487,7 +551,12 @@ function CommandMetadataModal({
           <Input
             id="cmd-slash"
             value={slashCommand}
-            onChange={(event) => setSlashCommand(event.target.value)}
+            onChange={(event) => {
+              const next = event.target.value;
+              setSlashCommand(next);
+              if (!slugEdited && !isEditing) setSlug(resourceSlug(next.replace(/^\//, "")));
+              if (!nameEdited && !isEditing) setName(next.replace(/^\//, ""));
+            }}
             onBlur={() => setSlashCommand((value) => normalizeSlashCommand(value))}
             placeholder="/summarize"
             required

@@ -490,6 +490,7 @@ export interface ChatStreamRequest {
 
 export interface ChatCommand {
   id: string;
+  slug: string;
   name: string;
   path: string;
   command: string;
@@ -510,6 +511,7 @@ export interface ChatCommand {
 
 export interface ConfigureChatCommandRequest {
   id?: string;
+  slug?: string;
   name?: string;
   path?: string;
   command: string;
@@ -900,7 +902,6 @@ export interface ChatSession {
 export interface ChatSessionExtended extends ChatSession {
   project_name: string;
   agent_name: string;
-  agent_display_name: string | null;
   council_name: string | null;
   council_description: string | null;
 }
@@ -908,7 +909,6 @@ export interface ChatSessionExtended extends ChatSession {
 export interface UnreadCountEntry {
   agent_id: string;
   agent_name: string;
-  agent_display_name: string | null;
   session_id: string;
   unread_count: number;
 }
@@ -1183,6 +1183,7 @@ export const MODEL_PROVIDERS: {
 
 export interface Model {
   id: string;
+  slug: string;
   name: string;
   description: string | null;
   model: string;
@@ -1206,6 +1207,7 @@ export interface Model {
 }
 
 export interface CreateModelRequest {
+  slug: string;
   name: string;
   description?: string;
   model: string;
@@ -1713,48 +1715,11 @@ export interface ApiKey {
   revoked_at: string | null;
 }
 
-/** All valid worker capabilities. */
-export const WORKER_CAPABILITIES = [
-  "chat",
-  "task",
-  "cron",
-  "manifest",
-  "repo",
-] as const;
-/** Capabilities that can only be held by one key per user. */
-export const EXCLUSIVE_CAPABILITIES = ["chat", "cron"] as const;
-
-// ---------------------------------------------------------------------------
-// MCP Scopes
-// ---------------------------------------------------------------------------
-
-export const MCP_RESOURCE_SCOPES = [
-  "agents:read",
-  "agents:write",
-  "abilities:read",
-  "abilities:write",
-  "domains:read",
-  "domains:write",
-  "projects:read",
-  "projects:write",
-  "library:write",
-  "routines:read",
-  "routines:write",
-  "councils:read",
-  "councils:write",
-  "context_blocks:read",
-  "context_blocks:write",
-  "commands:read",
-  "commands:write",
-  "mcp_servers:read",
-  "mcp_servers:write",
-  "notify:read",
-  "notify:write",
-  "models:read",
-  "models:write",
-] as const;
-
-export type McpScope = (typeof MCP_RESOURCE_SCOPES)[number];
+export interface ApiKeyCatalog {
+  scopes: string[];
+  capabilities: string[];
+  exclusive_capabilities: string[];
+}
 
 // ---------------------------------------------------------------------------
 // MCP Servers
@@ -1762,8 +1727,8 @@ export type McpScope = (typeof MCP_RESOURCE_SCOPES)[number];
 
 export interface McpServer {
   id: string;
+  slug: string;
   name: string;
-  display_name: string;
   description: string | null;
   transport: "stdio" | "http";
   command: string | null;
@@ -1821,6 +1786,7 @@ export function isContextBlockLocked(block: Pick<ContextBlock, "read_only" | "so
 }
 
 export interface CreateContextBlockRequest {
+  slug: string;
   name: string;
   path?: string;
   description?: string;
@@ -1838,6 +1804,7 @@ export interface UpdateContextBlockRequest {
 
 export interface Ability {
   id: string;
+  slug: string;
   name: string;
   path: string;
   description: string | null;
@@ -1858,6 +1825,7 @@ export interface Ability {
 }
 
 export interface CreateAbilityRequest {
+  slug: string;
   name: string;
   path?: string;
   description?: string;
@@ -2304,7 +2272,6 @@ export interface AgentDefinition {
   id: string;
   slug?: string;
   name: string;
-  display_name: string | null;
   description: string | null;
   created_by: string | null;
   is_system: boolean;
@@ -2338,7 +2305,6 @@ export interface PromptConfigResponse {
 
 export interface CreateAgentRequest {
   name: string;
-  display_name?: string;
   description?: string;
   color?: string;
   model_id?: string;
@@ -2347,7 +2313,6 @@ export interface CreateAgentRequest {
 
 export interface UpdateAgentRequest {
   name?: string;
-  display_name?: string;
   description?: string;
   color?: string;
   model_id?: string | null;
@@ -2416,7 +2381,6 @@ export interface PreviewPromptResponse {
 export interface PreviewDomain {
   id: string;
   name: string;
-  display_name: string;
   command: string;
   rendered_addon: string;
 }
@@ -2424,7 +2388,6 @@ export interface PreviewDomain {
 export interface PreviewAbility {
   id: string;
   name: string;
-  display_name: string;
   rendered_prompt: string;
 }
 
@@ -2446,6 +2409,7 @@ export interface AgentSummary {
 
 export interface Council {
   id: string;
+  slug: string;
   name: string;
   description: string | null;
   leader_agent_id: string;
@@ -2472,6 +2436,7 @@ export interface CouncilDetail extends Council {
 }
 
 export interface CreateCouncilRequest {
+  slug: string;
   name: string;
   description?: string;
   leader_agent: string;
@@ -2503,9 +2468,9 @@ export interface AddCouncilMemberRequest {
 
 export interface Domain {
   id: string;
+  slug: string;
   name: string;
   path: string;
-  display_name: string;
   description: string | null;
   command: string;
   manifest?: DomainManifest;
@@ -2563,9 +2528,9 @@ export interface DomainSession {
 }
 
 export interface CreateDomainRequest {
+  slug: string;
   name: string;
   path?: string;
-  display_name: string;
   description?: string;
   command: string;
   manifest?: DomainManifest;
@@ -2575,7 +2540,6 @@ export interface CreateDomainRequest {
 
 export interface UpdateDomainRequest {
   name?: string;
-  display_name?: string;
   description?: string;
   command?: string;
   category?: string;

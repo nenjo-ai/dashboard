@@ -25,7 +25,7 @@ function displayProjectName(name: string): string {
 
 function displayAgentName(session: ChatSessionExtended): string {
   if (session.target_type === "council") return session.council_name ?? session.title;
-  return session.agent_display_name ?? session.agent_name;
+  return session.agent_name;
 }
 
 function timeAgo(dateStr: string): string {

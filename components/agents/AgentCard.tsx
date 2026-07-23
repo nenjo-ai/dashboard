@@ -32,7 +32,6 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
   const [editing, setEditing] = useState(false);
   const router = useRouter();
   const [editName, setEditName] = useState(agent.name);
-  const [editDisplayName, setEditDisplayName] = useState(agent.display_name ?? "");
   const [editDescription, setEditDescription] = useState(agent.description ?? "");
   const [saving, setSaving] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -58,7 +57,6 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
   // Reset edit form when agent changes
   useEffect(() => {
     setEditName(agent.name);
-    setEditDisplayName(agent.display_name ?? "");
     setEditDescription(agent.description ?? "");
   }, [agent]);
 
@@ -81,7 +79,6 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
     try {
       await updateAgent(agent.id, {
         name: editName.trim(),
-        display_name: editDisplayName.trim() || undefined,
         description: editDescription.trim() || undefined,
       });
       setEditing(false);
@@ -96,7 +93,6 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
   const handleCancelEdit = () => {
     setEditing(false);
     setEditName(agent.name);
-    setEditDisplayName(agent.display_name ?? "");
     setEditDescription(agent.description ?? "");
   };
 
@@ -118,23 +114,13 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
             /* Edit mode */
             <div className="flex-1 space-y-2">
               <div>
-                <label className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">Display Name</label>
-                <input
-                  type="text"
-                  value={editDisplayName}
-                  onChange={(e) => setEditDisplayName(e.target.value)}
-                  placeholder="e.g., Lead Developer"
-                  className="theme-border theme-surface w-full rounded-md border px-2.5 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:text-gray-100 dark:placeholder-gray-500"
-                />
-              </div>
-              <div>
-                <label className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">Role (identifier)</label>
+                <label className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">Name</label>
                 <input
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  placeholder="e.g., lead_developer"
-                  className="theme-border theme-surface w-full rounded-md border px-2.5 py-1 font-mono text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:text-gray-100 dark:placeholder-gray-500"
+                  placeholder="e.g., Lead Developer"
+                  className="theme-border theme-surface w-full rounded-md border px-2.5 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:text-gray-100 dark:placeholder-gray-500"
                 />
               </div>
               <div>
@@ -166,14 +152,12 @@ export function AgentCard({ agent, onDelete, isDeleting, onRefresh }: AgentCardP
           ) : (
             /* Display mode */
             <div className="flex-1">
-              {agent.display_name && (
-                <h3 className="font-semibold text-gray-900 dark:text-gray-100">
-                  {agent.display_name}
-                </h3>
-              )}
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+                {agent.name}
+              </h3>
               <div className="flex items-center gap-2">
-                <span className={`font-mono text-xs ${agent.display_name ? "text-gray-400 dark:text-gray-500" : "font-semibold text-gray-900 dark:text-gray-100"}`}>
-                  {agent.name}
+                <span className="font-mono text-xs text-gray-400 dark:text-gray-500">
+                  {agent.slug}
                 </span>
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs font-medium ${

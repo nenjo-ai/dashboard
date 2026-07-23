@@ -117,7 +117,7 @@ export function AgentDomainsPanel({ agentId }: AgentDomainsPanelProps) {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {domain.display_name}
+                    {domain.name}
                   </span>
                   <span className="rounded-sm bg-purple-100 px-1.5 py-0.5 text-xs font-mono text-purple-600 dark:bg-purple-900/40 dark:text-purple-300">
                     {domain.command}

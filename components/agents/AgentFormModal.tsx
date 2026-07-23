@@ -10,6 +10,7 @@ import type {
 } from "@/lib/types";
 import { MODEL_PROVIDERS, NATIVE_MODEL_TOOL_LABELS } from "@/lib/types";
 import { createModel, updateModel } from "@/lib/api";
+import { resourceSlug } from "@/lib/resourceSlug";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -195,6 +196,7 @@ export function AgentFormModal({
           await updateModel(agent.id, data);
         } else {
           const data: CreateModelRequest = {
+            slug: resourceSlug(modelName),
             name: modelName,
             description: form.description.trim() || undefined,
             model: modelName,

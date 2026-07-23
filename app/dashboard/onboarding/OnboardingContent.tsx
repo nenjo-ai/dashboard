@@ -7,6 +7,7 @@ import { useUser } from "@clerk/nextjs";
 import useSWR from "swr";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { MODEL_PROVIDERS } from "@/lib/types";
+import { resourceSlug } from "@/lib/resourceSlug";
 import type {
   ModelProvider,
   Model,
@@ -631,6 +632,7 @@ function StepCreateAgent({
       }
 
       const agent = await createModel({
+        slug: resourceSlug(name),
         name,
         model,
         model_provider: provider,

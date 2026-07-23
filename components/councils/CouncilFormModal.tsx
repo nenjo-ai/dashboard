@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Label } from "@/components/ui/Label";
+import { resourceSlug } from "@/lib/resourceSlug";
 
 
 // ---------------------------------------------------------------------------
@@ -31,6 +32,7 @@ interface MemberRowData {
 }
 
 interface FormState {
+  slug: string;
   name: string;
   description: string;
   delegation_strategy: DelegationStrategy;
@@ -39,6 +41,7 @@ interface FormState {
 }
 
 interface FormErrors {
+  slug?: string;
   name?: string;
   leader_agent_id?: string;
   members?: string;
@@ -50,6 +53,7 @@ interface FormErrors {
 // ---------------------------------------------------------------------------
 
 const INITIAL: FormState = {
+  slug: "",
   name: "",
   description: "",
   delegation_strategy: "dynamic",
@@ -85,6 +89,7 @@ export function CouncilFormModal({
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [slugEdited, setSlugEdited] = useState(false);
 
   // Agents from API
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
@@ -114,6 +119,7 @@ export function CouncilFormModal({
     if (!open) return;
     if (council) {
       setForm({
+        slug: council.slug,
         name: council.name,
         description: council.description ?? "",
         delegation_strategy: council.delegation_strategy,
@@ -124,8 +130,10 @@ export function CouncilFormModal({
             }))
           : [{ agent_id: "" }],
       });
+      setSlugEdited(true);
     } else {
       setForm(INITIAL);
+      setSlugEdited(false);
     }
     setErrors({});
     setApiError(null);
@@ -205,6 +213,9 @@ export function CouncilFormModal({
     if (!form.name.trim()) {
       errs.name = "Name is required.";
     }
+    if (!resourceSlug(form.slug)) {
+      errs.slug = "Stable slug is required.";
+    }
 
     if (!form.leader_agent_id) {
       errs.leader_agent_id = "Council leader is required.";
@@ -266,6 +277,7 @@ export function CouncilFormModal({
           await updateCouncil(council.id, data);
         } else {
           const data: CreateCouncilRequest = {
+            slug: resourceSlug(form.slug),
             name: form.name.trim(),
             description: form.description.trim() || undefined,
             leader_agent: agentRefForId(form.leader_agent_id),
@@ -328,7 +340,10 @@ export function CouncilFormModal({
           </Label>
           <Input
             value={form.name}
-            onChange={(e) => set("name", e.target.value)}
+            onChange={(e) => {
+              set("name", e.target.value);
+              if (!slugEdited && !isEdit) set("slug", resourceSlug(e.target.value));
+            }}
             placeholder="e.g. Code Review Council"
             error={!!errors.name}
             disabled={submitting}
@@ -336,6 +351,28 @@ export function CouncilFormModal({
           />
           {errors.name && (
             <p className="mt-1 text-xs text-red-500">{errors.name}</p>
+          )}
+        </div>
+
+        <div>
+          <Label required>Stable slug</Label>
+          <Input
+            value={form.slug}
+            onChange={(e) => {
+              set("slug", resourceSlug(e.target.value));
+              setSlugEdited(true);
+            }}
+            placeholder="code-review-council"
+            error={!!errors.slug}
+            disabled={submitting || isEdit}
+            className="mt-1 font-mono"
+          />
+          {errors.slug ? (
+            <p className="mt-1 text-xs text-red-500">{errors.slug}</p>
+          ) : (
+            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+              Permanent reference used by agents; renaming the council will not change it.
+            </p>
           )}
         </div>
 

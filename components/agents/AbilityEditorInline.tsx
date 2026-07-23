@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { fetchAbilityPrompt, updateAbility, updateAbilityPrompt } from "@/lib/api";
-import { useMcpServers, useContextBlocks } from "@/lib/hooks";
+import { useApiKeyCatalog, useMcpServers, useContextBlocks } from "@/lib/hooks";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
 import { TemplateVariableReference } from "./TemplateVariableReference";
 import { LibraryReferenceList } from "./LibraryReferenceList";
@@ -12,7 +12,6 @@ import {
   SourceManagedResourcePanel,
   type SourceManagedDetailSection,
 } from "@/components/resources/SourceManagedResourcePanel";
-import { MCP_RESOURCE_SCOPES } from "@/lib/types";
 import { manifestResourceDisplayPath } from "@/lib/manifestResourcePath";
 import type { Ability, McpServer } from "@/lib/types";
 
@@ -434,7 +433,7 @@ function ManagedAbilityDetails({ ability }: { ability: Ability }) {
                 {attachedServers.map((server) => (
                   <div key={server.id} className="theme-border theme-surface-muted flex items-center justify-between rounded-lg border px-3 py-2">
                     <div className="min-w-0">
-                      <p className="theme-text truncate text-sm font-medium">{server.display_name}</p>
+                      <p className="theme-text truncate text-sm font-medium">{server.name}</p>
                       {server.description && <p className="theme-text-muted truncate text-xs">{server.description}</p>}
                     </div>
                     <span className="theme-surface-muted-strong theme-text-muted ml-3 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium">
@@ -488,7 +487,7 @@ interface BlockTreeNode {
   children: BlockTreeNode[];
 }
 
-function buildBlockTree(blocks: { name: string; path: string; description?: string | null; display_name?: string | null }[]): BlockTreeNode[] {
+function buildBlockTree(blocks: { name: string; path: string; description?: string | null }[]): BlockTreeNode[] {
   const root: BlockTreeNode[] = [];
   for (const b of blocks) {
     const segments = b.path ? b.path.split("/") : [];
@@ -503,7 +502,7 @@ function buildBlockTree(blocks: { name: string; path: string; description?: stri
       parent = folder.children;
     }
     const dottedName = b.path ? `${b.path.replace(/\//g, ".")}.${b.name}` : b.name;
-    parent.push({ name: b.name, dottedPath: dottedName, description: b.description || b.display_name || undefined, children: [] });
+    parent.push({ name: b.name, dottedPath: dottedName, description: b.description || undefined, children: [] });
   }
   return root;
 }
@@ -665,7 +664,7 @@ function McpTab({ ability, onSaved }: { ability: Ability; onSaved: () => void })
       {externalServers.map((server) => (
         <ToggleRow
           key={server.id}
-          label={server.display_name}
+          label={server.name}
           sublabel={server.description ?? undefined}
           badge={server.transport}
           isOn={assignedIds.has(server.name)}
@@ -682,6 +681,7 @@ function McpTab({ ability, onSaved }: { ability: Ability; onSaved: () => void })
 // ---------------------------------------------------------------------------
 
 function ScopesTab({ ability, onSaved }: { ability: Ability; onSaved: () => void }) {
+  const { catalog, isLoading, isError } = useApiKeyCatalog();
   const [saving, setSaving] = useState(false);
   const assignedScopes = new Set(ability.platform_scopes);
 
@@ -698,9 +698,12 @@ function ScopesTab({ ability, onSaved }: { ability: Ability; onSaved: () => void
     } catch { /* */ } finally { setSaving(false); }
   };
 
+  if (isLoading) return <LoadingSkeleton />;
+  if (isError) return <EmptyMessage text="Unable to load platform scopes." />;
+
   return (
     <div className="space-y-1.5">
-      {MCP_RESOURCE_SCOPES.map((scope) => (
+      {(catalog?.scopes ?? []).map((scope) => (
         <ToggleRow
           key={scope}
           label={scope}

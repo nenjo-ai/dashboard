@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Label } from "@/components/ui/Label";
 import { manifestResourceDisplayPath } from "@/lib/manifestResourcePath";
+import { resourceSlug } from "@/lib/resourceSlug";
 import type { Domain } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -173,7 +174,7 @@ function DraggableFile({
           d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418"
         />
       </svg>
-      <span className="truncate text-xs">{domain.display_name || domain.name}</span>
+      <span className="truncate text-xs">{domain.name}</span>
       {domain.is_system && (
         <svg
           className="h-3 w-3 shrink-0 text-gray-300 dark:text-gray-600"
@@ -564,7 +565,7 @@ export function DomainsExplorer() {
           (domain) =>
             domain.id === domainParam ||
             domain.name === domainParam ||
-            domain.display_name === domainParam,
+            domain.name === domainParam,
         )?.id
       : savedId;
     if (targetId) {
@@ -856,7 +857,7 @@ export function DomainsExplorer() {
       <DragOverlay>
         {draggingDomain && (
           <div className="rounded-md border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700 shadow-lg dark:border-teal-800 dark:bg-teal-900/50 dark:text-teal-300">
-            {draggingDomain.display_name || draggingDomain.name}
+            {draggingDomain.name}
           </div>
         )}
       </DragOverlay>
@@ -887,7 +888,7 @@ export function DomainsExplorer() {
 
       {/* Move to folder modal */}
       {movingDomain && (
-        <Modal open onClose={() => setMovingDomain(null)} title={`Move "${movingDomain.display_name || movingDomain.name}"`}>
+        <Modal open onClose={() => setMovingDomain(null)} title={`Move "${movingDomain.name}"`}>
           <div className="space-y-1">
             {getAllFolderPaths(tree)
               .filter((f) => f !== "nenjo" && !f.startsWith("nenjo/"))
@@ -921,7 +922,7 @@ export function DomainsExplorer() {
         onClose={() => setConfirmDeleteDomain(null)}
         onConfirm={handleDeleteDomain}
         title="Delete Domain"
-        message={`Delete domain "${confirmDeleteDomain?.display_name || confirmDeleteDomain?.name}"?`}
+        message={`Delete domain "${confirmDeleteDomain?.name}"?`}
         confirmLabel="Delete"
         variant="danger"
         loading={!!deletingId}
@@ -1042,9 +1043,9 @@ function CreateDomainModal({
     try {
       const cmd = command.trim().startsWith("#") ? command.trim() : `#${command.trim()}`;
       await createDomain({
-        name: name.trim(),
+        slug: name.trim(),
+        name: displayName.trim() || name.trim(),
         path: path || undefined,
-        display_name: displayName.trim() || name.trim(),
         command: cmd,
         description: description.trim() || undefined,
       });
@@ -1065,17 +1066,17 @@ function CreateDomainModal({
     <Modal open={open} onClose={onClose} title="Create Domain">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <Label htmlFor="dm-name">Name</Label>
+          <Label htmlFor="dm-name">Slug</Label>
           <Input
             id="dm-name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="task_creator"
+            onChange={(e) => setName(resourceSlug(e.target.value))}
+            placeholder="task-creator"
             required
             className="font-mono"
           />
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            System identifier for this domain.
+            Stable agent-facing reference.
           </p>
         </div>
         <div>
@@ -1093,7 +1094,7 @@ function CreateDomainModal({
           </select>
         </div>
         <div>
-          <Label htmlFor="dm-display">Display Name</Label>
+          <Label htmlFor="dm-display">Name</Label>
           <Input id="dm-display" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Task Creator" />
         </div>
         <div>
