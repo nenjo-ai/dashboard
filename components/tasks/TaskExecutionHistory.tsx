@@ -74,35 +74,45 @@ export function TaskExecutionHistory({
           const expanded = expandedRunId === execution.id;
           return (
             <section key={execution.id}>
-              <button
-                aria-expanded={expanded}
-                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:[background:var(--app-hover)]"
-                onClick={() => setExpandedRunId(expanded ? null : execution.id)}
-                type="button"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  {expanded ? (
-                    <ChevronDown className="theme-text-muted h-4 w-4 shrink-0" />
-                  ) : (
-                    <ChevronRight className="theme-text-muted h-4 w-4 shrink-0" />
-                  )}
-                  <div className="min-w-0">
-                    <p className="theme-text truncate text-sm font-medium">
-                      {executionHistoryLabel(execution)}
-                    </p>
-                    <p className="theme-text-muted text-xs">
-                      {formatExecutionRelativeTime(execution.created_at)}
-                    </p>
-                  </div>
-                </div>
-                <Badge
-                  className={cn(execution.status === "running" && "animate-pulse")}
-                  showDot
-                  variant={execution.status}
+              <div className="flex items-center gap-2 pr-4 transition-colors hover:[background:var(--app-hover)]">
+                <button
+                  aria-expanded={expanded}
+                  className="flex min-w-0 flex-1 items-center justify-between gap-3 px-4 py-3 text-left"
+                  onClick={() => setExpandedRunId(expanded ? null : execution.id)}
+                  type="button"
                 >
-                  {execution.status}
-                </Badge>
-              </button>
+                  <div className="flex min-w-0 items-center gap-3">
+                    {expanded ? (
+                      <ChevronDown className="theme-text-muted h-4 w-4 shrink-0" />
+                    ) : (
+                      <ChevronRight className="theme-text-muted h-4 w-4 shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="theme-text truncate text-sm font-medium">
+                        {executionHistoryLabel(execution)}
+                      </p>
+                      <p className="theme-text-muted text-xs">
+                        {formatExecutionRelativeTime(execution.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge
+                    className={cn(execution.status === "running" && "animate-pulse")}
+                    showDot
+                    variant={execution.status}
+                  >
+                    {execution.status}
+                  </Badge>
+                </button>
+                {execution.pending_reviews > 0 ? (
+                  <a
+                    className="shrink-0 rounded-md bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white"
+                    href={`/dashboard/reviews?execution_id=${execution.id}`}
+                  >
+                    Review
+                  </a>
+                ) : null}
+              </div>
               {expanded ? (
                 <div className="theme-border border-t p-4">
                   <TaskRunActivity

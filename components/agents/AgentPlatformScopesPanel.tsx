@@ -13,6 +13,7 @@ const SCOPE_GROUPS = [
   { label: "Domains", scopes: ["domains:read", "domains:write"] },
   { label: "Projects", scopes: ["projects:read", "projects:write"] },
   { label: "Tasks", scopes: ["tasks:read", "tasks:write"] },
+  { label: "Artifacts", scopes: ["artifacts:read", "artifacts:write"] },
   { label: "Library", scopes: ["library:write"] },
   { label: "Routines", scopes: ["routines:read", "routines:write"] },
   { label: "Councils", scopes: ["councils:read", "councils:write"] },

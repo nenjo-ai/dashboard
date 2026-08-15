@@ -603,20 +603,25 @@ function isEncryptedUserMessagePlaceholder(content: string): boolean {
 async function resolvePersistedMessageContent(
   message: Pick<
     PersistedChatMessage,
-    "content" | "metadata" | "encrypted_payload"
+    "content" | "metadata" | "encrypted_payload" | "artifact_ids"
   >,
 ): Promise<string> {
+  const withAttachmentFallback = (content: string) => {
+    if (content.trim() || !message.artifact_ids?.length) return content;
+    const count = message.artifact_ids.length;
+    return `Attached ${count} artifact${count === 1 ? "" : "s"}`;
+  };
   const encryptedPayload =
     message.encrypted_payload ?? message.metadata?.encrypted_payload;
   if (!encryptedPayload) {
-    return normalizeResolvedAssistantContent(message.content);
+    return withAttachmentFallback(normalizeResolvedAssistantContent(message.content));
   }
 
   try {
     const storedAck = await loadStoredAccountContentKey();
     const decrypted = await decryptContentPayload(encryptedPayload);
     if (decrypted !== null) {
-      return normalizeResolvedAssistantContent(decrypted);
+      return withAttachmentFallback(normalizeResolvedAssistantContent(decrypted));
     }
     console.warn("Persisted chat decrypt returned null", {
       hasAck: Boolean(storedAck),
@@ -629,7 +634,7 @@ async function resolvePersistedMessageContent(
     await warmAccountContentKey();
     const retried = await decryptContentPayload(encryptedPayload);
     if (retried !== null) {
-      return normalizeResolvedAssistantContent(retried);
+      return withAttachmentFallback(normalizeResolvedAssistantContent(retried));
     }
     return message.content.trim()
       ? normalizeResolvedAssistantContent(message.content)
@@ -1126,6 +1131,10 @@ export function usePlannerChat(
     (pId: string | null | undefined, aId: string) => `${pId ?? "root"}:${aId}`,
     [],
   );
+  const latestHistoryRef = useRef({ messages, hasMore });
+  useEffect(() => {
+    latestHistoryRef.current = { messages, hasMore };
+  }, [messages, hasMore]);
 
   // ── Load sessions on mount / role change ──────────────────────────────
   useEffect(() => {
@@ -1172,7 +1181,7 @@ export function usePlannerChat(
         setActiveSessionId(null);
       })
       .finally(() => setIsLoadingSessions(false));
-  }, [projectId, agentId, initialSessionId, targetType, isAgentTarget]);
+  }, [projectId, agentId, initialSessionId, targetType, isAgentTarget, setActiveSessionId]);
 
   // ── Load history on mount / role / session change ─────────────────────
   useEffect(() => {
@@ -1186,9 +1195,10 @@ export function usePlannerChat(
 
     // Save current messages to cache for the previous role+session
     if (previousAgentId) {
+      const previousHistory = latestHistoryRef.current;
       agentCacheRef.current.set(cacheKey(previousAgentId, previousSessionId), {
-        messages: compactDuplicateChatMessages(messages),
-        hasMore: hasMore,
+        messages: compactDuplicateChatMessages(previousHistory.messages),
+        hasMore: previousHistory.hasMore,
       });
     }
     prevAgentIdRef.current = agentId;
@@ -1289,6 +1299,7 @@ export function usePlannerChat(
               content: await resolvePersistedMessageContent(m),
               command: persistedMessageCommand(m),
               timestamp: m.created_at,
+              artifactIds: m.artifact_ids ?? [],
             })),
           );
           setMessages(
@@ -1308,7 +1319,7 @@ export function usePlannerChat(
         if (fetchId !== historyFetchIdRef.current) return;
         setIsLoadingHistory(false);
       });
-  }, [projectId, agentId, activeSessionId, currentUser?.org_id, targetType]);
+  }, [projectId, agentId, activeSessionId, currentUser?.org_id, targetType, cacheKey]);
 
   useEffect(() => {
     if (!activeSessionId || isLoadingHistory) return;
@@ -1462,6 +1473,7 @@ export function usePlannerChat(
             content: await resolvePersistedMessageContent(m),
             command: persistedMessageCommand(m),
             timestamp: m.created_at,
+            artifactIds: m.artifact_ids ?? [],
           })),
         );
         const olderWithEnvelopes = await hydrateRunEnvelopeLinks(older);
@@ -1514,6 +1526,7 @@ export function usePlannerChat(
           metadata?: PersistedChatMessage["metadata"];
           encrypted_payload?: EncryptedPayload | null;
           reply_to_message_id?: string | null;
+          artifact_ids?: string[];
         };
         if (!msg?.id) return;
         streamWorkQueueRef.current.enqueue(async () => {
@@ -1521,6 +1534,7 @@ export function usePlannerChat(
             content: msg.content,
             metadata: msg.metadata ?? null,
             encrypted_payload: msg.encrypted_payload ?? null,
+            artifact_ids: msg.artifact_ids ?? [],
           });
           const persistedRunEnvelopeId = msg.reply_to_message_id
             ? (
@@ -1557,6 +1571,7 @@ export function usePlannerChat(
                             ? m.content
                             : resolvedContent,
                           command: persistedCommand ?? m.command,
+                          artifactIds: msg.artifact_ids ?? m.artifactIds,
                           timestamp: msg.created_at,
                           status:
                             m.status === "cancelled"
@@ -2546,6 +2561,7 @@ export function usePlannerChat(
                 command: persistedMessageCommand(message),
                 timestamp: message.created_at,
                 status: message.sender === "user" ? "delivered" : undefined,
+                artifactIds: message.artifact_ids ?? [],
               })),
             );
             if (cancelled) return;
@@ -2692,10 +2708,12 @@ export function usePlannerChat(
         commandInvocation?: {
           command: string;
         };
+        artifactIds?: string[];
       },
     ) => {
       const trimmed = text.trim();
-      if (!trimmed || !activeSessionId) return;
+      const artifactIds = options?.artifactIds ?? [];
+      if ((!trimmed && artifactIds.length === 0) || !activeSessionId) return;
 
       const msgId = generateId();
       const queueIntoActiveTurn =
@@ -2711,10 +2729,11 @@ export function usePlannerChat(
       const userMsg: ChatMessage = {
         id: msgId,
         role: "user",
-        content: trimmed,
+        content: trimmed || `Attached ${artifactIds.length} artifact${artifactIds.length === 1 ? "" : "s"}`,
         command: options?.commandInvocation?.command,
         timestamp: new Date().toISOString(),
         status: queueIntoActiveTurn ? "queued" : "sending",
+        artifactIds,
       };
       if (!queueIntoActiveTurn) {
         optimisticUserMessageIdRef.current = msgId;
@@ -2837,6 +2856,7 @@ export function usePlannerChat(
           target_type: targetType,
           target_id: agentId!,
           ...(projectId ? { project_id: projectId } : {}),
+          ...(options?.artifactIds?.length ? { artifact_ids: options.artifactIds } : {}),
         };
         activeChatRequestRef.current = streamBody;
 
@@ -2920,6 +2940,7 @@ export function usePlannerChat(
               command: persistedMessageCommand(message),
               timestamp: message.created_at,
               status: message.sender === "user" ? "delivered" : undefined,
+              artifactIds: message.artifact_ids ?? [],
             })),
           );
           const loadedWithEnvelopes = await hydrateRunEnvelopeLinks(loaded);
@@ -2997,6 +3018,7 @@ export function usePlannerChat(
       domainCommand: string,
       overrideRoleId?: string,
       userMessage?: string,
+      artifactIds?: string[],
     ) => {
       const effectiveRoleId = overrideRoleId ?? agentId;
       if (!effectiveRoleId || activeDomainSession) return;
@@ -3023,6 +3045,7 @@ export function usePlannerChat(
             domain_session_id: session.id,
             domain_command: domainCommand,
           },
+          artifactIds,
         });
       } catch (err) {
         pendingDomainSessionRef.current = null;
@@ -3182,6 +3205,7 @@ export function usePlannerChat(
     cacheKey,
     isAgentTarget,
     targetType,
+    setActiveSessionId,
   ]);
 
   const cancelResponse = useCallback(() => {
@@ -3259,7 +3283,7 @@ export function usePlannerChat(
       }
       setActiveSessionId(sessionId);
     },
-    [agentId, activeSessionId, messages, hasMore, cacheKey],
+    [agentId, activeSessionId, messages, hasMore, cacheKey, setActiveSessionId],
   );
 
   const createNewSession = useCallback(async () => {
@@ -3349,6 +3373,7 @@ export function usePlannerChat(
       notifyWorkerSessionDelete,
       isAgentTarget,
       targetType,
+      setActiveSessionId,
     ],
   );
 
@@ -3392,6 +3417,9 @@ export function usePlannerChat(
       projectId,
       cacheKey,
       notifyWorkerSessionDelete,
+      isAgentTarget,
+      targetType,
+      setActiveSessionId,
     ],
   );
 

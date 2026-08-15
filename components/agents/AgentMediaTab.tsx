@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ImageIcon, RotateCcw, Save, Video, Volume2 } from "lucide-react";
+import { FileText, ImageIcon, RotateCcw, Save, Video, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { configureAgentModelAssignments } from "@/lib/api";
@@ -24,6 +24,7 @@ const KIND_ICON = {
   image: ImageIcon,
   video: Video,
   audio: Volume2,
+  document: FileText,
 } as const;
 
 function localDraft(assignments: ModelAssignment[]): ModelAssignmentInput[] {
@@ -205,8 +206,8 @@ export function AgentMediaTab({ agentId }: AgentMediaTabProps) {
     return (
       <div className="theme-border rounded-lg border border-dashed px-4 py-6 text-center">
         <p className="theme-text-muted text-sm">
-          No models advertise assignable capabilities yet. Add image, video, or
-          audio capabilities on models in Agents → Models first.
+          No models advertise assignable capabilities yet. Add analysis or
+          media capabilities on models in Agents → Models first.
         </p>
       </div>
     );

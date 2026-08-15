@@ -119,6 +119,7 @@ export type ExecutionStatus =
   | "queued"
   | "running"
   | "paused"
+  | "waiting_for_human"
   | "cancelled"
   | "completed"
   | "failed";
@@ -137,6 +138,7 @@ export interface ExecutionStatusCounts {
   queued: number;
   running: number;
   paused: number;
+  waiting_for_human: number;
   completed: number;
   failed: number;
   cancelled: number;
@@ -161,6 +163,7 @@ export interface ExecutionRun {
   routine_name: string | null;
   task_id: string | null;
   task_title: string | null;
+  pending_reviews: number;
 }
 
 export interface ExecutionDetails extends ExecutionRun {
@@ -281,6 +284,7 @@ export interface Task {
   updated_at: string;
   completed_at: string | null;
   created_by: string | null;
+  artifact_ids: string[];
 }
 
 export interface TaskWorkflowStatus {
@@ -334,6 +338,7 @@ export interface TaskExecutionRun {
   error_summary: string | null;
   created_at: string;
   updated_at: string;
+  pending_reviews: number;
 }
 
 export interface TaskSchedule {
@@ -470,6 +475,7 @@ export interface ChatMessage {
   persistedId?: string;
   /** Durable user-message UUID this assistant response answers. */
   replyToMessageId?: string;
+  artifactIds?: string[];
 }
 
 // Outbound: frontend → worker
@@ -501,6 +507,7 @@ export interface ChatStreamRequest {
   target_type?: "agent" | "council";
   target_id?: string;
   project_id?: string;
+  artifact_ids?: string[];
 }
 
 export interface ChatCommand {
@@ -841,6 +848,7 @@ export interface PersistedChatMessage {
   updated_at: string;
   metadata: NotificationMetadata | null;
   encrypted_payload?: EncryptedPayload | null;
+  artifact_ids?: string[];
 }
 
 export interface NotificationMetadata {
@@ -996,6 +1004,7 @@ export interface UpdateTaskRequest {
   assignee_user_id?: string | null;
   execution_target?: TaskExecutionTarget | null;
   label_ids?: string[];
+  artifact_ids?: string[];
 }
 
 export type ExecutionCommand = "start" | "pause" | "resume" | "cancel";
@@ -1263,6 +1272,9 @@ export type NativeModelTool = "web_search" | "x_search";
 /** Assignable operation IDs on `models.capabilities`. */
 export type ModelCapability =
   | "chat"
+  | "analyze_image"
+  | "analyze_video"
+  | "analyze_document"
   | "transcribe_audio"
   | "generate_speech"
   | "generate_image"
@@ -1299,6 +1311,9 @@ export const ASSIGNABLE_OPERATION_CAPABILITIES: Array<{
   label: string;
 }> = [
   { id: "chat", label: "Chat" },
+  { id: "analyze_image", label: "Analyze image" },
+  { id: "analyze_video", label: "Analyze video" },
+  { id: "analyze_document", label: "Analyze document" },
   { id: "transcribe_audio", label: "Transcribe audio" },
   { id: "generate_speech", label: "Generate speech" },
   { id: "generate_image", label: "Generate image" },
@@ -1317,8 +1332,11 @@ export const ASSIGNABLE_OPERATION_CAPABILITIES: Array<{
 export const ASSIGNMENT_CAPABILITIES: Array<{
   id: ModelCapability;
   label: string;
-  kind: "image" | "video" | "audio";
+  kind: "image" | "video" | "audio" | "document";
 }> = [
+  { id: "analyze_image", label: "Analyze image", kind: "image" },
+  { id: "analyze_video", label: "Analyze video", kind: "video" },
+  { id: "analyze_document", label: "Analyze document", kind: "document" },
   { id: "generate_image", label: "Generate image", kind: "image" },
   { id: "edit_image", label: "Edit image", kind: "image" },
   { id: "generate_video", label: "Generate video", kind: "video" },
@@ -1396,6 +1414,18 @@ export interface ConfigureModelAssignmentsRequest {
 
 export interface ModelAssignmentsResponse {
   assignments: ModelAssignment[];
+}
+
+export interface OrgCapabilityDefault {
+  org_id: string;
+  capability: string;
+  model_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrgCapabilityDefaultsResponse {
+  defaults: OrgCapabilityDefault[];
 }
 
 // ---------------------------------------------------------------------------
@@ -2045,6 +2075,7 @@ export interface CreateApiKeyResponse {
 export type RoutineStepType =
   | "agent"
   | "gate"
+  | "human"
   | "terminal"
   | "terminal_fail"
   | "council";
@@ -2053,11 +2084,18 @@ export const ROUTINE_STEP_TYPES: { id: RoutineStepType; label: string }[] = [
   { id: "agent", label: "Agent" },
   { id: "council", label: "Council" },
   { id: "gate", label: "Gate" },
+  { id: "human", label: "Human review" },
   { id: "terminal", label: "Terminal" },
   { id: "terminal_fail", label: "Terminal (Fail)" },
 ];
 
-export type RoutineEdgeCondition = "always" | "on_pass" | "on_fail";
+export type RoutineEdgeCondition =
+  | "always"
+  | "on_pass"
+  | "on_fail"
+  | "approved"
+  | "changes_requested"
+  | "rejected";
 
 export const ROUTINE_EDGE_CONDITIONS: {
   id: RoutineEdgeCondition;
@@ -2066,7 +2104,176 @@ export const ROUTINE_EDGE_CONDITIONS: {
   { id: "always", label: "Always" },
   { id: "on_pass", label: "On Pass" },
   { id: "on_fail", label: "On Fail" },
+  { id: "approved", label: "Approved" },
+  { id: "changes_requested", label: "Changes requested" },
+  { id: "rejected", label: "Rejected" },
 ];
+
+export interface HumanInputSchema {
+  type: string;
+  required?: string[];
+  properties?: Record<string, HumanInputSchema>;
+  items?: HumanInputSchema;
+  format?: "nenjo-artifact-id" | string;
+  [key: string]: unknown;
+}
+
+export interface HumanApprovalOption {
+  value: string | number | boolean;
+  label: string;
+}
+
+export interface HumanApprovalField {
+  id: string;
+  label: string;
+  type: "single_select" | "multi_select";
+  required?: boolean;
+  min_items?: number;
+  max_items?: number;
+  options:
+    | { type: "static"; values: HumanApprovalOption[] }
+    | { type: "inputs"; inputs: Array<{
+        input: string;
+        pointer: string;
+        value: string;
+        label: string;
+      }> };
+}
+
+export interface HumanStepRequest {
+  title: string;
+  approval?: { fields: HumanApprovalField[] };
+}
+
+export interface HumanReviewInput {
+  input: string;
+  source_name: string;
+  purpose?: string;
+  schema: HumanInputSchema;
+  value: unknown;
+}
+
+export interface ReviewFormField extends Omit<HumanApprovalField, "options"> {
+  options: HumanApprovalOption[];
+}
+
+export interface ReviewSummary {
+  id: string;
+  task_id: string;
+  execution_id: string;
+  routine_id: string;
+  step: string;
+  round: number;
+  status: "pending" | "resolved" | "cancelled";
+  version: number;
+  title: string;
+  created_at: string;
+  pending_at: string | null;
+  resolved_at: string | null;
+  cancelled_at: string | null;
+}
+
+export interface ReviewDetail extends ReviewSummary {
+  inputs: {
+    blob_id: string;
+    schemas: HumanInputSchema[];
+  };
+  content?: HumanReviewInput[];
+  form: { fields: ReviewFormField[] } | null;
+  checkpoint_id: string;
+  artifact_ids: string[];
+}
+
+export interface ArtifactMetadata {
+  id: string;
+  state: "uploading" | "ready" | "deleted";
+  lineage_id: string;
+  revision_number: number;
+  previous_artifact_id: string | null;
+  name: string;
+  media_type: string;
+  plaintext_size_bytes: number;
+  ciphertext_size_bytes: number;
+  plaintext_digest: string;
+  ciphertext_digest: string;
+  created_at: string;
+  ready_at: string | null;
+}
+
+export interface ArtifactUploadGrant {
+  upload_id: string;
+  artifact_id: string;
+  upload_url: string | null;
+  content_type: string;
+  content_length: number;
+  checksum_sha256: string;
+  expires_at: string;
+  already_ready: boolean;
+}
+
+export interface ArtifactCatalogFolder {
+  folder_id: string;
+  name: string;
+  path: string;
+}
+
+export interface ArtifactCatalogEntry {
+  entry_id: string;
+  artifact_id: string;
+  lineage_id: string;
+  revision_number: number;
+  revision_count: number;
+  name: string;
+  path: string;
+  media_type: string;
+  size_bytes: number;
+  digest: string;
+  created_at: string;
+}
+
+export interface UnfiledArtifactEntry extends Omit<ArtifactCatalogEntry, "entry_id" | "path"> {}
+
+export interface ArtifactCatalog {
+  path: string;
+  folders: ArtifactCatalogFolder[];
+  artifacts: ArtifactCatalogEntry[];
+  unfiled: UnfiledArtifactEntry[];
+}
+
+export interface ArtifactRevision {
+  id: string;
+  revision_number: number;
+  name: string;
+  media_type: string;
+  size_bytes: number;
+  digest: string;
+  created_at: string;
+  ready_at: string | null;
+}
+
+export interface ArtifactReviewUse {
+  artifact_id: string;
+  review_id: string;
+  task_id: string;
+  execution_id: string;
+  routine_id: string;
+  step: string;
+  round: number;
+  status: "pending" | "resolved" | "cancelled";
+  title: string;
+  created_at: string;
+}
+
+export interface ArtifactDetail {
+  artifact: ArtifactMetadata;
+  revisions: ArtifactRevision[];
+  used_in_reviews: ArtifactReviewUse[] | null;
+}
+
+export type HumanDecision =
+  | { outcome: "approved"; answers: Record<string, unknown>; comment?: string }
+  | { outcome: "changes_requested"; instructions: string }
+  | { outcome: "rejected"; reason: string };
 
 export interface Routine {
   id: string;
@@ -2138,6 +2345,7 @@ export interface RoutineStepInstructionsPayload {
 
 export interface CreateRoutineRequest {
   id?: string;
+  slug?: string;
   name: string;
   description?: string | null;
   project_id?: string | null;
@@ -2148,6 +2356,7 @@ export interface CreateRoutineRequest {
 }
 
 export interface UpdateRoutineRequest {
+  slug?: string;
   name?: string;
   description?: string | null;
   project_id?: string | null;
@@ -2218,6 +2427,7 @@ export interface SaveRoutineGraphRequest extends UpdateRoutineRequest {
 }
 
 export interface ConfigureRoutineMetadataRequest {
+  slug?: string;
   name?: string;
   description?: string | null;
   project_id?: string | null;

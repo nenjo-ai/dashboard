@@ -7,9 +7,10 @@
     "build": "next build --webpack",
     "test": "node --test tests/*.test.mjs",
     "test:e2e:vault": "playwright test e2e/vault-unlock.spec.ts",
+    "test:e2e:artifacts": "playwright test e2e/artifact-viewer.spec.ts",
     "start": "next start",
     "lint": "eslint .",
-    "license:check": "npx license-checker-rseidelsohn --production --excludePrivatePackages --onlyAllow \"MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;Zlib;0BSD;CC0-1.0;Unicode-3.0;Unicode-DFS-2016\""
+    "license:check": "npx license-checker-rseidelsohn --production --excludePrivatePackages --onlyAllow \"MIT;MIT*;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;Zlib;0BSD;Unlicense;CC0-1.0;CC-BY-4.0;Unicode-3.0;Unicode-DFS-2016;LGPL-3.0-or-later;(MPL-2.0 OR Apache-2.0);(MIT OR GPL-3.0-or-later);(MIT AND Zlib);MIT AND ISC\""
   },
   "dependencies": {
     "@clerk/nextjs": "^6.39.3",
@@ -34,6 +35,7 @@
     "mermaid": "^11.15.0",
     "motion": "^12.34.3",
     "next": "^16.2.6",
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-is": "^19.2.5",

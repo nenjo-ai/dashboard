@@ -28,7 +28,7 @@ export function ThemeImage({
     'w-full rounded-xl border border-fd-border shadow-sm';
   return (
     <figure className="not-prose my-6">
-      <img
+      <Image
         src={light}
         alt={alt}
         width={width}
@@ -36,7 +36,7 @@ export function ThemeImage({
         loading="lazy"
         className={`${imgClass} block dark:hidden`}
       />
-      <img
+      <Image
         src={dark}
         alt={alt}
         width={width}
@@ -52,3 +52,4 @@ export function ThemeImage({
     </figure>
   );
 }
+import Image from "next/image";

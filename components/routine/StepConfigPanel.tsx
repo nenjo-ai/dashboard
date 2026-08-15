@@ -54,6 +54,12 @@ export function StepConfigPanel({
     config?.metadata ? JSON.stringify(config.metadata, null, 2) : "",
   );
   const [metadataError, setMetadataError] = useState<string | null>(null);
+  const request = config?.request as Record<string, unknown> | undefined;
+  const [humanTitle, setHumanTitle] = useState<string>((request?.title as string) ?? "Review {{ task.title }}");
+  const [humanApproval, setHumanApproval] = useState<string>(
+    request?.approval ? JSON.stringify(request.approval, null, 2) : "",
+  );
+  const [humanError, setHumanError] = useState<string | null>(null);
   const [stepSaving, setStepSaving] = useState(false);
   const [stepSaved, setStepSaved] = useState(false);
   const [councilFormOpen, setCouncilFormOpen] = useState(false);
@@ -73,6 +79,10 @@ export function StepConfigPanel({
     setLocalFailureReason((config?.failure_reason as string) ?? "");
     setLocalMetadata(config?.metadata ? JSON.stringify(config.metadata, null, 2) : "");
     setMetadataError(null);
+    const nextRequest = config?.request as Record<string, unknown> | undefined;
+    setHumanTitle((nextRequest?.title as string) ?? "Review {{ task.title }}");
+    setHumanApproval(nextRequest?.approval ? JSON.stringify(nextRequest.approval, null, 2) : "");
+    setHumanError(null);
     setStepSaved(false);
   }, [stepId, name, stepType, agentId, councilId, config]);
 
@@ -114,6 +124,28 @@ export function StepConfigPanel({
     delete parsedConfig.max_turns;
     delete parsedConfig.criteria;
 
+    if (localStepType === "human") {
+      try {
+        const approval = humanApproval.trim()
+          ? JSON.parse(humanApproval) as Record<string, unknown>
+          : undefined;
+        if (!humanTitle.trim()) {
+          throw new Error("A title is required");
+        }
+        parsedConfig.request = {
+          title: humanTitle.trim(),
+          ...(approval ? { approval } : {}),
+        };
+        setHumanError(null);
+      } catch (error) {
+        setHumanError(error instanceof Error ? error.message : "Invalid human request JSON");
+        setStepSaving(false);
+        return;
+      }
+    } else {
+      delete parsedConfig.request;
+    }
+
     if (localStepType === "terminal_fail") {
       parsedConfig.failure_reason = localFailureReason || "Routine terminated with failure";
     } else {
@@ -138,7 +170,7 @@ export function StepConfigPanel({
         name: localName !== name ? localName : undefined,
         step_type: localStepType !== stepType ? localStepType : undefined,
         agent_id:
-          localStepType === "council" || localStepType === "terminal" || localStepType === "terminal_fail"
+          localStepType === "council" || localStepType === "human" || localStepType === "terminal" || localStepType === "terminal_fail"
             ? undefined
             : localAgentId !== (agentId ?? "")
               ? localAgentId || undefined
@@ -370,6 +402,27 @@ export function StepConfigPanel({
                 </p>
               </div>
             </>
+          )}
+
+          {localStepType === "human" && (
+            <div className="space-y-4 rounded-lg border border-cyan-200 bg-cyan-50/50 p-3 dark:border-cyan-800 dark:bg-cyan-950/20">
+              <p className="text-xs text-cyan-800 dark:text-cyan-200">
+                Human review always exposes fixed Approved, Changes requested, and Rejected outcomes.
+              </p>
+              <div>
+                <label className="block text-xs font-medium mb-1">Title template</label>
+                <input value={humanTitle} onChange={(event) => setHumanTitle(event.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">Approval fields (JSON, optional)</label>
+                <textarea value={humanApproval} onChange={(event) => { setHumanApproval(event.target.value); setHumanError(null); }}
+                  rows={8} placeholder={'{"fields":[{"id":"strategy","label":"Strategy","type":"single_select","required":true,"options":{"type":"static","values":[{"value":"canary","label":"Canary"}]}}]}' }
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-xs dark:border-gray-600 dark:bg-gray-800" />
+                <p className="mt-1 text-[10px] text-gray-500">Options may be static or derived from one or more incoming edge inputs. Review content schemas are configured on incoming edges.</p>
+              </div>
+              {humanError && <p className="text-xs text-red-600">{humanError}</p>}
+            </div>
           )}
 
           {localStepType === "terminal_fail" && (
