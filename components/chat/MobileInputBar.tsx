@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
@@ -46,6 +46,9 @@ interface MobileInputBarProps {
   onClearPendingDomain?: () => void;
   pendingCommand?: PendingCommandPillCommand | null;
   onClearPendingCommand?: () => void;
+  attachments?: ReactNode;
+  sendDisabled?: boolean;
+  hasReadyAttachments?: boolean;
 }
 
 export function MobileInputBar({
@@ -76,6 +79,9 @@ export function MobileInputBar({
   onClearPendingDomain,
   pendingCommand,
   onClearPendingCommand,
+  attachments,
+  sendDisabled,
+  hasReadyAttachments,
 }: MobileInputBarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -95,7 +101,9 @@ export function MobileInputBar({
   const cancelArmTimerRef = useRef<number | null>(null);
   const currentAgentId = activeAgent?.id;
   const interruptActive = isTyping || hasActiveRunTrace;
-  const canSend = input.trim().length > 0 || !!pendingCommand;
+  const canSend = (
+    input.trim().length > 0 || !!pendingCommand || !!hasReadyAttachments
+  ) && !sendDisabled;
   const voiceInputBusy =
     voiceInputState === "requesting" || voiceInputState === "processing";
   const voiceInputTitle =
@@ -373,6 +381,8 @@ export function MobileInputBar({
         <div className="pointer-events-none absolute inset-[3px] overflow-hidden rounded-[calc(1.55rem-3px)]">
           <div className="absolute inset-0 bg-[#f5f7fb]/50 backdrop-blur-[26px] [-webkit-backdrop-filter:blur(26px)] dark:bg-[#05070b]/48" />
         </div>
+
+        {attachments ? <div className="relative z-10 px-3 pt-2">{attachments}</div> : null}
 
         {/* Text input */}
         <div className="relative z-10 flex items-end gap-2 px-3 pt-3">

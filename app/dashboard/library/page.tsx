@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { KnowledgeSection } from "@/components/knowledge/KnowledgeSection";
 import { SourceKnowledgeSection } from "@/components/knowledge/SourceKnowledgeSection";
+import { LibraryTabs } from "@/components/library/LibraryTabs";
 import { useKnowledgePacks } from "@/lib/hooks";
 import { createKnowledgePack, deleteKnowledgePack } from "@/lib/api";
 import type { KnowledgePack } from "@/lib/types";
@@ -95,6 +96,7 @@ export default function KnowledgePage() {
               { label: selectedPack.name },
             ]}
           />
+          <LibraryTabs />
           {error ? <Notice tone="error">{error}</Notice> : null}
 
           <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
@@ -154,6 +156,8 @@ export default function KnowledgePage() {
             Platform-managed knowledge documents and editable org knowledge packs.
           </p>
         </div>
+
+        <LibraryTabs />
 
         {error ? <Notice tone="error">{error}</Notice> : null}
 

@@ -72,6 +72,12 @@ import {
 } from "./cryptoContent";
 import { packageInstallJobRunning } from "./packageInstalls";
 import { OFFICIAL_NENJO_PACKAGE_SOURCE } from "./officialNenjoPackageSource";
+import { normalizeHumanReviewInputs } from "./humanReview";
+import {
+  buildCreateRoutineConfigureRequest,
+  buildRoutineGraphConfigureRequest,
+  buildUpdateRoutineConfigureRequest,
+} from "./routineConfigure";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -266,6 +272,12 @@ async function authFetch(url: string, init?: RequestInit): Promise<Response> {
     }
 
     const controller = new AbortController();
+    const abortFromCaller = () => controller.abort(init?.signal?.reason);
+    if (init?.signal?.aborted) {
+      abortFromCaller();
+    } else {
+      init?.signal?.addEventListener("abort", abortFromCaller, { once: true });
+    }
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
     let res: Response;
@@ -277,6 +289,9 @@ async function authFetch(url: string, init?: RequestInit): Promise<Response> {
       });
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
+        if (init?.signal?.aborted) {
+          throw init.signal.reason instanceof Error ? init.signal.reason : error;
+        }
         throw new ApiError(
           `Request timed out after ${FETCH_TIMEOUT_MS / 1000}s`,
           504,
@@ -285,6 +300,7 @@ async function authFetch(url: string, init?: RequestInit): Promise<Response> {
       throw error;
     } finally {
       clearTimeout(timeout);
+      init?.signal?.removeEventListener("abort", abortFromCaller);
     }
 
     if (!res.ok) {
@@ -756,6 +772,7 @@ export async function createTask(data: {
   assignee_user_id?: string | null;
   execution_target?: TaskExecutionTarget | null;
   label_ids?: string[];
+  artifact_ids?: string[];
 }): Promise<Task> {
   const taskId = crypto.randomUUID();
   const needsEncryptedContent = Boolean(data.instructions?.trim());
@@ -782,6 +799,7 @@ export async function createTask(data: {
       assignee_user_id: data.assignee_user_id,
       execution_target: data.execution_target,
       label_ids: data.label_ids,
+      artifact_ids: data.artifact_ids,
       encrypted_payload: encryptedPayload,
     }),
   });
@@ -824,6 +842,7 @@ export async function updateTask(
       assignee_user_id: data.assignee_user_id,
       execution_target: data.execution_target,
       label_ids: data.label_ids,
+      artifact_ids: data.artifact_ids,
       encrypted_payload: encryptedPayload,
     }),
   });
@@ -1237,6 +1256,10 @@ export async function configureAgentMedia(
 
 export function agentModelAssignmentsUrl(agentId: string): string {
   return `${API_V1}/agents/${agentId}/model-assignments`;
+}
+
+export function orgCapabilityDefaultsUrl(): string {
+  return `${API_V1}/orgs/current/model-capability-defaults`;
 }
 
 export async function fetchAgentModelAssignments(
@@ -2629,41 +2652,287 @@ function hasOwn<T extends object, K extends PropertyKey>(
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
-function routineConfigureMetadata(
-  data: import("./types").CreateRoutineRequest | import("./types").UpdateRoutineRequest,
-): import("./types").ConfigureRoutineMetadataRequest {
-  const metadata: import("./types").ConfigureRoutineMetadataRequest = {};
-  if (hasOwn(data, "name")) metadata.name = data.name;
-  if (hasOwn(data, "description")) metadata.description = data.description;
-  if (hasOwn(data, "project_id")) metadata.project_id = data.project_id;
-  if (hasOwn(data, "is_active")) metadata.is_active = data.is_active;
-  if (hasOwn(data, "max_retries")) metadata.max_retries = data.max_retries;
-  return metadata;
-}
-
-function routineConfigureBase(
-  data: import("./types").CreateRoutineRequest | import("./types").UpdateRoutineRequest,
-): Pick<
-  import("./types").ConfigureRoutineRequest,
-  "metadata" | "runtime_metadata" | "encrypted_payload"
-> {
-  const body: Pick<
-    import("./types").ConfigureRoutineRequest,
-    "metadata" | "runtime_metadata" | "encrypted_payload"
-  > = {
-    metadata: routineConfigureMetadata(data),
-  };
-  if (hasOwn(data, "metadata")) body.runtime_metadata = data.metadata;
-  if (hasOwn(data, "encrypted_payload")) {
-    body.encrypted_payload = data.encrypted_payload;
-  }
-  return body;
-}
-
 export async function fetchRoutines(): Promise<
   import("./types").RoutineSummary[]
 > {
   return catalogFetcher(routinesUrl());
+}
+
+// ---------------------------------------------------------------------------
+// Human review
+// ---------------------------------------------------------------------------
+
+export type ReviewListFilters = {
+  status?: string;
+  executionId?: string;
+  taskId?: string;
+};
+
+export function reviewsUrl({
+  status = "pending",
+  executionId,
+  taskId,
+}: ReviewListFilters = {}): string {
+  const search = new URLSearchParams({ status });
+  if (executionId) search.set("execution_id", executionId);
+  if (taskId) search.set("task_id", taskId);
+  return `${API_V1}/reviews?${search}`;
+}
+
+export async function fetchReviews(
+  filters: ReviewListFilters = {},
+): Promise<import("./types").ReviewSummary[]> {
+  const page = await fetcher<{ items: import("./types").ReviewSummary[] }>(reviewsUrl(filters));
+  return page.items;
+}
+
+export async function fetchReview(
+  reviewId: string,
+): Promise<import("./types").ReviewDetail> {
+  const review = await fetcher<import("./types").ReviewDetail>(
+    `${API_V1}/reviews/${reviewId}`,
+  );
+  try {
+    const payload = await fetcher<{ encrypted: import("./types").EncryptedPayload }>(
+      `${API_V1}/payloads/${review.inputs.blob_id}`,
+    );
+    const plaintext = await decryptContentPayload(payload.encrypted);
+    if (!plaintext) return review;
+    return {
+      ...review,
+      content: normalizeHumanReviewInputs(
+        JSON.parse(plaintext),
+        review.inputs.schemas,
+      ),
+    };
+  } catch (error) {
+    console.warn("Failed to decrypt review inputs", { reviewId, error });
+    return review;
+  }
+}
+
+export async function fetchArtifactContent(
+  artifactId: string,
+  signal?: AbortSignal,
+): Promise<{
+  encrypted: import("./types").EncryptedPayload;
+  name: string;
+  mediaType: string;
+  plaintextDigest: string;
+  plaintextSize: number;
+}> {
+  const response = await authFetch(
+    `${API_V1}/artifacts/${encodeURIComponent(artifactId)}/content`,
+    { signal },
+  );
+  if (!response.ok) {
+    throw new ApiError(apiErrorMessageFromBody(await response.text()), response.status);
+  }
+  const encodedName = response.headers.get("x-nenjo-artifact-name");
+  const encodedMediaType = response.headers.get("x-nenjo-artifact-media-type");
+  const plaintextDigest = response.headers.get("x-nenjo-artifact-plaintext-digest");
+  const plaintextSize = Number(response.headers.get("x-nenjo-artifact-plaintext-size"));
+  if (
+    !encodedName
+    || !encodedMediaType
+    || !plaintextDigest?.match(/^sha256:[0-9a-f]{64}$/i)
+    || !Number.isSafeInteger(plaintextSize)
+    || plaintextSize < 0
+  ) {
+    throw new ApiError("Artifact response metadata is missing", 502);
+  }
+  const declaredLength = Number(response.headers.get("content-length"));
+  const maxBytes = 64 * 1024 * 1024;
+  if (!Number.isSafeInteger(declaredLength) || declaredLength <= 0 || declaredLength > maxBytes) {
+    await response.body?.cancel();
+    throw new ApiError("Artifact response size is invalid", 502);
+  }
+  const encoded = await response.arrayBuffer();
+  if (encoded.byteLength !== declaredLength) {
+    throw new ApiError("Artifact response ended before its declared size", 502);
+  }
+  let encrypted: import("./types").EncryptedPayload;
+  try {
+    encrypted = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(encoded)) as import("./types").EncryptedPayload;
+  } catch {
+    throw new ApiError("Artifact response is not a valid encrypted envelope", 502);
+  }
+  return {
+    encrypted,
+    name: decodeURIComponent(encodedName),
+    mediaType: decodeURIComponent(encodedMediaType),
+    plaintextDigest: plaintextDigest.toLowerCase(),
+    plaintextSize,
+  };
+}
+
+const MAX_ARTIFACT_BYTES = 16 * 1024 * 1024;
+const ENCRYPTED_ARTIFACT_MEDIA_TYPE = "application/vnd.nenjo.encrypted+json";
+const ARTIFACT_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function artifactBytesToBase64(bytes: Uint8Array): string {
+  const chunkSize = 32 * 1024;
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...Array.from(bytes.subarray(offset, offset + chunkSize)));
+  }
+  return btoa(binary);
+}
+
+async function artifactSha256(bytes: Uint8Array): Promise<{
+  qualified: string;
+  base64: string;
+}> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.slice().buffer));
+  return {
+    qualified: `sha256:${Array.from(digest).map((byte) => byte.toString(16).padStart(2, "0")).join("")}`,
+    base64: artifactBytesToBase64(digest),
+  };
+}
+
+interface UploadArtifactOptions {
+  signal?: AbortSignal;
+  /** Organization-relative catalog path. Omit to leave the artifact unfiled. */
+  publishPath?: string;
+}
+
+/** Encrypt and upload one immutable artifact revision. */
+export async function uploadArtifact(
+  file: File,
+  orgId: string,
+  options: UploadArtifactOptions = {},
+): Promise<import("./types").ArtifactMetadata> {
+  if (!file.name.trim() || file.name !== file.name.trim() || /[/\\]/.test(file.name) || file.name.length > 255) {
+    throw new ApiError("The selected file name is not valid for an artifact.", 400);
+  }
+  if (file.size > MAX_ARTIFACT_BYTES) {
+    throw new ApiError("Artifact files are limited to 16 MB each.", 400);
+  }
+  const artifactId = crypto.randomUUID();
+  const plaintext = new Uint8Array(await file.arrayBuffer());
+  if (options.signal?.aborted) {
+    throw options.signal.reason ?? new DOMException("Artifact upload was cancelled.", "AbortError");
+  }
+  const plaintextDigest = await artifactSha256(plaintext);
+  const envelope = JSON.stringify({ content_base64: artifactBytesToBase64(plaintext) });
+  const encrypted = await encryptOrgContentPayload({
+    orgId,
+    objectId: artifactId,
+    objectType: "artifact.content",
+    plaintext: envelope,
+  });
+  if (!encrypted) {
+    throw new ApiError(
+      "Shared artifact encryption is not available on this device for the current organization.",
+      409,
+    );
+  }
+  const encryptedBytes = new TextEncoder().encode(JSON.stringify(encrypted));
+  const ciphertextDigest = await artifactSha256(encryptedBytes);
+  const response = await authFetch(`${API_V1}/artifacts/uploads`, {
+    method: "POST",
+    headers: { "X-Nenjo-Org-Id": orgId },
+    body: JSON.stringify({
+      artifact_id: artifactId,
+      revision_of: null,
+      name: file.name,
+      media_type: file.type || "application/octet-stream",
+      plaintext_size_bytes: plaintext.byteLength,
+      ciphertext_size_bytes: encryptedBytes.byteLength,
+      plaintext_digest: plaintextDigest.qualified,
+      ciphertext_digest: ciphertextDigest.qualified,
+      publish_path: options.publishPath ?? null,
+    }),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    throw new ApiError(apiErrorMessageFromBody(await response.text()), response.status);
+  }
+  const grant = await response.json() as import("./types").ArtifactUploadGrant;
+  if (
+    grant.artifact_id !== artifactId
+    || !ARTIFACT_UUID_PATTERN.test(grant.upload_id)
+    || grant.content_type !== ENCRYPTED_ARTIFACT_MEDIA_TYPE
+    || grant.content_length !== encryptedBytes.byteLength
+    || grant.checksum_sha256 !== ciphertextDigest.base64
+  ) {
+    throw new ApiError("Artifact upload grant did not match the selected file.", 502);
+  }
+  if (!grant.already_ready) {
+    if (!grant.upload_url) {
+      throw new ApiError("Artifact upload grant did not include an upload URL.", 502);
+    }
+    const upload = await fetch(grant.upload_url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": grant.content_type,
+        "x-amz-checksum-sha256": ciphertextDigest.base64,
+      },
+      body: encryptedBytes.slice().buffer,
+      signal: options.signal,
+    });
+    if (!upload.ok) {
+      throw new ApiError(`Artifact object upload failed (${upload.status}).`, upload.status);
+    }
+  }
+  const completion = await authFetch(
+    `${API_V1}/artifacts/uploads/${encodeURIComponent(grant.upload_id)}/complete`,
+    {
+      method: "POST",
+      headers: { "X-Nenjo-Org-Id": orgId },
+      signal: options.signal,
+    },
+  );
+  if (!completion.ok) {
+    throw new ApiError(apiErrorMessageFromBody(await completion.text()), completion.status);
+  }
+  const artifact = await completion.json() as import("./types").ArtifactMetadata;
+  if (
+    artifact.id !== artifactId
+    || artifact.state !== "ready"
+    || artifact.name !== file.name
+    || artifact.media_type !== (file.type || "application/octet-stream")
+    || artifact.plaintext_size_bytes !== plaintext.byteLength
+    || artifact.ciphertext_size_bytes !== encryptedBytes.byteLength
+    || artifact.plaintext_digest !== plaintextDigest.qualified
+    || artifact.ciphertext_digest !== ciphertextDigest.qualified
+  ) {
+    throw new ApiError("Artifact completion response did not match the uploaded file.", 502);
+  }
+  return artifact;
+}
+
+export async function fetchArtifactCatalog(path = ""): Promise<import("./types").ArtifactCatalog> {
+  const search = new URLSearchParams({ path, depth: "1" });
+  return fetcher<import("./types").ArtifactCatalog>(`${API_V1}/artifacts?${search}`);
+}
+
+export async function fetchArtifactDetail(
+  artifactId: string,
+): Promise<import("./types").ArtifactDetail> {
+  return fetcher<import("./types").ArtifactDetail>(`${API_V1}/artifacts/${artifactId}`);
+}
+
+export async function deleteArtifact(artifactId: string): Promise<void> {
+  await authFetch(`${API_V1}/artifacts/${encodeURIComponent(artifactId)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function putReviewResponse(
+  reviewId: string,
+  version: number,
+  decision: import("./types").HumanDecision,
+): Promise<unknown> {
+  const response = await authFetch(`${API_V1}/reviews/${reviewId}/response`, {
+    method: "PUT",
+    headers: { "If-Match": `"${version}"` },
+    body: JSON.stringify(decision),
+  });
+  if (!response.ok) {
+    throw new ApiError(apiErrorMessageFromBody(await response.text()), response.status);
+  }
+  return response.json();
 }
 
 export async function fetchRoutine(
@@ -2712,10 +2981,7 @@ function splitStepInstructions(config: Record<string, unknown> | undefined): {
 export async function createRoutine(
   data: import("./types").CreateRoutineRequest,
 ): Promise<import("./types").Routine> {
-  const body: import("./types").ConfigureRoutineRequest = {
-    ...routineConfigureBase(data),
-    id: data.id,
-  };
+  const body = buildCreateRoutineConfigureRequest(data);
   const res = await authFetch(configureRoutineUrl(), {
     method: "POST",
     body: JSON.stringify(body),
@@ -2728,10 +2994,7 @@ export async function updateRoutine(
   routineId: string,
   data: import("./types").UpdateRoutineRequest,
 ): Promise<import("./types").Routine> {
-  const body: import("./types").ConfigureRoutineRequest = {
-    ...routineConfigureBase(data),
-    routine: routineId,
-  };
+  const body = buildUpdateRoutineConfigureRequest(routineId, data);
   const res = await authFetch(configureRoutineUrl(), {
     method: "POST",
     body: JSON.stringify(body),
@@ -2759,15 +3022,7 @@ export async function saveRoutineGraph(
       };
     }),
   );
-  const body: import("./types").ConfigureRoutineRequest = {
-    ...routineConfigureBase(data),
-    routine: routineId,
-    graph: {
-      entry_steps: data.entry_steps,
-      steps,
-      edges: data.edges,
-    },
-  };
+  const body = buildRoutineGraphConfigureRequest(routineId, data, steps);
   const res = await authFetch(configureRoutineUrl(), {
     method: "POST",
     body: JSON.stringify(body),

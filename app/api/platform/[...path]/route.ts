@@ -1,6 +1,10 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { createPlatformToken } from "@/lib/server/platform-token";
+import {
+  buildPlatformApiUrl,
+  forwardPlatformResponseHeaders,
+} from "@/lib/server/platformProxyPolicy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,18 +12,6 @@ export const maxDuration = 300;
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const STREAM_PATHS = new Set(["chat-streams", "execution-streams"]);
-const STRIPPED_RESPONSE_HEADERS = new Set([
-  "connection",
-  "content-encoding",
-  "content-length",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade",
-]);
 
 function platformBaseUrl(): string {
   const url =
@@ -46,7 +38,7 @@ function requestHasAllowedOrigin(req: NextRequest): boolean {
   return origin === new URL(req.url).origin;
 }
 
-function forwardedContentHeaders(req: NextRequest): Headers {
+function forwardedRequestHeaders(req: NextRequest): Headers {
   const headers = new Headers();
   headers.set("accept", req.headers.get("accept") ?? "application/json");
 
@@ -60,17 +52,10 @@ function forwardedContentHeaders(req: NextRequest): Headers {
     headers.set("x-nenjo-org-id", orgId);
   }
 
-  return headers;
-}
-
-function forwardedResponseHeaders(upstreamHeaders: Headers): Headers {
-  const headers = new Headers();
-
-  upstreamHeaders.forEach((value, key) => {
-    if (!STRIPPED_RESPONSE_HEADERS.has(key.toLowerCase())) {
-      headers.set(key, value);
-    }
-  });
+  const ifMatch = req.headers.get("if-match");
+  if (ifMatch) {
+    headers.set("if-match", ifMatch);
+  }
 
   return headers;
 }
@@ -80,7 +65,7 @@ function isStreamPath(path: string[]): boolean {
 }
 
 function finalizeResponseHeaders(upstreamHeaders: Headers, path: string[]): Headers {
-  const headers = forwardedResponseHeaders(upstreamHeaders);
+  const headers = forwardPlatformResponseHeaders(upstreamHeaders);
 
   if (isStreamPath(path)) {
     headers.set("Cache-Control", "no-cache, no-transform");
@@ -125,10 +110,21 @@ async function proxyPlatformRequest(
   }
 
   const { path } = await ctx.params;
-  const upstream = new URL(`/api/v1/${path.join("/")}`, platformBaseUrl());
-  upstream.search = new URL(req.url).search;
+  let upstream: URL;
+  try {
+    upstream = buildPlatformApiUrl(
+      platformBaseUrl(),
+      path,
+      new URL(req.url).search,
+    );
+  } catch {
+    return NextResponse.json(
+      { error: { code: "invalid_proxy_path", message: "Invalid platform API path" } },
+      { status: 400 },
+    );
+  }
 
-  const headers = forwardedContentHeaders(req);
+  const headers = forwardedRequestHeaders(req);
   headers.set("authorization", `Bearer ${token}`);
 
   const body = req.method === "GET" || req.method === "HEAD" ? undefined : req.body;

@@ -30,6 +30,10 @@ import { useSafeRouter } from "@/lib/safeRouter";
 import { subscribeExecutionRealtime } from "@/lib/executionRealtime";
 import { EXECUTION_EVENT_TYPE, ExecutionEventKind, executionRealtimeEventIsTerminal } from "@/lib/executionEvents";
 import { TaskAttachments } from "./TaskAttachments";
+import {
+  ArtifactAttachmentComposer,
+  useArtifactAttachments,
+} from "@/components/artifacts/ArtifactAttachmentComposer";
 import { InlineTaskLabels } from "./InlineTaskLabels";
 import {
   TaskScheduleEditor,
@@ -79,6 +83,10 @@ export function TaskDetailClient({ taskId }: { taskId: string }) {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [existingArtifactIds, setExistingArtifactIds] = useState<string[]>([]);
+  const artifactAttachments = useArtifactAttachments(
+    Math.max(0, 16 - existingArtifactIds.length),
+  );
 
   useEffect(() => {
     if (!task) return;
@@ -90,6 +98,7 @@ export function TaskDetailClient({ taskId }: { taskId: string }) {
     setTarget(task.execution_target ? `${task.execution_target.type}:${task.execution_target.id}` : "");
     setDispatchMode(task.dispatch.mode);
     setLabelIds(task.labels.map((label) => label.id));
+    setExistingArtifactIds(task.artifact_ids ?? []);
   }, [task]);
 
   const latestRunStatus = executions?.[0]?.status;
@@ -159,6 +168,10 @@ export function TaskDetailClient({ taskId }: { taskId: string }) {
     target,
     labelIds,
   });
+  const artifactIds = [...existingArtifactIds, ...artifactAttachments.artifactIds];
+  const artifactsDirty = artifactIds.length !== (task.artifact_ids?.length ?? 0)
+    || artifactIds.some((artifactId, index) => artifactId !== task.artifact_ids?.[index]);
+  const editorDirty = taskDirty || artifactsDirty;
   const parseTarget = (): TaskExecutionTarget | null => {
     if (!target) return null;
     const [type, id] = target.split(":", 2);
@@ -170,7 +183,10 @@ export function TaskDetailClient({ taskId }: { taskId: string }) {
       title: title.trim(), instructions, status_id: statusId, priority,
       project_id: projectId || null,
       execution_target: parseTarget(), label_ids: labelIds,
+      artifact_ids: artifactIds,
     }, task);
+    setExistingArtifactIds(updated.artifact_ids ?? []);
+    artifactAttachments.clear();
     await mutateTask(updated, { revalidate: false });
     return updated;
   };
@@ -179,12 +195,13 @@ export function TaskDetailClient({ taskId }: { taskId: string }) {
     const saveScheduleChanges = scheduleEditorRef.current?.saveChanges;
     const switchingToManual = task.dispatch.mode === "scheduled" && dispatchMode === "manual";
     if (switchingToManual) await saveScheduleChanges?.();
-    if (taskDirty) await persistEditor();
+    if (editorDirty) await persistEditor();
     if (!switchingToManual) await saveScheduleChanges?.();
   };
 
   const save = async () => {
-    if (!taskDirty && !scheduleEditorState.dirty) return;
+    if (!editorDirty && !scheduleEditorState.dirty) return;
+    if (!artifactAttachments.isReady) return;
     setPending(true);
     setError(null);
     try {
@@ -263,6 +280,23 @@ export function TaskDetailClient({ taskId }: { taskId: string }) {
               <label className="theme-text text-sm">Dispatch to<select className={`${fieldClass} mt-1`} value={target} onChange={(event) => setTarget(event.target.value)}><option value="">Choose an agent</option><optgroup label="Agents">{agents?.map((agent) => <option key={agent.id} value={`agent:${agent.id}`}>{agent.name}</option>)}</optgroup><optgroup label="Routine workflows">{routines?.map((routine) => <option key={routine.id} value={`routine:${routine.id}`}>{routine.name}</option>)}</optgroup></select></label>
               <div><p className="theme-text mb-2 text-sm">Labels</p><InlineTaskLabels disabled={pending} onChange={setLabelIds} selectedIds={labelIds} /></div>
             </div>
+            <div>
+              <p className="theme-text mb-2 text-sm">Input artifacts</p>
+              {existingArtifactIds.length > 0 ? <div className="mb-2 flex flex-wrap gap-1.5">
+                {existingArtifactIds.map((artifactId, index) => <span className="theme-border theme-surface-muted flex items-center gap-1 rounded-md border px-2 py-1 text-xs" key={artifactId}>
+                  <span>Attachment {index + 1}</span>
+                  <button type="button" className="theme-text-muted hover:theme-text" onClick={() => setExistingArtifactIds((current) => current.filter((id) => id !== artifactId))} aria-label={`Remove attachment ${index + 1}`}>×</button>
+                </span>)}
+              </div> : null}
+              <ArtifactAttachmentComposer
+                attachments={artifactAttachments.attachments}
+                canAdd={artifactAttachments.canAdd && artifactIds.length < 16}
+                disabled={pending}
+                onAdd={artifactAttachments.addFiles}
+                onRemove={artifactAttachments.remove}
+                onRetry={artifactAttachments.retry}
+              />
+            </div>
             <TaskScheduleEditor
               mode={dispatchMode}
               onModeChange={setDispatchMode}
@@ -277,13 +311,13 @@ export function TaskDetailClient({ taskId }: { taskId: string }) {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex gap-2">
                 <Button
-                  disabled={pending || (!taskDirty && !scheduleEditorState.dirty) || !title.trim() || !scheduleEditorState.canSave}
+                  disabled={pending || (!editorDirty && !scheduleEditorState.dirty) || !title.trim() || !scheduleEditorState.canSave || !artifactAttachments.isReady}
                   isLoading={pending}
                   onClick={save}
                 >
                   Save
                 </Button>
-                {dispatchMode === "manual" ? <Button disabled={pending || Boolean(activeRun) || !target || !runnable || !title.trim()} onClick={run}><Play size={14} /> Run</Button> : null}
+                {dispatchMode === "manual" ? <Button disabled={pending || Boolean(activeRun) || !target || !runnable || !title.trim() || !artifactAttachments.isReady} onClick={run}><Play size={14} /> Run</Button> : null}
                 {activeRun ? <Button disabled={cancelling} onClick={() => setCancelOpen(true)} variant="danger"><Square size={13} /> Cancel run</Button> : null}
               </div>
               <div className="flex items-center gap-2">
@@ -344,6 +378,12 @@ export function TaskDetailClient({ taskId }: { taskId: string }) {
                         >
                           Retry
                         </Button>
+                      ) : null}
+                      {execution.pending_reviews > 0 ? (
+                        <a href={`/dashboard/reviews?execution_id=${execution.id}`}
+                          className="rounded-md bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white">
+                          Review
+                        </a>
                       ) : null}
                     </div>
                     {expanded ? (

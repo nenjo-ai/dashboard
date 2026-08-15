@@ -16,6 +16,12 @@ Then, run the development server:
 npm run dev
 ```
 
+Artifact previews are streamed through the dashboard server. Set
+`ARTIFACT_DOWNLOAD_ORIGINS` to the comma-separated object-store origins that
+may appear in platform download grants. Local Garage uses
+`http://localhost:3900`. The proxy rejects signed URLs outside this
+server-owned allowlist.
+
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 ## Project Structure

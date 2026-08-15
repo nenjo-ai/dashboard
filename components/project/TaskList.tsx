@@ -9,6 +9,10 @@ import { scheduledTaskStateLabel } from "@/lib/taskLifecycle";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
+import {
+  ArtifactAttachmentComposer,
+  useArtifactAttachments,
+} from "@/components/artifacts/ArtifactAttachmentComposer";
 
 interface TaskListProps {
   tasks: Task[] | undefined;
@@ -57,9 +61,10 @@ export function TaskList({
   const [instructions, setInstructions] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const artifactAttachments = useArtifactAttachments();
 
   const submit = async () => {
-    if (!title.trim()) return;
+    if (!title.trim() || !artifactAttachments.isReady) return;
     setPending(true);
     setError(null);
     try {
@@ -67,10 +72,12 @@ export function TaskList({
         project_id: projectId ?? null,
         title: title.trim(),
         instructions: instructions.trim() || undefined,
+        artifact_ids: artifactAttachments.artifactIds,
       });
       setCreating(false);
       setTitle("");
       setInstructions("");
+      artifactAttachments.clear();
       onDeleted?.();
       router.push(`/dashboard/tasks/${task.id}`);
     } catch (cause) {
@@ -139,10 +146,18 @@ export function TaskList({
           <label className="block text-sm theme-text">Instructions
             <textarea className="theme-surface theme-border mt-1 min-h-28 w-full rounded-lg border px-3 py-2" value={instructions} onChange={(event) => setInstructions(event.target.value)} />
           </label>
+          <ArtifactAttachmentComposer
+            attachments={artifactAttachments.attachments}
+            canAdd={artifactAttachments.canAdd}
+            disabled={pending}
+            onAdd={artifactAttachments.addFiles}
+            onRemove={artifactAttachments.remove}
+            onRetry={artifactAttachments.retry}
+          />
           {error ? <p className="text-sm text-red-500">{error}</p> : null}
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setCreating(false)}>Cancel</Button>
-            <Button disabled={pending || !title.trim()} onClick={submit}>{pending ? "Creating…" : "Create"}</Button>
+            <Button variant="ghost" onClick={() => { setCreating(false); artifactAttachments.clear(); }}>Cancel</Button>
+            <Button disabled={pending || !title.trim() || !artifactAttachments.isReady} onClick={submit}>{pending ? "Creating…" : "Create"}</Button>
           </div>
         </div>
       </Modal>

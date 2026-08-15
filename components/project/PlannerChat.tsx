@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/cn";
+import Image from "next/image";
 import { useState, useRef, useEffect, useMemo, useCallback, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -26,6 +27,13 @@ import { DomainSlashCommandDropdown } from "./DomainSlashCommandDropdown";
 import { DomainIndicator } from "./DomainIndicator";
 import { PendingDomainPill } from "./PendingDomainPill";
 import ChatSessionList from "./ChatSessionList";
+import {
+  ArtifactAttachmentButton,
+  ArtifactAttachmentList,
+  useArtifactAttachments,
+} from "@/components/artifacts/ArtifactAttachmentComposer";
+import { SessionArtifactAttachments } from "@/components/artifacts/ChatArtifactAttachments";
+import { useChatArtifactSupport } from "@/lib/useChatArtifactSupport";
 
 
 interface PlannerChatProps {
@@ -41,9 +49,12 @@ function UserAvatar({
 }) {
   if (imageUrl) {
     return (
-      <img
+      <Image
         src={imageUrl}
         alt="You"
+        width={32}
+        height={32}
+        unoptimized
         className="h-8 w-8 shrink-0 rounded-full object-cover"
       />
     );
@@ -295,6 +306,13 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
     archiveSession,
     deleteSession,
   } = usePlannerChat(projectId, activeAgentId);
+  const artifactAttachments = useArtifactAttachments();
+  const artifactSupport = useChatArtifactSupport(activeAgent);
+  const attachmentDisabled =
+    artifactSupport.isLoading || !artifactSupport.canAttach;
+  const attachmentDisabledReason = artifactSupport.isLoading
+    ? "Checking the agent's file analysis capabilities"
+    : "Assign an Analyze document or Analyze image model capability to this agent";
   const visibleRunTrace = visibleLiveChatRunTrace(activeRunTrace);
   const hasActiveRunTrace = Boolean(visibleRunTrace);
   const hasActiveTurn = shouldShowChatCancelControl({
@@ -513,7 +531,9 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
 
   const handleSend = () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text && artifactAttachments.artifactIds.length === 0) return;
+    if (!artifactAttachments.isReady) return;
+    if (artifactAttachments.artifactIds.length > 0 && attachmentDisabled) return;
 
     // Check for domain exit commands (always allowed)
     if (activeDomainSession) {
@@ -538,7 +558,9 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
         pendingDomain.command,
         ownerAgentId ?? activeAgentId,
         text,
+        artifactAttachments.artifactIds,
       );
+      artifactAttachments.clear();
       setPendingDomain(null);
       return;
     }
@@ -571,7 +593,9 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
           matchedDomain.command,
           ownerAgentId ?? activeAgentId,
           userMessage,
+          artifactAttachments.artifactIds,
         );
+        artifactAttachments.clear();
         return;
       }
     }
@@ -590,7 +614,8 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
         if (rest.trim()) {
           // Switch role AND send the remaining text
           setInput("");
-          sendMessage(rest.trim());
+          sendMessage(rest.trim(), { artifactIds: artifactAttachments.artifactIds });
+          artifactAttachments.clear();
         } else {
           // Just switch role, don't send
           setInput("");
@@ -599,7 +624,8 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
       }
     }
 
-    sendMessage(text);
+    sendMessage(text, { artifactIds: artifactAttachments.artifactIds });
+    artifactAttachments.clear();
     setInput("");
   };
 
@@ -872,6 +898,12 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
             </div>
           )}
 
+          <SessionArtifactAttachments messages={messages} />
+          <ArtifactAttachmentList
+            attachments={artifactAttachments.attachments}
+            onRemove={artifactAttachments.remove}
+            onRetry={artifactAttachments.retry}
+          />
           <div className="flex items-end gap-2">
             <div className="flex min-h-10 flex-1 items-end gap-2 rounded-lg border border-gray-300 px-2 py-1.5 focus-within:border-deep-space-blue-500 focus-within:ring-1 focus-within:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-900">
               {pendingDomain && (
@@ -893,6 +925,13 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
                 style={{ maxHeight: 200 }}
               />
             </div>
+            <ArtifactAttachmentButton
+              canAdd={artifactAttachments.canAdd}
+              disabled={attachmentDisabled}
+              disabledReason={attachmentDisabledReason}
+              iconOnly
+              onAdd={artifactAttachments.addFiles}
+            />
             {hasActiveTurn && (
               <button
                 onClick={cancelResponse}
@@ -936,7 +975,11 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
             )}
             <Button
               onClick={handleSend}
-              disabled={!input.trim()}
+              disabled={
+                (!input.trim() && artifactAttachments.artifactIds.length === 0)
+                || !artifactAttachments.isReady
+                || (artifactAttachments.artifactIds.length > 0 && attachmentDisabled)
+              }
               size="md"
             >
               <svg

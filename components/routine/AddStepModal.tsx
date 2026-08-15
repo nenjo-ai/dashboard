@@ -34,6 +34,7 @@ const CATEGORIES: Category[] = [
     subtitle: "Wrap a function to shape execution",
     steps: [
       { type: "gate", icon: "⬥", name: "Gate", color: "amber", desc: "Branch on function pass / fail" },
+      { type: "human", icon: "◉", name: "Human review", color: "cyan", desc: "Wait for an authorized reviewer" },
     ],
   },
   {
@@ -54,6 +55,7 @@ const ICON_BG: Record<string, string> = {
   amber: "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300",
   emerald: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300",
   red: "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300",
+  cyan: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
 };
 
 const CARD_SELECTED: Record<string, string> = {
@@ -62,6 +64,7 @@ const CARD_SELECTED: Record<string, string> = {
   amber: "border-amber-400 bg-amber-50 dark:border-amber-500 dark:bg-amber-900/20",
   emerald: "border-emerald-400 bg-emerald-50 dark:border-emerald-500 dark:bg-emerald-900/20",
   red: "border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-900/20",
+  cyan: "border-cyan-400 bg-cyan-50 dark:border-cyan-500 dark:bg-cyan-900/20",
 };
 
 const ADD_BTN: Record<string, string> = {
@@ -70,6 +73,7 @@ const ADD_BTN: Record<string, string> = {
   amber: "bg-amber-500 hover:bg-amber-600",
   emerald: "bg-emerald-500 hover:bg-emerald-600",
   red: "bg-red-500 hover:bg-red-600",
+  cyan: "bg-cyan-600 hover:bg-cyan-700",
 };
 
 const SELECT_CLS =
@@ -267,6 +271,8 @@ function RightPanelBody({
       return <p className={HINT_CLS}>Marks successful routine completion. No configuration needed.</p>;
     case "terminal_fail":
       return <p className={HINT_CLS}>Marks routine failure. Add an optional failure reason after creating the step.</p>;
+    case "human":
+      return <p className={HINT_CLS}>Configure the review subject and optional approval fields after creating the step.</p>;
     default:
       return null;
   }

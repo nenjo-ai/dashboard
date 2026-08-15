@@ -27,7 +27,10 @@ import { RoutineStepNode, type StepNodeData } from "./RoutineStepNode";
 import { TriggerNode, type TriggerNodeData } from "./TriggerNode";
 import { StepConfigPanel } from "./StepConfigPanel";
 import { AddStepModal } from "./AddStepModal";
-import { HANDLE_GATE_PASS, HANDLE_GATE_FAIL } from "./constants";
+import {
+  HANDLE_GATE_PASS, HANDLE_GATE_FAIL, HANDLE_HUMAN_APPROVED,
+  HANDLE_HUMAN_CHANGES, HANDLE_HUMAN_REJECTED,
+} from "./constants";
 
 import type {
   RoutineDetail,
@@ -74,6 +77,12 @@ function conditionEdgeStyle(condition: RoutineEdgeCondition, isFromGate: boolean
       return { stroke: "#34d399", animated: false, label: isFromGate ? "pass" : undefined };
     case "on_fail":
       return { stroke: "#f87171", animated: true, label: isFromGate ? "fail" : undefined };
+    case "approved":
+      return { stroke: "#34d399", animated: false, label: "approved" };
+    case "changes_requested":
+      return { stroke: "#fbbf24", animated: true, label: "changes" };
+    case "rejected":
+      return { stroke: "#f87171", animated: false, label: "rejected" };
     default:
       return { stroke: "#9ca3af", animated: false, label: undefined };
   }
@@ -164,6 +173,7 @@ function routineEdgesToFlowEdges(edges: RoutineEdgeType[], steps: RoutineStep[])
   return edges.map((edge) => {
     const sourceStep = steps.find((s) => s.slug === edge.source_step);
     const isFromGate = sourceStep?.step_type === "gate";
+    const isFromHuman = sourceStep?.step_type === "human";
     const style = conditionEdgeStyle(edge.condition, isFromGate);
 
     // For gate edges, map condition back to the correct source handle
@@ -174,6 +184,13 @@ function routineEdgesToFlowEdges(edges: RoutineEdgeType[], steps: RoutineStep[])
       } else {
         sourceHandle = HANDLE_GATE_PASS;
       }
+    }
+    if (isFromHuman) {
+      sourceHandle = edge.condition === "approved"
+        ? HANDLE_HUMAN_APPROVED
+        : edge.condition === "changes_requested"
+          ? HANDLE_HUMAN_CHANGES
+          : HANDLE_HUMAN_REJECTED;
     }
 
     return {
@@ -390,6 +407,12 @@ function RoutineEditorInner({
         condition = "on_pass";
       } else if (connection.sourceHandle === HANDLE_GATE_FAIL) {
         condition = "on_fail";
+      } else if (connection.sourceHandle === HANDLE_HUMAN_APPROVED) {
+        condition = "approved";
+      } else if (connection.sourceHandle === HANDLE_HUMAN_CHANGES) {
+        condition = "changes_requested";
+      } else if (connection.sourceHandle === HANDLE_HUMAN_REJECTED) {
+        condition = "rejected";
       }
 
       const isFromGate = condition !== "always";
@@ -521,6 +544,8 @@ function RoutineEditorInner({
             ? "Agent Step"
             : stepType === "gate"
                   ? "Quality Gate"
+                  : stepType === "human"
+                    ? "Human Review"
                   : stepType === "terminal_fail"
                     ? "Failed"
                     : "Done";
@@ -529,7 +554,13 @@ function RoutineEditorInner({
       const position_x = 250;
       const position_y = 50 + stepNodes.length * 120;
 
-      const config: Record<string, unknown> = {};
+      const config: Record<string, unknown> = stepType === "human"
+        ? {
+            request: {
+              title: "Review {{ task.title }}",
+            },
+          }
+        : {};
       const baseSlug = slugify(name);
       const tempId = `${baseSlug}_${tempIdCounter.current + 1}`;
       tempIdCounter.current += 1;

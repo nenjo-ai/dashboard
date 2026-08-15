@@ -12,6 +12,7 @@ import {
   memo,
 } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import useSWR from "swr";
@@ -46,6 +47,14 @@ import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { DomainSlashCommandDropdown } from "@/components/project/DomainSlashCommandDropdown";
 import { PendingDomainPill } from "@/components/project/PendingDomainPill";
 import { Button } from "@/components/ui/Button";
+import {
+  ArtifactAttachmentComposer,
+  ArtifactAttachmentButton,
+  ArtifactAttachmentList,
+  useArtifactAttachments,
+} from "@/components/artifacts/ArtifactAttachmentComposer";
+import { SessionArtifactAttachments } from "@/components/artifacts/ChatArtifactAttachments";
+import { useChatArtifactSupport } from "@/lib/useChatArtifactSupport";
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronDown, ChevronRight, Loader2, Mic, Square } from "lucide-react";
@@ -902,9 +911,12 @@ function UserAvatar({
 }) {
   if (imageUrl) {
     return (
-      <img
+      <Image
         src={imageUrl}
         alt="You"
+        width={32}
+        height={32}
+        unoptimized
         className="h-8 w-8 shrink-0 rounded-full object-cover"
       />
     );
@@ -1608,6 +1620,17 @@ export function ChatArea({
     exitDomain,
     cancelResponse,
   } = usePlannerChat(projectId, agentId, sessionId ?? undefined, targetType);
+  const artifactAttachments = useArtifactAttachments();
+  const artifactSupport = useChatArtifactSupport(
+    isAgentTarget ? activeAgent : undefined,
+  );
+  const attachmentDisabled =
+    isDomainPending || artifactSupport.isLoading || !artifactSupport.canAttach;
+  const attachmentDisabledReason = isDomainPending
+    ? "Wait for the domain to finish activating before attaching a file"
+    : artifactSupport.isLoading
+      ? "Checking the agent's file analysis capabilities"
+      : "Assign an Analyze document or Analyze image model capability to this agent";
   const visibleRunTrace = visibleLiveChatRunTrace(activeRunTrace);
   const hasActiveRunTrace = Boolean(visibleRunTrace);
   const hasActiveTurn = shouldShowChatCancelControl({
@@ -2416,7 +2439,9 @@ export function ChatArea({
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text && !pendingCommand) return;
+    if (!text && !pendingCommand && artifactAttachments.artifactIds.length === 0) return;
+    if (!artifactAttachments.isReady) return;
+    if (artifactAttachments.artifactIds.length > 0 && attachmentDisabled) return;
 
     // Close any open mention flow
     closeMentionFlow();
@@ -2446,7 +2471,14 @@ export function ChatArea({
     if (pendingDomain && !activeDomainSession) {
       setInput("");
       resetInputHeight();
-      enterDomain(pendingDomain.id, pendingDomain.command, agentId, text);
+      enterDomain(
+        pendingDomain.id,
+        pendingDomain.command,
+        agentId,
+        text,
+        artifactAttachments.artifactIds,
+      );
+      artifactAttachments.clear();
       setPendingDomain(null);
       return;
     }
@@ -2457,7 +2489,9 @@ export function ChatArea({
         commandInvocation: {
           command: pendingCommand.command,
         },
+        artifactIds: artifactAttachments.artifactIds,
       });
+      artifactAttachments.clear();
       setPendingCommand(null);
       setInput("");
       resetInputHeight();
@@ -2493,7 +2527,9 @@ export function ChatArea({
           matchedDomain.command,
           agentId,
           userMessage,
+          artifactAttachments.artifactIds,
         );
+        artifactAttachments.clear();
         return;
       }
     }
@@ -2504,10 +2540,12 @@ export function ChatArea({
         commandInvocation: {
           command: runtimeCommand.command,
         },
+        artifactIds: artifactAttachments.artifactIds,
       });
     } else {
-      sendMessage(text);
+      sendMessage(text, { artifactIds: artifactAttachments.artifactIds });
     }
+    artifactAttachments.clear();
     setInput("");
     resetInputHeight();
     // On mobile, force scroll to bottom after send to prevent layout shift
@@ -3329,6 +3367,23 @@ export function ChatArea({
             onClearPendingDomain={() => setPendingDomain(null)}
             pendingCommand={pendingCommand}
             onClearPendingCommand={() => setPendingCommand(null)}
+            sendDisabled={
+              !artifactAttachments.isReady
+              || (artifactAttachments.artifactIds.length > 0 && attachmentDisabled)
+            }
+            hasReadyAttachments={artifactAttachments.artifactIds.length > 0}
+            attachments={<>
+              <SessionArtifactAttachments messages={messages} />
+              <ArtifactAttachmentComposer
+                attachments={artifactAttachments.attachments}
+                canAdd={artifactAttachments.canAdd}
+                disabled={attachmentDisabled}
+                disabledReason={attachmentDisabledReason}
+                onAdd={artifactAttachments.addFiles}
+                onRemove={artifactAttachments.remove}
+                onRetry={artifactAttachments.retry}
+              />
+            </>}
           />
         </div>
       )}
@@ -3336,6 +3391,12 @@ export function ChatArea({
       {/* Desktop Input */}
       {!isMobile && (
         <div className="theme-border theme-surface relative z-[90] border-t p-3">
+          <SessionArtifactAttachments messages={messages} />
+          <ArtifactAttachmentList
+            attachments={artifactAttachments.attachments}
+            onRemove={artifactAttachments.remove}
+            onRetry={artifactAttachments.retry}
+          />
           <div className="relative">
             {showCommandDropdown && filteredCommandEntries.length > 0 && (
               <ChatCommandDropdown
@@ -3795,6 +3856,13 @@ export function ChatArea({
                   <Mic className="h-4 w-4" />
                 )}
               </button>
+              <ArtifactAttachmentButton
+                canAdd={artifactAttachments.canAdd}
+                disabled={attachmentDisabled}
+                disabledReason={attachmentDisabledReason}
+                iconOnly
+                onAdd={artifactAttachments.addFiles}
+              />
               <ChatCancelControl
                 visible={hasActiveTurn}
                 holdProgress={holdProgress}
@@ -3804,7 +3872,11 @@ export function ChatArea({
               />
               <Button
                 onClick={handleSend}
-                disabled={!input.trim() && !pendingCommand}
+                disabled={
+                  (!input.trim() && !pendingCommand && artifactAttachments.artifactIds.length === 0)
+                  || !artifactAttachments.isReady
+                  || (artifactAttachments.artifactIds.length > 0 && attachmentDisabled)
+                }
                 size="md"
                 className="!bg-deep-space-blue-500 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
               >

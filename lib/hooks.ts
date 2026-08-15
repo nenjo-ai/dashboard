@@ -38,6 +38,7 @@ import {
   mediaConfigUrl,
   agentMediaUrl,
   agentModelAssignmentsUrl,
+  orgCapabilityDefaultsUrl,
   knowledgeItemsUrl,
   knowledgePacksUrl,
   packageSourcesUrl,
@@ -118,6 +119,7 @@ import type {
   MediaConfig,
   MediaAssignmentsResponse,
   ModelAssignmentsResponse,
+  OrgCapabilityDefaultsResponse,
 } from "./types";
 import type { TaskFilters } from "./api";
 import { useSafeRouter } from "./safeRouter";
@@ -634,6 +636,22 @@ export function useAgentModelAssignments(agentId: string | undefined) {
 
   return {
     modelAssignments: data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useOrgCapabilityDefaults() {
+  const { data, error, isLoading, mutate } = useSWR<OrgCapabilityDefaultsResponse>(
+    orgCapabilityDefaultsUrl(),
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5000 },
+  );
+
+  return {
+    capabilityDefaults: data,
     isLoading,
     isError: !!error,
     error,

@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/cn";
+import Image from "next/image";
 import { useState, useRef, useEffect, useMemo, useCallback, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -18,6 +19,13 @@ import { DomainIndicator } from "@/components/project/DomainIndicator";
 import { PendingDomainPill } from "@/components/project/PendingDomainPill";
 import ChatSessionList from "@/components/project/ChatSessionList";
 import { findNenjiAgent, isNenjiAgent } from "@/lib/nenjiAgent";
+import {
+  ArtifactAttachmentButton,
+  ArtifactAttachmentList,
+  useArtifactAttachments,
+} from "@/components/artifacts/ArtifactAttachmentComposer";
+import { SessionArtifactAttachments } from "@/components/artifacts/ChatArtifactAttachments";
+import { useChatArtifactSupport } from "@/lib/useChatArtifactSupport";
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -32,9 +40,12 @@ function UserAvatar({
 }) {
   if (imageUrl) {
     return (
-      <img
+      <Image
         src={imageUrl}
         alt="You"
+        width={28}
+        height={28}
+        unoptimized
         className="h-7 w-7 shrink-0 rounded-full object-cover"
       />
     );
@@ -201,6 +212,13 @@ export function SystemChat() {
   const [domainFilter, setDomainFilter] = useState("");
   const [selectedDomainIndex, setSelectedDomainIndex] = useState(0);
   const [pendingDomain, setPendingDomain] = useState<Domain | null>(null);
+  const artifactAttachments = useArtifactAttachments();
+  const artifactSupport = useChatArtifactSupport(systemAgent);
+  const attachmentDisabled =
+    artifactSupport.isLoading || !artifactSupport.canAttach;
+  const attachmentDisabledReason = artifactSupport.isLoading
+    ? "Checking Nenji's file analysis capabilities"
+    : "Assign an Analyze document or Analyze image model capability to Nenji";
 
   // Pre-filter domains by the current filter
   const filteredDomains = useMemo(
@@ -219,7 +237,9 @@ export function SystemChat() {
   // Handle sending a message
   const handleSend = useCallback(() => {
     const text = inputValue.trim();
-    if (!text || !systemAgentId) return;
+    if ((!text && artifactAttachments.artifactIds.length === 0) || !systemAgentId) return;
+    if (!artifactAttachments.isReady) return;
+    if (artifactAttachments.artifactIds.length > 0 && attachmentDisabled) return;
 
     // Check for domain exit commands
     if (chat.activeDomainSession && ["#exit", "#done", "#finish"].includes(text.toLowerCase())) {
@@ -229,7 +249,14 @@ export function SystemChat() {
     }
 
     if (pendingDomain && !chat.activeDomainSession) {
-      chat.enterDomain(pendingDomain.id, pendingDomain.command, systemAgentId, text);
+      chat.enterDomain(
+        pendingDomain.id,
+        pendingDomain.command,
+        systemAgentId,
+        text,
+        artifactAttachments.artifactIds,
+      );
+      artifactAttachments.clear();
       setInputValue("");
       setPendingDomain(null);
       return;
@@ -248,20 +275,36 @@ export function SystemChat() {
         if (!userMessage) {
           return;
         }
-        chat.enterDomain(matchedDomain.id, matchedDomain.command, systemAgentId, userMessage);
+        chat.enterDomain(
+          matchedDomain.id,
+          matchedDomain.command,
+          systemAgentId,
+          userMessage,
+          artifactAttachments.artifactIds,
+        );
+        artifactAttachments.clear();
         setInputValue("");
         return;
       }
     }
 
-    chat.sendMessage(text);
+    chat.sendMessage(text, { artifactIds: artifactAttachments.artifactIds });
+    artifactAttachments.clear();
     setInputValue("");
 
     // Reset textarea height
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
-  }, [inputValue, systemAgentId, chat, availableDomains, pendingDomain]);
+  }, [
+    inputValue,
+    systemAgentId,
+    chat,
+    availableDomains,
+    pendingDomain,
+    artifactAttachments,
+    attachmentDisabled,
+  ]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (pendingDomain && !inputValue.trim() && (e.key === "Backspace" || e.key === "Escape")) {
@@ -478,6 +521,12 @@ export function SystemChat() {
           </div>
         )}
 
+        <SessionArtifactAttachments messages={chat.messages} />
+        <ArtifactAttachmentList
+          attachments={artifactAttachments.attachments}
+          onRemove={artifactAttachments.remove}
+          onRetry={artifactAttachments.retry}
+        />
         <div className="flex items-end gap-2">
           <div className="flex min-h-9 flex-1 items-end gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 focus-within:border-violet-400 focus-within:ring-1 focus-within:ring-violet-400 dark:border-gray-600 dark:bg-gray-900 dark:focus:border-violet-500 dark:focus:ring-violet-500">
             {pendingDomain && (
@@ -505,10 +554,22 @@ export function SystemChat() {
               style={{ maxHeight: 120 }}
             />
           </div>
+          <ArtifactAttachmentButton
+            canAdd={artifactAttachments.canAdd}
+            disabled={attachmentDisabled}
+            disabledReason={attachmentDisabledReason}
+            iconOnly
+            onAdd={artifactAttachments.addFiles}
+          />
           <button
             type="button"
             onClick={handleSend}
-            disabled={!inputValue.trim() || !systemAgentId}
+            disabled={
+              (!inputValue.trim() && artifactAttachments.artifactIds.length === 0)
+              || !systemAgentId
+              || !artifactAttachments.isReady
+              || (artifactAttachments.artifactIds.length > 0 && attachmentDisabled)
+            }
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white transition-colors hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-violet-500 dark:hover:bg-violet-600"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">

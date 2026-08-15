@@ -3,7 +3,10 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { RoutineStepType } from "@/lib/types";
-import { HANDLE_GATE_PASS, HANDLE_GATE_FAIL } from "./constants";
+import {
+  HANDLE_GATE_PASS, HANDLE_GATE_FAIL, HANDLE_HUMAN_APPROVED,
+  HANDLE_HUMAN_CHANGES, HANDLE_HUMAN_REJECTED,
+} from "./constants";
 
 // ---------------------------------------------------------------------------
 // Node data shape
@@ -41,6 +44,12 @@ const STEP_STYLES: Record<RoutineStepType, { bg: string; border: string; icon: s
     border: "border-amber-300 dark:border-amber-600",
     icon: "⬥",
     iconBg: "bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-300",
+  },
+  human: {
+    bg: "theme-surface",
+    border: "border-cyan-300 dark:border-cyan-600",
+    icon: "◉",
+    iconBg: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-300",
   },
   terminal: {
     bg: "theme-surface",
@@ -129,7 +138,23 @@ function RoutineStepNodeInner({ data, selected }: NodeProps) {
       </div>
 
       {/* Output handles */}
-      {nodeData.stepType === "gate" ? (
+      {nodeData.stepType === "human" ? (
+        <>
+          {[
+            [HANDLE_HUMAN_APPROVED, "approved", "20%", "bg-emerald-400!"],
+            [HANDLE_HUMAN_CHANGES, "changes", "50%", "bg-amber-400!"],
+            [HANDLE_HUMAN_REJECTED, "rejected", "80%", "bg-red-400!"],
+          ].map(([id, label, left, color]) => (
+            <div key={id}>
+              <Handle type="source" position={Position.Bottom} id={id}
+                className={`w-3! h-3! ${color} border-2! theme-surface! -bottom-1.5!`}
+                style={{ left }} />
+              <span className="absolute bottom-0 -translate-x-1/2 translate-y-full pt-0.5 text-[8px] font-medium uppercase text-gray-500 pointer-events-none"
+                style={{ left }}>{label}</span>
+            </div>
+          ))}
+        </>
+      ) : nodeData.stepType === "gate" ? (
         <>
           {/* Gate: pass-out (bottom-left, green) */}
           <Handle

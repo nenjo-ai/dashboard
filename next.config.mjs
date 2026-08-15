@@ -9,6 +9,11 @@ const config = {
   reactStrictMode: true,
   ...(distDir ? { distDir } : {}),
   turbopack: {},
+  experimental: {
+    instantInsights: {
+      validationLevel: 'warning',
+    },
+  },
   allowedDevOrigins: ['192.168.1.228'],
   // Next resolves the root OG/Twitter metadata image module while rendering
   // dynamic dashboard pages, so those serverless functions also read these fonts.

@@ -1,3 +1,9 @@
+export function officialNenjoPackageReference(
+  configuredReference = process.env.NEXT_PUBLIC_NENJO_PACKAGES_REF,
+): string {
+  return configuredReference?.trim() || "main";
+}
+
 /** Package registry source reconciled and installed during fresh onboarding. */
 export const OFFICIAL_NENJO_PACKAGE_SOURCE = {
   name: "Nenjo Official Packages",
@@ -7,7 +13,7 @@ export const OFFICIAL_NENJO_PACKAGE_SOURCE = {
     source: {
       kind: "git",
       url: "https://github.com/nenjo-ai/packages.git",
-      reference: "main",
+      reference: officialNenjoPackageReference(),
       manifest_path: "packages.yaml",
     },
   },

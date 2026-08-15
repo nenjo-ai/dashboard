@@ -3,6 +3,7 @@
 import { cn } from "@/lib/cn";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth, useUser } from "@clerk/nextjs";
@@ -12,7 +13,7 @@ import type { Project } from "@/lib/types";
 import { clearLocalSecretVaultSession, lockLocalSecretVault } from "@/lib/cryptoContent";
 import { CreateProjectModal } from "@/components/dashboard/CreateProjectModal";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
-import { Bot, GitBranch, LibraryBig, ListTodo, Package, Users } from "lucide-react";
+import { Bot, GitBranch, LibraryBig, ListTodo, Package, Users, UserCheck } from "lucide-react";
 
 
 interface NavItem {
@@ -55,6 +56,11 @@ const navigation: NavItem[] = [
     label: "Tasks",
     href: "/dashboard/tasks",
     icon: <ListTodo className="h-5 w-5" />,
+  },
+  {
+    label: "Reviews",
+    href: "/dashboard/reviews",
+    icon: <UserCheck className="h-5 w-5" />,
   },
   {
     label: "Library",
@@ -562,9 +568,12 @@ function UserProfile({ collapsed = false }: { collapsed?: boolean }) {
         className="flex w-full items-center gap-3 overflow-hidden p-4 text-left transition-colors hover:[background:var(--app-hover)]"
       >
         {imageUrl ? (
-          <img
+          <Image
             src={imageUrl}
             alt={displayName}
+            width={32}
+            height={32}
+            unoptimized
             className="h-8 w-8 shrink-0 rounded-full object-cover"
           />
         ) : (
