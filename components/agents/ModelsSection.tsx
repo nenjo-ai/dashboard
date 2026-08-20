@@ -412,8 +412,13 @@ export function ModelsSection({
     const nextErrors: FormErrors = {};
     if (!form.model.trim()) nextErrors.model = "Model is required.";
     if (!resourceSlug(form.slug)) nextErrors.slug = "Stable slug is required.";
-    if (form.provider === "openai-compatible" && !form.baseUrl.trim()) {
-      nextErrors.baseUrl = "Base URL is required for OpenAI Compatible providers.";
+    if (
+      (form.provider === "openai-compatible" || form.provider === "vllm") &&
+      !form.baseUrl.trim()
+    ) {
+      nextErrors.baseUrl = `Base URL is required for ${
+        form.provider === "vllm" ? "vLLM" : "OpenAI Compatible"
+      } providers.`;
     } else if (form.baseUrl.trim()) {
       try {
         new URL(form.baseUrl.trim());
@@ -943,16 +948,24 @@ export function ModelsSection({
               />
             </div>
 
-            {(form.provider === "ollama" || form.provider === "openai-compatible") && (
+            {(form.provider === "ollama" ||
+              form.provider === "vllm" ||
+              form.provider === "openai-compatible") && (
               <div>
-                <Label required={form.provider === "openai-compatible"}>Base URL</Label>
+                <Label required={form.provider !== "ollama"}>Base URL</Label>
                 <Input
                   value={form.baseUrl}
                   onChange={(event) => setField("baseUrl", event.target.value)}
                   className="mt-1"
                   error={!!errors.baseUrl}
                   disabled={saving}
-                  placeholder={form.provider === "ollama" ? "http://localhost:11434" : "http://localhost:1234/v1"}
+                  placeholder={
+                    form.provider === "ollama"
+                      ? "http://localhost:11434"
+                      : form.provider === "vllm"
+                        ? "http://localhost:8000/v1"
+                        : "http://localhost:1234/v1"
+                  }
                 />
                 {errors.baseUrl && (
                   <p className="mt-1 text-xs text-red-500">{errors.baseUrl}</p>

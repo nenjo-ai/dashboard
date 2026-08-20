@@ -1059,6 +1059,7 @@ export type ModelProvider =
   | "xai"
   | "openrouter"
   | "ollama"
+  | "vllm"
   | "groq"
   | "deepseek"
   | "minimax"
@@ -1173,6 +1174,11 @@ export const MODEL_PROVIDERS: {
       "phi3",
       "qwen2.5-coder",
     ],
+  },
+  {
+    id: "vllm",
+    label: "vLLM (Local)",
+    models: [],
   },
   {
     id: "groq",

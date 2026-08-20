@@ -100,6 +100,7 @@ const PROVIDER_ENV_VARS: Record<ModelProvider, string> = {
   xai: "XAI_API_KEY",
   openrouter: "OPENROUTER_API_KEY",
   ollama: "OLLAMA_HOST",
+  vllm: "",
   groq: "GROQ_API_KEY",
   deepseek: "DEEPSEEK_API_KEY",
   minimax: "MINIMAX_API_KEY",

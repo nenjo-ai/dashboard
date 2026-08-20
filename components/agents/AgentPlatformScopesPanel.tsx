@@ -26,7 +26,7 @@ const SCOPE_GROUPS = [
 
 interface AgentPlatformScopesPanelProps {
   agent: AgentDefinition;
-  onSaved: () => void;
+  onSaved: (updatedAgent: AgentDefinition) => void | Promise<unknown>;
 }
 
 export function AgentPlatformScopesPanel({ agent, onSaved }: AgentPlatformScopesPanelProps) {
@@ -34,12 +34,14 @@ export function AgentPlatformScopesPanel({ agent, onSaved }: AgentPlatformScopes
     new Set(agent.platform_scopes),
   );
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const isDirty =
     selected.size !== agent.platform_scopes.length ||
     agent.platform_scopes.some((s) => !selected.has(s));
 
   const toggle = (scope: string) => {
+    setError(null);
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(scope)) {
@@ -61,11 +63,18 @@ export function AgentPlatformScopesPanel({ agent, onSaved }: AgentPlatformScopes
 
   const handleSave = async () => {
     setSaving(true);
+    setError(null);
     try {
-      await updateAgentPlatformScopes(agent.id, Array.from(selected));
-      onSaved();
-    } catch {
-      // TODO: toast
+      const updatedAgent = await updateAgentPlatformScopes(
+        agent.id,
+        Array.from(selected).sort(),
+      );
+      setSelected(new Set(updatedAgent.platform_scopes));
+      await onSaved(updatedAgent);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to save agent scopes.",
+      );
     } finally {
       setSaving(false);
     }
@@ -82,7 +91,7 @@ export function AgentPlatformScopesPanel({ agent, onSaved }: AgentPlatformScopes
         <span>{writeCount} write</span>
       </div>
 
-      <div className="space-y-3">
+      <fieldset className="space-y-3" disabled={saving} aria-busy={saving}>
         {SCOPE_GROUPS.map((group) => (
           <div key={group.label} className="theme-surface-muted theme-border rounded-lg border p-3">
             <div className="theme-text-muted mb-2 text-xs font-medium uppercase tracking-wider">
@@ -109,6 +118,7 @@ export function AgentPlatformScopesPanel({ agent, onSaved }: AgentPlatformScopes
                       type="checkbox"
                       checked={isChecked}
                       onChange={() => toggle(scope)}
+                      disabled={saving}
                       className="theme-border h-3.5 w-3.5 rounded-sm"
                       style={{ accentColor: agent.color }}
                     />
@@ -130,7 +140,13 @@ export function AgentPlatformScopesPanel({ agent, onSaved }: AgentPlatformScopes
             </div>
           </div>
         ))}
-      </div>
+      </fieldset>
+
+      {error && (
+        <p role="alert" className="text-sm text-red-500 dark:text-red-400">
+          {error}
+        </p>
+      )}
 
       {isDirty && (
         <div className="flex justify-end pt-2">
