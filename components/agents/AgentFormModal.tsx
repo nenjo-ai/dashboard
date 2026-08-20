@@ -154,8 +154,13 @@ export function AgentFormModal({
     if (!form.model.trim()) errs.model = "Model is required.";
     if (form.temperature < 0 || form.temperature > 2)
       errs.temperature = "Temperature must be between 0.0 and 2.0.";
-    if (form.provider === "openai-compatible" && !form.baseUrl.trim()) {
-      errs.baseUrl = "Base URL is required for OpenAI Compatible providers.";
+    if (
+      (form.provider === "openai-compatible" || form.provider === "vllm") &&
+      !form.baseUrl.trim()
+    ) {
+      errs.baseUrl = `Base URL is required for ${
+        form.provider === "vllm" ? "vLLM" : "OpenAI Compatible"
+      } providers.`;
     } else if (form.baseUrl.trim()) {
       try {
         new URL(form.baseUrl.trim());
@@ -278,17 +283,21 @@ export function AgentFormModal({
           </div>
         </div>
 
-        {/* Base URL (shown for Ollama and OpenAI-compatible providers) */}
-        {(form.provider === "ollama" || form.provider === "openai-compatible") && (
+        {/* Base URL (shown for local and OpenAI-compatible providers) */}
+        {(form.provider === "ollama" ||
+          form.provider === "vllm" ||
+          form.provider === "openai-compatible") && (
           <div>
-            <Label required={form.provider === "openai-compatible"}>Base URL</Label>
+            <Label required={form.provider !== "ollama"}>Base URL</Label>
             <Input
               value={form.baseUrl}
               onChange={(e) => set("baseUrl", e.target.value)}
               placeholder={
                 form.provider === "ollama"
                   ? "http://localhost:11434"
-                  : "http://localhost:1234/v1"
+                  : form.provider === "vllm"
+                    ? "http://localhost:8000/v1"
+                    : "http://localhost:1234/v1"
               }
               error={!!errors.baseUrl}
               disabled={submitting}
@@ -300,7 +309,9 @@ export function AgentFormModal({
               <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                 {form.provider === "ollama"
                   ? "Leave empty for default (localhost:11434)"
-                  : "e.g. LM Studio, vLLM, llama.cpp, LocalAI, TGI"}
+                  : form.provider === "vllm"
+                    ? "The OpenAI-compatible vLLM endpoint reachable by your worker"
+                    : "e.g. LM Studio, llama.cpp, LocalAI, TGI"}
               </p>
             )}
           </div>

@@ -2769,6 +2769,39 @@ export async function fetchArtifactContent(
 const MAX_ARTIFACT_BYTES = 16 * 1024 * 1024;
 const ENCRYPTED_ARTIFACT_MEDIA_TYPE = "application/vnd.nenjo.encrypted+json";
 const ARTIFACT_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UTF8_ARTIFACT_MEDIA_TYPES_BY_EXTENSION = new Map<string, string>([
+  ["json", "application/json"],
+  ["jsonld", "application/ld+json"],
+  ["md", "text/markdown"],
+  ["txt", "text/plain"],
+  ["csv", "text/csv"],
+  ["html", "text/html"],
+  ["htm", "text/html"],
+  ["xml", "application/xml"],
+  ["yaml", "application/yaml"],
+  ["yml", "application/yaml"],
+  ["toml", "application/toml"],
+  ["js", "application/javascript"],
+  ["mjs", "application/javascript"],
+  ["cjs", "application/javascript"],
+  ["svg", "image/svg+xml"],
+]);
+
+function artifactUploadMediaType(file: File, plaintext: Uint8Array): string {
+  const extension = file.name.includes(".")
+    ? file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase()
+    : "";
+  const canonicalTextMediaType = UTF8_ARTIFACT_MEDIA_TYPES_BY_EXTENSION.get(extension);
+  if (!canonicalTextMediaType) {
+    return file.type || "application/octet-stream";
+  }
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
+  } catch {
+    throw new ApiError(`${file.name} is not valid UTF-8 text.`, 400);
+  }
+  return canonicalTextMediaType;
+}
 
 function artifactBytesToBase64(bytes: Uint8Array): string {
   const chunkSize = 32 * 1024;
@@ -2813,6 +2846,7 @@ export async function uploadArtifact(
   if (options.signal?.aborted) {
     throw options.signal.reason ?? new DOMException("Artifact upload was cancelled.", "AbortError");
   }
+  const mediaType = artifactUploadMediaType(file, plaintext);
   const plaintextDigest = await artifactSha256(plaintext);
   const envelope = JSON.stringify({ content_base64: artifactBytesToBase64(plaintext) });
   const encrypted = await encryptOrgContentPayload({
@@ -2836,7 +2870,7 @@ export async function uploadArtifact(
       artifact_id: artifactId,
       revision_of: null,
       name: file.name,
-      media_type: file.type || "application/octet-stream",
+      media_type: mediaType,
       plaintext_size_bytes: plaintext.byteLength,
       ciphertext_size_bytes: encryptedBytes.byteLength,
       plaintext_digest: plaintextDigest.qualified,
@@ -2891,7 +2925,7 @@ export async function uploadArtifact(
     artifact.id !== artifactId
     || artifact.state !== "ready"
     || artifact.name !== file.name
-    || artifact.media_type !== (file.type || "application/octet-stream")
+    || artifact.media_type !== mediaType
     || artifact.plaintext_size_bytes !== plaintext.byteLength
     || artifact.ciphertext_size_bytes !== encryptedBytes.byteLength
     || artifact.plaintext_digest !== plaintextDigest.qualified

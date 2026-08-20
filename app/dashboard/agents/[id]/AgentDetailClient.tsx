@@ -174,6 +174,12 @@ export function AgentDetailClient({ agentRef }: { agentRef: string }) {
     [agentRef, mutateAgent, router],
   );
 
+  const handleScopesSaved = useCallback(
+    (updatedAgent: AgentDefinition) =>
+      mutateAgent(updatedAgent, { revalidate: false }),
+    [mutateAgent],
+  );
+
   if (isLoading) {
     return isMobileViewport ? (
       <MobilePageShell title="Agent" backHref="/dashboard/agents" backLabel="Agents">
@@ -283,7 +289,11 @@ export function AgentDetailClient({ agentRef }: { agentRef: string }) {
             )}
 
             {activeTab === "scopes" && agent && (
-              <AgentPlatformScopesPanel agent={agent} onSaved={() => mutateAgent()} />
+              <AgentPlatformScopesPanel
+                key={`${agent.id}:${agent.updated_at}`}
+                agent={agent}
+                onSaved={handleScopesSaved}
+              />
             )}
 
             {activeTab === "settings" && agent && (

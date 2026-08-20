@@ -12,6 +12,11 @@ test("artifact library uploads files directly into the current folder", async ()
   assert.match(api, /interface UploadArtifactOptions/);
   assert.match(api, /publishPath\?: string/);
   assert.match(api, /publish_path: options\.publishPath \?\? null/);
+  assert.match(api, /\["csv", "text\/csv"\]/);
+  assert.match(api, /new TextDecoder\("utf-8", \{ fatal: true \}\)\.decode\(plaintext\)/);
+  assert.match(api, /const mediaType = artifactUploadMediaType\(file, plaintext\)/);
+  assert.match(api, /media_type: mediaType/);
+  assert.match(api, /artifact\.media_type !== mediaType/);
   assert.match(attachmentComposer, /uploadArtifact\(attachment\.file, activeOrgId, \{ signal: controller\.signal \}\)/);
 
   assert.match(artifactBrowser, /hasScope\("artifacts:write"\)/);
