@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useAppAuth } from "@/components/auth/AppAuth";
 import { Copy, Mail, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
@@ -835,7 +835,7 @@ function AccessRequestsPanel({
 }
 
 export function OrgSettingsSection() {
-  const { user } = useUser();
+  const { user } = useAppAuth();
   const { currentUser, mutate: mutateCurrentUser } = useCurrentUser();
   const { mutate: mutateCurrentOrg } = useCurrentOrg();
   const { mutate: mutateOrganizations } = useOrganizations();

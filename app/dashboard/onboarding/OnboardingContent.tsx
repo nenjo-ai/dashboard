@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { useAppAuth } from "@/components/auth/AppAuth";
 import useSWR from "swr";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { MODEL_PROVIDERS } from "@/lib/types";
@@ -948,7 +948,7 @@ function StepConnect({
   accountOrgId: string;
 }) {
   const router = useSafeRouter();
-  const { user } = useUser();
+  const { user } = useAppAuth();
   const { isConnected } = useWorkerStatus({ refreshInterval: 3000 });
   const { data: enrollments, mutate: mutateEnrollments } = useSWR<WorkerEnrollmentStatusResponse[]>(
     user ? workerEnrollmentUrl() : null,
@@ -1760,7 +1760,7 @@ function StepRestoreDevice({
 // ---------------------------------------------------------------------------
 
 export default function OnboardingContent() {
-  const { user, isLoaded } = useUser();
+  const { user, isLoaded } = useAppAuth();
   const router = useSafeRouter();
   const searchParams = useSearchParams();
   const forceRestore = searchParams.get("restore") === "1";

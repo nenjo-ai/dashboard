@@ -1,7 +1,7 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createPlatformToken } from "@/lib/server/platform-token";
+import { resolveDashboardSession } from "@/lib/server/dashboardAuth";
 import {
   MAX_DASHBOARD_ARTIFACT_ENVELOPE_BYTES,
   validateArtifactDownloadUrl,
@@ -53,16 +53,30 @@ export async function GET(
     return errorResponse("Invalid artifact ID", 400);
   }
 
-  const { userId, sessionId } = await auth();
-  if (!userId) {
+  let sessionResolution;
+  try {
+    sessionResolution = await resolveDashboardSession(request.url);
+  } catch (error) {
+    console.error("Failed to resolve artifact proxy authentication", error);
+    return errorResponse("Dashboard authentication is not configured", 500);
+  }
+  if (sessionResolution.kind !== "authenticated") {
+    if (sessionResolution.kind === "forbidden_local_host") {
+      return errorResponse("Local authentication requires a loopback hostname", 403);
+    }
+    if (sessionResolution.kind === "unconfigured") {
+      return errorResponse("Dashboard authentication is not configured", 500);
+    }
     return errorResponse("Authentication required", 401);
   }
+  const { userId, sessionId, provisioningProfile } = sessionResolution.session;
 
   let token: string;
   try {
     token = createPlatformToken({
       userId,
       sessionId,
+      provisioningProfile,
       orgId: request.headers.get("x-nenjo-org-id")?.trim() || null,
     });
   } catch (error) {

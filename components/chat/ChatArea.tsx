@@ -1,25 +1,12 @@
 "use client";
 
 import { cn } from "@/lib/cn";
-import {
-  Children,
-  isValidElement,
-  useState,
-  useRef,
-  useEffect,
-  useMemo,
-  useCallback,
-  memo,
-} from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
-import Image from "next/image";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
 import useSWR from "swr";
 import type {
   AgentDefinition,
   ChatCommand,
-  ChatMessage,
   ChatSessionExtended,
   Domain,
   EncryptedPayload,
@@ -39,38 +26,34 @@ import {
   fetchVoiceInputJob,
   fetcher,
 } from "@/lib/api";
-import { usePlannerChat } from "@/lib/usePlannerChat";
+import { useChat } from "@/lib/useChat";
 import { decryptContentPayload } from "@/lib/cryptoContent";
 import { toast } from "@/lib/toast";
-import { useUser } from "@clerk/nextjs";
+import { useAppAuth } from "@/components/auth/AppAuth";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { DomainSlashCommandDropdown } from "@/components/project/DomainSlashCommandDropdown";
-import { PendingDomainPill } from "@/components/project/PendingDomainPill";
-import { Button } from "@/components/ui/Button";
 import {
   ArtifactAttachmentComposer,
-  ArtifactAttachmentButton,
   ArtifactAttachmentList,
   useArtifactAttachments,
 } from "@/components/artifacts/ArtifactAttachmentComposer";
 import { SessionArtifactAttachments } from "@/components/artifacts/ChatArtifactAttachments";
 import { useChatArtifactSupport } from "@/lib/useChatArtifactSupport";
-import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
-import { ChevronRight, Loader2, Mic, Square } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { MobileInputBar } from "./MobileInputBar";
 import { MobileEmptyState } from "./MobileEmptyState";
-import { PendingCommandPill } from "./PendingCommandPill";
-import { ChatCancelControl } from "./ChatLiveTurnSurface";
-import { AssistantActivity } from "./AssistantActivity";
+import { ChatEmptyState } from "./ChatEmptyState";
+import { ChatMessageBubble } from "./ChatMessageBubble";
+import { ChatComposer } from "./ChatComposer";
 import {
   isVoiceInputDisabled,
+  livePhaseForChatMessage,
+  shouldDisplayChatMessage,
   shouldShowChatHistoryLoader,
   shouldShowChatCancelControl,
-  shouldShowChatRunStatusNotice,
-  visibleLiveAssistantContent,
   visibleLiveChatRunTrace,
-} from "@/lib/chatInterfaceState";
+} from "@/lib/chat/derivations";
 
 interface ChatAreaProps {
   projectId: string | null;
@@ -120,8 +103,6 @@ type ChatCommandPickerEntry =
 // Helpers
 // ---------------------------------------------------------------------------
 
-const UUID_RE =
-  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const NEW_SESSION_COMMAND = "/new-session";
 const CHAT_COMMANDS: ChatCommandOption[] = [
   {
@@ -709,739 +690,6 @@ function ChatCommandDropdown({
   );
 }
 
-/** Shorten full UUIDs to their first 8-char segment for compact mobile display. */
-function shortenUuids(text: string): string {
-  return text.replace(UUID_RE, (match) => `${match.slice(0, 8)}…`);
-}
-
-function messageCommandDisplay(
-  message: ChatMessage,
-  content: string,
-): { command: string; content: string } | null {
-  if (message.role !== "user") return null;
-  const command = message.command?.trim();
-  if (command?.startsWith("/")) {
-    const body =
-      content === command
-        ? ""
-        : content.startsWith(`${command} `)
-          ? content.slice(command.length).trimStart()
-          : content;
-    return { command, content: body };
-  }
-
-  const match = content.match(/^(\/\S+)(?:\s+([\s\S]*))?$/);
-  if (!match) return null;
-  return {
-    command: match[1],
-    content: match[2]?.trimStart() ?? "",
-  };
-}
-
-function getCodeLanguage(className?: string): string | null {
-  const match = /language-([\w-]+)/i.exec(className ?? "");
-  return match?.[1] ?? null;
-}
-
-function formatCodeLanguageLabel(language: string | null): string | null {
-  if (!language) return null;
-  return language
-    .split(/[-_]/g)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function extractMermaidChart(text: string): {
-  chart: string | null;
-  before: string;
-  after: string;
-} {
-  const fencedMatch = text.match(/```mermaid\s*([\s\S]*?)```/i);
-  if (fencedMatch) {
-    const chart = fencedMatch[1]?.trim() ?? "";
-    const [fullMatch] = fencedMatch;
-    const startIndex = text.indexOf(fullMatch);
-    const before = startIndex >= 0 ? text.slice(0, startIndex).trim() : "";
-    const after =
-      startIndex >= 0 ? text.slice(startIndex + fullMatch.length).trim() : "";
-    return { chart: chart || null, before, after };
-  }
-
-  const normalized = text
-    .trim()
-    .replace(/^```mermaid\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/^mermaid\s*\n/i, "")
-    .trimStart();
-
-  if (!normalized) {
-    return { chart: null, before: text, after: "" };
-  }
-
-  const isMermaid =
-    /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|quadrantChart|requirementDiagram|gitGraph|C4Context|C4Container|C4Component|C4Dynamic|C4Deployment)\b/.test(
-      normalized,
-    );
-
-  return {
-    chart: isMermaid ? normalized.trim() : null,
-    before: isMermaid ? "" : text,
-    after: "",
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-const assistantMarkdownComponents: Components = {
-  pre({ children }) {
-    const child =
-      Children.count(children) === 1 ? Children.only(children) : null;
-    if (
-      child &&
-      typeof child === "object" &&
-      "type" in child &&
-      (child as React.ReactElement).type === MermaidDiagram
-    ) {
-      return <>{children}</>;
-    }
-    const className = isValidElement<{ className?: string }>(child)
-      ? child.props.className
-      : undefined;
-    const language = formatCodeLanguageLabel(getCodeLanguage(className));
-    const rawText = isValidElement<{ children?: React.ReactNode }>(child)
-      ? String(child.props.children ?? "").replace(/\n$/, "")
-      : String(children ?? "").replace(/\n$/, "");
-
-    return (
-      <div className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900">
-        {language ? (
-          <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-slate-200 dark:text-slate-500">
-            {language}
-          </div>
-        ) : null}
-        <pre className="m-0 overflow-x-auto bg-slate-950 p-4 text-left text-slate-50 dark:bg-slate-50 dark:text-slate-900">
-          <code
-            className="block whitespace-pre font-mono text-[13px] leading-6 text-slate-50 dark:text-slate-900"
-            style={{
-              fontFamily:
-                'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-            }}
-          >
-            {rawText}
-          </code>
-        </pre>
-      </div>
-    );
-  },
-  code({ className, children, ...props }) {
-    const language = getCodeLanguage(className);
-    const codeString = String(children).replace(/\n$/, "");
-
-    if (language === "mermaid") {
-      return <MermaidDiagram chart={codeString} />;
-    }
-    if (className) {
-      return (
-        <code className={className} {...props}>
-          {children}
-        </code>
-      );
-    }
-    return (
-      <code className="font-mono text-[0.85em]" {...props}>
-        {children}
-      </code>
-    );
-  },
-};
-
-const AssistantMarkdown = memo(function AssistantMarkdown({
-  content,
-}: {
-  content: string;
-}) {
-  return (
-    <div className="prose max-w-none break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-headings:font-semibold prose-headings:tracking-[-0.02em] prose-headings:text-gray-950 dark:prose-headings:text-white prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:rounded prose-code:bg-black/[0.06] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:font-medium prose-code:text-gray-900 prose-code:break-all dark:prose-code:bg-white/[0.08] dark:prose-code:text-gray-100 prose-pre:overflow-x-auto prose-pre:rounded-[1.35rem] prose-pre:border prose-pre:border-white/10 prose-pre:bg-[#0a0d12] prose-pre:px-0 prose-pre:py-0 prose-pre:text-[13px] prose-pre:text-gray-100 dark:prose-pre:bg-[#0a0d12] [&_pre_code]:block [&_pre_code]:bg-transparent [&_pre_code]:p-4 [&_pre_code]:pt-3 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-li:my-1 prose-ul:my-2 prose-ol:my-2 prose-blockquote:border-deep-space-blue-300 prose-blockquote:text-gray-700 dark:prose-blockquote:border-deep-space-blue-700 dark:prose-blockquote:text-gray-300 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={assistantMarkdownComponents}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
-  );
-});
-
-function UserAvatar({
-  imageUrl,
-  initials,
-}: {
-  imageUrl?: string | null;
-  initials: string;
-}) {
-  if (imageUrl) {
-    return (
-      <Image
-        src={imageUrl}
-        alt="You"
-        width={32}
-        height={32}
-        unoptimized
-        className="h-8 w-8 shrink-0 rounded-full object-cover"
-      />
-    );
-  }
-  return (
-    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-deep-space-blue-100 text-xs font-bold text-deep-space-blue-700">
-      {initials}
-    </div>
-  );
-}
-
-const MessageStatusIndicator = memo(function MessageStatusIndicator({
-  status,
-}: {
-  status?: ChatMessage["status"];
-}) {
-  if (!status) return null;
-
-  if (status === "queued") {
-    return (
-      <motion.span
-        key="queued"
-        initial={{ opacity: 0, x: 10 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -5 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
-        className="inline-flex items-center gap-1.5 text-[11px] font-medium text-deep-space-blue-200"
-      >
-        Queued
-        <svg
-          className="h-3.5 w-3.5 animate-spin"
-          viewBox="0 0 16 16"
-          fill="none"
-        >
-          <circle
-            cx="8"
-            cy="8"
-            r="6"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeDasharray="20 12"
-            strokeLinecap="round"
-          />
-        </svg>
-      </motion.span>
-    );
-  }
-
-  if (status === "sending") {
-    return (
-      <motion.span
-        key="sending"
-        initial={{ opacity: 0, x: 10 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -5 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
-        className="inline-flex items-center gap-1.5 text-[11px] font-medium text-deep-space-blue-200"
-      >
-        Sending
-        <svg
-          className="h-3.5 w-3.5 animate-spin"
-          viewBox="0 0 16 16"
-          fill="none"
-        >
-          <circle
-            cx="8"
-            cy="8"
-            r="6"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeDasharray="20 12"
-            strokeLinecap="round"
-          />
-        </svg>
-      </motion.span>
-    );
-  }
-
-  if (status === "sent") {
-    return (
-      <motion.span
-        key="sent"
-        initial={{ opacity: 0, x: 10 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -5 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
-        className="inline-flex items-center gap-1.5 text-[11px] font-medium text-deep-space-blue-200"
-      >
-        <svg className="h-3.5 w-3.5" viewBox="0 0 20 16" fill="none">
-          <path
-            d="M4 8.5l4 4 7-8"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="animate-check-draw"
-          />
-        </svg>
-        Sent
-        <svg
-          className="h-3.5 w-3.5 animate-spin"
-          viewBox="0 0 16 16"
-          fill="none"
-        >
-          <circle
-            cx="8"
-            cy="8"
-            r="6"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeDasharray="20 12"
-            strokeLinecap="round"
-          />
-        </svg>
-      </motion.span>
-    );
-  }
-
-  if (status === "failed") {
-    return (
-      <motion.span
-        key="failed"
-        initial={{ opacity: 0, x: 10 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -5 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
-        className="inline-flex items-center gap-1.5 text-[11px] font-medium text-rose-300"
-      >
-        Failed
-      </motion.span>
-    );
-  }
-
-  if (status === "cancelled") {
-    return (
-      <motion.span
-        key="cancelled"
-        initial={{ opacity: 0, x: 10 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -5 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
-        className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-300"
-      >
-        Cancelled
-      </motion.span>
-    );
-  }
-
-  // delivered
-  return (
-    <motion.span
-      key="delivered"
-      initial={{ opacity: 0, x: 10 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
-      className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-300"
-    >
-      <svg className="h-3.5 w-3.5" viewBox="0 0 20 16" fill="none">
-        <path
-          d="M2 8.5l3 3 5-6"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="animate-check-draw"
-        />
-        <path
-          d="M7 8.5l3 3 5-6"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="animate-check-draw-delayed"
-        />
-      </svg>
-      Delivered
-    </motion.span>
-  );
-});
-
-const MessageBubble = memo(function MessageBubble({
-  message,
-  activeAgent,
-  userImageUrl,
-  userInitials,
-  onDelete,
-  onRetry,
-  compact,
-}: {
-  message: ChatMessage;
-  activeAgent?: AgentDefinition;
-  userImageUrl?: string | null;
-  userInitials: string;
-  onDelete?: (messageId: string) => void;
-  onRetry?: (messageId: string) => void;
-  /** When true, shorten UUIDs in message content (mobile). */
-  compact?: boolean;
-}) {
-  const isUser = message.role === "user";
-  const rawDisplayContent = compact
-    ? shortenUuids(message.content)
-    : message.content;
-  const commandDisplay = messageCommandDisplay(message, rawDisplayContent);
-  const displayContent = commandDisplay?.content ?? rawDisplayContent;
-  const assistantDisplayContent = message.isLiveDraft
-    ? visibleLiveAssistantContent(displayContent, message.runTrace)
-    : displayContent;
-  const runStatusNotice = shouldShowChatRunStatusNotice(message.runStatus)
-    ? message.runStatus
-    : undefined;
-  const mermaidContent = !isUser
-    ? extractMermaidChart(assistantDisplayContent)
-    : { chart: null, before: displayContent, after: "" };
-
-  return (
-    <div
-      className={cn(
-        "group flex items-start gap-3",
-        isUser ? "flex-row-reverse md:flex-row" : "flex-row",
-      )}
-    >
-      {/* Avatar — hidden on mobile */}
-      <div className="hidden md:block">
-        {isUser ? (
-          <UserAvatar imageUrl={userImageUrl} initials={userInitials} />
-        ) : activeAgent ? (
-          <RoleIdenticon
-            roleId={activeAgent.id}
-            color={activeAgent.color}
-            size={32}
-            className="shrink-0"
-            name={activeAgent.name}
-          />
-        ) : (
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vivid-tangerine-100 text-xs font-bold text-vivid-tangerine-700">
-            AI
-          </div>
-        )}
-      </div>
-      <div
-        className={cn(
-          "overflow-hidden break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed rounded-2xl md:rounded-xl px-4 py-2.5",
-          isUser
-            ? "max-w-[85%] md:max-w-[75%] bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100 rounded-tr-sm md:rounded-tr-2xl md:rounded-tl-sm md:bg-deep-space-blue-500 md:text-white md:dark:bg-deep-space-blue-500 md:dark:text-white"
-            : "w-full max-w-full md:w-[75%] md:max-w-[75%] bg-transparent md:theme-surface md:border md:theme-border text-gray-800 rounded-tl-sm dark:text-gray-200",
-        )}
-      >
-        {isUser ? (
-          <div className="space-y-2">
-            {commandDisplay ? (
-              <div className="flex min-w-0">
-                <span
-                  className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-gray-300 bg-white/60 px-2 py-1 text-[11px] font-medium text-gray-600 dark:border-gray-700 dark:bg-white/5 dark:text-gray-300 md:border-white/25 md:bg-white/10 md:text-deep-space-blue-50 md:dark:border-white/25 md:dark:bg-white/10 md:dark:text-deep-space-blue-50"
-                  title={commandDisplay.command}
-                >
-                  <span className="shrink-0 text-[10px] uppercase text-gray-400 md:text-deep-space-blue-100">
-                    Command
-                  </span>
-                  <span className="min-w-0 truncate font-mono">
-                    {commandDisplay.command}
-                  </span>
-                </span>
-              </div>
-            ) : null}
-            {displayContent.trim() ? (
-              <p className="whitespace-pre-wrap">{displayContent}</p>
-            ) : null}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {message.isLiveDraft ? (
-              assistantDisplayContent ? (
-                <AssistantMarkdown content={assistantDisplayContent} />
-              ) : null
-            ) : (
-              <>
-                {mermaidContent.before ? (
-                  <div className="prose max-w-none break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-headings:font-semibold prose-headings:tracking-[-0.02em] prose-headings:text-gray-950 dark:prose-headings:text-white prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:rounded prose-code:bg-black/[0.06] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:font-medium prose-code:text-gray-900 prose-code:break-all dark:prose-code:bg-white/[0.08] dark:prose-code:text-gray-100 prose-pre:overflow-x-auto prose-pre:rounded-[1.35rem] prose-pre:border prose-pre:border-white/10 prose-pre:bg-[#0a0d12] prose-pre:px-0 prose-pre:py-0 prose-pre:text-[13px] prose-pre:text-gray-100 dark:prose-pre:bg-[#0a0d12] [&_pre_code]:block [&_pre_code]:bg-transparent [&_pre_code]:p-4 [&_pre_code]:pt-3 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-li:my-1 prose-ul:my-2 prose-ol:my-2 prose-blockquote:border-deep-space-blue-300 prose-blockquote:text-gray-700 dark:prose-blockquote:border-deep-space-blue-700 dark:prose-blockquote:text-gray-300 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        pre({ children }) {
-                          const child =
-                            Children.count(children) === 1
-                              ? Children.only(children)
-                              : null;
-                          if (
-                            child &&
-                            typeof child === "object" &&
-                            "type" in child &&
-                            (child as React.ReactElement).type ===
-                              MermaidDiagram
-                          ) {
-                            return <>{children}</>;
-                          }
-                          const className = isValidElement<{
-                            className?: string;
-                          }>(child)
-                            ? child.props.className
-                            : undefined;
-                          const language = formatCodeLanguageLabel(
-                            getCodeLanguage(className),
-                          );
-                          const rawText = isValidElement<{
-                            children?: React.ReactNode;
-                          }>(child)
-                            ? String(child.props.children ?? "").replace(
-                                /\n$/,
-                                "",
-                              )
-                            : String(children ?? "").replace(/\n$/, "");
-
-                          return (
-                            <div className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900">
-                              {language ? (
-                                <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-slate-200 dark:text-slate-500">
-                                  {language}
-                                </div>
-                              ) : null}
-                              <pre className="m-0 overflow-x-auto bg-slate-950 p-4 text-left text-slate-50 dark:bg-slate-50 dark:text-slate-900">
-                                <code
-                                  className="block whitespace-pre font-mono text-[13px] leading-6 text-slate-50 dark:text-slate-900"
-                                  style={{
-                                    fontFamily:
-                                      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-                                  }}
-                                >
-                                  {rawText}
-                                </code>
-                              </pre>
-                            </div>
-                          );
-                        },
-                        code({ className, children, ...props }) {
-                          const language = getCodeLanguage(className);
-                          const codeString = String(children).replace(
-                            /\n$/,
-                            "",
-                          );
-
-                          if (language === "mermaid") {
-                            return <MermaidDiagram chart={codeString} />;
-                          }
-
-                          if (className) {
-                            return (
-                              <code className={className} {...props}>
-                                {children}
-                              </code>
-                            );
-                          }
-                          return (
-                            <code
-                              className="font-mono text-[0.85em]"
-                              {...props}
-                            >
-                              {children}
-                            </code>
-                          );
-                        },
-                      }}
-                    >
-                      {mermaidContent.chart
-                        ? mermaidContent.before
-                        : displayContent}
-                    </ReactMarkdown>
-                  </div>
-                ) : null}
-                {mermaidContent.chart ? (
-                  <div className="not-prose">
-                    <MermaidDiagram chart={mermaidContent.chart} />
-                  </div>
-                ) : null}
-                {mermaidContent.after ? (
-                  <div className="prose max-w-none break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-headings:font-semibold prose-headings:tracking-[-0.02em] prose-headings:text-gray-950 dark:prose-headings:text-white prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:rounded prose-code:bg-black/[0.06] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:font-medium prose-code:text-gray-900 prose-code:break-all dark:prose-code:bg-white/[0.08] dark:prose-code:text-gray-100 prose-pre:overflow-x-auto prose-pre:rounded-[1.35rem] prose-pre:border prose-pre:border-white/10 prose-pre:bg-[#0a0d12] prose-pre:px-0 prose-pre:py-0 prose-pre:text-[13px] prose-pre:text-gray-100 dark:prose-pre:bg-[#0a0d12] [&_pre_code]:block [&_pre_code]:bg-transparent [&_pre_code]:p-4 [&_pre_code]:pt-3 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-li:my-1 prose-ul:my-2 prose-ol:my-2 prose-blockquote:border-deep-space-blue-300 prose-blockquote:text-gray-700 dark:prose-blockquote:border-deep-space-blue-700 dark:prose-blockquote:text-gray-300 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        pre({ children }) {
-                          const child =
-                            Children.count(children) === 1
-                              ? Children.only(children)
-                              : null;
-                          if (
-                            child &&
-                            typeof child === "object" &&
-                            "type" in child &&
-                            (child as React.ReactElement).type ===
-                              MermaidDiagram
-                          ) {
-                            return <>{children}</>;
-                          }
-                          const className = isValidElement<{
-                            className?: string;
-                          }>(child)
-                            ? child.props.className
-                            : undefined;
-                          const language = formatCodeLanguageLabel(
-                            getCodeLanguage(className),
-                          );
-                          const rawText = isValidElement<{
-                            children?: React.ReactNode;
-                          }>(child)
-                            ? String(child.props.children ?? "").replace(
-                                /\n$/,
-                                "",
-                              )
-                            : String(children ?? "").replace(/\n$/, "");
-
-                          return (
-                            <div className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900">
-                              {language ? (
-                                <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-slate-200 dark:text-slate-500">
-                                  {language}
-                                </div>
-                              ) : null}
-                              <pre className="m-0 overflow-x-auto bg-slate-950 p-4 text-left text-slate-50 dark:bg-slate-50 dark:text-slate-900">
-                                <code
-                                  className="block whitespace-pre font-mono text-[13px] leading-6 text-slate-50 dark:text-slate-900"
-                                  style={{
-                                    fontFamily:
-                                      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-                                  }}
-                                >
-                                  {rawText}
-                                </code>
-                              </pre>
-                            </div>
-                          );
-                        },
-                        code({ className, children, ...props }) {
-                          const language = getCodeLanguage(className);
-                          const codeString = String(children).replace(
-                            /\n$/,
-                            "",
-                          );
-
-                          if (language === "mermaid") {
-                            return <MermaidDiagram chart={codeString} />;
-                          }
-
-                          if (className) {
-                            return (
-                              <code className={className} {...props}>
-                                {children}
-                              </code>
-                            );
-                          }
-                          return (
-                            <code
-                              className="font-mono text-[0.85em]"
-                              {...props}
-                            >
-                              {children}
-                            </code>
-                          );
-                        },
-                      }}
-                    >
-                      {mermaidContent.after}
-                    </ReactMarkdown>
-                  </div>
-                ) : null}
-              </>
-            )}
-            <AssistantActivity
-              message={message}
-              compact={compact}
-              hasResponseContent={Boolean(assistantDisplayContent.trim())}
-            />
-            {runStatusNotice ? (
-              <div
-                className={cn(
-                  "not-prose rounded-lg px-3 py-2 text-xs",
-                  runStatusNotice === "failed"
-                    ? "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"
-                    : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
-                )}
-                role={runStatusNotice === "failed" ? "alert" : "status"}
-              >
-                <span className="font-medium capitalize">
-                  {runStatusNotice.replace("_", " ")}
-                </span>
-                {message.errorMessage ? ` — ${message.errorMessage}` : null}
-                {message.retryable && onRetry ? (
-                  <button
-                    type="button"
-                    onClick={() => onRetry(message.id)}
-                    className="ml-2 rounded border border-current px-2 py-1 font-semibold hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current dark:hover:bg-white/5"
-                  >
-                    Retry
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        )}
-        <div className="mt-1 flex items-center gap-1.5">
-          <span
-            className={cn(
-              "text-[10px]",
-              isUser
-                ? "text-gray-400 md:text-deep-space-blue-200"
-                : "text-gray-400",
-            )}
-            suppressHydrationWarning
-          >
-            {new Date(message.timestamp).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </span>
-          {isUser && (
-            <AnimatePresence mode="wait">
-              <MessageStatusIndicator status={message.status} />
-            </AnimatePresence>
-          )}
-          {!isUser &&
-          (message.inputTokens !== undefined ||
-            message.outputTokens !== undefined) ? (
-            <span className="text-[10px] text-gray-400 tabular-nums">
-              {message.inputTokens?.toLocaleString() ?? 0} in ·{" "}
-              {message.outputTokens?.toLocaleString() ?? 0} out
-            </span>
-          ) : null}
-          {onDelete && (
-            <button
-              type="button"
-              onClick={() => onDelete(message.id)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-flag-red-500 dark:hover:text-flag-red-400"
-              title="Delete message"
-            >
-              <svg
-                className="h-3 w-3"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244 2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
-                />
-              </svg>
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-});
-
 // ---------------------------------------------------------------------------
 // Session picker dropdown (step 2 of @mention navigation)
 // ---------------------------------------------------------------------------
@@ -1478,7 +726,7 @@ export function ChatArea({
   const isMobile = variant === "mobile";
   const reduceMotion = useReducedMotion();
   const isAgentTarget = targetType === "agent";
-  const { user } = useUser();
+  const { user } = useAppAuth();
   const userImageUrl = user?.imageUrl;
   const userInitials = user?.firstName?.[0] ?? "U";
 
@@ -1586,6 +834,7 @@ export function ChatArea({
     deleteMessage,
     isTyping,
     hasActiveChatRequest,
+    lifecycle,
     activeRunTrace,
     isLoadingHistory,
     hasMore,
@@ -1596,7 +845,7 @@ export function ChatArea({
     enterDomain,
     exitDomain,
     cancelResponse,
-  } = usePlannerChat(projectId, agentId, sessionId ?? undefined, targetType);
+  } = useChat(projectId, agentId, sessionId ?? undefined, targetType);
   const artifactAttachments = useArtifactAttachments();
   const artifactSupport = useChatArtifactSupport(
     isAgentTarget ? activeAgent : undefined,
@@ -1614,6 +863,13 @@ export function ChatArea({
     isTyping: isTyping || hasActiveChatRequest,
     activeRunTrace,
   });
+  const displayMessages = useMemo(
+    () =>
+      messages.filter((message) =>
+        shouldDisplayChatMessage(message, lifecycle),
+      ),
+    [lifecycle, messages],
+  );
 
   // Domains
   const agentDomainsList: Domain[] = useMemo(
@@ -2690,7 +1946,7 @@ export function ChatArea({
   }, []);
 
   const messageContent = useMemo(() => {
-    if (shouldShowChatHistoryLoader(isLoadingHistory, messages.length)) {
+    if (shouldShowChatHistoryLoader(isLoadingHistory, displayMessages.length)) {
       return (
         <div className="flex items-center justify-center py-12">
           <div className="flex items-center gap-1.5 font-mono text-xs text-gray-400">
@@ -2703,7 +1959,7 @@ export function ChatArea({
       );
     }
 
-    if (messages.length === 0 && isMobile) {
+    if (displayMessages.length === 0 && isMobile) {
       return (
         <MobileEmptyState
           agentId={agentId}
@@ -2712,6 +1968,10 @@ export function ChatArea({
           onEnterDomain={handleEnterDomainFromChip}
         />
       );
+    }
+
+    if (displayMessages.length === 0) {
+      return <ChatEmptyState agentName={activeAgent?.name} />;
     }
 
     if (isMobile) {
@@ -2724,9 +1984,9 @@ export function ChatArea({
               </span>
             </div>
           )}
-          {messages.map((msg) => (
+          {displayMessages.map((msg) => (
             <div key={msg.id}>
-              <MessageBubble
+              <ChatMessageBubble
                 message={msg}
                 activeAgent={msg.role === "assistant" ? activeAgent : undefined}
                 userImageUrl={userImageUrl}
@@ -2734,6 +1994,7 @@ export function ChatArea({
                 onDelete={msg.id !== "welcome" ? deleteMessage : undefined}
                 onRetry={msg.retryable ? retryMessage : undefined}
                 compact
+                livePhase={livePhaseForChatMessage(msg, lifecycle)}
               />
             </div>
           ))}
@@ -2751,24 +2012,25 @@ export function ChatArea({
           </div>
         )}
         <AnimatePresence mode="popLayout">
-          {messages.map((msg, i) => {
+          {displayMessages.map((msg, i) => {
             const isBulkLoad =
               prevMessageCountRef.current === 0 ||
-              (messages.length > 2 && i < messages.length - 2);
-            const staggerDelay = isBulkLoad ? Math.min(i * 0.03, 0.3) : 0;
+              (displayMessages.length > 2 && i < displayMessages.length - 2);
+            const shouldAnimateEntry = !reduceMotion && !isBulkLoad;
             return (
               <motion.div
                 key={msg.id}
-                initial={{ opacity: 0, y: 12 }}
+                initial={
+                  shouldAnimateEntry ? { opacity: 0, y: 8 } : false
+                }
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{
-                  duration: reduceMotion ? 0 : 0.2,
+                  duration: shouldAnimateEntry ? 0.16 : 0,
                   ease: "easeOut",
-                  delay: reduceMotion ? 0 : staggerDelay,
                 }}
               >
-                <MessageBubble
+                <ChatMessageBubble
                   message={msg}
                   activeAgent={
                     msg.role === "assistant" ? activeAgent : undefined
@@ -2778,6 +2040,7 @@ export function ChatArea({
                   onDelete={msg.id !== "welcome" ? deleteMessage : undefined}
                   onRetry={msg.retryable ? retryMessage : undefined}
                   compact={false}
+                  livePhase={livePhaseForChatMessage(msg, lifecycle)}
                 />
               </motion.div>
             );
@@ -2787,7 +2050,7 @@ export function ChatArea({
     );
   }, [
     isLoadingHistory,
-    messages,
+    displayMessages,
     isMobile,
     agentId,
     activeAgent,
@@ -2799,6 +2062,7 @@ export function ChatArea({
     deleteMessage,
     retryMessage,
     reduceMotion,
+    lifecycle,
   ]);
 
   const agentColor = activeAgent?.color;
@@ -2896,13 +2160,16 @@ export function ChatArea({
       </div>
 
       <AnimatePresence>
-        {isMobile && showScrollToLatest && (
+        {showScrollToLatest ? (
           <motion.button
             type="button"
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
+            transition={{
+              duration: reduceMotion ? 0 : 0.18,
+              ease: "easeOut",
+            }}
             onClick={scrollToLatest}
             className={cn(
               "right-4 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-[#f5f7fb]/90 text-gray-700 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-[#05070b]/90 dark:text-gray-100",
@@ -2911,6 +2178,7 @@ export function ChatArea({
                 : "absolute bottom-4",
             )}
             title="Jump to latest"
+            aria-label="Jump to latest message"
           >
             <svg
               className="h-4 w-4"
@@ -2926,7 +2194,7 @@ export function ChatArea({
               />
             </svg>
           </motion.button>
-        )}
+        ) : null}
       </AnimatePresence>
 
       {/* Mobile input bar */}
@@ -3597,184 +2865,42 @@ export function ChatArea({
                 })()}
             </AnimatePresence>
 
-            <div className="flex items-end gap-2">
-              <div className="relative flex-1">
-                {/* Domain input border animation */}
-                {borderPhase && agentColor && (
-                  <div
-                    className="pointer-events-none absolute inset-0 z-10 rounded-lg"
-                    style={{
-                      padding: "1px",
-                      background:
-                        borderPhase === "exit"
-                          ? `linear-gradient(90deg, transparent 0%, ${agentColor} var(--input-idle-spread, 30%), ${agentColor} calc(var(--input-border-pos, 100%) - var(--input-idle-spread, 30%)), transparent var(--input-border-pos, 100%))`
-                          : `linear-gradient(90deg, transparent 0%, ${agentColor} var(--input-idle-spread, 0%), ${agentColor} calc(var(--input-border-pos, 0%) - var(--input-idle-spread, 0%)), transparent var(--input-border-pos, 0%))`,
-                      mask: "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
-                      maskComposite: "exclude",
-                      WebkitMask:
-                        "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
-                      WebkitMaskComposite: "xor",
-                      animation:
-                        borderPhase === "exit"
-                          ? "input-border-exit 2.25s ease-in forwards"
-                          : "input-border-enter 2.25s ease-in-out forwards, input-border-idle 6s linear 2.25s infinite",
-                    }}
-                  />
-                )}
-                <div
-                  className={cn(
-                    "theme-surface flex min-h-10 w-full items-end gap-2 rounded-lg px-2 py-1.5",
-                    borderPhase
-                      ? "border border-transparent"
-                      : "theme-border border focus-within:border-deep-space-blue-500 focus-within:ring-1 focus-within:ring-deep-space-blue-500",
-                    isDomainPending && "opacity-60",
-                  )}
-                >
-                  {pendingDomain && (
-                    <PendingDomainPill
-                      domain={pendingDomain}
-                      onClear={() => setPendingDomain(null)}
-                      accentColor={agentColor}
-                      className="mb-0.5"
-                    />
-                  )}
-                  {pendingCommand && (
-                    <PendingCommandPill
-                      command={pendingCommand}
-                      onClear={() => setPendingCommand(null)}
-                      accentColor={agentColor}
-                      className="mb-0.5"
-                    />
-                  )}
-                  <textarea
-                    ref={inputRef}
-                    value={input}
-                    onChange={handleInputChange}
-                    onKeyDown={handleKeyDown}
-                    placeholder={
-                      isDomainPending
-                        ? "Activating domain..."
-                        : pendingDomain
-                          ? "Describe what to do in this domain..."
-                          : pendingCommand
-                            ? `Arguments for ${pendingCommand.command}...`
-                            : placeholder
-                    }
-                    disabled={isDomainPending}
-                    rows={1}
-                    className="min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-0.5 text-sm placeholder:text-gray-400 focus:outline-hidden focus:ring-0 dark:text-gray-100 dark:placeholder:text-gray-500"
-                    style={{ maxHeight: 200 }}
-                  />
-                </div>
-                {isDomainPending && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <svg
-                      className="h-4 w-4 animate-spin text-gray-400"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                      />
-                    </svg>
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={handleVoiceInputPress}
-                disabled={voiceInputControlDisabled}
-                title={voiceInputTitle}
-                aria-label={voiceInputTitle}
-                className={cn(
-                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border transition-colors",
-                  voiceInputState === "recording"
-                    ? "border-flag-red-200 bg-flag-red-50 text-flag-red-600 hover:bg-flag-red-100 dark:border-flag-red-900/50 dark:bg-flag-red-950/40 dark:text-flag-red-300"
-                    : "theme-border theme-surface text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/10",
-                  voiceInputControlDisabled &&
-                    "cursor-not-allowed opacity-50 hover:bg-transparent dark:hover:bg-transparent",
-                )}
-              >
-                {voiceInputState === "requesting" ||
-                voiceInputState === "processing" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : voiceInputState === "recording" ? (
-                  <Square className="h-3.5 w-3.5 fill-current" />
-                ) : (
-                  <Mic className="h-4 w-4" />
-                )}
-              </button>
-              <ArtifactAttachmentButton
-                canAdd={artifactAttachments.canAdd}
-                disabled={attachmentDisabled}
-                disabledReason={attachmentDisabledReason}
-                iconOnly
-                onAdd={artifactAttachments.addFiles}
-              />
-              <ChatCancelControl
-                visible={hasActiveTurn}
-                holdProgress={holdProgress}
-                onCancel={cancelResponse}
-                onHoldStart={handleCancelHoldStart}
-                onHoldEnd={handleCancelHoldEnd}
-              />
-              <Button
-                onClick={handleSend}
-                disabled={
-                  (!input.trim() &&
-                    !pendingCommand &&
-                    artifactAttachments.artifactIds.length === 0) ||
-                  !artifactAttachments.isReady ||
-                  (artifactAttachments.artifactIds.length > 0 &&
-                    attachmentDisabled)
-                }
-                size="md"
-                className="!bg-deep-space-blue-500 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
-              >
-                <svg
-                  className="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
-                  />
-                </svg>
-              </Button>
-            </div>
-            <AnimatePresence>
-              {hasActiveTurn && (
-                <motion.p
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="text-center text-xs text-gray-400 dark:text-gray-500"
-                >
-                  Press{" "}
-                  <kbd className="theme-border theme-surface-muted rounded border px-1 py-0.5 text-[10px] font-medium">
-                    Esc
-                  </kbd>{" "}
-                  <kbd className="theme-border theme-surface-muted rounded border px-1 py-0.5 text-[10px] font-medium">
-                    Esc
-                  </kbd>{" "}
-                  to interrupt
-                </motion.p>
-              )}
-            </AnimatePresence>
+            <ChatComposer
+              inputRef={inputRef}
+              input={input}
+              onInputChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder={placeholder}
+              pendingDomain={pendingDomain}
+              pendingCommand={pendingCommand}
+              onClearPendingDomain={() => setPendingDomain(null)}
+              onClearPendingCommand={() => setPendingCommand(null)}
+              isDomainPending={isDomainPending}
+              borderPhase={borderPhase}
+              agentColor={agentColor}
+              voiceInputState={voiceInputState}
+              voiceInputDisabled={voiceInputControlDisabled}
+              voiceInputTitle={voiceInputTitle}
+              onVoiceInputPress={handleVoiceInputPress}
+              attachmentCanAdd={artifactAttachments.canAdd}
+              attachmentDisabled={attachmentDisabled}
+              attachmentDisabledReason={attachmentDisabledReason}
+              onAddAttachments={artifactAttachments.addFiles}
+              canSend={
+                (Boolean(input.trim()) ||
+                  Boolean(pendingCommand) ||
+                  artifactAttachments.artifactIds.length > 0) &&
+                artifactAttachments.isReady &&
+                (artifactAttachments.artifactIds.length === 0 ||
+                  !attachmentDisabled)
+              }
+              onSend={handleSend}
+              hasActiveTurn={hasActiveTurn}
+              holdProgress={holdProgress}
+              onCancel={cancelResponse}
+              onCancelHoldStart={handleCancelHoldStart}
+              onCancelHoldEnd={handleCancelHoldEnd}
+            />
           </div>
         </div>
       )}

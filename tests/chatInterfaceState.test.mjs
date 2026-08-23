@@ -9,12 +9,14 @@ import {
   compactDuplicateChatMessages,
   createSerialChatWorkQueue,
   isVoiceInputDisabled,
+  livePhaseForChatMessage,
   lifecycleRunIdentity,
   lifecycleTraceBase,
   preferredChatRunTrace,
   resolveAssistantMessageIdentity,
   retainedLiveChatRunTrace,
   scheduledDraftBelongsToResponse,
+  shouldDisplayChatMessage,
   settledAssistantActivityTrace,
   shouldShowChatHistoryLoader,
   shouldShowChatRunStatusNotice,
@@ -25,7 +27,7 @@ import {
   visibleLiveAssistantContent,
   visibleLiveChatRunTrace,
   withLiveChatActivityPreview,
-} from "../lib/chatInterfaceState.ts";
+} from "../lib/chat/derivations.ts";
 
 test("voice input availability does not depend on an agent model assignment", () => {
   assert.equal(
@@ -201,6 +203,35 @@ test("history loading never hides an optimistic first turn", () => {
   assert.equal(shouldShowChatHistoryLoader(true, 0), true);
   assert.equal(shouldShowChatHistoryLoader(true, 1), false);
   assert.equal(shouldShowChatHistoryLoader(false, 0), false);
+});
+
+test("only the reducer-owned assistant draft receives the live phase", () => {
+  const lifecycle = {
+    phase: "thinking",
+    isActive: true,
+    isTyping: true,
+    responseId: "response-current",
+  };
+  const current = {
+    id: "response-current",
+    role: "assistant",
+    content: "",
+    timestamp: "2026-01-01T00:00:00.000Z",
+    isLiveDraft: true,
+  };
+  const stale = { ...current, id: "response-stale" };
+
+  assert.equal(livePhaseForChatMessage(current, lifecycle), "thinking");
+  assert.equal(livePhaseForChatMessage(stale, lifecycle), undefined);
+  assert.equal(shouldDisplayChatMessage(current, lifecycle), true);
+  assert.equal(shouldDisplayChatMessage(stale, lifecycle), false);
+  assert.equal(
+    shouldDisplayChatMessage(
+      { ...stale, runStatus: "cancelled" },
+      lifecycle,
+    ),
+    true,
+  );
 });
 
 test("completed activity wins over a stale running trace", () => {

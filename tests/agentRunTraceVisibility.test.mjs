@@ -4,6 +4,7 @@ import test from "node:test";
 import { reduceRunTrace } from "../lib/agentRunTrace/reducer.ts";
 import {
   chatDisplaySpans,
+  hasMeaningfulChatActivity,
   chronologicalSpans,
   currentCycleSpans,
   filterHistorySpans,
@@ -301,6 +302,34 @@ test("chat activity renders tool-batch narration once above its calls", () => {
   ]);
 });
 
+test("chat activity waits for meaningful work instead of mirroring thinking", () => {
+  const model = {
+    kind: "model",
+    id: "model-1",
+    status: "running",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    children: [],
+  };
+  assert.equal(hasMeaningfulChatActivity([model]), false);
+  assert.equal(
+    hasMeaningfulChatActivity([
+      {
+        ...model,
+        children: [
+          {
+            kind: "tool",
+            id: "tool-1",
+            status: "running",
+            name: "shell",
+            startedAt: "2026-01-01T00:00:01.000Z",
+          },
+        ],
+      },
+    ]),
+    true,
+  );
+});
+
 test("provider tool labels are not promoted as assistant narration", () => {
   assert.deepEqual(
     toolBatchTextPreviews([
@@ -419,6 +448,39 @@ test("chat display hides respond_to_user tool calls", () => {
       span.kind === "tool" ? span.name : span.kind,
     ),
     ["read_knowledge_doc"],
+  );
+});
+
+test("chat display hides the internal respond_to_user shell fallback", () => {
+  const display = chatDisplaySpans([
+    {
+      kind: "tool",
+      id: "fallback-shell",
+      status: "completed",
+      name: "shell",
+      rawArgs: {
+        command: 'echo "respond_to_user unavailable; replying directly"',
+      },
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:00:00.100Z",
+    },
+  ]);
+
+  assert.deepEqual(display, []);
+  assert.deepEqual(
+    chatDisplaySpans([
+      {
+        kind: "tool",
+        id: "environment-fallback-shell",
+        status: "completed",
+        name: "shell",
+        argsSummary:
+          'echo "respond_to_user tool not available in this environment; providing reply directly"',
+        startedAt: "2026-01-01T00:00:00.000Z",
+        completedAt: "2026-01-01T00:00:00.100Z",
+      },
+    ]),
+    [],
   );
 });
 

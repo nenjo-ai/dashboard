@@ -97,7 +97,21 @@ export function visibleAsyncOperationResultPreview(
 }
 
 function isHiddenChatToolSpan(span: TraceSpan): boolean {
-  return span.kind === "tool" && span.name === "respond_to_user";
+  if (span.kind !== "tool") return false;
+  if (span.name === "respond_to_user") return true;
+  if (span.name !== "shell") return false;
+  const rawArgs =
+    typeof span.rawArgs === "string"
+      ? span.rawArgs
+      : span.rawArgs
+        ? JSON.stringify(span.rawArgs)
+        : "";
+  const diagnostic = [span.argsSummary, rawArgs, span.textPreview]
+    .filter(Boolean)
+    .join(" ");
+  return /respond_to_user(?: tool)? (?:is )?(?:not available|unavailable)(?: in this environment)?;?\s*(?:providing (?:a )?reply|replying) directly/i.test(
+    diagnostic,
+  );
 }
 
 function filterChatSpan(span: TraceSpan): TraceSpan | undefined {
@@ -147,6 +161,15 @@ export function chatDisplaySpans(spans: TraceSpan[]): TraceSpan[] {
   }
 
   return displaySpans;
+}
+
+/** Model-only progress belongs to the response indicator, not Activity. */
+export function hasMeaningfulChatActivity(spans: TraceSpan[]): boolean {
+  return spans.some((span) =>
+    span.kind === "model"
+      ? hasMeaningfulChatActivity(span.children ?? [])
+      : true,
+  );
 }
 
 /**

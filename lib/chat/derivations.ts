@@ -4,8 +4,9 @@ import type {
   RunTrace,
   TraceSpan,
   TraceStatus,
-} from "./agentRunTrace/types";
-import type { ChatMessage, ChatRunStatus } from "./types";
+} from "../agentRunTrace/types";
+import type { ChatMessage, ChatRunStatus } from "../types";
+import type { ChatLifecycle, ChatPhase } from "./types";
 
 export interface SerialChatWorkQueue {
   /** Schedule work after every previously scheduled stream operation. */
@@ -54,6 +55,40 @@ export function shouldShowChatHistoryLoader(
   messageCount: number,
 ): boolean {
   return isLoadingHistory && messageCount === 0;
+}
+
+/** Only the reducer-owned response may inherit the current turn's animation. */
+export function livePhaseForChatMessage(
+  message: ChatMessage,
+  lifecycle: ChatLifecycle,
+): ChatPhase | undefined {
+  if (
+    !lifecycle.isActive ||
+    !lifecycle.responseId ||
+    message.role !== "assistant" ||
+    message.isLiveDraft !== true
+  ) {
+    return undefined;
+  }
+  return message.id === lifecycle.responseId ||
+    message.persistedId === lifecycle.responseId
+    ? lifecycle.phase
+    : undefined;
+}
+
+/** Hide legacy empty drafts that no longer belong to an active response. */
+export function shouldDisplayChatMessage(
+  message: ChatMessage,
+  lifecycle: ChatLifecycle,
+): boolean {
+  if (message.role !== "assistant" || message.isLiveDraft !== true) return true;
+  if (livePhaseForChatMessage(message, lifecycle)) return true;
+  if (message.content.trim()) return true;
+  return (
+    message.runStatus === "completed" ||
+    message.runStatus === "failed" ||
+    message.runStatus === "cancelled"
+  );
 }
 
 function withoutLeadingActivityPreview(

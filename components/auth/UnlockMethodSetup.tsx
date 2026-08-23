@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useAppAuth } from "@/components/auth/AppAuth";
 import { KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -21,7 +21,7 @@ export function UnlockMethodSetup({
   showDeviceUnlock?: boolean;
   showPasswordUnlock?: boolean;
 }) {
-  const { user } = useUser();
+  const { user } = useAppAuth();
   const accountId = user?.id ?? null;
   const [passkeyAvailable, setPasskeyAvailable] = useState(false);
   const [password, setPassword] = useState("");

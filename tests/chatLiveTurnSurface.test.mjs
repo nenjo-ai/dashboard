@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { ChatCancelControl } from "../components/chat/ChatLiveTurnSurface.ts";
-import { shouldShowChatCancelControl } from "../lib/chatInterfaceState.ts";
+import { shouldShowChatCancelControl } from "../lib/chat/derivations.ts";
 
 function runningToolTrace() {
   return {

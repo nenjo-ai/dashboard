@@ -2,9 +2,8 @@
 
 import dynamic from "next/dynamic";
 
-// Dynamically import the onboarding content with SSR disabled.
-// This prevents build failures when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-// is not set, since useUser() requires ClerkProvider at render time.
+// The onboarding flow depends on browser-only cryptography and storage, so it
+// is intentionally rendered only on the client.
 const OnboardingContent = dynamic(() => import("./OnboardingContent"), {
   ssr: false,
   loading: () => (

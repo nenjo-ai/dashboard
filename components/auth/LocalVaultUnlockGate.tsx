@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useAppAuth } from "@/components/auth/AppAuth";
 import { KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -21,7 +21,7 @@ import { retryEncryptedPushNotifications } from "@/lib/pushNotificationRetry";
 import { useSafeRouter } from "@/lib/safeRouter";
 
 export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }) {
-  const { isLoaded, user } = useUser();
+  const { isLoaded, user } = useAppAuth();
   const router = useSafeRouter();
   const [checking, setChecking] = useState(true);
   const [locked, setLocked] = useState(false);

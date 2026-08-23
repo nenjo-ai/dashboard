@@ -3,25 +3,37 @@
 import { Suspense, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { SignUp, useAuth } from "@clerk/nextjs";
+import { SignUp } from "@clerk/nextjs";
+import { useAppAuth } from "@/components/auth/AppAuth";
 
 import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
 import { useSafeRouter } from "@/lib/safeRouter";
 
-const CLERK_ENABLED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
-
 function SignupContent() {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, mode } = useAppAuth();
   const router = useSafeRouter();
   const searchParams = useSearchParams();
-  const redirectUrl = searchParams.get("redirect_url") || "/dashboard/onboarding";
+  const requestedRedirect = searchParams.get("redirect_url");
+  const redirectUrl = requestedRedirect || (mode === "local" ? "/dashboard" : "/dashboard/onboarding");
 
   useEffect(() => {
     if (isLoaded && isSignedIn) {
       router.replace(redirectUrl);
     }
   }, [isLoaded, isSignedIn, redirectUrl, router]);
+
+  if (mode === "unconfigured") {
+    return <ClerkConfigurationNotice compact />;
+  }
+
+  if (mode === "local") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#05070f] text-sm text-gray-400">
+        Opening the local dashboard…
+      </div>
+    );
+  }
 
   return (
     <>
@@ -86,10 +98,6 @@ function SignupContent() {
 }
 
 export default function SignupPage() {
-  if (!CLERK_ENABLED) {
-    return <ClerkConfigurationNotice compact />;
-  }
-
   return (
     <div className="flex min-h-screen bg-[#05070f] lg:overflow-hidden">
       <div className="onboarding-landing onboarding-brand-panel relative hidden overflow-hidden border-r border-white/10 bg-[#05070f] p-12 text-white lg:flex lg:w-1/2 lg:flex-col lg:justify-between">

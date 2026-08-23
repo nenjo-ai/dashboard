@@ -15,6 +15,7 @@ import {
   markNotificationRead,
   notificationsUnreadUrl,
 } from "@/lib/api";
+import { ChatProgressIndicator } from "./ChatProgressIndicator";
 import { decryptContentPayload } from "@/lib/cryptoContent";
 import type { ChatMessagePage, NotificationMetadata, PersistedChatMessage } from "@/lib/types";
 import { mutate } from "swr";
@@ -153,7 +154,7 @@ export function NotificationArea({
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center px-4">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-deep-space-blue-500" />
+        <ChatProgressIndicator phase="connecting" />
       </div>
     );
   }

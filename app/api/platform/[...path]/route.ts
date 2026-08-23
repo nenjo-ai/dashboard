@@ -1,6 +1,6 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { createPlatformToken } from "@/lib/server/platform-token";
+import { resolveDashboardSession } from "@/lib/server/dashboardAuth";
 import {
   buildPlatformApiUrl,
   forwardPlatformResponseHeaders,
@@ -86,19 +86,45 @@ async function proxyPlatformRequest(
     );
   }
 
-  const { userId, sessionId } = await auth();
-  if (!userId) {
+  let sessionResolution;
+  try {
+    sessionResolution = await resolveDashboardSession(req.url);
+  } catch (error) {
+    console.error("Failed to resolve dashboard authentication", error);
     return NextResponse.json(
-      { error: { code: "unauthorized", message: "Authentication required" } },
-      { status: 401 },
+      { error: { code: "auth_not_configured", message: "Dashboard authentication is not configured" } },
+      { status: 500 },
     );
   }
+  if (sessionResolution.kind !== "authenticated") {
+    const forbidden = sessionResolution.kind === "forbidden_local_host";
+    const unconfigured = sessionResolution.kind === "unconfigured";
+    return NextResponse.json(
+      {
+        error: {
+          code: forbidden
+            ? "local_auth_requires_loopback"
+            : unconfigured
+              ? "auth_not_configured"
+              : "unauthorized",
+          message: forbidden
+            ? "Local authentication is only available through a loopback hostname"
+            : unconfigured
+              ? "Dashboard authentication is not configured"
+              : "Authentication required",
+        },
+      },
+      { status: forbidden ? 403 : unconfigured ? 500 : 401 },
+    );
+  }
+  const { userId, sessionId, provisioningProfile } = sessionResolution.session;
 
   let token: string;
   try {
     token = createPlatformToken({
       userId,
       sessionId,
+      provisioningProfile,
       orgId: req.headers.get("x-nenjo-org-id")?.trim() || null,
     });
   } catch (error) {

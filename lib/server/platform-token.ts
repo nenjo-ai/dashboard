@@ -4,6 +4,10 @@ type PlatformTokenInput = {
   userId: string;
   sessionId?: string | null;
   orgId?: string | null;
+  provisioningProfile?: {
+    name: string;
+    email: string;
+  };
 };
 
 type PlatformTokenClaims = {
@@ -12,6 +16,10 @@ type PlatformTokenClaims = {
   sub: string;
   sid?: string | null;
   org_id?: string | null;
+  profile?: {
+    name: string;
+    email: string;
+  };
   jti: string;
   iat: number;
   exp: number;
@@ -34,6 +42,7 @@ export function createPlatformToken(input: PlatformTokenInput): string {
     sub: input.userId,
     sid: input.sessionId ?? null,
     org_id: input.orgId ?? null,
+    profile: input.provisioningProfile,
     jti: randomUUID(),
     iat: now,
     exp: now + 120,

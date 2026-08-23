@@ -144,29 +144,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Optional global token getter retained for compatibility with components
- * that still initialize auth plumbing. Browser API calls route through the
- * dashboard BFF and do not attach Clerk bearer tokens directly.
- *
- * Usage (e.g. in your dashboard layout):
- * ```ts
- * import { useAuth } from "@clerk/nextjs";
- * import { setAuthTokenGetter } from "@/lib/api";
- *
- * const { getToken } = useAuth();
- * useEffect(() => { setAuthTokenGetter(getToken); }, [getToken]);
- * ```
- */
-type AuthTokenGetter = (options?: {
-  skipCache?: boolean;
-}) => Promise<string | null>;
-
 let _getActiveOrgId: (() => string | null) | null = null;
-
-export function setAuthTokenGetter(getter: AuthTokenGetter | null) {
-  void getter;
-}
 
 export function setActiveOrgIdGetter(getter: (() => string | null) | null) {
   _getActiveOrgId = getter;

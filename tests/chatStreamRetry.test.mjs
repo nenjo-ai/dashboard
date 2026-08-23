@@ -32,9 +32,13 @@ test("chat stream retry reuses the original request body", async () => {
 });
 
 test("chat requests use UUIDs and route retries through the idempotent stream body", () => {
-  const source = readFileSync(new URL("lib/usePlannerChat.ts", ROOT), "utf8");
+  const source = readFileSync(new URL("lib/useChatController.ts", ROOT), "utf8");
   const snapshotSource = readFileSync(
     new URL("lib/chatStreamDurability.ts", ROOT),
+    "utf8",
+  );
+  const streamingSource = readFileSync(
+    new URL("lib/chat/streaming.ts", ROOT),
     "utf8",
   );
 
@@ -44,15 +48,15 @@ test("chat requests use UUIDs and route retries through the idempotent stream bo
   );
   assert.match(
     source,
-    /after_sequence: lastSequenceRef\.current \|\| undefined/,
+    /afterSequence: lastSequenceRef\.current/,
   );
-  assert.match(source, /consumeChatStreamWithRetry\(/);
+  assert.match(streamingSource, /consumeChatStreamWithRetry\(/);
   assert.match(source, /request: streamBody/);
   assert.match(source, /if \(!snapshot\.request\)/);
-  assert.match(source, /\.\.\.snapshot\.request!/);
+  assert.match(source, /request: snapshot\.request/);
   assert.match(
     source,
-    /after_sequence: lastSequenceRef\.current \|\| snapshot\.lastSequence/,
+    /afterSequence: lastSequenceRef\.current \|\| snapshot\.lastSequence/,
   );
   assert.match(snapshotSource, /request\?: ChatStreamRequest/);
 });

@@ -5,7 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { motion, AnimatePresence } from "motion/react";
-import { Loader2, Mic, Square } from "lucide-react";
+import { Mic, Square } from "lucide-react";
 import type { AgentDefinition, Domain } from "@/lib/types";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { PendingDomainPill } from "@/components/project/PendingDomainPill";
@@ -15,6 +15,7 @@ import {
 } from "./PendingCommandPill";
 import { MobileTouchButton } from "./MobileTouchButton";
 import { MobileBottomSheet } from "./MobileBottomSheet";
+import { ChatProgressIndicator } from "./ChatProgressIndicator";
 
 type VoiceInputState = "idle" | "requesting" | "recording" | "processing";
 
@@ -428,10 +429,7 @@ export function MobileInputBar({
 
         {isDomainPending && (
           <div className="absolute right-5 top-4 z-10">
-            <svg className="h-4 w-4 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
+            <ChatProgressIndicator phase="connecting" compact />
           </div>
         )}
 
@@ -537,7 +535,10 @@ export function MobileInputBar({
                 )}
               >
                 {voiceInputBusy ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <ChatProgressIndicator
+                    phase={voiceInputState === "requesting" ? "connecting" : "finalizing"}
+                    compact
+                  />
                 ) : voiceInputState === "recording" ? (
                   <Square className="h-3.5 w-3.5 fill-current" />
                 ) : (

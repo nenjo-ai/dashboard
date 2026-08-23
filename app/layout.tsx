@@ -2,6 +2,11 @@ import type { Metadata, Viewport } from 'next'
 import { Suspense } from 'react'
 import Script from 'next/script'
 import { ClerkProvider } from '@clerk/nextjs'
+import {
+  LocalAppAuthProvider,
+  UnavailableAppAuthProvider,
+} from '@/components/auth/AppAuth'
+import { ClerkAppAuthProvider } from '@/components/auth/ClerkAppAuthProvider'
 import { ThemeProvider } from '@/lib/theme'
 import { PwaInstallController } from '@/components/pwa/PwaInstallController'
 import { PwaProvider } from '@/components/pwa/PwaProvider'
@@ -17,6 +22,7 @@ import {
   SITE_URL,
 } from '@/lib/seo/constants'
 import { buildSiteSchemaGraph } from '@/lib/seo/site-schema'
+import { resolveDashboardAuthConfig } from '@/lib/authMode'
 
 const WEBSITE_UUID = '05016a17-3f9b-4d9a-97f7-989353c2fa40'
 const siteSchemaGraph = buildSiteSchemaGraph()
@@ -76,20 +82,55 @@ export const viewport: Viewport = {
 }
 
 /**
- * Root layout wraps the entire app with ClerkProvider for authentication.
- *
- * Clerk requires `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` to be set. If it is
- * missing (e.g. during a CI build without secrets), the provider is skipped
- * so the build doesn't crash.
+ * Root layout selects the configured authentication implementation once.
+ * General dashboard components consume the app auth adapter and do not need
+ * to know whether Clerk or the loopback-only local identity is active.
  */
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const clerkKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const authConfig = resolveDashboardAuthConfig(process.env);
 
-  const content = (
+  const application = (
+    <PwaProvider>
+      <ThemeProvider>
+        {children}
+        <PwaInstallController />
+        <ToastProvider />
+        <Suspense fallback={null}>
+          <TermlyCMP websiteUUID={WEBSITE_UUID} />
+        </Suspense>
+        <Analytics />
+      </ThemeProvider>
+    </PwaProvider>
+  );
+
+  let authenticatedApplication: React.ReactNode;
+  switch (authConfig.kind) {
+    case 'local':
+      authenticatedApplication = (
+        <LocalAppAuthProvider identity={authConfig.identity}>
+          {application}
+        </LocalAppAuthProvider>
+      );
+      break;
+    case 'clerk_unconfigured':
+      authenticatedApplication = (
+        <UnavailableAppAuthProvider>
+          {application}
+        </UnavailableAppAuthProvider>
+      );
+      break;
+    case 'clerk':
+      authenticatedApplication = (
+        <ClerkAppAuthProvider>{application}</ClerkAppAuthProvider>
+      );
+      break;
+  }
+
+  const document = (
     <html lang="en" suppressHydrationWarning>
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -123,37 +164,25 @@ export default function RootLayout({
       </head>
       <body>
         <JsonLd data={siteSchemaGraph} />
-        <PwaProvider>
-          <ThemeProvider>
-            {children}
-            <PwaInstallController />
-            <ToastProvider />
-            <Suspense fallback={null}>
-              <TermlyCMP websiteUUID={WEBSITE_UUID} />
-            </Suspense>
-            <Analytics />
-          </ThemeProvider>
-        </PwaProvider>
+        {authenticatedApplication}
       </body>
     </html>
   );
 
-  // If Clerk publishable key is not set, render without ClerkProvider
-  // (allows builds to succeed without secrets)
-  if (!clerkKey) {
-    return content;
+  if (authConfig.kind !== 'clerk') {
+    return document;
   }
 
   return (
     <ClerkProvider
-      publishableKey={clerkKey}
+      publishableKey={authConfig.publishableKey}
       signInUrl="/dashboard/login"
       signUpUrl="/dashboard/signup"
       signInFallbackRedirectUrl="/dashboard/onboarding"
       signUpFallbackRedirectUrl="/dashboard/onboarding"
       afterSignOutUrl="/"
     >
-      {content}
+      {document}
     </ClerkProvider>
   )
 }

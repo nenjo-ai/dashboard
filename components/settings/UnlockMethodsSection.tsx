@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useAppAuth } from "@/components/auth/AppAuth";
 import useSWR from "swr";
 import { KeyRound, LockKeyhole, Trash2 } from "lucide-react";
 import {
@@ -31,7 +31,7 @@ function methodLabel(credential: UnlockCredential): string {
 }
 
 export function UnlockMethodsSection() {
-  const { user } = useUser();
+  const { user } = useAppAuth();
   const accountId = user?.id ?? null;
   const { data, mutate, isLoading } = useSWR(unlockCredentialsUrl(), () => listUnlockCredentials());
   const [hasPassword, setHasPassword] = useState(false);
