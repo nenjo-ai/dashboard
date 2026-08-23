@@ -21,7 +21,7 @@ Status: Resolved 2026-06-11.
 
 Evidence:
 
-- `dashboard/lib/usePlannerChat.ts:2139` encrypts outbound user chat content, but sets `objectType: "agent_prompt"` at `dashboard/lib/usePlannerChat.ts:2142`.
+- `dashboard/lib/useChatController.ts` encrypts outbound user chat content before streaming it to the worker.
 - The current sensitive-field catalog says user chat messages should use `chat.message` (`platform/docs/db/sensitive-field-encryption-catalog.md:110`).
 - The chat stream route persists `encrypted_message` without validating the encrypted payload object type (`platform/crates/api-server/src/routes/chat_streams.rs:186` through `platform/crates/api-server/src/routes/chat_streams.rs:210`).
 
@@ -48,7 +48,7 @@ Evidence:
 
 - `createChatMessage` accepts `content: string` and posts it directly to `/chat-messages` (`dashboard/lib/api.ts:3244` through `dashboard/lib/api.ts:3261`).
 - `createChatStream` serializes the caller-provided `message` and `encrypted_message` without enforcing encryption (`dashboard/lib/api.ts:3315` through `dashboard/lib/api.ts:3330`).
-- The active `usePlannerChat` send path does encrypt and sends the placeholder `"[Encrypted message]"` plus `encrypted_message` (`dashboard/lib/usePlannerChat.ts:2179` through `dashboard/lib/usePlannerChat.ts:2183`).
+- The active `useChat` send path encrypts and sends the placeholder `"[Encrypted message]"` plus `encrypted_message` (`dashboard/lib/useChatController.ts`).
 - I did not find active dashboard callers of `createChatMessage`, so this is unsafe exported surface rather than confirmed current UI leakage.
 
 Impact:

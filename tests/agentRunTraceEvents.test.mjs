@@ -615,10 +615,7 @@ test("tool start creates a visible trace before RunStarted when chat session is 
 });
 
 test("chat surfaces do not contain the legacy active-tool fallback display", () => {
-  const files = [
-    new URL("components/chat/ChatArea.tsx", ROOT),
-    new URL("components/project/PlannerChat.tsx", ROOT),
-  ];
+  const files = [new URL("components/chat/ChatArea.tsx", ROOT)];
 
   for (const file of files) {
     const source = readFileSync(file, "utf8");
@@ -629,7 +626,7 @@ test("chat surfaces do not contain the legacy active-tool fallback display", () 
 });
 
 test("chat finalization preserves run trace until it is attached to the final message", () => {
-  const source = readFileSync(new URL("lib/usePlannerChat.ts", ROOT), "utf8");
+  const source = readFileSync(new URL("lib/useChatController.ts", ROOT), "utf8");
 
   assert.match(
     source,

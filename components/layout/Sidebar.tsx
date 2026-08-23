@@ -6,8 +6,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
-import { useAuth, useUser } from "@clerk/nextjs";
 import useSWR from "swr";
+import { useAppAuth } from "@/components/auth/AppAuth";
 import { catalogFetcher, catalogSWROptions, projectsUrl } from "@/lib/api";
 import type { Project } from "@/lib/types";
 import { clearLocalSecretVaultSession, lockLocalSecretVault } from "@/lib/cryptoContent";
@@ -113,10 +113,10 @@ const navigation: NavItem[] = [
 // ---------------------------------------------------------------------------
 
 function ProjectSubmenu({ activeProjectId }: { activeProjectId: string | undefined }) {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn } = useAppAuth();
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
-  // Only fetch when Clerk auth is fully loaded and user is signed in
+  // Only fetch when the configured auth implementation is ready.
   const { data: projects, isLoading, mutate: mutateProjects } = useSWR<Project[]>(
     isLoaded && isSignedIn ? projectsUrl() : null,
     catalogFetcher,
@@ -474,8 +474,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse, mobileOpen = fals
 
 /** Displays the signed-in user's avatar and GitHub username in the sidebar footer. */
 function UserProfile({ collapsed = false }: { collapsed?: boolean }) {
-  const { signOut } = useAuth();
-  const { isSignedIn, user, isLoaded } = useUser();
+  const { canSignOut, isSignedIn, user, isLoaded, mode, signOut } = useAppAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -507,11 +506,12 @@ function UserProfile({ collapsed = false }: { collapsed?: boolean }) {
   }, [menuOpen]);
 
   const handleLogout = useCallback(async () => {
+    if (!canSignOut) return;
     setMenuOpen(false);
     lockLocalSecretVault();
     await clearLocalSecretVaultSession();
     await signOut({ redirectUrl: "/" });
-  }, [signOut]);
+  }, [canSignOut, signOut]);
 
   // Loading skeleton
   if (!isLoaded) {
@@ -547,7 +547,7 @@ function UserProfile({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <div ref={menuRef} className="theme-border relative border-t">
       {/* Logout popover — rendered outside overflow context */}
-      {menuOpen && (
+      {menuOpen && canSignOut && (
         <div className="theme-border theme-surface-elevated absolute bottom-full left-2 right-2 z-50 mb-1 rounded-lg border py-1 shadow-lg">
           <button
             type="button"
@@ -564,8 +564,11 @@ function UserProfile({ collapsed = false }: { collapsed?: boolean }) {
 
       <button
         type="button"
-        onClick={() => setMenuOpen((prev) => !prev)}
-        className="flex w-full items-center gap-3 overflow-hidden p-4 text-left transition-colors hover:[background:var(--app-hover)]"
+        onClick={canSignOut ? () => setMenuOpen((prev) => !prev) : undefined}
+        className={cn(
+          "flex w-full items-center gap-3 overflow-hidden p-4 text-left transition-colors",
+          canSignOut && "hover:[background:var(--app-hover)]",
+        )}
       >
         {imageUrl ? (
           <Image
@@ -587,11 +590,15 @@ function UserProfile({ collapsed = false }: { collapsed?: boolean }) {
           <p className="text-sm font-medium text-gray-900 truncate dark:text-gray-100">
             {displayName}
           </p>
-          {(githubUsername || (email && displayName !== email)) && (
+          {mode === "local" ? (
+            <p className="truncate text-xs font-medium text-amber-600 dark:text-amber-300">
+              Local development
+            </p>
+          ) : (githubUsername || (email && displayName !== email)) ? (
             <p className="text-xs text-gray-500 truncate dark:text-gray-400">
               {githubUsername ? `@${githubUsername}` : email}
             </p>
-          )}
+          ) : null}
         </div>
       </button>
     </div>

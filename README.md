@@ -24,6 +24,42 @@ server-owned allowlist.
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Local authentication
+
+Browser automation and UI development can use a stable local identity without
+signing in to Clerk:
+
+```bash
+npm run dev:local-auth
+```
+
+This mode binds Next.js to `127.0.0.1` and is rejected when `NODE_ENV` is
+`production`. It still sends every platform request through the dashboard BFF,
+which signs the normal short-lived internal JWT. Platform user, organization,
+scope, and tenant authorization therefore remain enabled.
+
+The dashboard and platform must have their existing matching internal-auth
+shared secret configuration:
+
+```text
+dashboard: DASHBOARD_PLATFORM_SHARED_SECRET
+platform:  NEN__INTERNAL_AUTH__ENABLED=true
+platform:  NEN__INTERNAL_AUTH__SHARED_SECRET
+```
+
+The optional local profile settings are server-owned and never accepted from
+browser headers or query parameters:
+
+```text
+NENJO_LOCAL_AUTH_SUBJECT=local_dev
+NENJO_LOCAL_AUTH_NAME=Local Developer
+NENJO_LOCAL_AUTH_EMAIL=local@nenjo.dev
+```
+
+Keep the subject stable: it is also the browser vault account identifier and
+the platform external user identifier. Clerk remains the default whenever
+`NENJO_AUTH_MODE` is unset.
+
 ## Project Structure
 
 - `/app` - Next.js 13+ app directory with routing

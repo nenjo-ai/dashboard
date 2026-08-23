@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:local-auth": "NENJO_AUTH_MODE=local next dev --turbopack --hostname 127.0.0.1",
     "build": "next build --webpack",
     "test": "node --test tests/*.test.mjs",
     "test:e2e:vault": "playwright test e2e/vault-unlock.spec.ts",

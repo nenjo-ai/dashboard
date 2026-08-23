@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   onboardingEntryGateKey,
+  shouldBootstrapSecureWorkspace,
   shouldRedirectExistingWorkspaceToDashboard,
   shouldRunOnboardingEntryGate,
   shouldUseExistingWorkspaceRestoreMode,
@@ -67,6 +68,65 @@ test("fresh accounts do not enter existing-workspace restore mode", () => {
 
   assert.equal(shouldRedirectExistingWorkspaceToDashboard(state), false);
   assert.equal(shouldUseExistingWorkspaceRestoreMode(state), false);
+});
+
+test("fresh accounts bootstrap encryption before entering the dashboard", () => {
+  const state = {
+    hasSignedInAccount: true,
+    hasOrg: true,
+    hasRecoveryBundle: false,
+    isOnboarded: false,
+    requiresSecureWorkspace: true,
+  };
+
+  assert.equal(shouldBootstrapSecureWorkspace(state), true);
+  assert.equal(
+    shouldBootstrapSecureWorkspace({
+      ...state,
+      hasRecoveryBundle: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldBootstrapSecureWorkspace({
+      ...state,
+      requiresSecureWorkspace: false,
+    }),
+    false,
+  );
+});
+
+test("durable encrypted workspaces restore instead of generating replacement keys", () => {
+  const state = {
+    hasSignedInAccount: true,
+    hasOrg: true,
+    hasRecoveryBundle: false,
+    isOnboarded: false,
+    requiresSecureWorkspace: true,
+  };
+
+  assert.equal(
+    shouldBootstrapSecureWorkspace({ ...state, hasRecoveryBundle: true }),
+    false,
+  );
+  assert.equal(
+    shouldBootstrapSecureWorkspace({ ...state, isOnboarded: true }),
+    false,
+  );
+});
+
+test("partial trusted-device setup still requires secure workspace bootstrap", () => {
+  assert.equal(
+    shouldBootstrapSecureWorkspace({
+      hasSignedInAccount: true,
+      hasOrg: true,
+      hasRecoveryBundle: false,
+      isOnboarded: false,
+      requiresSecureWorkspace: true,
+      trustedDeviceCount: 2,
+    }),
+    true,
+  );
 });
 
 test("onboarding entry gate runs once for a user and mode", () => {

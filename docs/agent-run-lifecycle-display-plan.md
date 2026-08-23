@@ -34,7 +34,7 @@ The same reducer and display primitives should be reusable in:
 
 The chat UI is driven by:
 
-- `lib/usePlannerChat.ts`
+- `lib/useChatController.ts`
   - `isTyping`
   - `activeTools`
   - `livePreview`
@@ -553,7 +553,7 @@ Desktop behavior:
 
 ## Reducer Plan
 
-Create a trace reducer near `usePlannerChat`:
+Create a trace reducer near the internal `useChatController`:
 
 ```ts
 function reduceRunTrace(
@@ -642,7 +642,7 @@ Tasks:
 - define `RunTrace`, `TraceSpan`, and lifecycle event types
 - add compatibility adapter for existing stream events
 - add execution history adapter for `ExecutionDetails` and `ExecutionTask[]`
-- update `usePlannerChat` to expose `activeRunTrace`
+- update the public `useChat` hook to expose `activeRunTrace`
 - keep `isTyping`, `activeTools`, and `livePreview` only as compatibility shims during migration
 - stop appending ability/tool/delegation previews into one shared `livePreview`
 
@@ -749,7 +749,7 @@ The smallest useful slice:
 
 1. Emit `ModelRequestStarted` and `ModelRequestCompleted`.
 2. Emit `AbilityCallStarted` with `ability_name`, `ability_display_name`, and `task_preview`.
-3. Add `activeRunTrace` in `usePlannerChat`.
+3. Add `activeRunTrace` in `useChat`.
 4. Replace `TypingIndicator` with `AgentRunTrace` for active runs.
 5. Render ability blocks with semantic titles and separated task/result sections.
 6. Use the same `AgentRunTrace` in mobile chat.

@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import useSWR from "swr";
-import { useAuth } from "@clerk/nextjs";
 import { Bell, BellOff, BookOpenText, Download, Github, Menu, WifiOff } from "lucide-react";
+import { useAppAuth } from "@/components/auth/AppAuth";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { useMobileMenu } from "@/lib/MobileMenuContext";
 import { usePwa } from "@/components/pwa/PwaProvider";
@@ -17,7 +17,7 @@ interface TopBarProps {
 
 export function TopBar({ title, children }: TopBarProps) {
   const onMenuClick = useMobileMenu();
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, mode } = useAppAuth();
   const {
     canInstall,
     disableNotifications,
@@ -74,6 +74,11 @@ export function TopBar({ title, children }: TopBarProps) {
           <h1 className="theme-text text-xl font-semibold">{title}</h1>
         </div>
         <div className="flex items-center gap-3">
+          {mode === "local" ? (
+            <span className="rounded-full border border-amber-300/70 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300">
+              Local auth
+            </span>
+          ) : null}
           <OrgSwitcher />
           <div className="hidden items-center gap-1 md:flex">
             <Link

@@ -75,18 +75,21 @@ test("deleted artifact metadata is omitted instead of rendering a fallback pill"
 });
 
 test("desktop chat keeps the attachment control with the turn controls", async () => {
-  const source = await readFile(
+  const areaSource = await readFile(
     new URL("../components/chat/ChatArea.tsx", import.meta.url),
     "utf8",
   );
-  const desktop = source.slice(source.indexOf("{/* Desktop Input */}"));
-  const button = desktop.indexOf("<ArtifactAttachmentButton");
-  const cancel = desktop.indexOf("<ChatCancelControl");
-  const send = desktop.indexOf("<Button", cancel);
+  const composerSource = await readFile(
+    new URL("../components/chat/ChatComposer.tsx", import.meta.url),
+    "utf8",
+  );
+  const button = composerSource.indexOf("<ArtifactAttachmentButton");
+  const cancel = composerSource.indexOf("<ChatCancelControl");
+  const send = composerSource.indexOf("<Button", cancel);
 
   assert.ok(button >= 0);
   assert.ok(cancel > button);
   assert.ok(send > cancel);
-  assert.match(desktop, /disabled=\{attachmentDisabled\}/);
-  assert.match(desktop, /<SessionArtifactAttachments messages=\{messages\}/);
+  assert.match(composerSource, /disabled=\{attachmentDisabled\}/);
+  assert.match(areaSource, /<SessionArtifactAttachments messages=\{messages\}/);
 });

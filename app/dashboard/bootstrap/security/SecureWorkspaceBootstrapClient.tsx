@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { useAppAuth } from "@/components/auth/AppAuth";
 import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { TopBar } from "@/components/layout/TopBar";
 import { PageContent } from "@/components/ui/PageContent";
@@ -12,7 +12,7 @@ import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 export function SecureWorkspaceBootstrapClient() {
   const router = useSafeRouter();
   const searchParams = useSearchParams();
-  const { user } = useUser();
+  const { user } = useAppAuth();
   const isMobileViewport = useIsMobileViewport();
   const redirectUrl = searchParams.get("redirect_url") || "/dashboard";
   const userLabel =

@@ -3,7 +3,8 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import useSWR, { mutate as mutateSWR } from "swr";
-import { SignIn, useAuth, useUser } from "@clerk/nextjs";
+import { SignIn } from "@clerk/nextjs";
+import { useAppAuth } from "@/components/auth/AppAuth";
 import {
   acceptOrgInvitation,
   fetchOrgInvitationPreview,
@@ -19,16 +20,13 @@ import { useBootstrapStatus } from "@/lib/hooks";
 import { toast } from "@/lib/toast";
 import { ensureDeviceEncryptionIdentity } from "@/lib/cryptoContent";
 
-const CLERK_ENABLED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
-
 export default function InvitationAcceptClient({ token: tokenProp }: { token?: string }) {
   const searchParams = useSearchParams();
   const token = tokenProp ?? searchParams.get("token") ?? "";
   const invitePath = token
     ? `/dashboard/invitations?token=${encodeURIComponent(token)}`
     : "/dashboard/invitations";
-  const { isLoaded, isSignedIn } = useAuth();
-  const { user } = useUser();
+  const { isLoaded, isSignedIn, mode, user } = useAppAuth();
   const router = useRouter();
   const [isAccepting, setIsAccepting] = useState(false);
   const { status: bootstrapStatus, isLoading: bootstrapLoading, mutate: mutateBootstrapStatus } = useBootstrapStatus(
@@ -41,7 +39,7 @@ export default function InvitationAcceptClient({ token: tokenProp }: { token?: s
     { revalidateOnFocus: false },
   );
 
-  if (!CLERK_ENABLED) {
+  if (mode === "unconfigured") {
     return <ClerkConfigurationNotice compact />;
   }
 

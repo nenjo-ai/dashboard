@@ -1,6 +1,10 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import {
+  isLoopbackHostname,
+  resolveDashboardAuthConfig,
+} from "@/lib/authMode";
 
 // Routes that require authentication
 const isProtectedRoute = createRouteMatcher([
@@ -17,21 +21,40 @@ const isPublicRoute = createRouteMatcher([
   "/sign-up(.*)",
 ]);
 
-// Only enable Clerk middleware if the publishable key is configured
-const clerkKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+const authConfig = resolveDashboardAuthConfig(process.env);
 
 function noopMiddleware(_req: NextRequest) {
   return NextResponse.next();
 }
 
-export default clerkKey
-  ? clerkMiddleware(async (auth, req) => {
-      // If the route is protected and user is not signed in, redirect to login
-      if (isProtectedRoute(req) && !isPublicRoute(req)) {
-        await auth.protect();
-      }
-    })
-  : noopMiddleware;
+function localAuthMiddleware(req: NextRequest) {
+  if (!isLoopbackHostname(req.nextUrl.hostname)) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "local_auth_requires_loopback",
+          message: "Local authentication is only available through a loopback hostname",
+        },
+      },
+      { status: 403 },
+    );
+  }
+  return NextResponse.next();
+}
+
+const dashboardProxy =
+  authConfig.kind === "clerk"
+    ? clerkMiddleware(async (auth, req) => {
+        // If the route is protected and user is not signed in, redirect to login
+        if (isProtectedRoute(req) && !isPublicRoute(req)) {
+          await auth.protect();
+        }
+      })
+    : authConfig.kind === "local"
+      ? localAuthMiddleware
+      : noopMiddleware;
+
+export default dashboardProxy;
 
 export const config = {
   // Match all routes except static files and Next.js internals

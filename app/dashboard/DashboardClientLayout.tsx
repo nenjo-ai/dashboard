@@ -2,24 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
 import { SWRConfig } from "swr";
+import { useAppAuth } from "@/components/auth/AppAuth";
 import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
 import { LocalVaultUnlockGate } from "@/components/auth/LocalVaultUnlockGate";
 import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { PageTransition } from "@/components/ui/motion";
-import { fetchBootstrapStatus, fetchCurrentUser, setAuthTokenGetter } from "@/lib/api";
+import { fetchBootstrapStatus, fetchCurrentUser } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { bindLocalSecretVaultSession, loadStoredAccountContentKey } from "@/lib/cryptoContent";
 import { MobileMenuProvider } from "@/lib/MobileMenuContext";
 import { OrgProvider } from "@/lib/org-context";
 import { shouldRetryDashboardRequest } from "@/lib/apiRetryPolicy";
 import { useSafeRouter } from "@/lib/safeRouter";
+import { shouldBootstrapSecureWorkspace } from "@/lib/vaultRestoreGate.mjs";
 
 /** Routes under /dashboard that should NOT show the sidebar chrome. */
 const CHROMELESS_ROUTES = ["/dashboard/login", "/dashboard/signup", "/dashboard/onboarding", "/dashboard/invitations"];
-const CLERK_ENABLED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 const DASHBOARD_SWR_CONFIG = {
   shouldRetryOnError: shouldRetryDashboardRequest,
 };
@@ -30,36 +30,36 @@ export function DashboardClientLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { mode } = useAppAuth();
 
-  if (!CLERK_ENABLED) {
-    if (pathname.startsWith("/dashboard/login") || pathname.startsWith("/dashboard/signup")) {
-      return <>{children}</>;
-    }
+  if (mode === "unconfigured") {
     return <ClerkConfigurationNotice />;
   }
 
   return (
     <SWRConfig value={DASHBOARD_SWR_CONFIG}>
-      <DashboardLayoutWithClerk pathname={pathname}>
+      <AuthenticatedDashboardLayout pathname={pathname}>
         {children}
-      </DashboardLayoutWithClerk>
+      </AuthenticatedDashboardLayout>
     </SWRConfig>
   );
 }
 
-function DashboardLayoutWithClerk({
+function AuthenticatedDashboardLayout({
   children,
   pathname,
 }: {
   children: React.ReactNode;
   pathname: string;
 }) {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn } = useAppAuth();
   const router = useSafeRouter();
   const isChromeless = CHROMELESS_ROUTES.some((r) => pathname.startsWith(r));
+  const isSecureWorkspaceBootstrap = pathname.startsWith(
+    "/dashboard/bootstrap/security",
+  );
   const isChatRoute = pathname.startsWith("/dashboard/chat");
   const showMobileNav = !isChatRoute;
-  const [authReady, setAuthReady] = useState(false);
   const [routeReady, setRouteReady] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
@@ -99,29 +99,13 @@ function DashboardLayoutWithClerk({
     });
   };
 
-  // Wire up the global auth token getter so all API calls via `fetcher`
-  // automatically include the Clerk Bearer token.
-  useEffect(() => {
-    if (!isLoaded) {
-      return;
-    }
-
-    setAuthTokenGetter(getToken);
-    const timer = setTimeout(() => setAuthReady(true), 0);
-
-    return () => {
-      clearTimeout(timer);
-      setAuthTokenGetter(null);
-    };
-  }, [getToken, isLoaded]);
-
   // Run vault-restore / bootstrap gate once per auth session, not on every route.
   useEffect(() => {
     if (isChromeless) {
       const timer = setTimeout(() => setRouteReady(true), 0);
       return () => clearTimeout(timer);
     }
-    if (!authReady || !isLoaded || !isSignedIn) {
+    if (!isLoaded || !isSignedIn) {
       const timer = setTimeout(() => setRouteReady(false), 0);
       return () => clearTimeout(timer);
     }
@@ -152,6 +136,24 @@ function DashboardLayoutWithClerk({
           Boolean(me.onboarded) ||
           Boolean(bootstrap?.has_recovery_bundle) ||
           (bootstrap?.trusted_device_count ?? 0) > 0;
+        if (
+          shouldBootstrapSecureWorkspace({
+            hasSignedInAccount: Boolean(accountId),
+            hasOrg,
+            hasRecoveryBundle: Boolean(bootstrap?.has_recovery_bundle),
+            isOnboarded: Boolean(me.onboarded),
+            requiresSecureWorkspace: Boolean(
+              bootstrap?.requires_secure_workspace,
+            ),
+          }) &&
+          !isSecureWorkspaceBootstrap
+        ) {
+          router.replace(
+            "/dashboard/bootstrap/security?redirect_url=%2Fdashboard",
+          );
+          return;
+        }
+
         const needsRestore = hasOrg && hasExistingWorkspace && !localAck;
 
         if (needsRestore) {
@@ -171,12 +173,18 @@ function DashboardLayoutWithClerk({
       cancelled = true;
       clearTimeout(pendingTimer);
     };
-  }, [authReady, isChromeless, isLoaded, isSignedIn, router]);
+  }, [
+    isChromeless,
+    isLoaded,
+    isSecureWorkspaceBootstrap,
+    isSignedIn,
+    router,
+  ]);
 
   if (isChromeless) {
-    // Wait for Clerk to load so the auth token getter is wired up
-    // before children (like onboarding) make API calls.
-    if (!isLoaded || !authReady) {
+    // Wait for the selected auth implementation before children such as
+    // onboarding make API calls through the dashboard BFF.
+    if (!isLoaded) {
       return (
         <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] dark:bg-[#05070b]">
           <div className="flex items-center gap-3 text-gray-400">
@@ -197,10 +205,9 @@ function DashboardLayoutWithClerk({
     sidebarCollapsed ? "md:pl-16" : "md:pl-64",
   );
 
-  // Don't render dashboard children until Clerk auth is loaded and the
-  // token getter is wired up. This prevents SWR hooks from firing
-  // requests before the auth token is available (which causes 401s).
-  if (!authReady) {
+  // Don't render dashboard children until the selected auth implementation
+  // is ready. This prevents SWR hooks from firing unauthenticated requests.
+  if (!isLoaded) {
     return (
       <div className="min-h-screen bg-[#f5f7fb] dark:bg-[#05070b]">
         <main className="min-h-screen flex items-center justify-center">

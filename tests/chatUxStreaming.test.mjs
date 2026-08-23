@@ -3,19 +3,54 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const hookSource = await readFile(
-  new URL("../lib/usePlannerChat.ts", import.meta.url),
+  new URL("../lib/useChatController.ts", import.meta.url),
   "utf8",
 );
 const areaSource = await readFile(
   new URL("../components/chat/ChatArea.tsx", import.meta.url),
   "utf8",
 );
-const plannerSource = await readFile(
-  new URL("../components/project/PlannerChat.tsx", import.meta.url),
+const bubbleSource = await readFile(
+  new URL("../components/chat/ChatMessageBubble.tsx", import.meta.url),
+  "utf8",
+);
+const responseSource = await readFile(
+  new URL("../components/chat/AssistantResponseContent.tsx", import.meta.url),
+  "utf8",
+);
+const activitySource = await readFile(
+  new URL("../components/chat/ChatActivityTimeline.tsx", import.meta.url),
+  "utf8",
+);
+const assistantActivitySource = await readFile(
+  new URL("../components/chat/AssistantActivity.tsx", import.meta.url),
+  "utf8",
+);
+const errorSource = await readFile(
+  new URL("../components/chat/ChatErrorState.tsx", import.meta.url),
+  "utf8",
+);
+const progressSource = await readFile(
+  new URL("../components/chat/ChatProgressIndicator.tsx", import.meta.url),
+  "utf8",
+);
+const mobileComposerSource = await readFile(
+  new URL("../components/chat/MobileInputBar.tsx", import.meta.url),
+  "utf8",
+);
+const streamingSource = await readFile(
+  new URL("../lib/chat/streaming.ts", import.meta.url),
   "utf8",
 );
 const traceSource = await readFile(
   new URL("../components/agent-run-trace/AgentRunTrace.tsx", import.meta.url),
+  "utf8",
+);
+const traceStatusSource = await readFile(
+  new URL(
+    "../components/agent-run-trace/TraceStatusIndicator.tsx",
+    import.meta.url,
+  ),
   "utf8",
 );
 const serviceWorkerSource = await readFile(
@@ -28,8 +63,8 @@ const durabilitySource = await readFile(
 );
 
 test("chat consumes versioned frames and resumes by sequence", () => {
-  assert.match(hookSource, /event\.event === "chat_stream_frame"/);
-  assert.match(hookSource, /after_sequence: lastSequenceRef\.current/);
+  assert.match(streamingSource, /event\.event === "chat_stream_frame"/);
+  assert.match(hookSource, /afterSequence: lastSequenceRef\.current/);
   assert.match(hookSource, /case "ChatRunSnapshot"/);
   assert.match(hookSource, /case "AssistantMessageFinalized"/);
 });
@@ -41,22 +76,24 @@ test("live deltas are coalesced to animation frames without fake typing", () => 
     areaSource,
     /useAnimatedStreamText|getNextStreamSliceLength/,
   );
-  assert.match(areaSource, /message\.isLiveDraft/);
+  assert.match(bubbleSource, /message\.isLiveDraft/);
 });
 
 test("live assistant content renders markdown as stream frames arrive", () => {
   assert.match(
-    areaSource,
-    /message\.isLiveDraft[\s\S]*?<AssistantMarkdown content=\{assistantDisplayContent\}/,
+    bubbleSource,
+    /message\.isLiveDraft[\s\S]*?<AssistantResponseContent[\s\S]*?content=\{assistantContent\}/,
   );
   assert.match(
-    areaSource,
-    /const AssistantMarkdown = memo[\s\S]*?<ReactMarkdown[\s\S]*?remarkPlugins=\{\[remarkGfm\]\}/,
+    responseSource,
+    /AssistantResponseContent[\s\S]*?<ReactMarkdown[\s\S]*?remarkPlugins=\{\[remarkGfm\]\}/,
   );
   assert.doesNotMatch(
-    areaSource,
-    /<p className="whitespace-pre-wrap">\{assistantDisplayContent\}<\/p>/,
+    bubbleSource,
+    /<p className="whitespace-pre-wrap">\{assistantContent\}<\/p>/,
   );
+  assert.match(bubbleSource, /streaming=\{isStreamingResponse\}/);
+  assert.match(responseSource, /motion-reduce:animate-none/);
 });
 
 test("late animation frames cannot create an orphan assistant card", () => {
@@ -116,11 +153,7 @@ test("a late history fetch preserves an optimistic first turn", () => {
   assert.doesNotMatch(historySource, /setMessages\(\[\]\)/);
   assert.match(
     areaSource,
-    /shouldShowChatHistoryLoader\(isLoadingHistory, messages\.length\)/,
-  );
-  assert.match(
-    plannerSource,
-    /shouldShowChatHistoryLoader\(isLoadingHistory, messages\.length\)/,
+    /shouldShowChatHistoryLoader\(isLoadingHistory, displayMessages\.length\)/,
   );
 });
 
@@ -167,30 +200,64 @@ test("one live assistant card owns response text and activity", () => {
   );
   assert.match(hookSource, /messages: renderedMessages/);
   assert.match(hookSource, /runTrace: activeRunTraceRef\.current/);
-  assert.match(areaSource, /<AssistantActivity\s+message=\{message\}/);
-  assert.match(plannerSource, /<AssistantActivity\s+message=\{message\}/);
+  assert.match(activitySource, /<AssistantActivity[\s\S]*?message=\{message\}/);
   assert.doesNotMatch(areaSource, /ChatLiveToolPreview/);
+});
+
+test("only the reducer-owned response can render a thinking animation", () => {
+  assert.match(areaSource, /livePhaseForChatMessage\(msg, lifecycle\)/);
+  assert.match(bubbleSource, /isLiveResponse && !isStreamingResponse/);
   assert.doesNotMatch(
-    plannerSource,
-    /<AgentRunTrace trace=\{visibleRunTrace\}/,
+    areaSource,
+    /livePhase=\{msg\.isLiveDraft \? lifecycle\.phase : undefined\}/,
   );
 });
 
 test("assistant activity has stable width and compact live spacing", () => {
-  assert.match(areaSource, /w-full max-w-full md:w-\[75%\] md:max-w-\[75%\]/);
-  assert.match(plannerSource, /w-\[75%\] max-w-\[75%\]/);
+  assert.match(bubbleSource, /md:w-full md:max-w-\[46rem\]/);
   assert.match(
-    areaSource,
+    bubbleSource,
     /visibleLiveAssistantContent\(displayContent, message\.runTrace\)/,
   );
-  assert.match(
-    areaSource,
-    /shouldShowChatRunStatusNotice\(message\.runStatus\)/,
-  );
   assert.doesNotMatch(
-    areaSource,
+    bubbleSource,
     /message\.runStatus && message\.runStatus !== "completed"/,
   );
+});
+
+test("assistant activity is collapsed by default and remains user-toggleable", () => {
+  assert.match(
+    assistantActivitySource,
+    /const \[activityOpen, setActivityOpen\] = useState\(false\)/,
+  );
+  assert.match(
+    assistantActivitySource,
+    /setActivityOpen\(\(open\) => !open\)/,
+  );
+  assert.match(assistantActivitySource, /aria-expanded=\{activityOpen\}/);
+  assert.match(assistantActivitySource, /aria-controls=\{activityPanelId\}/);
+  assert.match(assistantActivitySource, /traceActivitySummary/);
+  assert.match(assistantActivitySource, /hasMeaningfulChatActivity/);
+});
+
+test("completed tool batches collapse into readable progressive disclosure", () => {
+  assert.match(traceSource, /function ToolBatchTraceBlock/);
+  assert.match(traceSource, /toolBatchLabel\(tools\)/);
+  assert.match(traceSource, /defaultExpanded = status === "running" \|\| status === "queued"/);
+  assert.match(traceSource, /technical details for \$\{span\.name\}/);
+  assert.doesNotMatch(traceSource, />\{detailsOpen \? "Hide" : "Details"\}<\/button>/);
+});
+
+test("history appears immediately while new turns keep restrained entry motion", () => {
+  assert.match(areaSource, /const shouldAnimateEntry = !reduceMotion && !isBulkLoad/);
+  assert.match(areaSource, /shouldAnimateEntry \? \{ opacity: 0, y: 8 \} : false/);
+  assert.doesNotMatch(areaSource, /staggerDelay/);
+});
+
+test("jump to latest is available on desktop and mobile", () => {
+  assert.match(areaSource, /\{showScrollToLatest \? \(/);
+  assert.match(areaSource, /aria-label="Jump to latest message"/);
+  assert.doesNotMatch(areaSource, /isMobile && showScrollToLatest/);
 });
 
 test("tool narration is owned by activity above its tool batch", () => {
@@ -219,16 +286,38 @@ test("terminal lifecycle state replaces stale running activity", () => {
   assert.match(hookSource, /pendingTarget && isTerminalChatRunTrace\(next\)/);
 });
 
+test("local cancellation settles the rendered assistant draft and trace", () => {
+  assert.match(
+    hookSource,
+    /const finishLocalCancel[\s\S]*?RunCancelled[\s\S]*?runStatus: "cancelled"[\s\S]*?isLiveDraft: false[\s\S]*?suppressActiveRunTraceRef\.current = true/,
+  );
+});
+
 test("final assistant usage is visible in the message footer", () => {
   assert.match(hookSource, /inputTokens: data\.total_input_tokens/);
   assert.match(hookSource, /outputTokens: data\.total_output_tokens/);
-  assert.match(areaSource, /message\.inputTokens/);
-  assert.match(areaSource, /message\.outputTokens/);
+  assert.match(bubbleSource, /message\.inputTokens/);
+  assert.match(bubbleSource, /message\.outputTokens/);
 });
 
 test("retry and terminal run states are visible inline", () => {
   assert.match(hookSource, /case "ProviderRetryScheduled"/);
   assert.match(hookSource, /case "RunFailed"/);
-  assert.match(areaSource, /message\.errorMessage/);
-  assert.match(areaSource, />\s*Retry\s*</);
+  assert.match(errorSource, /message\.errorMessage/);
+  assert.match(errorSource, />\s*Retry\s*</);
+});
+
+test("chat progress uses calm reduced-motion indicators without legacy spinners", () => {
+  assert.match(progressSource, /motion-reduce:animate-none/);
+  assert.match(progressSource, /aria-live="polite"/);
+  for (const source of [
+    areaSource,
+    bubbleSource,
+    progressSource,
+    mobileComposerSource,
+    traceSource,
+    traceStatusSource,
+  ]) {
+    assert.doesNotMatch(source, /animate-spin|Loader2/);
+  }
 });

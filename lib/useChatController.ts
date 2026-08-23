@@ -1,12 +1,18 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+} from "react";
 import {
   authRequestHeaders,
   chatStreamsUrl,
   fetchChatMessages,
   deleteChatMessage,
-  createChatStream,
   cancelChat,
   createDomainSession,
   completeDomainSession,
@@ -21,8 +27,6 @@ import {
   fetchQuotaStatus,
   notifyChatSessionDelete,
 } from "./api";
-import { consumeSseStream } from "./chatStream";
-import { consumeChatStreamWithRetry } from "./chatStreamRetry";
 import {
   decryptContentPayload,
   encryptContentPayload,
@@ -36,7 +40,6 @@ import {
   clearChatStreamSnapshot,
   type ChatStreamClearSnapshot,
   type ChatStreamSnapshot,
-  type ChatStreamToolSnapshot,
   loadChatStreamSnapshot,
   notifyChatStreamSnapshot,
   persistChatStreamSnapshot,
@@ -70,9 +73,58 @@ import {
   shouldPersistChatActivityEvent,
   upsertLiveAssistantDraft,
   withLiveChatActivityPreview,
-} from "./chatInterfaceState";
+} from "./chat/derivations";
 import { normalizeToolCallArgs } from "./toolCallDisplay";
 import type { AgentLifecycleEvent, RunTrace } from "./agentRunTrace/types";
+import {
+  ENCRYPTED_USER_MESSAGE_PLACEHOLDER,
+  LOCAL_CHAT_SEED_KEY,
+  STREAM_CHANNEL_NAME,
+} from "./chat/constants";
+import {
+  isBrowserReload,
+  readPendingAgentId,
+  readPersistedLivePreview,
+  readPersistedTools,
+  writePendingAgentId,
+  writePersistedLivePreview,
+  writePersistedTools,
+} from "./chat/persistence";
+import {
+  lifecycleRunId,
+  lifecycleSessionId,
+  normalizeSseAgentEvent,
+  subscribeToChatStream,
+  type NormalizedStreamEvent,
+} from "./chat/streaming";
+import {
+  appendPreview,
+  hookToolDisplayName,
+  isAbilityTool,
+  isProviderTool,
+  providerForTool,
+  providerToolPreview,
+  stringField,
+  toolArgsSummary,
+  upsertActiveTool,
+  type LifecyclePayload,
+  type ToolPreviewPayload,
+  type ToolStreamData,
+} from "./chat/toolCalls";
+import {
+  isTerminalAssistantStatus,
+  terminalPhaseForStatus,
+} from "./chat/terminal";
+import {
+  chatLifecycle,
+  chatTurnReducer,
+  createChatTurnState,
+} from "./chat/state";
+import {
+  activeChatPhaseForRunStatus,
+  type ActiveToolEntry,
+  type ChatPhase,
+} from "./chat/types";
 import type {
   ChatMessage,
   ChatSession,
@@ -81,169 +133,6 @@ import type {
   EncryptedPayload,
   PersistedChatMessage,
 } from "./types";
-
-type NormalizedStreamEvent = {
-  event_type: string;
-  data: Record<string, unknown>;
-};
-
-type LifecyclePayload = {
-  label?: string;
-  summary?: string;
-  event?: Record<string, unknown>;
-  message?: string;
-  delta?: string;
-  checkpoint?: string;
-  status?: string;
-  details?: unknown;
-  tool_name?: string;
-  tool_args?: unknown;
-  text_preview?: string;
-  output?: unknown;
-  output_preview?: string;
-  error_preview?: string;
-  task_preview?: string;
-  result_preview?: string;
-};
-
-type ActiveToolEntry = ChatStreamToolSnapshot;
-
-function isAbilityTool(name: string): boolean {
-  return name === "use_ability" || name.startsWith("ability/");
-}
-
-function hookToolDisplayName(
-  hook: string | undefined,
-  hookEvent: string | undefined,
-): string {
-  const label = hook?.trim() || "hook";
-  const event = hookEvent?.trim();
-  return event ? `hook/${label}:${event}` : `hook/${label}`;
-}
-
-function appendPreview(
-  existing?: string,
-  incoming?: string,
-): string | undefined {
-  const next = incoming?.trim();
-  if (!next) return existing;
-  const prev = existing?.trim();
-  return prev ? `${prev}\n\n${next}` : next;
-}
-
-type ToolPreviewPayload = LifecyclePayload & {
-  provider_native?: boolean;
-  provider?: string;
-  tool_origin?: string;
-};
-
-type ToolStreamData = Record<string, unknown> & {
-  batch_id?: string;
-  call_id?: string;
-  parent_call_id?: string;
-  tool_name?: string;
-  success?: boolean;
-  payload?: ToolPreviewPayload;
-  encrypted_payload?: EncryptedPayload;
-};
-
-function stringField(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
-function providerDisplayName(provider?: string): string {
-  if (!provider) return "provider";
-  if (provider.toLowerCase() === "xai") return "xAI";
-  return provider;
-}
-
-function toolDisplayName(toolName: string): string {
-  return toolName.replaceAll("_", " ");
-}
-
-function providerToolPreview(
-  toolName: string,
-  provider: string | undefined,
-  status: "started" | "completed" | "failed",
-): string {
-  const providerName = providerDisplayName(provider);
-  if (toolName === "web_search") {
-    if (status === "started") return `Searching the web with ${providerName}`;
-    if (status === "failed") return `Web search failed`;
-    return `Web search completed`;
-  }
-  if (toolName === "x_search") {
-    if (status === "started") return `Searching X with ${providerName}`;
-    if (status === "failed") return `X search failed`;
-    return `X search completed`;
-  }
-  const label = toolDisplayName(toolName);
-  if (status === "started") return `Running ${label} with ${providerName}`;
-  if (status === "failed") return `${label} failed`;
-  return `${label} completed`;
-}
-
-function isProviderTool(
-  data: ToolStreamData,
-  payload?: ToolPreviewPayload,
-): boolean {
-  return (
-    data.provider_native === true ||
-    data.tool_origin === "provider" ||
-    payload?.provider_native === true ||
-    payload?.tool_origin === "provider"
-  );
-}
-
-function providerForTool(
-  data: ToolStreamData,
-  payload?: ToolPreviewPayload,
-): string | undefined {
-  return stringField(payload?.provider) ?? stringField(data.provider);
-}
-
-function toolArgsSummary(
-  data: ToolStreamData,
-  payload?: ToolPreviewPayload,
-): string {
-  const args =
-    payload?.tool_args !== undefined ? payload.tool_args : data.tool_args;
-  if (args !== undefined) return normalizeToolCallArgs(args);
-  return stringField(data.args_summary) ?? "";
-}
-
-function upsertActiveTool(
-  tools: ActiveToolEntry[],
-  next: ActiveToolEntry,
-): ActiveToolEntry[] {
-  const matches = (tool: ActiveToolEntry) =>
-    next.callId ? tool.callId === next.callId : tool.name === next.name;
-  const update = (tool: ActiveToolEntry): ActiveToolEntry =>
-    matches(tool)
-      ? {
-          ...tool,
-          ...next,
-          args: next.args || tool.args,
-          textPreview: next.textPreview ?? tool.textPreview,
-          outputPreview: next.outputPreview ?? tool.outputPreview,
-          errorPreview: next.errorPreview ?? tool.errorPreview,
-        }
-      : {
-          ...tool,
-          children: tool.children?.map(update),
-        };
-
-  if (tools.some(matches)) return tools.map(update);
-  return [...tools.map(update), next];
-}
-
-const LOCAL_CHAT_SEED_KEY = "nenjo:local_chat_seed";
-const PENDING_AGENT_KEY = "nenjo:pendingAgentId";
-const TOOLS_KEY = "nenjo:activeTools";
-const LIVE_PREVIEW_KEY = "nenjo:livePreview";
-const STREAM_CHANNEL_NAME = "nenjo-chat-stream";
-const ENCRYPTED_USER_MESSAGE_PLACEHOLDER = "[Encrypted message]";
-const CHAT_STREAM_PROTOCOL_VERSION = 1;
 
 function persistedMessageCommand(
   message: Pick<PersistedChatMessage, "metadata">,
@@ -262,167 +151,6 @@ function isClearSnapshot(
 
 function generateId(): string {
   return crypto.randomUUID();
-}
-
-function readPendingAgentId(): string | null {
-  try {
-    return sessionStorage.getItem(PENDING_AGENT_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writePendingAgentId(agentId: string | null): void {
-  try {
-    if (agentId) {
-      sessionStorage.setItem(PENDING_AGENT_KEY, agentId);
-    } else {
-      sessionStorage.removeItem(PENDING_AGENT_KEY);
-    }
-  } catch {
-    // ignore
-  }
-}
-
-function isBrowserReload(): boolean {
-  if (typeof performance === "undefined") return false;
-  const [navigation] = performance.getEntriesByType(
-    "navigation",
-  ) as PerformanceNavigationTiming[];
-  return navigation?.type === "reload";
-}
-
-function readPersistedTools() {
-  try {
-    const raw = sessionStorage.getItem(TOOLS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writePersistedTools(tools: unknown[]): void {
-  try {
-    if (tools.length > 0) {
-      sessionStorage.setItem(TOOLS_KEY, JSON.stringify(tools));
-    } else {
-      sessionStorage.removeItem(TOOLS_KEY);
-    }
-  } catch {
-    // ignore
-  }
-}
-
-function readPersistedLivePreview(): string | undefined {
-  try {
-    return sessionStorage.getItem(LIVE_PREVIEW_KEY) ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function writePersistedLivePreview(preview?: string): void {
-  try {
-    const next = preview?.trim();
-    if (next) {
-      sessionStorage.setItem(LIVE_PREVIEW_KEY, next);
-    } else {
-      sessionStorage.removeItem(LIVE_PREVIEW_KEY);
-    }
-  } catch {
-    // ignore
-  }
-}
-
-function normalizeSseAgentEvent(event: {
-  event: string;
-  data: unknown;
-}): NormalizedStreamEvent | null {
-  if (
-    event.event === "snapshot" &&
-    event.data &&
-    typeof event.data === "object"
-  ) {
-    return {
-      event_type: "ChatRunSnapshot",
-      data: event.data as Record<string, unknown>,
-    };
-  }
-  if (
-    event.event === "chat_stream_frame" &&
-    event.data &&
-    typeof event.data === "object"
-  ) {
-    const frame = event.data as {
-      protocol_version?: unknown;
-      sequence?: unknown;
-      run_id?: unknown;
-      input_message_id?: unknown;
-      event?: { event_type?: unknown; data?: unknown };
-    };
-    if (
-      frame.protocol_version === CHAT_STREAM_PROTOCOL_VERSION &&
-      typeof frame.event?.event_type === "string"
-    ) {
-      return {
-        event_type: frame.event.event_type,
-        data: {
-          ...((frame.event.data as Record<string, unknown> | undefined) ?? {}),
-          __sequence: frame.sequence,
-          __frame_run_id: frame.run_id,
-          __input_message_id: frame.input_message_id,
-        },
-      };
-    }
-  }
-  if (typeof event.data === "object" && event.data !== null) {
-    const maybeWrapped = event.data as { event_type?: unknown; data?: unknown };
-    if (typeof maybeWrapped.event_type === "string") {
-      return {
-        event_type: maybeWrapped.event_type,
-        data: (maybeWrapped.data as Record<string, unknown> | undefined) ?? {},
-      };
-    }
-  }
-
-  const eventTypeMap: Record<string, string> = {
-    hook_started: "HookStarted",
-    hook_completed: "HookCompleted",
-    run_started: "RunStarted",
-    run_completed: "RunCompleted",
-    run_failed: "RunFailed",
-    run_cancelled: "RunCancelled",
-    model_request_started: "ModelRequestStarted",
-    assistant_text_delta: "AssistantTextDelta",
-    assistant_reasoning_delta: "AssistantReasoningDelta",
-    model_request_completed: "ModelRequestCompleted",
-    tool_call_started: "ToolCallStarted",
-    tool_call_updated: "ToolCallUpdated",
-    tool_output_delta: "ToolOutputDelta",
-    tool_call_completed: "ToolCallCompleted",
-    provider_retry_scheduled: "ProviderRetryScheduled",
-    progress_update: "ProgressUpdate",
-    assistant_message_finalized: "AssistantMessageFinalized",
-    async_operation_event: "AsyncOperationEvent",
-    async_operation_transcript: "AsyncOperationTranscript",
-    done: "Done",
-    error: "Error",
-    domain_entered: "DomainEntered",
-    domain_exited: "DomainExited",
-    message_compacted: "MessageCompacted",
-    paused: "Paused",
-    resumed: "Resumed",
-  };
-
-  const event_type = eventTypeMap[event.event];
-  if (!event_type || typeof event.data !== "object" || event.data === null) {
-    return null;
-  }
-
-  return {
-    event_type,
-    data: event.data as Record<string, unknown>,
-  };
 }
 
 interface AgentCache {
@@ -820,23 +548,7 @@ async function resolveLifecycleEventPayload(
   } as AgentLifecycleEvent;
 }
 
-function lifecycleRunId(event: AgentLifecycleEvent): string | undefined {
-  return "run_id" in event.data ? event.data.run_id : undefined;
-}
-
-function lifecycleSessionId(event: AgentLifecycleEvent): string | undefined {
-  return "session_id" in event.data ? event.data.session_id : undefined;
-}
-
-function isTerminalAssistantStatus(status: string | undefined): boolean {
-  return Boolean(status && status !== "in_progress");
-}
-
-function hasRestorableStreamProgress(snapshot: ChatStreamSnapshot): boolean {
-  return snapshot.status === "streaming";
-}
-
-export function usePlannerChat(
+export function useChatController(
   projectId: string | null | undefined,
   agentId?: string,
   initialSessionId?: string,
@@ -844,7 +556,6 @@ export function usePlannerChat(
 ) {
   const { currentUser, userId } = useCurrentUser();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [livePreview, setLivePreview] = useState<string | undefined>(undefined);
   const [activeRunTrace, setActiveRunTrace] = useState<RunTrace | undefined>();
   const activeRunTraceRef = useRef<RunTrace | undefined>(undefined);
   const lastRunTraceRef = useRef<RunTrace | undefined>(undefined);
@@ -868,12 +579,26 @@ export function usePlannerChat(
   const status = "connected";
   const isAgentTarget = targetType === "agent";
 
-  // Initialize from pendingAgentId so the typing indicator is correct on the
-  // very first render after remount — no useEffect delay.
-  // Only show typing if THIS role is the one with a pending response.
-  const [isTyping, setIsTyping] = useState(
-    () => !isBrowserReload() && !!agentId && readPendingAgentId() === agentId,
+  const [liveTurn, dispatchLiveTurn] = useReducer(
+    chatTurnReducer,
+    undefined,
+    () => {
+      const isPending =
+        !isBrowserReload() && !!agentId && readPendingAgentId() === agentId;
+      return createChatTurnState({
+        phase: isPending ? "thinking" : "idle",
+        activeTools: isPending
+          ? (readPersistedTools() as ActiveToolEntry[])
+          : [],
+        activityPreview: isPending ? readPersistedLivePreview() : undefined,
+      });
+    },
   );
+  const lifecycle = useMemo(() => chatLifecycle(liveTurn), [liveTurn]);
+  const isTyping = lifecycle.isTyping;
+  const hasActiveChatRequest = lifecycle.isActive;
+  const activeTools = liveTurn.activeTools;
+  const livePreview = liveTurn.activityPreview;
 
   useEffect(() => {
     void warmAccountContentKey();
@@ -883,12 +608,6 @@ export function usePlannerChat(
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const isReloadRef = useRef(isBrowserReload());
   const workerAckSyncedRef = useRef(false);
-  const [activeTools, setActiveTools] = useState<ActiveToolEntry[]>(() =>
-    !isBrowserReload() && !!agentId && readPendingAgentId() === agentId
-      ? (readPersistedTools() as ActiveToolEntry[])
-      : [],
-  );
-  const [hasActiveChatRequest, setHasActiveChatRequest] = useState(false);
   const [activeDomainSession, setActiveDomainSession] =
     useState<DomainSession | null>(null);
   const activeDomainSessionRef = useRef<DomainSession | null>(null);
@@ -958,6 +677,49 @@ export function usePlannerChat(
   const activeToolsRef = useRef<ActiveToolEntry[]>(activeTools);
   const livePreviewRef = useRef<string | undefined>(livePreview);
 
+  const setActiveTools = useCallback(
+    (
+      update:
+        | ActiveToolEntry[]
+        | ((previous: ActiveToolEntry[]) => ActiveToolEntry[]),
+    ) => {
+      const next =
+        typeof update === "function" ? update(activeToolsRef.current) : update;
+      activeToolsRef.current = next;
+      dispatchLiveTurn({ type: "tools_replaced", tools: next });
+    },
+    [],
+  );
+
+  const setLivePreview = useCallback(
+    (
+      update:
+        | string
+        | undefined
+        | ((previous: string | undefined) => string | undefined),
+    ) => {
+      const next =
+        typeof update === "function" ? update(livePreviewRef.current) : update;
+      livePreviewRef.current = next;
+      dispatchLiveTurn({ type: "preview_replaced", preview: next });
+    },
+    [],
+  );
+
+  const setIsTyping = useCallback((typing: boolean) => {
+    if (!typing) {
+      dispatchLiveTurn({ type: "phase_changed", phase: "finalizing" });
+      return;
+    }
+    dispatchLiveTurn({
+      type: "phase_changed",
+      phase: activeChatPhaseForRunStatus(
+        activeRunStatusRef.current,
+        Boolean(draftContentRef.current.trim()),
+      ),
+    });
+  }, []);
+
   const cancelDraftRender = useCallback(() => {
     if (draftRafRef.current === null) return;
     window.cancelAnimationFrame(draftRafRef.current);
@@ -1001,7 +763,7 @@ export function usePlannerChat(
     if (!awaitingDeliveryRef.current) {
       setIsTyping(true);
     }
-  }, []);
+  }, [setIsTyping]);
 
   const persistCurrentStreamSnapshot = useCallback(() => {
     if (!activeSessionId) return;
@@ -1044,10 +806,7 @@ export function usePlannerChat(
       }
       activeToolsRef.current = [];
       livePreviewRef.current = undefined;
-      setActiveTools([]);
-      setLivePreview(undefined);
-      setIsTyping(false);
-      setHasActiveChatRequest(false);
+      dispatchLiveTurn({ type: "reset" });
       currentRequestIdRef.current = null;
       activeChatRequestRef.current = undefined;
       activeRunIdRef.current = undefined;
@@ -1088,10 +847,10 @@ export function usePlannerChat(
       livePreviewRef.current = undefined;
       activeRunTraceRef.current = undefined;
       activeRunEnvelopeIdRef.current = undefined;
-      setActiveTools([]);
-      setLivePreview(undefined);
-      setIsTyping(false);
-      setHasActiveChatRequest(false);
+      const terminalPhase = terminalPhaseForStatus(status);
+      dispatchLiveTurn(
+        terminalPhase ? { type: terminalPhase } : { type: "reset" },
+      );
       setActiveRunTrace(undefined);
       if (activeSessionId) {
         void clearChatStreamSnapshot(activeSessionId, finishedResponseId);
@@ -1128,9 +887,7 @@ export function usePlannerChat(
         activeToolsRef.current = [];
         livePreviewRef.current = undefined;
         activeRunTraceRef.current = undefined;
-        setActiveTools([]);
-        setLivePreview(undefined);
-        setIsTyping(false);
+        dispatchLiveTurn({ type: "reset" });
         setActiveRunTrace(undefined);
         return;
       }
@@ -1148,8 +905,7 @@ export function usePlannerChat(
       suppressActiveRunTraceRef.current = false;
       activeToolsRef.current = snapshot.activeTools ?? [];
       livePreviewRef.current = snapshot.livePreview;
-      setActiveTools(snapshot.activeTools ?? []);
-      setLivePreview(snapshot.livePreview);
+      dispatchLiveTurn({ type: "restored", snapshot });
       const restoredTrace = snapshot.activeRunTrace as RunTrace | undefined;
       activeRunTraceRef.current = restoredTrace;
       if (restoredTrace && !isTerminalChatRunTrace(restoredTrace)) {
@@ -1173,8 +929,6 @@ export function usePlannerChat(
             : snapshot.status === "error"
               ? "failed"
               : snapshot.status;
-      setHasActiveChatRequest(isStreaming);
-      setIsTyping(isStreaming && hasRestorableStreamProgress(snapshot));
       setMessages((prev) => {
         const targetIndex = findLastIndexCompat(
           prev,
@@ -1317,9 +1071,18 @@ export function usePlannerChat(
     // Reset typing state: only show if the NEW role has a pending response
     const isPending =
       !isReloadRef.current && !!agentId && pendingAgentId === agentId;
-    setIsTyping(isPending);
-    setActiveTools(isPending ? persistedActiveTools : []);
-    setLivePreview(isPending ? persistedLivePreview : undefined);
+    dispatchLiveTurn({ type: "reset" });
+    if (isPending) {
+      dispatchLiveTurn({
+        type: "tools_replaced",
+        tools: persistedActiveTools,
+      });
+      dispatchLiveTurn({
+        type: "preview_replaced",
+        preview: persistedLivePreview,
+      });
+      dispatchLiveTurn({ type: "phase_changed", phase: "thinking" });
+    }
 
     // Clear the response ref so stray tokens from the old role don't bleed in
     responseIdRef.current = null;
@@ -2092,6 +1855,7 @@ export function usePlannerChat(
             const runId = stringField(streamEvent.data.run_id) ?? frameRunId;
             if (runId) activeRunIdRef.current = runId;
             activeRunStatusRef.current = "generating";
+            dispatchLiveTurn({ type: "phase_changed", phase: "thinking" });
             setTypingIfDelivered();
             scheduleDraftRender();
             persistCurrentStreamSnapshot();
@@ -2104,8 +1868,16 @@ export function usePlannerChat(
               if (lifecycleEvent?.event_type !== "AssistantTextDelta") return;
               if (typeof lifecycleEvent.data.checkpoint === "string") {
                 draftContentRef.current = lifecycleEvent.data.checkpoint;
+                dispatchLiveTurn({
+                  type: "content_replaced",
+                  content: lifecycleEvent.data.checkpoint,
+                });
               } else if (typeof lifecycleEvent.data.delta === "string") {
                 draftContentRef.current += lifecycleEvent.data.delta;
+                dispatchLiveTurn({
+                  type: "text_delta",
+                  delta: lifecycleEvent.data.delta,
+                });
               }
               if (!draftContentRef.current) return;
               activeRunStatusRef.current = "generating";
@@ -2119,6 +1891,7 @@ export function usePlannerChat(
           case "ProviderRetryScheduled": {
             streamWorkQueueRef.current.enqueue(async () => {
               activeRunStatusRef.current = "retrying";
+              dispatchLiveTurn({ type: "phase_changed", phase: "waiting" });
               scheduleDraftRender();
               persistCurrentStreamSnapshot();
             });
@@ -2137,6 +1910,7 @@ export function usePlannerChat(
               total_output_tokens?: number;
             };
             streamWorkQueueRef.current.enqueue(async () => {
+              dispatchLiveTurn({ type: "phase_changed", phase: "finalizing" });
               const decrypted = await resolveEncryptedPayloadJson<
                 | { final_output?: string; message?: string; text?: string }
                 | string
@@ -2242,7 +2016,14 @@ export function usePlannerChat(
                       itemIndex === index ? { ...item, ...failed } : item,
                     );
               });
-              setIsTyping(false);
+              dispatchLiveTurn({
+                type: "failed",
+                error: {
+                  code: data.code,
+                  message,
+                  retryable: data.retryable,
+                },
+              });
               persistCurrentStreamSnapshot();
             });
             break;
@@ -2275,7 +2056,7 @@ export function usePlannerChat(
                         : message,
                     );
               });
-              setIsTyping(false);
+              dispatchLiveTurn({ type: "cancelled" });
               persistCurrentStreamSnapshot();
             });
             break;
@@ -2284,7 +2065,7 @@ export function usePlannerChat(
           case "RunCompleted": {
             streamWorkQueueRef.current.enqueue(async () => {
               activeRunStatusRef.current = "completed";
-              setIsTyping(false);
+              dispatchLiveTurn({ type: "phase_changed", phase: "finalizing" });
             });
             break;
           }
@@ -2543,6 +2324,7 @@ export function usePlannerChat(
           case "ToolCallStarted": {
             const data = streamEvent.data as ToolStreamData;
             activeRunStatusRef.current = "using_tool";
+            dispatchLiveTurn({ type: "phase_changed", phase: "using_tool" });
             setTypingIfDelivered();
             scheduleDraftRender();
             streamWorkQueueRef.current.enqueue(async () => {
@@ -2605,8 +2387,8 @@ export function usePlannerChat(
               const errorPreview =
                 stringField(payload.error_preview) ??
                 stringField(data.error_preview);
-              setTypingIfDelivered();
               activeRunStatusRef.current = "generating";
+              setTypingIfDelivered();
               if (providerPreview) {
                 setLivePreview((prev) => appendPreview(prev, providerPreview));
               }
@@ -2773,6 +2555,8 @@ export function usePlannerChat(
       finishLiveTurn,
       persistCurrentStreamSnapshot,
       scheduleDraftRender,
+      setActiveTools,
+      setLivePreview,
       setTypingIfDelivered,
     ],
   );
@@ -2867,18 +2651,12 @@ export function usePlannerChat(
         }
       };
 
-      void consumeChatStreamWithRetry(
-        () =>
-          createChatStream(
-            {
-              ...snapshot.request!,
-              after_sequence: lastSequenceRef.current || snapshot.lastSequence,
-            },
-            restoreController!.signal,
-          ),
-        (response) => consumeSseStream(response, handleStreamEvent),
-        restoreController.signal,
-      ).catch((error) => {
+      void subscribeToChatStream({
+        request: snapshot.request,
+        afterSequence: lastSequenceRef.current || snapshot.lastSequence,
+        signal: restoreController.signal,
+        onEvent: handleStreamEvent,
+      }).catch((error) => {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           console.warn("Failed to restore chat stream after navigation", error);
         }
@@ -3015,7 +2793,6 @@ export function usePlannerChat(
       if (!queueIntoActiveTurn) {
         optimisticUserMessageIdRef.current = msgId;
         awaitingDeliveryRef.current = true;
-        setHasActiveChatRequest(true);
       }
       let optimisticResponseId: string | undefined;
       if (!queueIntoActiveTurn) {
@@ -3036,8 +2813,7 @@ export function usePlannerChat(
         lastSequenceRef.current = 0;
         draftContentRef.current = "";
         activeRunStatusRef.current = "connecting";
-        setHasActiveChatRequest(true);
-        setLivePreview(undefined);
+        livePreviewRef.current = undefined;
         pendingFinalTraceTargetRef.current = undefined;
         suppressActiveRunTraceRef.current = false;
         activeRunTraceRef.current = optimisticTrace;
@@ -3045,7 +2821,12 @@ export function usePlannerChat(
         lastRunTraceRef.current = undefined;
         lastRunEnvelopeIdRef.current = undefined;
         setActiveRunTrace(optimisticTrace);
-        setIsTyping(true);
+        dispatchLiveTurn({
+          type: "prompt_submitted",
+          requestId: msgId,
+          responseId,
+          runTrace: optimisticTrace,
+        });
         setMessages((previous) =>
           upsertLiveAssistantDraft([...previous, userMsg], {
             id: responseId,
@@ -3065,8 +2846,13 @@ export function usePlannerChat(
           optimisticUserMessageIdRef.current = null;
           currentRequestIdRef.current = null;
           awaitingDeliveryRef.current = false;
-          setHasActiveChatRequest(false);
-          setIsTyping(false);
+          dispatchLiveTurn({
+            type: "failed",
+            error: {
+              code: "message_preparation_failed",
+              message: "The message could not be prepared for the worker.",
+            },
+          });
           pendingFinalTraceTargetRef.current = undefined;
           suppressActiveRunTraceRef.current = true;
           if (activeRunEnvelopeIdRef.current) {
@@ -3207,18 +2993,12 @@ export function usePlannerChat(
           });
         };
 
-        streamPromise = consumeChatStreamWithRetry(
-          () =>
-            createChatStream(
-              {
-                ...streamBody,
-                after_sequence: lastSequenceRef.current || undefined,
-              },
-              controller.signal,
-            ),
-          (response) => consumeSseStream(response, handleStreamEvent),
-          controller.signal,
-        );
+        streamPromise = subscribeToChatStream({
+          request: streamBody,
+          afterSequence: lastSequenceRef.current,
+          signal: controller.signal,
+          onEvent: handleStreamEvent,
+        });
       } catch (error) {
         console.error("Failed to prepare chat stream:", error);
         failOptimisticMessage();
@@ -3284,7 +3064,6 @@ export function usePlannerChat(
           cancelDraftRender();
           if (!queueIntoActiveTurn) {
             optimisticUserMessageIdRef.current = null;
-            setIsTyping(false);
           }
           if (activeSessionId && !queueIntoActiveTurn && wasCancelled) {
             void clearChatStreamSnapshot(activeSessionId, optimisticResponseId);
@@ -3295,6 +3074,7 @@ export function usePlannerChat(
             });
           }
           if (wasCancelled) {
+            dispatchLiveTurn({ type: "cancelled" });
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === msgId ? { ...m, status: "cancelled" } : m,
@@ -3302,6 +3082,15 @@ export function usePlannerChat(
             );
           } else if (!queueIntoActiveTurn) {
             activeRunStatusRef.current = "failed";
+            dispatchLiveTurn({
+              type: "failed",
+              error: {
+                code: "stream_disconnected",
+                message:
+                  "The live connection was interrupted. You can retry while the saved run remains recoverable.",
+                retryable: true,
+              },
+            });
             const id =
               failedResponseId ?? activeRunIdRef.current ?? generateId();
             setMessages((previous) => {
@@ -3350,10 +3139,9 @@ export function usePlannerChat(
               return;
             }
             cancelDraftRender();
-            setActiveTools([]);
-            setLivePreview(undefined);
-            setIsTyping(false);
-            setHasActiveChatRequest(false);
+            activeToolsRef.current = [];
+            livePreviewRef.current = undefined;
+            dispatchLiveTurn({ type: "reset" });
             currentRequestIdRef.current = null;
             responseIdRef.current = null;
             activeRunTraceRef.current = undefined;
@@ -3620,19 +3408,47 @@ export function usePlannerChat(
 
     // Hide the typing affordance immediately, but keep the stream open until
     // the cancel command has been sent to the platform.
-    setIsTyping(false);
+    dispatchLiveTurn({ type: "cancelled" });
 
     const finishLocalCancel = () => {
+      const completedAt = new Date().toISOString();
+      const cancelledTrace = reduceRunTrace(
+        activeTrace,
+        { event_type: "RunCancelled", data: {} },
+        { now: completedAt },
+      );
+      if (cancelledTrace) {
+        lastRunTraceRef.current = cancelledTrace;
+      }
+      if (cancelledResponseId) {
+        setMessages((previous) =>
+          previous.map((message) =>
+            message.role === "assistant" &&
+            (message.id === cancelledResponseId ||
+              message.persistedId === cancelledResponseId)
+              ? {
+                  ...message,
+                  runStatus: "cancelled",
+                  runTrace: cancelledTrace ?? message.runTrace,
+                  isLiveDraft: false,
+                }
+              : message,
+          ),
+        );
+      }
+      cancelDraftRender();
       responseIdRef.current = null;
       currentRequestIdRef.current = null;
       pendingFinalTraceTargetRef.current = undefined;
+      suppressActiveRunTraceRef.current = true;
+      activeRunStatusRef.current = "cancelled";
       if (activeRunEnvelopeIdRef.current) {
         void markEnvelopeOrphaned(activeRunEnvelopeIdRef.current);
       }
       activeRunTraceRef.current = undefined;
       activeRunEnvelopeIdRef.current = undefined;
       setActiveRunTrace(undefined);
-      setHasActiveChatRequest(false);
+      dispatchLiveTurn({ type: "reset" });
       streamAbortRef.current?.abort();
       streamAbortRef.current = null;
       if (activeSessionId) {
@@ -3656,7 +3472,14 @@ export function usePlannerChat(
         console.error("Failed to cancel chat:", err);
       })
       .finally(finishLocalCancel);
-  }, [agentId, activeSessionId, isTyping, hasActiveChatRequest, isAgentTarget]);
+  }, [
+    agentId,
+    activeSessionId,
+    isTyping,
+    hasActiveChatRequest,
+    isAgentTarget,
+    cancelDraftRender,
+  ]);
 
   // ── Session management callbacks ─────────────────────────────────────
   const switchSession = useCallback(
@@ -3828,6 +3651,7 @@ export function usePlannerChat(
     clearMessages,
     isTyping,
     hasActiveChatRequest,
+    lifecycle,
     activeTools,
     status,
     isLoadingHistory,
