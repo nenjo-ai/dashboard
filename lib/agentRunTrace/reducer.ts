@@ -148,27 +148,24 @@ function findSpan(spans: TraceSpan[], spanId: string): TraceSpan | undefined {
   return undefined;
 }
 
-function completeRunningSpans(
+function settlePendingSpans(
   spans: TraceSpan[],
+  status: Extract<TraceStatus, "completed" | "failed" | "cancelled">,
   completedAt: string,
 ): TraceSpan[] {
   return spans.map((span) => {
     const next =
-      span.status === "running"
-        ? ({ ...span, status: "completed", completedAt } as TraceSpan)
+      span.status === "running" || span.status === "queued"
+        ? ({ ...span, status, completedAt } as TraceSpan)
         : span;
     if ("children" in next && next.children) {
       return {
         ...next,
-        children: completeRunningSpans(next.children, completedAt),
+        children: settlePendingSpans(next.children, status, completedAt),
       } as TraceSpan;
     }
     return next;
   });
-}
-
-function isTerminalAssistantResponseStatus(status?: string): boolean {
-  return Boolean(status && status !== "in_progress");
 }
 
 function completeSpanStatus(success: boolean): TraceStatus {
@@ -234,7 +231,7 @@ export function reduceRunTrace(
         ...trace,
         phase: "completed",
         completedAt: now,
-        spans: completeRunningSpans(trace.spans, now),
+        spans: settlePendingSpans(trace.spans, "completed", now),
       };
     case "RunFailed":
       return {
@@ -242,12 +239,14 @@ export function reduceRunTrace(
         phase: "failed",
         completedAt: now,
         errorMessage: event.data.message,
+        spans: settlePendingSpans(trace.spans, "failed", now),
       };
     case "RunCancelled":
       return {
         ...trace,
         phase: "cancelled",
         completedAt: now,
+        spans: settlePendingSpans(trace.spans, "cancelled", now),
       };
     case "Paused":
       return {
@@ -302,28 +301,38 @@ export function reduceRunTrace(
       };
     }
     case "AssistantTextDelta": {
-      const spans = withSpan(trace.spans, event.data.request_id, (span) => {
-        if (span.kind !== "model") return span;
-        return { ...span, text: `${span.text ?? ""}${event.data.delta}` };
-      });
+      // A chat response has one owner: the assistant message draft. Keeping the
+      // same token text in a model span duplicates the answer inside Activity.
+      // Execution traces retain model text because they have no chat bubble.
+      const spans =
+        trace.source === "chat"
+          ? trace.spans
+          : withSpan(trace.spans, event.data.request_id, (span) => {
+              if (span.kind !== "model") return span;
+              return { ...span, text: `${span.text ?? ""}${event.data.delta}` };
+            });
+      const phase = hasTopLevelSpan(trace.spans, event.data.request_id)
+        ? "streaming"
+        : phaseAfterSpanCompletion(spans, "running_ability");
+      if (spans === trace.spans && phase === trace.phase) return trace;
       return {
         ...trace,
-        phase: hasTopLevelSpan(trace.spans, event.data.request_id)
-          ? "streaming"
-          : phaseAfterSpanCompletion(spans, "running_ability"),
+        phase,
         spans,
       };
     }
-    case "AssistantResponse":
-      if (!isTerminalAssistantResponseStatus(event.data.status)) {
-        return trace;
-      }
+    case "AssistantMessageFinalized":
       return {
         ...trace,
         phase: "completed",
         completedAt: now,
-        spans: completeRunningSpans(trace.spans, now),
+        spans: settlePendingSpans(trace.spans, "completed", now),
       };
+    case "AssistantReasoningDelta":
+    case "ProviderRetryScheduled":
+    case "ProgressUpdate":
+    case "ToolCallUpdated":
+      return trace;
     case "MessageCompacted":
       return {
         ...trace,

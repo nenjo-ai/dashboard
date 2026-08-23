@@ -13,7 +13,11 @@ const ENVELOPES_STORE = "envelopes";
 const LINKS_STORE = "message_links";
 
 export type EnvelopeStatus = "running" | "completed" | "failed" | "cancelled";
-export type EnvelopeAttachState = "running" | "awaiting_message" | "attached" | "orphaned";
+export type EnvelopeAttachState =
+  | "running"
+  | "awaiting_message"
+  | "attached"
+  | "orphaned";
 
 export type ToolEnvelopeIndex = {
   envelopeId: string;
@@ -47,34 +51,44 @@ function openDb(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(ENVELOPES_STORE)) {
-        const envelopes = db.createObjectStore(ENVELOPES_STORE, { keyPath: "envelopeId" });
+        const envelopes = db.createObjectStore(ENVELOPES_STORE, {
+          keyPath: "envelopeId",
+        });
         envelopes.createIndex("sessionId", "sessionId", { unique: false });
         envelopes.createIndex("status", "status", { unique: false });
         envelopes.createIndex("attachState", "attachState", { unique: false });
       }
       if (!db.objectStoreNames.contains(LINKS_STORE)) {
-        const links = db.createObjectStore(LINKS_STORE, { keyPath: "messageId" });
+        const links = db.createObjectStore(LINKS_STORE, {
+          keyPath: "messageId",
+        });
         links.createIndex("sessionId", "sessionId", { unique: false });
         links.createIndex("envelopeId", "envelopeId", { unique: false });
       }
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("Failed to open agent run envelope store."));
+    request.onerror = () =>
+      reject(
+        request.error ?? new Error("Failed to open agent run envelope store."),
+      );
   });
 }
 
 function txDone(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed."));
-    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted."));
+    tx.onerror = () =>
+      reject(tx.error ?? new Error("IndexedDB transaction failed."));
+    tx.onabort = () =>
+      reject(tx.error ?? new Error("IndexedDB transaction aborted."));
   });
 }
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed."));
+    request.onerror = () =>
+      reject(request.error ?? new Error("IndexedDB request failed."));
   });
 }
 
@@ -86,16 +100,22 @@ function getAllFromIndex<T>(
   return requestResult(store.index(indexName).getAll(key) as IDBRequest<T[]>);
 }
 
-async function decryptEvents(envelope: StoredToolEnvelope | undefined): Promise<AgentLifecycleEvent[]> {
+async function decryptEvents(
+  envelope: StoredToolEnvelope | undefined,
+): Promise<AgentLifecycleEvent[]> {
   if (!envelope) return [];
   try {
-    return await decryptLocalJsonFromStorage<AgentLifecycleEvent[]>(envelope.encryptedEvents);
+    return await decryptLocalJsonFromStorage<AgentLifecycleEvent[]>(
+      envelope.encryptedEvents,
+    );
   } catch {
     return [];
   }
 }
 
-function statusForEvent(event: AgentLifecycleEvent): EnvelopeStatus | undefined {
+function statusForEvent(
+  event: AgentLifecycleEvent,
+): EnvelopeStatus | undefined {
   switch (event.event_type) {
     case "RunCompleted":
       return "completed";
@@ -103,10 +123,8 @@ function statusForEvent(event: AgentLifecycleEvent): EnvelopeStatus | undefined 
       return "failed";
     case "RunCancelled":
       return "cancelled";
-    case "AssistantResponse":
-      return event.data.status && event.data.status !== "in_progress"
-        ? "completed"
-        : undefined;
+    case "AssistantMessageFinalized":
+      return "completed";
     default:
       return undefined;
   }
@@ -122,21 +140,28 @@ export async function appendEnvelopeEvent(params: {
   const db = await openDb();
   const readTx = db.transaction(ENVELOPES_STORE, "readonly");
   const existing = await requestResult(
-    readTx.objectStore(ENVELOPES_STORE).get(params.envelopeId) as IDBRequest<StoredToolEnvelope | undefined>,
+    readTx.objectStore(ENVELOPES_STORE).get(params.envelopeId) as IDBRequest<
+      StoredToolEnvelope | undefined
+    >,
   );
   const events = await decryptEvents(existing);
   events.push(params.event);
 
   const timestamp = nowIso();
-  const nextStatus = statusForEvent(params.event) ?? existing?.status ?? "running";
-  const completed = nextStatus === "completed" || nextStatus === "failed" || nextStatus === "cancelled";
+  const nextStatus =
+    statusForEvent(params.event) ?? existing?.status ?? "running";
+  const completed =
+    nextStatus === "completed" ||
+    nextStatus === "failed" ||
+    nextStatus === "cancelled";
   const next: StoredToolEnvelope = {
     envelopeId: params.envelopeId,
     runId: existing?.runId ?? params.runId,
     sessionId: existing?.sessionId ?? params.sessionId,
     inputMessageId: existing?.inputMessageId,
     status: nextStatus,
-    attachState: existing?.attachState ?? (completed ? "awaiting_message" : "running"),
+    attachState:
+      existing?.attachState ?? (completed ? "awaiting_message" : "running"),
     createdAt: existing?.createdAt ?? timestamp,
     updatedAt: timestamp,
     encryptedEvents: await encryptLocalJsonForStorage(events),
@@ -146,12 +171,16 @@ export async function appendEnvelopeEvent(params: {
   await txDone(writeTx);
 }
 
-export async function loadEnvelopeEvents(envelopeId: string): Promise<AgentLifecycleEvent[]> {
+export async function loadEnvelopeEvents(
+  envelopeId: string,
+): Promise<AgentLifecycleEvent[]> {
   if (typeof indexedDB === "undefined") return [];
   const db = await openDb();
   const tx = db.transaction(ENVELOPES_STORE, "readonly");
   const envelope = await requestResult(
-    tx.objectStore(ENVELOPES_STORE).get(envelopeId) as IDBRequest<StoredToolEnvelope | undefined>,
+    tx.objectStore(ENVELOPES_STORE).get(envelopeId) as IDBRequest<
+      StoredToolEnvelope | undefined
+    >,
   );
   return decryptEvents(envelope);
 }
@@ -167,7 +196,9 @@ export async function linkEnvelopeToInputMessage(link: {
   const db = await openDb();
   const readTx = db.transaction(ENVELOPES_STORE, "readonly");
   const existing = await requestResult(
-    readTx.objectStore(ENVELOPES_STORE).get(link.envelopeId) as IDBRequest<StoredToolEnvelope | undefined>,
+    readTx.objectStore(ENVELOPES_STORE).get(link.envelopeId) as IDBRequest<
+      StoredToolEnvelope | undefined
+    >,
   );
 
   const writeTx = db.transaction([ENVELOPES_STORE, LINKS_STORE], "readwrite");
@@ -211,7 +242,9 @@ export async function getEnvelopeLinksForInputMessages(
   return links;
 }
 
-export async function deleteEnvelopeForInputMessage(messageId: string): Promise<void> {
+export async function deleteEnvelopeForInputMessage(
+  messageId: string,
+): Promise<void> {
   if (typeof indexedDB === "undefined") return;
   const db = await openDb();
   const readTx = db.transaction(LINKS_STORE, "readonly");
@@ -240,7 +273,9 @@ export async function deleteEnvelopeForInputMessage(messageId: string): Promise<
   }
 }
 
-export async function deleteEnvelopesForSession(sessionId: string): Promise<void> {
+export async function deleteEnvelopesForSession(
+  sessionId: string,
+): Promise<void> {
   if (typeof indexedDB === "undefined") return;
   const db = await openDb();
   const readTx = db.transaction(LINKS_STORE, "readonly");
@@ -254,7 +289,8 @@ export async function deleteEnvelopesForSession(sessionId: string): Promise<void
   const envelopes = writeTx.objectStore(ENVELOPES_STORE);
   const links = writeTx.objectStore(LINKS_STORE);
   for (const link of sessionLinks) links.delete(link.messageId);
-  for (const envelopeId of Array.from(envelopeIds)) envelopes.delete(envelopeId);
+  for (const envelopeId of Array.from(envelopeIds))
+    envelopes.delete(envelopeId);
   await txDone(writeTx);
 }
 
@@ -263,7 +299,9 @@ export async function markEnvelopeOrphaned(envelopeId: string): Promise<void> {
   const db = await openDb();
   const readTx = db.transaction(ENVELOPES_STORE, "readonly");
   const existing = await requestResult(
-    readTx.objectStore(ENVELOPES_STORE).get(envelopeId) as IDBRequest<StoredToolEnvelope | undefined>,
+    readTx.objectStore(ENVELOPES_STORE).get(envelopeId) as IDBRequest<
+      StoredToolEnvelope | undefined
+    >,
   );
   if (existing) {
     const writeTx = db.transaction(ENVELOPES_STORE, "readwrite");
@@ -288,12 +326,12 @@ export async function runEnvelopeGc(params: {
     "sessionId",
     params.sessionId,
   );
-  const sorted = sessionLinks
-    .slice()
-    .sort((left, right) => {
-      const time = new Date(right.messageCreatedAt).getTime() - new Date(left.messageCreatedAt).getTime();
-      return time || right.messageId.localeCompare(left.messageId);
-    });
+  const sorted = sessionLinks.slice().sort((left, right) => {
+    const time =
+      new Date(right.messageCreatedAt).getTime() -
+      new Date(left.messageCreatedAt).getTime();
+    return time || right.messageId.localeCompare(left.messageId);
+  });
   const deleteLinks = sorted.slice(params.keepRecent);
   const linkCounts = new Map<string, number>();
   for (const link of sessionLinks) {

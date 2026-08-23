@@ -38,14 +38,21 @@ test("chat requests use UUIDs and route retries through the idempotent stream bo
     "utf8",
   );
 
-  assert.match(source, /function generateId\(\): string \{\s*return crypto\.randomUUID\(\);\s*\}/);
-  assert.match(source, /\(\) => createChatStream\(streamBody, controller\.signal\)/);
+  assert.match(
+    source,
+    /function generateId\(\): string \{\s*return crypto\.randomUUID\(\);\s*\}/,
+  );
+  assert.match(
+    source,
+    /after_sequence: lastSequenceRef\.current \|\| undefined/,
+  );
   assert.match(source, /consumeChatStreamWithRetry\(/);
   assert.match(source, /request: streamBody/);
   assert.match(source, /if \(!snapshot\.request\)/);
+  assert.match(source, /\.\.\.snapshot\.request!/);
   assert.match(
     source,
-    /\(\) => createChatStream\(snapshot\.request!, restoreController!\.signal\)/,
+    /after_sequence: lastSequenceRef\.current \|\| snapshot\.lastSequence/,
   );
   assert.match(snapshotSource, /request\?: ChatStreamRequest/);
 });

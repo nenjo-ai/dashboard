@@ -194,15 +194,36 @@ export type AgentLifecycleEvent =
         run_id?: string;
         request_id: string;
         delta: string;
+        checkpoint?: string;
       };
     }
   | {
-      event_type: "AssistantResponse";
+      event_type: "AssistantReasoningDelta";
       data: {
         run_id?: string;
-        message?: string;
-        status?: string;
+        request_id: string;
       };
+    }
+  | {
+      event_type: "AssistantMessageFinalized";
+      data: { run_id?: string; message_id: string; input_message_id?: string };
+    }
+  | {
+      event_type: "ProviderRetryScheduled";
+      data: {
+        run_id?: string;
+        request_id: string;
+        message: string;
+        delay_ms: number;
+      };
+    }
+  | {
+      event_type: "ProgressUpdate";
+      data: { run_id?: string; status: string; message: string };
+    }
+  | {
+      event_type: "ToolCallUpdated";
+      data: { run_id?: string; call_id: string };
     }
   | {
       event_type: "ModelRequestCompleted";

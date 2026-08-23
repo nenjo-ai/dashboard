@@ -6,7 +6,7 @@ import type {
 } from "./types";
 
 export function spanChildren(span: TraceSpan): TraceSpan[] {
-  return "children" in span ? span.children ?? [] : [];
+  return "children" in span ? (span.children ?? []) : [];
 }
 
 export function chronologicalSpans(spans: TraceSpan[]): TraceSpan[] {
@@ -37,7 +37,10 @@ function isEmptyCompletedModelSpan(span: TraceSpan): span is ModelSpan {
 }
 
 function modelSpanHasDisplayContent(span: TraceSpan): boolean {
-  return span.kind === "model" && (Boolean(span.text?.trim()) || spanChildren(span).length > 0);
+  return (
+    span.kind === "model" &&
+    (Boolean(span.text?.trim()) || spanChildren(span).length > 0)
+  );
 }
 
 function isRawTranscriptMessageSpan(span: TraceSpan): boolean {
@@ -99,6 +102,15 @@ function isHiddenChatToolSpan(span: TraceSpan): boolean {
 
 function filterChatSpan(span: TraceSpan): TraceSpan | undefined {
   if (isHiddenChatToolSpan(span)) return undefined;
+  if (span.kind === "model") {
+    return {
+      ...span,
+      // Defense in depth for snapshots/envelopes created by older dashboard
+      // builds: assistant response text must never render inside chat Activity.
+      text: undefined,
+      children: chatDisplaySpans(span.children ?? []),
+    };
+  }
   if (!("children" in span) || !span.children) return span;
   return {
     ...span,
@@ -135,6 +147,37 @@ export function chatDisplaySpans(spans: TraceSpan[]): TraceSpan[] {
   }
 
   return displaySpans;
+}
+
+/**
+ * Return the assistant narration attached to each local tool batch.
+ *
+ * The worker repeats the same preview on every call in a parallel batch. The
+ * UI owns that narration once, above the batch, rather than once per tool row.
+ * Provider-native previews describe the provider tool itself and are not
+ * assistant narration.
+ */
+export function toolBatchTextPreviews(spans: TraceSpan[]): string[] {
+  const seenBatches = new Set<string>();
+  const previews: string[] = [];
+
+  for (const span of spans) {
+    if (
+      span.kind !== "tool" ||
+      span.providerNative === true ||
+      span.name === "respond_to_user"
+    ) {
+      continue;
+    }
+    const preview = span.textPreview?.trim();
+    if (!preview) continue;
+    const batchKey = span.batchId ?? span.id;
+    if (seenBatches.has(batchKey)) continue;
+    seenBatches.add(batchKey);
+    previews.push(preview);
+  }
+
+  return previews;
 }
 
 export function filterHistorySpans(spans: TraceSpan[]): TraceSpan[] {

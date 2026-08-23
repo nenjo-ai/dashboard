@@ -8,6 +8,7 @@ import {
   mergeAsyncOperationPayload,
 } from "../lib/agentRunTrace/adapters/chatStream.ts";
 import { reduceRunTrace } from "../lib/agentRunTrace/reducer.ts";
+import { chatDisplaySpans } from "../lib/agentRunTrace/visibility.ts";
 
 const ROOT = new URL("..", import.meta.url);
 
@@ -101,11 +102,19 @@ const adapterSamples = {
     request_id: "model-1",
     delta: "Hello",
   },
-  AssistantResponse: {
+  AssistantReasoningDelta: { run_id: "run-1", request_id: "model-1" },
+  AssistantMessageFinalized: {
     run_id: "run-1",
-    message: "Still working",
-    status: "in_progress",
+    message_id: "message-1",
   },
+  ProviderRetryScheduled: {
+    run_id: "run-1",
+    request_id: "model-1",
+    message: "Retrying",
+    delay_ms: 100,
+  },
+  ProgressUpdate: { run_id: "run-1", status: "working", message: "Working" },
+  ToolCallUpdated: { run_id: "run-1", call_id: "tool-1" },
   ModelRequestCompleted: { run_id: "run-1", request_id: "model-1" },
   MessageCompacted: { run_id: "run-1", messages_before: 20, messages_after: 8 },
   ToolCallStarted: toolStarted().data,
@@ -224,7 +233,11 @@ const renderCases = [
   },
   {
     eventType: "RunCompleted",
-    events: [runStarted(), modelStarted(), { event_type: "RunCompleted", data: {} }],
+    events: [
+      runStarted(),
+      modelStarted(),
+      { event_type: "RunCompleted", data: {} },
+    ],
     assertTrace(trace) {
       assert.equal(trace.phase, "completed");
       assert.equal(trace.spans[0].status, "completed");
@@ -232,17 +245,27 @@ const renderCases = [
   },
   {
     eventType: "RunFailed",
-    events: [runStarted(), { event_type: "RunFailed", data: { message: "boom" } }],
+    events: [
+      runStarted(),
+      modelStarted(),
+      { event_type: "RunFailed", data: { message: "boom" } },
+    ],
     assertTrace(trace) {
       assert.equal(trace.phase, "failed");
       assert.equal(trace.errorMessage, "boom");
+      assert.equal(trace.spans[0].status, "failed");
     },
   },
   {
     eventType: "RunCancelled",
-    events: [runStarted(), { event_type: "RunCancelled", data: {} }],
+    events: [
+      runStarted(),
+      modelStarted(),
+      { event_type: "RunCancelled", data: {} },
+    ],
     assertTrace(trace) {
       assert.equal(trace.phase, "cancelled");
+      assert.equal(trace.spans[0].status, "cancelled");
     },
   },
   {
@@ -281,36 +304,74 @@ const renderCases = [
     events: [
       runStarted(),
       modelStarted(),
-      { event_type: "AssistantTextDelta", data: { request_id: "model-1", delta: "Hello" } },
+      {
+        event_type: "AssistantTextDelta",
+        data: { request_id: "model-1", delta: "Hello" },
+      },
     ],
     assertTrace(trace) {
       assert.equal(trace.phase, "streaming");
       assert.equal(trace.spans.at(-1).kind, "model");
-      assert.equal(trace.spans.at(-1).text, "Hello");
+      assert.equal(trace.spans.at(-1).text, undefined);
     },
   },
   {
-    eventType: "AssistantResponse",
+    eventType: "AssistantReasoningDelta",
+    events: [
+      runStarted(),
+      modelStarted(),
+      { event_type: "AssistantReasoningDelta", data: {} },
+    ],
+    assertTrace(trace) {
+      assert.equal(trace.phase, "thinking");
+    },
+  },
+  {
+    eventType: "ProviderRetryScheduled",
     events: [
       runStarted(),
       {
-        event_type: "AssistantResponse",
-        data: { message: "Still working", status: "in_progress" },
+        event_type: "ProviderRetryScheduled",
+        data: { message: "Retrying", delay_ms: 100 },
       },
     ],
     assertTrace(trace) {
       assert.equal(trace.phase, "queued");
-      assert.equal(trace.spans.length, 0);
     },
   },
   {
-    eventType: "AssistantResponse:terminal",
+    eventType: "ProgressUpdate",
+    events: [
+      runStarted(),
+      {
+        event_type: "ProgressUpdate",
+        data: { status: "working", message: "Working" },
+      },
+    ],
+    assertTrace(trace) {
+      assert.equal(trace.phase, "queued");
+    },
+  },
+  {
+    eventType: "ToolCallUpdated",
+    events: [
+      runStarted(),
+      toolStarted(),
+      { event_type: "ToolCallUpdated", data: { call_id: "tool-1" } },
+    ],
+    assertTrace(trace) {
+      assert.equal(trace.phase, "executing_tools");
+      assert.equal(trace.spans.at(-1).status, "running");
+    },
+  },
+  {
+    eventType: "AssistantMessageFinalized",
     events: [
       runStarted(),
       toolStarted(),
       {
-        event_type: "AssistantResponse",
-        data: { message: "Done", status: "completed" },
+        event_type: "AssistantMessageFinalized",
+        data: { message_id: "message-1" },
       },
     ],
     assertTrace(trace) {
@@ -367,7 +428,10 @@ const renderCases = [
     ],
     assertTrace(trace) {
       assert.equal(trace.spans.at(-1).kind, "tool");
-      assert.equal(trace.spans.at(-1).textPreview, "Inspecting operationshalfway");
+      assert.equal(
+        trace.spans.at(-1).textPreview,
+        "Inspecting operationshalfway",
+      );
     },
   },
   {
@@ -393,7 +457,10 @@ const renderCases = [
     assertTrace(trace) {
       assert.equal(trace.phase, "running_ability");
       assert.equal(trace.spans.at(-1).kind, "async_operation");
-      assert.equal(trace.spans.at(-1).taskPreview, "Creating a knowledge graph");
+      assert.equal(
+        trace.spans.at(-1).taskPreview,
+        "Creating a knowledge graph",
+      );
     },
   },
   {
@@ -484,6 +551,52 @@ test("tool output deltas render to their matching preview streams", () => {
   assert.equal(span.textPreview, "Inspecting operationspreview");
 });
 
+test("execution traces retain model output while chat activity does not", () => {
+  const executionTrace = reduceRunTrace(
+    reduceRunTrace(
+      undefined,
+      {
+        event_type: "RunStarted",
+        data: {
+          run_id: "run-1",
+          session_id: "session-1",
+          source: "execution",
+        },
+      },
+      { now: at(0) },
+    ),
+    modelStarted(),
+    { now: at(1) },
+  );
+  const withText = reduceRunTrace(
+    executionTrace,
+    {
+      event_type: "AssistantTextDelta",
+      data: { request_id: "model-1", delta: "execution output" },
+    },
+    { now: at(2) },
+  );
+
+  assert.equal(withText.spans[0].text, "execution output");
+});
+
+test("chat display strips response text from legacy activity traces", () => {
+  const [model] = chatDisplaySpans([
+    {
+      kind: "model",
+      id: "model-1",
+      status: "completed",
+      text: "This belongs in the assistant message only.",
+      children: [],
+      startedAt: at(0),
+      completedAt: at(1),
+    },
+  ]);
+
+  assert.equal(model.kind, "model");
+  assert.equal(model.text, undefined);
+});
+
 test("tool start creates a visible trace before RunStarted when chat session is known", () => {
   const trace = reduceRunTrace(undefined, toolStarted(), {
     defaultSessionId: "session-1",
@@ -520,11 +633,11 @@ test("chat finalization preserves run trace until it is attached to the final me
 
   assert.match(
     source,
-    /clearLiveTurnIndicators\(\{\s*preserveRunTraceForFinalMessage: true,\s*broadcastClear: false,\s*\}\);\s*const resolvedFinalOutput[\s\S]*?const traceForFinal =[\s\S]*?runTrace: traceForFinal[\s\S]*?finishFinalizedLiveTurn\(\);/,
+    /clearLiveTurnIndicators\(\{\s*preserveRunTraceForFinalMessage: true,\s*broadcastClear: false,\s*\}\);\s*const resolvedFinalOutput[\s\S]*?const traceForFinal =[\s\S]*?runTrace: traceForFinal[\s\S]*?finishLiveTurn\("completed"\);/,
   );
   assert.match(
     source,
-    /streamWorkQueueRef\.current\.enqueue\(async \(\) => \{[\s\S]*?clearLiveTurnIndicators\(\{\s*preserveRunTraceForFinalMessage: true,\s*broadcastClear: false,\s*\}\);[\s\S]*?const traceForFinal =[\s\S]*?runTrace: m\.runTrace \?\? traceForFinal[\s\S]*?finishFinalizedLiveTurn\(\);/,
+    /streamWorkQueueRef\.current\.enqueue\(async \(\) => \{[\s\S]*?clearLiveTurnIndicators\(\{\s*preserveRunTraceForFinalMessage: true,\s*broadcastClear: false,\s*\}\);[\s\S]*?const traceForFinal =[\s\S]*?preferredChatRunTrace\([\s\S]*?traceForFinal[\s\S]*?finishLiveTurn\("completed"\);/,
   );
   assert.match(
     source,

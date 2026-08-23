@@ -15,13 +15,15 @@ import {
 } from "@/lib/hooks";
 import { usePlannerChat } from "@/lib/usePlannerChat";
 import {
+  shouldShowChatHistoryLoader,
   shouldShowChatCancelControl,
+  visibleLiveAssistantContent,
   visibleLiveChatRunTrace,
 } from "@/lib/chatInterfaceState";
 import { Button } from "@/components/ui/Button";
 import { useUser } from "@clerk/nextjs";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
-import { AgentRunTrace } from "@/components/agent-run-trace/AgentRunTrace";
+import { AssistantActivity } from "@/components/chat/AssistantActivity";
 import { agentColorBg, agentColorText } from "@/lib/agent-colors";
 import { DomainSlashCommandDropdown } from "./DomainSlashCommandDropdown";
 import { DomainIndicator } from "./DomainIndicator";
@@ -134,6 +136,9 @@ const MessageBubble = memo(function MessageBubble({
   onDelete?: (messageId: string) => void;
 }) {
   const isUser = message.role === "user";
+  const assistantDisplayContent = message.isLiveDraft
+    ? visibleLiveAssistantContent(message.content, message.runTrace)
+    : message.content;
 
   return (
     <div className="group flex items-start gap-3">
@@ -157,33 +162,41 @@ const MessageBubble = memo(function MessageBubble({
       {/* Bubble */}
       <div
         className={cn(
-          "max-w-[75%] rounded-xl px-4 py-2.5 text-sm leading-relaxed",
+          "min-w-0 rounded-xl px-4 py-2.5 text-sm leading-relaxed",
           isUser
-            ? "bg-deep-space-blue-500 text-white rounded-tl-sm"
-            : "bg-white border border-gray-200 text-gray-800 rounded-tl-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200",
+            ? "max-w-[75%] bg-deep-space-blue-500 text-white rounded-tl-sm"
+            : "w-[75%] max-w-[75%] bg-white border border-gray-200 text-gray-800 rounded-tl-sm dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200",
         )}
       >
         {isUser ? (
           <p className="whitespace-pre-wrap">{message.content}</p>
         ) : (
-          <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-headings:font-semibold prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-700 dark:prose-p:text-gray-300 prose-a:text-deep-space-blue-600 dark:prose-a:text-deep-space-blue-400 prose-code:bg-gray-200 dark:prose-code:bg-gray-700 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-pre:bg-gray-800 dark:prose-pre:bg-gray-950 prose-pre:text-gray-100 prose-pre:text-xs [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:rounded-none prose-li:text-gray-700 dark:prose-li:text-gray-300 prose-li:my-0.5 prose-ul:my-1 prose-ol:my-1 prose-blockquote:border-deep-space-blue-300 dark:prose-blockquote:border-deep-space-blue-700 prose-table:text-xs prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                code({ className, children, ...props }) {
-                  if (className) {
-                    return (
-                      <code className={className} {...props}>
-                        {children}
-                      </code>
-                    );
-                  }
-                  return <code {...props}>{children}</code>;
-                },
-              }}
-            >
-              {message.content}
-            </ReactMarkdown>
+          <div className="space-y-3">
+            {assistantDisplayContent ? (
+              <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-headings:font-semibold prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-700 dark:prose-p:text-gray-300 prose-a:text-deep-space-blue-600 dark:prose-a:text-deep-space-blue-400 prose-code:bg-gray-200 dark:prose-code:bg-gray-700 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-pre:bg-gray-800 dark:prose-pre:bg-gray-950 prose-pre:text-gray-100 prose-pre:text-xs [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:rounded-none prose-li:text-gray-700 dark:prose-li:text-gray-300 prose-li:my-0.5 prose-ul:my-1 prose-ol:my-1 prose-blockquote:border-deep-space-blue-300 dark:prose-blockquote:border-deep-space-blue-700 prose-table:text-xs prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    code({ className, children, ...props }) {
+                      if (className) {
+                        return (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        );
+                      }
+                      return <code {...props}>{children}</code>;
+                    },
+                  }}
+                >
+                  {assistantDisplayContent}
+                </ReactMarkdown>
+              </div>
+            ) : null}
+            <AssistantActivity
+              message={message}
+              hasResponseContent={Boolean(assistantDisplayContent.trim())}
+            />
           </div>
         )}
         <div className="mt-1 flex items-center gap-1.5">
@@ -745,7 +758,7 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto p-4 space-y-4"
       >
-        {isLoadingHistory ? (
+        {shouldShowChatHistoryLoader(isLoadingHistory, messages.length) ? (
           <div className="flex items-center justify-center py-12">
             <div className="flex items-center gap-1.5 font-mono text-xs text-gray-400">
               <span className="tracking-wider">loading</span>
@@ -771,9 +784,6 @@ export function PlannerChat({ projectId }: PlannerChatProps) {
                 onDelete={msg.id !== "welcome" ? deleteMessage : undefined}
               />
             ))}
-            {visibleRunTrace && (
-              <AgentRunTrace trace={visibleRunTrace} activeAgent={activeAgent} />
-            )}
           </>
         )}
       </div>

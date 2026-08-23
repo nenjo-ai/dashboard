@@ -52,13 +52,19 @@ Multiple loaders are merged in order. This lets the worker combine platform mani
 Agents are resolved from the manifest by ID or name. The provider creates an `AgentBuilder`, then the builder produces an `AgentRunner`.
 
 ```rust
+use nenjo::{Buffered, ChatInput};
+
 let runner = provider
     .agent_by_name("coder")
     .await?
     .build()
     .await?;
 
-let output = runner.chat("Summarize the current project").await?;
+let output = runner
+    .chat(ChatInput::new("Summarize the current project"), Buffered)
+    .await?
+    .output()
+    .await?;
 println!("{}", output.text);
 ```
 
@@ -75,10 +81,14 @@ An `AgentBuilder` can add execution context before `build()`:
 
 ## Streaming
 
-The SDK has both simple and streaming execution. Use `chat()` when only the final answer matters. Use `chat_stream()` when the caller needs tool events, transcript messages, pause/resume state, or completion output.
+The SDK has one typed `chat()` entry point. Pass `Buffered` when only the final answer is needed, or `Streaming` when the caller needs incremental assistant text and reasoning alongside tool and lifecycle events. Both modes return a typed handle and the same final `TurnOutput`.
 
 ```rust
-let mut handle = runner.chat_stream("Refactor the auth module").await?;
+use nenjo::{ChatInput, Streaming};
+
+let mut handle = runner
+    .chat(ChatInput::new("Refactor the auth module"), Streaming)
+    .await?;
 
 while let Some(event) = handle.recv().await {
     match event {
