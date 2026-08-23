@@ -7,6 +7,7 @@ import {
   chronologicalSpans,
   currentCycleSpans,
   filterHistorySpans,
+  toolBatchTextPreviews,
   visibleAsyncOperationResultPreview,
   visibleHistoryTranscriptEntries,
 } from "../lib/agentRunTrace/visibility.ts";
@@ -71,6 +72,7 @@ function toolStarted({
   parentCallId,
   providerNative = false,
   provider,
+  textPreview,
 }) {
   return {
     event_type: "ToolCallStarted",
@@ -81,7 +83,8 @@ function toolStarted({
       parent_call_id: parentCallId,
       tool_name: name,
       tool_args: "{}",
-      text_preview: providerNative ? `Running ${name}` : undefined,
+      text_preview:
+        textPreview ?? (providerNative ? `Running ${name}` : undefined),
       provider_native: providerNative,
       tool_origin: providerNative ? "provider" : undefined,
       provider,
@@ -185,7 +188,10 @@ test("live trace keeps provider-native web_search visible after a later tool bat
     }),
   ]);
 
-  assert.deepEqual(visibleToolNames(trace), ["web_search", "inspect_operations"]);
+  assert.deepEqual(visibleToolNames(trace), [
+    "web_search",
+    "inspect_operations",
+  ]);
 });
 
 test("live trace stacks completed tool batches from the current turn", () => {
@@ -215,7 +221,7 @@ test("live trace stacks completed tool batches from the current turn", () => {
   assert.deepEqual(visibleToolNames(trace), ["first_tool", "second_tool"]);
 });
 
-test("live trace keeps assistant text above model-attached tool calls", () => {
+test("live chat activity omits assistant text but keeps model-attached tool calls", () => {
   const trace = reduceEvents([
     runStarted(),
     modelStarted(),
@@ -249,14 +255,71 @@ test("live trace keeps assistant text above model-attached tool calls", () => {
   const visible = currentCycleSpans(chronologicalSpans(trace.spans));
   assert.equal(visible.length, 1);
   assert.equal(visible[0].kind, "model");
-  assert.equal(visible[0].text, "I will inspect the project first.");
+  assert.equal(visible[0].text, undefined);
   assert.deepEqual(
-    visible[0].children.map((span) => `${span.kind}:${span.name}:${span.status}`),
+    visible[0].children.map(
+      (span) => `${span.kind}:${span.name}:${span.status}`,
+    ),
     ["tool:inspect_operations:completed"],
   );
 });
 
-test("chat display groups top-level tool calls under the preceding text preview", () => {
+test("chat activity renders tool-batch narration once above its calls", () => {
+  const display = chatDisplaySpans([
+    {
+      kind: "model",
+      id: "model-1",
+      status: "completed",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:00:01.000Z",
+      children: [],
+    },
+    {
+      kind: "tool",
+      id: "tool-1",
+      batchId: "batch-1",
+      status: "running",
+      name: "list_agents",
+      textPreview: "I’ll gather these in parallel.",
+      startedAt: "2026-01-01T00:00:02.000Z",
+    },
+    {
+      kind: "tool",
+      id: "tool-2",
+      batchId: "batch-1",
+      status: "running",
+      name: "list_commands",
+      textPreview: "I’ll gather these in parallel.",
+      startedAt: "2026-01-01T00:00:02.000Z",
+    },
+  ]);
+
+  assert.equal(display.length, 1);
+  assert.equal(display[0].kind, "model");
+  assert.deepEqual(toolBatchTextPreviews(display[0].children), [
+    "I’ll gather these in parallel.",
+  ]);
+});
+
+test("provider tool labels are not promoted as assistant narration", () => {
+  assert.deepEqual(
+    toolBatchTextPreviews([
+      {
+        kind: "tool",
+        id: "provider-tool",
+        batchId: "provider-batch",
+        status: "running",
+        name: "web_search",
+        textPreview: "Searching the web",
+        providerNative: true,
+        startedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]),
+    [],
+  );
+});
+
+test("chat display keeps top-level tool calls when the response preview is omitted", () => {
   const trace = reduceEvents([
     runStarted(),
     modelStarted(),
@@ -301,12 +364,12 @@ test("chat display groups top-level tool calls under the preceding text preview"
     }),
   ]);
 
-  const display = chatDisplaySpans(currentCycleSpans(chronologicalSpans(trace.spans)));
-  assert.equal(display.length, 1);
-  assert.equal(display[0].kind, "model");
-  assert.equal(display[0].text, "I will inspect the project first.");
+  const display = chatDisplaySpans(
+    currentCycleSpans(chronologicalSpans(trace.spans)),
+  );
+  assert.equal(display.length, 2);
   assert.deepEqual(
-    display[0].children.map((span) => `${span.kind}:${span.name}:${span.status}`),
+    display.map((span) => `${span.kind}:${span.name}:${span.status}`),
     ["tool:file_read:failed", "tool:list_agents:completed"],
   );
 });
@@ -352,12 +415,14 @@ test("chat display hides respond_to_user tool calls", () => {
   assert.equal(display.length, 1);
   assert.equal(display[0].kind, "model");
   assert.deepEqual(
-    display[0].children.map((span) => span.kind === "tool" ? span.name : span.kind),
+    display[0].children.map((span) =>
+      span.kind === "tool" ? span.name : span.kind,
+    ),
     ["read_knowledge_doc"],
   );
 });
 
-test("chat display groups async operation child tools under child text previews", () => {
+test("chat display groups async operation tools without child response text", () => {
   const display = chatDisplaySpans([
     {
       kind: "async_operation",
@@ -412,7 +477,7 @@ test("chat display groups async operation child tools under child text previews"
   assert.equal(display[0].kind, "async_operation");
   assert.equal(display[0].children.length, 1);
   assert.equal(display[0].children[0].kind, "model");
-  assert.equal(display[0].children[0].text, "I will inspect the workspace first.");
+  assert.equal(display[0].children[0].text, undefined);
   assert.deepEqual(
     display[0].children[0].children.map(
       (span) => `${span.kind}:${span.name}:${span.status}`,
@@ -498,7 +563,9 @@ test("reducer preserves provider-native metadata on completed tool spans", () =>
     }),
   ]);
 
-  const span = trace.spans.find((candidate) => candidate.id === "provider-call-1");
+  const span = trace.spans.find(
+    (candidate) => candidate.id === "provider-call-1",
+  );
   assert.equal(span?.kind, "tool");
   assert.equal(span.providerNative, true);
   assert.equal(span.provider, "xai");
@@ -531,9 +598,14 @@ test("reducer preserves structured tool output on completed tool spans", () => {
     }),
   ]);
 
-  const span = trace.spans.find((candidate) => candidate.id === "search-call-1");
+  const span = trace.spans.find(
+    (candidate) => candidate.id === "search-call-1",
+  );
   assert.equal(span?.kind, "tool");
-  assert.equal(span.output?.[0]?.document?.selector, "classification.workflow_patterns");
+  assert.equal(
+    span.output?.[0]?.document?.selector,
+    "classification.workflow_patterns",
+  );
 });
 
 test("history trace hides raw transcript echo rows while keeping named child tools", () => {
@@ -583,7 +655,9 @@ test("history trace hides raw transcript echo rows while keeping named child too
   const [span] = history;
   assert.equal(span.kind, "async_operation");
   assert.deepEqual(
-    span.children.map((child) => child.kind === "tool" ? child.name : child.text),
+    span.children.map((child) =>
+      child.kind === "tool" ? child.name : child.text,
+    ),
     ["configure_routine"],
   );
 });

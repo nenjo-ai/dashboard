@@ -10,6 +10,8 @@ const PENDING_NOTIFICATION_PREFIX = 'pending-encrypted-notification:'
 const PENDING_NOTIFICATION_MAX_AGE_MS = 24 * 60 * 60 * 1000
 const PAYLOAD_ALGORITHM = 'aes-256-gcm'
 const AES_ALGORITHM = 'AES-GCM'
+let streamDbPromise
+let streamMutationTail = Promise.resolve()
 const APP_SHELL_ASSETS = [
   '/offline',
   '/manifest.webmanifest',
@@ -19,7 +21,9 @@ const APP_SHELL_ASSETS = [
 ]
 
 function openStreamDb() {
-  return new Promise((resolve, reject) => {
+  if (streamDbPromise) return streamDbPromise
+
+  streamDbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(STREAM_DB, 1)
     request.onupgradeneeded = () => {
       const db = request.result
@@ -27,9 +31,26 @@ function openStreamDb() {
         db.createObjectStore(STREAM_STORE, { keyPath: 'sessionId' })
       }
     }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const database = request.result
+      database.onversionchange = () => {
+        database.close()
+        streamDbPromise = undefined
+      }
+      resolve(database)
+    }
+    request.onerror = () => {
+      streamDbPromise = undefined
+      reject(request.error)
+    }
   })
+  return streamDbPromise
+}
+
+function serializeStreamMutation(work) {
+  const mutation = streamMutationTail.then(work, work)
+  streamMutationTail = mutation.catch(() => undefined)
+  return mutation
 }
 
 async function writeSnapshot(snapshot) {
@@ -37,11 +58,32 @@ async function writeSnapshot(snapshot) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STREAM_STORE, 'readwrite')
     const store = tx.objectStore(STREAM_STORE)
-    const request = snapshot.clear
-      ? store.delete(snapshot.sessionId)
-      : store.put(snapshot)
-    request.onsuccess = () => resolve()
-    request.onerror = () => reject(request.error)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+
+    if (!snapshot.clear) {
+      store.put(snapshot)
+      return
+    }
+
+    const existingRequest = store.get(snapshot.sessionId)
+    existingRequest.onsuccess = () => {
+      const existing = existingRequest.result
+      const unscopedClearWouldDeleteActiveResponse =
+        !snapshot.responseId && existing?.responseId
+      const clearBelongsToDifferentResponse =
+        snapshot.responseId &&
+        existing &&
+        existing.responseId !== snapshot.responseId
+      if (
+        unscopedClearWouldDeleteActiveResponse ||
+        clearBelongsToDifferentResponse
+      ) {
+        return
+      }
+      store.delete(snapshot.sessionId)
+    }
   })
 }
 
@@ -303,7 +345,6 @@ self.addEventListener('install', (event) => {
       .then(() => self.skipWaiting())
   )
 })
-
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(
@@ -411,7 +452,7 @@ self.addEventListener('message', (event) => {
   }
 
   event.waitUntil((async () => {
-    await writeSnapshot(data.snapshot).catch(() => undefined)
+    await serializeStreamMutation(() => writeSnapshot(data.snapshot)).catch(() => undefined)
 
     const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     for (const client of clientsList) {

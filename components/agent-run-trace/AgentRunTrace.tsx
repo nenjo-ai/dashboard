@@ -38,6 +38,7 @@ import {
   filterHistorySpans,
   hasRunningSpan,
   spanChildren,
+  toolBatchTextPreviews,
   visibleAsyncOperationResultPreview,
   visibleHistoryTranscriptEntries,
 } from "@/lib/agentRunTrace/visibility";
@@ -121,8 +122,10 @@ function spanSummary(spans: TraceSpan[]): string {
   const toolCount = countKind(spans, "tool");
   const childCount = countKind(spans, "model");
   const parts = [];
-  if (toolCount > 0) parts.push(`${toolCount} tool${toolCount === 1 ? "" : "s"}`);
-  if (childCount > 0) parts.push(`${childCount} child turn${childCount === 1 ? "" : "s"}`);
+  if (toolCount > 0)
+    parts.push(`${toolCount} tool${toolCount === 1 ? "" : "s"}`);
+  if (childCount > 0)
+    parts.push(`${childCount} child turn${childCount === 1 ? "" : "s"}`);
   return parts.join(" - ");
 }
 
@@ -177,7 +180,9 @@ function isAbilityToolSpan(span: ToolSpan): boolean {
   return span.name === "use_ability" || span.name.endsWith("/use_ability");
 }
 
-function detailPayloadForSpan(span: TraceSpan): Record<string, unknown> | undefined {
+function detailPayloadForSpan(
+  span: TraceSpan,
+): Record<string, unknown> | undefined {
   if (span.kind === "tool") {
     if (isAbilityToolSpan(span)) return undefined;
     return {
@@ -260,7 +265,9 @@ function spanIcon(span: TraceSpan) {
 function spanTitle(span: TraceSpan): string {
   switch (span.kind) {
     case "model":
-      return [span.provider, span.model].filter(Boolean).join(" / ") || "Thinking";
+      return (
+        [span.provider, span.model].filter(Boolean).join(" / ") || "Thinking"
+      );
     case "routine_step":
       return span.name;
     case "tool":
@@ -343,26 +350,28 @@ function PreviewMarkdown({ children }: { children: string | undefined }) {
   );
 }
 
-function ToolTraceRow({
-  span,
-}: {
-  span: ToolSpan;
-}) {
+function ToolTraceRow({ span }: { span: ToolSpan }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsPayload = useMemo(() => detailPayloadForSpan(span), [span]);
-  const signature = toolDisplaySignature(span.name, span.rawArgs ?? span.argsSummary);
+  const signature = toolDisplaySignature(
+    span.name,
+    span.rawArgs ?? span.argsSummary,
+  );
   const originLabel = span.providerNative
     ? [span.provider, "provider"].filter(Boolean).join(" ")
     : undefined;
   const hasDetails = Boolean(
     detailsPayload &&
-      Object.values(detailsPayload).some((value) => hasDetailValue(value)),
+    Object.values(detailsPayload).some((value) => hasDetailValue(value)),
   );
   return (
     <div className="min-w-0">
       <div className="flex min-h-8 items-center gap-2">
         <span className="shrink-0">{statusIcon(span.status)}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-700 dark:text-gray-300" title={signature}>
+        <span
+          className="min-w-0 flex-1 truncate font-mono text-xs text-gray-700 dark:text-gray-300"
+          title={signature}
+        >
           {signature}
         </span>
         {originLabel && (
@@ -397,8 +406,11 @@ function RoutineStepTraceBlock({
   span: RoutineStepSpan;
   compact: boolean;
 }) {
-  const forceExpanded = span.status === "running" || span.children.some(hasRunningSpan);
-  const [manualExpanded, setManualExpanded] = useState(span.status !== "completed");
+  const forceExpanded =
+    span.status === "running" || span.children.some(hasRunningSpan);
+  const [manualExpanded, setManualExpanded] = useState(
+    span.status !== "completed",
+  );
   const expanded = forceExpanded || manualExpanded;
   const summary = spanSummary(span.children);
   return (
@@ -414,7 +426,10 @@ function RoutineStepTraceBlock({
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400" />
         )}
         <span className="shrink-0">{statusIcon(span.status)}</span>
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800 dark:text-gray-200" title={span.name}>
+        <span
+          className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800 dark:text-gray-200"
+          title={span.name}
+        >
           {span.name}
         </span>
         <span className="shrink-0 rounded-sm bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
@@ -452,9 +467,18 @@ function RoutineStepTraceBlock({
   );
 }
 
-function AbilityTraceBlock({ span, compact }: { span: AbilitySpan; compact: boolean }) {
-  const forceExpanded = span.status === "running" || span.children.some(hasRunningSpan);
-  const [manualExpanded, setManualExpanded] = useState(span.status !== "completed");
+function AbilityTraceBlock({
+  span,
+  compact,
+}: {
+  span: AbilitySpan;
+  compact: boolean;
+}) {
+  const forceExpanded =
+    span.status === "running" || span.children.some(hasRunningSpan);
+  const [manualExpanded, setManualExpanded] = useState(
+    span.status !== "completed",
+  );
   const expanded = forceExpanded || manualExpanded;
   const summary = spanSummary(span.children);
   return (
@@ -470,7 +494,10 @@ function AbilityTraceBlock({ span, compact }: { span: AbilitySpan; compact: bool
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400" />
         )}
         <span className="shrink-0">{statusIcon(span.status)}</span>
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800 dark:text-gray-200" title={span.displayName}>
+        <span
+          className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800 dark:text-gray-200"
+          title={span.displayName}
+        >
           Ability: {span.displayName}
         </span>
         {summary && (
@@ -511,8 +538,11 @@ function AsyncOperationTraceBlock({
   span: AsyncOperationSpan;
   compact: boolean;
 }) {
-  const forceExpanded = span.status === "running" || span.children.some(hasRunningSpan);
-  const [manualExpanded, setManualExpanded] = useState(span.status !== "completed");
+  const forceExpanded =
+    span.status === "running" || span.children.some(hasRunningSpan);
+  const [manualExpanded, setManualExpanded] = useState(
+    span.status !== "completed",
+  );
   const expanded = forceExpanded || manualExpanded;
   const summary = spanSummary(span.children);
   const isAbility = span.operationKind === "ability";
@@ -532,8 +562,13 @@ function AsyncOperationTraceBlock({
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400" />
         )}
         <span className="shrink-0">{statusIcon(span.status)}</span>
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800 dark:text-gray-200" title={span.label}>
-          {isAbility ? `Ability: ${span.label}` : `${span.operationKind}: ${span.label}`}
+        <span
+          className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800 dark:text-gray-200"
+          title={span.label}
+        >
+          {isAbility
+            ? `Ability: ${span.label}`
+            : `${span.operationKind}: ${span.label}`}
         </span>
         {summary && (
           <span className="hidden shrink-0 text-[10px] text-gray-400 sm:inline">
@@ -547,8 +582,8 @@ function AsyncOperationTraceBlock({
       {expanded && (
         <div className="theme-border ml-4 border-l pl-3">
           <PreviewSection
-            label={isAbility ? "Task from parent" : span.signal ?? "Status"}
-            text={isAbility ? span.taskPreview ?? span.summary : span.summary}
+            label={isAbility ? "Task from parent" : (span.signal ?? "Status")}
+            text={isAbility ? (span.taskPreview ?? span.summary) : span.summary}
           />
           {transcript.length > 0 && (
             <div className="mt-2 space-y-1">
@@ -587,7 +622,9 @@ function AsyncOperationTraceBlock({
           {(isAbility || isSubAgent) && (
             <PreviewSection label="Result to parent" text={resultPreview} />
           )}
-          {!compact && span.details !== undefined && <JsonCodeBlock value={span.details} />}
+          {!compact && span.details !== undefined && (
+            <JsonCodeBlock value={span.details} />
+          )}
         </div>
       )}
     </div>
@@ -606,12 +643,21 @@ function PreviewSection({ label, text }: { label: string; text?: string }) {
   );
 }
 
-function DelegationTraceBlock({ span, compact }: { span: DelegationSpan; compact: boolean }) {
+function DelegationTraceBlock({
+  span,
+  compact,
+}: {
+  span: DelegationSpan;
+  compact: boolean;
+}) {
   return (
     <div className="min-w-0">
       <div className="flex min-h-8 items-center gap-2">
         <span className="shrink-0">{statusIcon(span.status)}</span>
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800 dark:text-gray-200" title={span.targetAgent}>
+        <span
+          className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800 dark:text-gray-200"
+          title={span.targetAgent}
+        >
           Delegate: {span.targetAgent}
         </span>
         <span className="shrink-0 text-[10px] font-medium text-gray-400">
@@ -633,7 +679,10 @@ function HookTraceRow({ span, compact }: { span: HookSpan; compact: boolean }) {
     <div className="min-w-0">
       <div className="flex min-h-8 items-center gap-2">
         <span className="shrink-0">{statusIcon(span.status)}</span>
-        <span className="min-w-0 flex-1 truncate text-xs text-gray-700 dark:text-gray-300" title={spanTitle(span)}>
+        <span
+          className="min-w-0 flex-1 truncate text-xs text-gray-700 dark:text-gray-300"
+          title={spanTitle(span)}
+        >
           Hook: {spanTitle(span)}
         </span>
         <span className="shrink-0 text-[10px] font-medium text-gray-400">
@@ -659,6 +708,7 @@ function ModelTraceBlock({
 }) {
   const children = spanChildren(span);
   const text = span.text?.trim();
+  const toolTextPreviews = toolBatchTextPreviews(children);
   const toolCount = children.filter((child) => child.kind === "tool").length;
 
   if (!text && children.length === 0) {
@@ -681,12 +731,19 @@ function ModelTraceBlock({
   return (
     <div className="min-w-0">
       <PreviewMarkdown>{span.text}</PreviewMarkdown>
+      {toolTextPreviews.map((preview, index) => (
+        <PreviewMarkdown key={`${span.id}:tool-preview:${index}`}>
+          {preview}
+        </PreviewMarkdown>
+      ))}
       {children.length > 0 && (
         <div className="theme-border mt-2 border-l pl-3">
           {toolCount > 0 && (
             <div className="mb-1 flex min-h-5 items-center gap-1.5 text-[10px] font-medium text-gray-400">
               <Terminal className="h-3 w-3 shrink-0" />
-              <span>{toolCount === 1 ? "1 tool call" : `${toolCount} tool calls`}</span>
+              <span>
+                {toolCount === 1 ? "1 tool call" : `${toolCount} tool calls`}
+              </span>
             </div>
           )}
           <div className="space-y-1">
@@ -771,9 +828,14 @@ export const AgentRunTrace = memo(function AgentRunTrace({
     trace.phase !== "completed" &&
     trace.phase !== "failed" &&
     trace.phase !== "cancelled";
-  const elapsed = formatDuration(durationMs(trace.startedAt, trace.completedAt));
+  const elapsed = formatDuration(
+    durationMs(trace.startedAt, trace.completedAt),
+  );
   const phase = phaseLabel(trace.phase);
-  const orderedSpans = useMemo(() => chronologicalSpans(trace.spans), [trace.spans]);
+  const orderedSpans = useMemo(
+    () => chronologicalSpans(trace.spans),
+    [trace.spans],
+  );
   const cycleSpans = useMemo(
     () =>
       mode === "live" && !embedded
@@ -781,17 +843,16 @@ export const AgentRunTrace = memo(function AgentRunTrace({
         : orderedSpans,
     [embedded, mode, orderedSpans],
   );
-  const visibleSpans = useMemo(
-    () =>
-      mode === "history" || embedded
-        ? filterHistorySpans(cycleSpans)
-        : cycleSpans,
-    [cycleSpans, embedded, mode],
+  const sourceSpans = useMemo(
+    () => (trace.source === "chat" ? chatDisplaySpans(cycleSpans) : cycleSpans),
+    [cycleSpans, trace.source],
   );
   const displaySpans = useMemo(
     () =>
-      trace.source === "chat" ? chatDisplaySpans(visibleSpans) : visibleSpans,
-    [trace.source, visibleSpans],
+      mode === "history" || embedded
+        ? filterHistorySpans(sourceSpans)
+        : sourceSpans,
+    [embedded, mode, sourceSpans],
   );
 
   return (
@@ -806,8 +867,9 @@ export const AgentRunTrace = memo(function AgentRunTrace({
         className,
       )}
     >
-      {mode === "live" && !embedded && (
-        activeAgent ? (
+      {mode === "live" &&
+        !embedded &&
+        (activeAgent ? (
           <RoleIdenticon
             roleId={activeAgent.id}
             color={activeAgent.color}
@@ -820,8 +882,7 @@ export const AgentRunTrace = memo(function AgentRunTrace({
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-vivid-tangerine-100 text-xs font-bold text-vivid-tangerine-700">
             AI
           </div>
-        )
-      )}
+        ))}
       <div
         className={cn(
           "theme-border theme-surface min-w-0 rounded-xl border",

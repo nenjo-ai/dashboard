@@ -462,6 +462,15 @@ export type MessageStatus =
   | "failed"
   | "cancelled";
 
+export type ChatRunStatus =
+  | "connecting"
+  | "generating"
+  | "using_tool"
+  | "retrying"
+  | "failed"
+  | "cancelled"
+  | "completed";
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
@@ -476,6 +485,14 @@ export interface ChatMessage {
   /** Durable user-message UUID this assistant response answers. */
   replyToMessageId?: string;
   artifactIds?: string[];
+  runStatus?: ChatRunStatus;
+  errorCode?: string;
+  errorMessage?: string;
+  retryable?: boolean;
+  inputTokens?: number;
+  outputTokens?: number;
+  /** Live drafts use lightweight plaintext rendering until finalization. */
+  isLiveDraft?: boolean;
 }
 
 // Outbound: frontend → worker
@@ -494,6 +511,7 @@ export interface ChatMessageOutbound {
 
 export interface ChatStreamRequest {
   id: string;
+  after_sequence?: number;
   message: string;
   encrypted_message: EncryptedPayload;
   command?: string;
@@ -1301,10 +1319,7 @@ export type ModelCatalogFeature =
 
 export type ModelModality = "text" | "audio" | "image" | "file" | "video";
 
-export type ModelExecutionMode =
-  | "immediate"
-  | "async_job"
-  | "realtime_session";
+export type ModelExecutionMode = "immediate" | "async_job" | "realtime_session";
 
 export const NATIVE_MODEL_TOOL_LABELS: Record<NativeModelTool, string> = {
   web_search: "Web Search",
@@ -1389,7 +1404,9 @@ export function modelCapabilityLabel(cap: string): string {
 }
 
 export function modelCatalogFeatureLabel(feature: string): string {
-  return MODEL_CATALOG_FEATURES.find((item) => item.id === feature)?.label ?? feature;
+  return (
+    MODEL_CATALOG_FEATURES.find((item) => item.id === feature)?.label ?? feature
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1641,10 +1658,7 @@ export const NATIVE_MEDIA_PROVIDERS: NativeMediaProviderInfo[] = [
   {
     id: "xai",
     label: "xAI",
-    models: [
-      "grok-imagine-image-quality",
-      "grok-imagine-video",
-    ],
+    models: ["grok-imagine-image-quality", "grok-imagine-video"],
     capabilities: [
       "generate_image",
       "edit_image",
@@ -1832,7 +1846,9 @@ export interface ContextBlock {
   template?: string;
 }
 
-export function isContextBlockLocked(block: Pick<ContextBlock, "read_only" | "source_type">): boolean {
+export function isContextBlockLocked(
+  block: Pick<ContextBlock, "read_only" | "source_type">,
+): boolean {
   return Boolean(block.read_only || block.source_type === "package");
 }
 
@@ -2138,12 +2154,15 @@ export interface HumanApprovalField {
   max_items?: number;
   options:
     | { type: "static"; values: HumanApprovalOption[] }
-    | { type: "inputs"; inputs: Array<{
-        input: string;
-        pointer: string;
-        value: string;
-        label: string;
-      }> };
+    | {
+        type: "inputs";
+        inputs: Array<{
+          input: string;
+          pointer: string;
+          value: string;
+          label: string;
+        }>;
+      };
 }
 
 export interface HumanStepRequest {
@@ -2237,7 +2256,10 @@ export interface ArtifactCatalogEntry {
   created_at: string;
 }
 
-export interface UnfiledArtifactEntry extends Omit<ArtifactCatalogEntry, "entry_id" | "path"> {}
+export interface UnfiledArtifactEntry extends Omit<
+  ArtifactCatalogEntry,
+  "entry_id" | "path"
+> {}
 
 export interface ArtifactCatalog {
   path: string;
@@ -2673,7 +2695,11 @@ export interface CreateCouncilRequest {
   leader_agent: string;
   delegation_strategy?: DelegationStrategy;
   config?: Record<string, unknown>;
-  members?: { agent: string; priority?: number; config?: Record<string, unknown> }[];
+  members?: {
+    agent: string;
+    priority?: number;
+    config?: Record<string, unknown>;
+  }[];
 }
 
 export interface UpdateCouncilRequest {

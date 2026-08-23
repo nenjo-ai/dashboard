@@ -1,34 +1,6 @@
 "use client";
 
-import { createElement, type ComponentType } from "react";
-import type { RunTrace } from "@/lib/agentRunTrace/types";
-import type { AgentDefinition } from "@/lib/types";
-
-type LiveTraceComponent = ComponentType<{
-  trace: RunTrace;
-  activeAgent?: AgentDefinition;
-  mobile?: boolean;
-}>;
-
-export function ChatLiveToolPreview({
-  trace,
-  TraceComponent,
-  activeAgent,
-  mobile,
-}: {
-  trace?: RunTrace;
-  TraceComponent: LiveTraceComponent;
-  activeAgent?: AgentDefinition;
-  mobile?: boolean;
-}) {
-  if (!trace) return null;
-
-  return createElement(TraceComponent, {
-    trace,
-    activeAgent,
-    mobile,
-  });
-}
+import { createElement } from "react";
 
 export function ChatCancelControl({
   visible,
@@ -99,8 +71,4 @@ export function ChatCancelControl({
         )
       : null,
   );
-}
-
-export function chatLiveTurnSpacerClass(hasActiveRunTrace: boolean, mobile: boolean): string {
-  return `shrink-0 ${hasActiveRunTrace ? (mobile ? "h-20" : "h-16") : "h-1"}`;
 }

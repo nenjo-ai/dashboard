@@ -13,7 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import useSWR from "swr";
 import type {
@@ -56,23 +56,19 @@ import {
 import { SessionArtifactAttachments } from "@/components/artifacts/ChatArtifactAttachments";
 import { useChatArtifactSupport } from "@/lib/useChatArtifactSupport";
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
-import { motion, AnimatePresence } from "motion/react";
-import { ChevronDown, ChevronRight, Loader2, Mic, Square } from "lucide-react";
+import { motion, AnimatePresence, useReducedMotion } from "motion/react";
+import { ChevronRight, Loader2, Mic, Square } from "lucide-react";
 import { MobileInputBar } from "./MobileInputBar";
 import { MobileEmptyState } from "./MobileEmptyState";
 import { PendingCommandPill } from "./PendingCommandPill";
-import {
-  ChatCancelControl,
-  ChatLiveToolPreview,
-  chatLiveTurnSpacerClass,
-} from "./ChatLiveTurnSurface";
-import { AgentRunTrace } from "@/components/agent-run-trace/AgentRunTrace";
-import { loadEnvelopeEvents } from "@/lib/agentRunTrace/envelopeStore";
-import { reduceRunTraceEvents } from "@/lib/agentRunTrace/reducer";
-import type { RunTrace } from "@/lib/agentRunTrace/types";
+import { ChatCancelControl } from "./ChatLiveTurnSurface";
+import { AssistantActivity } from "./AssistantActivity";
 import {
   isVoiceInputDisabled,
+  shouldShowChatHistoryLoader,
   shouldShowChatCancelControl,
+  shouldShowChatRunStatusNotice,
+  visibleLiveAssistantContent,
   visibleLiveChatRunTrace,
 } from "@/lib/chatInterfaceState";
 
@@ -219,9 +215,7 @@ function selectVoiceInputMimeType(): string | undefined {
     "audio/webm;codecs=opus",
     "audio/webm",
   ];
-  return candidates.find((mimeType) =>
-    MediaRecorder.isTypeSupported(mimeType),
-  );
+  return candidates.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
 }
 
 function isEncryptedPayload(value: unknown): value is EncryptedPayload {
@@ -796,111 +790,89 @@ function extractMermaidChart(text: string): {
   };
 }
 
-function getNextStreamSliceLength(remainingText: string): number {
-  if (remainingText.length === 0) return 0;
-  if (remainingText.startsWith("\n\n")) return 2;
-  if (remainingText[0] === "\n") return 1;
-
-  const nextWord = remainingText.match(/^\S+\s*/)?.[0];
-  if (!nextWord) {
-    return Math.min(3, remainingText.length);
-  }
-
-  if (nextWord.length <= 4) return nextWord.length;
-  if (nextWord.length <= 8) return Math.min(nextWord.length, 4);
-  return Math.min(nextWord.length, 6);
-}
-
-function getSeenAssistantStorageKey(sessionId: string | null): string | null {
-  return sessionId ? `nenjo:seen-assistant:${sessionId}` : null;
-}
-
-function getSeenAssistantContentKey(content: string): string {
-  let hash = 5381;
-  for (let index = 0; index < content.length; index += 1) {
-    hash = ((hash << 5) + hash) ^ content.charCodeAt(index);
-  }
-  return `content:${(hash >>> 0).toString(36)}`;
-}
-
-function readSeenAssistantMap(sessionId: string | null): Map<string, string> {
-  const key = getSeenAssistantStorageKey(sessionId);
-  if (!key || typeof window === "undefined") return new Map();
-
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return new Map();
-    const parsed = JSON.parse(raw) as Record<string, string>;
-    return new Map(Object.entries(parsed));
-  } catch {
-    return new Map();
-  }
-}
-
-function writeSeenAssistantMap(
-  sessionId: string | null,
-  seenMap: Map<string, string>,
-): void {
-  const key = getSeenAssistantStorageKey(sessionId);
-  if (!key || typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(
-      key,
-      JSON.stringify(Object.fromEntries(seenMap)),
-    );
-  } catch {
-    // ignore
-  }
-}
-
-function useAnimatedStreamText(text: string, enabled: boolean, delayMs = 72) {
-  const [visibleLength, setVisibleLength] = useState(enabled ? 0 : text.length);
-  const previousEnabledRef = useRef(enabled);
-  const nextLengthRef = useRef<number | null>(null);
-
-  const visibleText = enabled ? text.slice(0, visibleLength) : text;
-
-  useEffect(() => {
-    if (!enabled) {
-      previousEnabledRef.current = false;
-      nextLengthRef.current = null;
-      return;
-    }
-
-    const shouldRestart =
-      !previousEnabledRef.current || !text.startsWith(visibleText);
-    const baseLength = shouldRestart ? 0 : visibleLength;
-    if (baseLength === text.length) {
-      previousEnabledRef.current = true;
-      nextLengthRef.current = null;
-      return;
-    }
-
-    const remainingText = text.slice(baseLength);
-    const nextSliceLength = getNextStreamSliceLength(remainingText);
-    if (nextSliceLength <= 0) return;
-
-    nextLengthRef.current = baseLength + nextSliceLength;
-    const timeoutId = window.setTimeout(() => {
-      if (nextLengthRef.current !== null) {
-        setVisibleLength(nextLengthRef.current);
-      }
-    }, delayMs);
-
-    previousEnabledRef.current = true;
-    return () => {
-      nextLengthRef.current = null;
-      window.clearTimeout(timeoutId);
-    };
-  }, [delayMs, enabled, text, visibleLength, visibleText]);
-
-  return visibleText;
-}
-
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+const assistantMarkdownComponents: Components = {
+  pre({ children }) {
+    const child =
+      Children.count(children) === 1 ? Children.only(children) : null;
+    if (
+      child &&
+      typeof child === "object" &&
+      "type" in child &&
+      (child as React.ReactElement).type === MermaidDiagram
+    ) {
+      return <>{children}</>;
+    }
+    const className = isValidElement<{ className?: string }>(child)
+      ? child.props.className
+      : undefined;
+    const language = formatCodeLanguageLabel(getCodeLanguage(className));
+    const rawText = isValidElement<{ children?: React.ReactNode }>(child)
+      ? String(child.props.children ?? "").replace(/\n$/, "")
+      : String(children ?? "").replace(/\n$/, "");
+
+    return (
+      <div className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900">
+        {language ? (
+          <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-slate-200 dark:text-slate-500">
+            {language}
+          </div>
+        ) : null}
+        <pre className="m-0 overflow-x-auto bg-slate-950 p-4 text-left text-slate-50 dark:bg-slate-50 dark:text-slate-900">
+          <code
+            className="block whitespace-pre font-mono text-[13px] leading-6 text-slate-50 dark:text-slate-900"
+            style={{
+              fontFamily:
+                'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+            }}
+          >
+            {rawText}
+          </code>
+        </pre>
+      </div>
+    );
+  },
+  code({ className, children, ...props }) {
+    const language = getCodeLanguage(className);
+    const codeString = String(children).replace(/\n$/, "");
+
+    if (language === "mermaid") {
+      return <MermaidDiagram chart={codeString} />;
+    }
+    if (className) {
+      return (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    }
+    return (
+      <code className="font-mono text-[0.85em]" {...props}>
+        {children}
+      </code>
+    );
+  },
+};
+
+const AssistantMarkdown = memo(function AssistantMarkdown({
+  content,
+}: {
+  content: string;
+}) {
+  return (
+    <div className="prose max-w-none break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-headings:font-semibold prose-headings:tracking-[-0.02em] prose-headings:text-gray-950 dark:prose-headings:text-white prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:rounded prose-code:bg-black/[0.06] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:font-medium prose-code:text-gray-900 prose-code:break-all dark:prose-code:bg-white/[0.08] dark:prose-code:text-gray-100 prose-pre:overflow-x-auto prose-pre:rounded-[1.35rem] prose-pre:border prose-pre:border-white/10 prose-pre:bg-[#0a0d12] prose-pre:px-0 prose-pre:py-0 prose-pre:text-[13px] prose-pre:text-gray-100 dark:prose-pre:bg-[#0a0d12] [&_pre_code]:block [&_pre_code]:bg-transparent [&_pre_code]:p-4 [&_pre_code]:pt-3 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-li:my-1 prose-ul:my-2 prose-ol:my-2 prose-blockquote:border-deep-space-blue-300 prose-blockquote:text-gray-700 dark:prose-blockquote:border-deep-space-blue-700 dark:prose-blockquote:text-gray-300 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={assistantMarkdownComponents}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+});
 
 function UserAvatar({
   imageUrl,
@@ -1103,17 +1075,17 @@ const MessageBubble = memo(function MessageBubble({
   userImageUrl,
   userInitials,
   onDelete,
+  onRetry,
   compact,
-  animateStream = false,
 }: {
   message: ChatMessage;
   activeAgent?: AgentDefinition;
   userImageUrl?: string | null;
   userInitials: string;
   onDelete?: (messageId: string) => void;
+  onRetry?: (messageId: string) => void;
   /** When true, shorten UUIDs in message content (mobile). */
   compact?: boolean;
-  animateStream?: boolean;
 }) {
   const isUser = message.role === "user";
   const rawDisplayContent = compact
@@ -1121,39 +1093,15 @@ const MessageBubble = memo(function MessageBubble({
     : message.content;
   const commandDisplay = messageCommandDisplay(message, rawDisplayContent);
   const displayContent = commandDisplay?.content ?? rawDisplayContent;
-  const streamedContent = useAnimatedStreamText(
-    displayContent,
-    animateStream,
-    28,
-  );
+  const assistantDisplayContent = message.isLiveDraft
+    ? visibleLiveAssistantContent(displayContent, message.runTrace)
+    : displayContent;
+  const runStatusNotice = shouldShowChatRunStatusNotice(message.runStatus)
+    ? message.runStatus
+    : undefined;
   const mermaidContent = !isUser
-    ? extractMermaidChart(displayContent)
+    ? extractMermaidChart(assistantDisplayContent)
     : { chart: null, before: displayContent, after: "" };
-  const [activityOpen, setActivityOpen] = useState(
-    message.runTrace?.phase === "failed",
-  );
-  const [envelopeTrace, setEnvelopeTrace] = useState<RunTrace | undefined>();
-  const [activityLoadFailed, setActivityLoadFailed] = useState(false);
-  const activityTrace = message.runTrace ?? envelopeTrace;
-  const hasActivity = Boolean(message.runTrace ?? message.runEnvelopeId);
-
-  useEffect(() => {
-    if (!activityOpen || message.runTrace || !message.runEnvelopeId) return;
-    let cancelled = false;
-    void loadEnvelopeEvents(message.runEnvelopeId)
-      .then((events) => {
-        if (cancelled) return;
-        const trace = reduceRunTraceEvents(undefined, events);
-        setEnvelopeTrace(trace);
-        setActivityLoadFailed(events.length === 0 || !trace);
-      })
-      .catch(() => {
-        if (!cancelled) setActivityLoadFailed(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activityOpen, message.runEnvelopeId, message.runTrace]);
 
   return (
     <div
@@ -1185,7 +1133,7 @@ const MessageBubble = memo(function MessageBubble({
           "overflow-hidden break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed rounded-2xl md:rounded-xl px-4 py-2.5",
           isUser
             ? "max-w-[85%] md:max-w-[75%] bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100 rounded-tr-sm md:rounded-tr-2xl md:rounded-tl-sm md:bg-deep-space-blue-500 md:text-white md:dark:bg-deep-space-blue-500 md:dark:text-white"
-            : "max-w-full md:max-w-[75%] bg-transparent md:theme-surface md:border md:theme-border text-gray-800 rounded-tl-sm dark:text-gray-200",
+            : "w-full max-w-full md:w-[75%] md:max-w-[75%] bg-transparent md:theme-surface md:border md:theme-border text-gray-800 rounded-tl-sm dark:text-gray-200",
         )}
       >
         {isUser ? (
@@ -1211,209 +1159,231 @@ const MessageBubble = memo(function MessageBubble({
           </div>
         ) : (
           <div className="space-y-3">
-            {mermaidContent.before ? (
-              <div className="prose max-w-none break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-headings:font-semibold prose-headings:tracking-[-0.02em] prose-headings:text-gray-950 dark:prose-headings:text-white prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:rounded prose-code:bg-black/[0.06] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:font-medium prose-code:text-gray-900 prose-code:break-all dark:prose-code:bg-white/[0.08] dark:prose-code:text-gray-100 prose-pre:overflow-x-auto prose-pre:rounded-[1.35rem] prose-pre:border prose-pre:border-white/10 prose-pre:bg-[#0a0d12] prose-pre:px-0 prose-pre:py-0 prose-pre:text-[13px] prose-pre:text-gray-100 dark:prose-pre:bg-[#0a0d12] [&_pre_code]:block [&_pre_code]:bg-transparent [&_pre_code]:p-4 [&_pre_code]:pt-3 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-li:my-1 prose-ul:my-2 prose-ol:my-2 prose-blockquote:border-deep-space-blue-300 prose-blockquote:text-gray-700 dark:prose-blockquote:border-deep-space-blue-700 dark:prose-blockquote:text-gray-300 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    pre({ children }) {
-                      const child =
-                        Children.count(children) === 1
-                          ? Children.only(children)
-                          : null;
-                      if (
-                        child &&
-                        typeof child === "object" &&
-                        "type" in child &&
-                        (child as React.ReactElement).type === MermaidDiagram
-                      ) {
-                        return <>{children}</>;
-                      }
-                      const className = isValidElement<{ className?: string }>(
-                        child,
-                      )
-                        ? child.props.className
-                        : undefined;
-                      const language = formatCodeLanguageLabel(
-                        getCodeLanguage(className),
-                      );
-                      const rawText = isValidElement<{
-                        children?: React.ReactNode;
-                      }>(child)
-                        ? String(child.props.children ?? "").replace(/\n$/, "")
-                        : String(children ?? "").replace(/\n$/, "");
+            {message.isLiveDraft ? (
+              assistantDisplayContent ? (
+                <AssistantMarkdown content={assistantDisplayContent} />
+              ) : null
+            ) : (
+              <>
+                {mermaidContent.before ? (
+                  <div className="prose max-w-none break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-headings:font-semibold prose-headings:tracking-[-0.02em] prose-headings:text-gray-950 dark:prose-headings:text-white prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:rounded prose-code:bg-black/[0.06] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:font-medium prose-code:text-gray-900 prose-code:break-all dark:prose-code:bg-white/[0.08] dark:prose-code:text-gray-100 prose-pre:overflow-x-auto prose-pre:rounded-[1.35rem] prose-pre:border prose-pre:border-white/10 prose-pre:bg-[#0a0d12] prose-pre:px-0 prose-pre:py-0 prose-pre:text-[13px] prose-pre:text-gray-100 dark:prose-pre:bg-[#0a0d12] [&_pre_code]:block [&_pre_code]:bg-transparent [&_pre_code]:p-4 [&_pre_code]:pt-3 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-li:my-1 prose-ul:my-2 prose-ol:my-2 prose-blockquote:border-deep-space-blue-300 prose-blockquote:text-gray-700 dark:prose-blockquote:border-deep-space-blue-700 dark:prose-blockquote:text-gray-300 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        pre({ children }) {
+                          const child =
+                            Children.count(children) === 1
+                              ? Children.only(children)
+                              : null;
+                          if (
+                            child &&
+                            typeof child === "object" &&
+                            "type" in child &&
+                            (child as React.ReactElement).type ===
+                              MermaidDiagram
+                          ) {
+                            return <>{children}</>;
+                          }
+                          const className = isValidElement<{
+                            className?: string;
+                          }>(child)
+                            ? child.props.className
+                            : undefined;
+                          const language = formatCodeLanguageLabel(
+                            getCodeLanguage(className),
+                          );
+                          const rawText = isValidElement<{
+                            children?: React.ReactNode;
+                          }>(child)
+                            ? String(child.props.children ?? "").replace(
+                                /\n$/,
+                                "",
+                              )
+                            : String(children ?? "").replace(/\n$/, "");
 
-                      return (
-                        <div className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900">
-                          {language ? (
-                            <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-slate-200 dark:text-slate-500">
-                              {language}
+                          return (
+                            <div className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900">
+                              {language ? (
+                                <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-slate-200 dark:text-slate-500">
+                                  {language}
+                                </div>
+                              ) : null}
+                              <pre className="m-0 overflow-x-auto bg-slate-950 p-4 text-left text-slate-50 dark:bg-slate-50 dark:text-slate-900">
+                                <code
+                                  className="block whitespace-pre font-mono text-[13px] leading-6 text-slate-50 dark:text-slate-900"
+                                  style={{
+                                    fontFamily:
+                                      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+                                  }}
+                                >
+                                  {rawText}
+                                </code>
+                              </pre>
                             </div>
-                          ) : null}
-                          <pre className="m-0 overflow-x-auto bg-slate-950 p-4 text-left text-slate-50 dark:bg-slate-50 dark:text-slate-900">
+                          );
+                        },
+                        code({ className, children, ...props }) {
+                          const language = getCodeLanguage(className);
+                          const codeString = String(children).replace(
+                            /\n$/,
+                            "",
+                          );
+
+                          if (language === "mermaid") {
+                            return <MermaidDiagram chart={codeString} />;
+                          }
+
+                          if (className) {
+                            return (
+                              <code className={className} {...props}>
+                                {children}
+                              </code>
+                            );
+                          }
+                          return (
                             <code
-                              className="block whitespace-pre font-mono text-[13px] leading-6 text-slate-50 dark:text-slate-900"
-                              style={{
-                                fontFamily:
-                                  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-                              }}
+                              className="font-mono text-[0.85em]"
+                              {...props}
                             >
-                              {rawText}
+                              {children}
                             </code>
-                          </pre>
-                        </div>
-                      );
-                    },
-                    code({ className, children, ...props }) {
-                      const language = getCodeLanguage(className);
-                      const codeString = String(children).replace(/\n$/, "");
+                          );
+                        },
+                      }}
+                    >
+                      {mermaidContent.chart
+                        ? mermaidContent.before
+                        : displayContent}
+                    </ReactMarkdown>
+                  </div>
+                ) : null}
+                {mermaidContent.chart ? (
+                  <div className="not-prose">
+                    <MermaidDiagram chart={mermaidContent.chart} />
+                  </div>
+                ) : null}
+                {mermaidContent.after ? (
+                  <div className="prose max-w-none break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-headings:font-semibold prose-headings:tracking-[-0.02em] prose-headings:text-gray-950 dark:prose-headings:text-white prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:rounded prose-code:bg-black/[0.06] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:font-medium prose-code:text-gray-900 prose-code:break-all dark:prose-code:bg-white/[0.08] dark:prose-code:text-gray-100 prose-pre:overflow-x-auto prose-pre:rounded-[1.35rem] prose-pre:border prose-pre:border-white/10 prose-pre:bg-[#0a0d12] prose-pre:px-0 prose-pre:py-0 prose-pre:text-[13px] prose-pre:text-gray-100 dark:prose-pre:bg-[#0a0d12] [&_pre_code]:block [&_pre_code]:bg-transparent [&_pre_code]:p-4 [&_pre_code]:pt-3 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-li:my-1 prose-ul:my-2 prose-ol:my-2 prose-blockquote:border-deep-space-blue-300 prose-blockquote:text-gray-700 dark:prose-blockquote:border-deep-space-blue-700 dark:prose-blockquote:text-gray-300 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        pre({ children }) {
+                          const child =
+                            Children.count(children) === 1
+                              ? Children.only(children)
+                              : null;
+                          if (
+                            child &&
+                            typeof child === "object" &&
+                            "type" in child &&
+                            (child as React.ReactElement).type ===
+                              MermaidDiagram
+                          ) {
+                            return <>{children}</>;
+                          }
+                          const className = isValidElement<{
+                            className?: string;
+                          }>(child)
+                            ? child.props.className
+                            : undefined;
+                          const language = formatCodeLanguageLabel(
+                            getCodeLanguage(className),
+                          );
+                          const rawText = isValidElement<{
+                            children?: React.ReactNode;
+                          }>(child)
+                            ? String(child.props.children ?? "").replace(
+                                /\n$/,
+                                "",
+                              )
+                            : String(children ?? "").replace(/\n$/, "");
 
-                      if (language === "mermaid") {
-                        return <MermaidDiagram chart={codeString} />;
-                      }
-
-                      if (className) {
-                        return (
-                          <code className={className} {...props}>
-                            {children}
-                          </code>
-                        );
-                      }
-                      return (
-                        <code className="font-mono text-[0.85em]" {...props}>
-                          {children}
-                        </code>
-                      );
-                    },
-                  }}
-                >
-                  {mermaidContent.chart
-                    ? mermaidContent.before
-                    : streamedContent}
-                </ReactMarkdown>
-              </div>
-            ) : null}
-            {mermaidContent.chart ? (
-              <div className="not-prose">
-                <MermaidDiagram chart={mermaidContent.chart} />
-              </div>
-            ) : null}
-            {mermaidContent.after ? (
-              <div className="prose max-w-none break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed dark:prose-invert prose-p:my-2 prose-headings:my-3 prose-headings:font-semibold prose-headings:tracking-[-0.02em] prose-headings:text-gray-950 dark:prose-headings:text-white prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-a:text-deep-space-blue-600 prose-a:break-all dark:prose-a:text-deep-space-blue-400 prose-code:rounded prose-code:bg-black/[0.06] prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:font-medium prose-code:text-gray-900 prose-code:break-all dark:prose-code:bg-white/[0.08] dark:prose-code:text-gray-100 prose-pre:overflow-x-auto prose-pre:rounded-[1.35rem] prose-pre:border prose-pre:border-white/10 prose-pre:bg-[#0a0d12] prose-pre:px-0 prose-pre:py-0 prose-pre:text-[13px] prose-pre:text-gray-100 dark:prose-pre:bg-[#0a0d12] [&_pre_code]:block [&_pre_code]:bg-transparent [&_pre_code]:p-4 [&_pre_code]:pt-3 [&_pre_code]:rounded-none [&_pre_code]:break-normal prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-li:my-1 prose-ul:my-2 prose-ol:my-2 prose-blockquote:border-deep-space-blue-300 prose-blockquote:text-gray-700 dark:prose-blockquote:border-deep-space-blue-700 dark:prose-blockquote:text-gray-300 prose-table:text-xs prose-table:overflow-x-auto prose-th:bg-gray-100 dark:prose-th:bg-gray-800 prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1 prose-td:border-t prose-td:border-gray-200 dark:prose-td:border-gray-700 prose-hr:border-gray-200 dark:prose-hr:border-gray-700">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    pre({ children }) {
-                      const child =
-                        Children.count(children) === 1
-                          ? Children.only(children)
-                          : null;
-                      if (
-                        child &&
-                        typeof child === "object" &&
-                        "type" in child &&
-                        (child as React.ReactElement).type === MermaidDiagram
-                      ) {
-                        return <>{children}</>;
-                      }
-                      const className = isValidElement<{ className?: string }>(
-                        child,
-                      )
-                        ? child.props.className
-                        : undefined;
-                      const language = formatCodeLanguageLabel(
-                        getCodeLanguage(className),
-                      );
-                      const rawText = isValidElement<{
-                        children?: React.ReactNode;
-                      }>(child)
-                        ? String(child.props.children ?? "").replace(/\n$/, "")
-                        : String(children ?? "").replace(/\n$/, "");
-
-                      return (
-                        <div className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900">
-                          {language ? (
-                            <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-slate-200 dark:text-slate-500">
-                              {language}
+                          return (
+                            <div className="not-prose overflow-hidden rounded-[1.35rem] border border-slate-900 bg-slate-950 text-slate-50 shadow-[0_10px_30px_rgba(2,6,23,0.16)] dark:border-slate-200 dark:bg-slate-50 dark:text-slate-900">
+                              {language ? (
+                                <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-slate-200 dark:text-slate-500">
+                                  {language}
+                                </div>
+                              ) : null}
+                              <pre className="m-0 overflow-x-auto bg-slate-950 p-4 text-left text-slate-50 dark:bg-slate-50 dark:text-slate-900">
+                                <code
+                                  className="block whitespace-pre font-mono text-[13px] leading-6 text-slate-50 dark:text-slate-900"
+                                  style={{
+                                    fontFamily:
+                                      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+                                  }}
+                                >
+                                  {rawText}
+                                </code>
+                              </pre>
                             </div>
-                          ) : null}
-                          <pre className="m-0 overflow-x-auto bg-slate-950 p-4 text-left text-slate-50 dark:bg-slate-50 dark:text-slate-900">
+                          );
+                        },
+                        code({ className, children, ...props }) {
+                          const language = getCodeLanguage(className);
+                          const codeString = String(children).replace(
+                            /\n$/,
+                            "",
+                          );
+
+                          if (language === "mermaid") {
+                            return <MermaidDiagram chart={codeString} />;
+                          }
+
+                          if (className) {
+                            return (
+                              <code className={className} {...props}>
+                                {children}
+                              </code>
+                            );
+                          }
+                          return (
                             <code
-                              className="block whitespace-pre font-mono text-[13px] leading-6 text-slate-50 dark:text-slate-900"
-                              style={{
-                                fontFamily:
-                                  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-                              }}
+                              className="font-mono text-[0.85em]"
+                              {...props}
                             >
-                              {rawText}
+                              {children}
                             </code>
-                          </pre>
-                        </div>
-                      );
-                    },
-                    code({ className, children, ...props }) {
-                      const language = getCodeLanguage(className);
-                      const codeString = String(children).replace(/\n$/, "");
-
-                      if (language === "mermaid") {
-                        return <MermaidDiagram chart={codeString} />;
-                      }
-
-                      if (className) {
-                        return (
-                          <code className={className} {...props}>
-                            {children}
-                          </code>
-                        );
-                      }
-                      return (
-                        <code className="font-mono text-[0.85em]" {...props}>
-                          {children}
-                        </code>
-                      );
-                    },
-                  }}
-                >
-                  {mermaidContent.after}
-                </ReactMarkdown>
-              </div>
-            ) : null}
-            {hasActivity && (
-              <div className="not-prose border-t border-gray-200/70 pt-2 dark:border-gray-700/70">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActivityLoadFailed(false);
-                    setActivityOpen((value) => !value);
-                  }}
-                  className="flex min-h-8 w-full items-center gap-2 text-left text-xs font-medium text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                  aria-expanded={activityOpen}
-                >
-                  {activityOpen ? (
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                  ) : (
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                  )}
-                  <span className="min-w-0 flex-1">Activity</span>
-                  <span className="shrink-0 text-[10px] uppercase tracking-normal text-gray-400">
-                    {activityOpen ? "Hide" : "Show"}
-                  </span>
-                </button>
-                {activityOpen && activityTrace && (
-                  <AgentRunTrace
-                    trace={activityTrace}
-                    mode="history"
-                    density={compact ? "compact" : "regular"}
-                    embedded
-                  />
-                )}
-                {activityOpen && !activityTrace && activityLoadFailed && (
-                  <p className="px-1 py-2 text-xs text-gray-400 dark:text-gray-500">
-                    Activity unavailable on this device.
-                  </p>
-                )}
-              </div>
+                          );
+                        },
+                      }}
+                    >
+                      {mermaidContent.after}
+                    </ReactMarkdown>
+                  </div>
+                ) : null}
+              </>
             )}
+            <AssistantActivity
+              message={message}
+              compact={compact}
+              hasResponseContent={Boolean(assistantDisplayContent.trim())}
+            />
+            {runStatusNotice ? (
+              <div
+                className={cn(
+                  "not-prose rounded-lg px-3 py-2 text-xs",
+                  runStatusNotice === "failed"
+                    ? "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                    : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
+                )}
+                role={runStatusNotice === "failed" ? "alert" : "status"}
+              >
+                <span className="font-medium capitalize">
+                  {runStatusNotice.replace("_", " ")}
+                </span>
+                {message.errorMessage ? ` — ${message.errorMessage}` : null}
+                {message.retryable && onRetry ? (
+                  <button
+                    type="button"
+                    onClick={() => onRetry(message.id)}
+                    className="ml-2 rounded border border-current px-2 py-1 font-semibold hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current dark:hover:bg-white/5"
+                  >
+                    Retry
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         )}
         <div className="mt-1 flex items-center gap-1.5">
@@ -1436,6 +1406,14 @@ const MessageBubble = memo(function MessageBubble({
               <MessageStatusIndicator status={message.status} />
             </AnimatePresence>
           )}
+          {!isUser &&
+          (message.inputTokens !== undefined ||
+            message.outputTokens !== undefined) ? (
+            <span className="text-[10px] text-gray-400 tabular-nums">
+              {message.inputTokens?.toLocaleString() ?? 0} in ·{" "}
+              {message.outputTokens?.toLocaleString() ?? 0} out
+            </span>
+          ) : null}
           {onDelete && (
             <button
               type="button"
@@ -1498,6 +1476,7 @@ export function ChatArea({
   onSwitchAgent,
 }: ChatAreaProps) {
   const isMobile = variant === "mobile";
+  const reduceMotion = useReducedMotion();
   const isAgentTarget = targetType === "agent";
   const { user } = useUser();
   const userImageUrl = user?.imageUrl;
@@ -1534,10 +1513,7 @@ export function ChatArea({
   const { projects } = useProjects();
   const { commands: platformCommandRecords } = useChatCommands();
   const chatCommands = useMemo(
-    () => [
-      ...CHAT_COMMANDS,
-      ...platformCommands(platformCommandRecords),
-    ],
+    () => [...CHAT_COMMANDS, ...platformCommands(platformCommandRecords)],
     [platformCommandRecords],
   );
   useEffect(() => {
@@ -1606,6 +1582,7 @@ export function ChatArea({
   const {
     messages,
     sendMessage,
+    retryMessage,
     deleteMessage,
     isTyping,
     hasActiveChatRequest,
@@ -1688,17 +1665,10 @@ export function ChatArea({
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const voiceInputTimerRef = useRef<number | null>(null);
-  const lastAssistantContentRef = useRef<Map<string, string>>(new Map());
-  const seenAssistantContentRef = useRef<Map<string, string>>(new Map());
-  const hasInitializedAssistantRef = useRef(false);
-  const historyReadyRef = useRef(false);
   const pendingSessionScrollRef = useRef(false);
   const [voiceInputState, setVoiceInputState] =
     useState<VoiceInputState>("idle");
   const [voiceInputAvailable, setVoiceInputAvailable] = useState(false);
-  const [streamingAssistantId, setStreamingAssistantId] = useState<
-    string | null
-  >(null);
   const [showScrollToLatest, setShowScrollToLatest] = useState(false);
 
   // Track message count for animation stagger logic
@@ -1708,11 +1678,6 @@ export function ChatArea({
   }, [messages.length]);
 
   useEffect(() => {
-    lastAssistantContentRef.current = new Map();
-    seenAssistantContentRef.current = readSeenAssistantMap(sessionId);
-    hasInitializedAssistantRef.current = false;
-    historyReadyRef.current = false;
-    setStreamingAssistantId(null);
     pendingSessionScrollRef.current = true;
     setShowScrollToLatest(false);
   }, [sessionId]);
@@ -1817,8 +1782,9 @@ export function ChatArea({
           throw new Error("Transcription finished without a transcript.");
         }
 
-        const transcript = (await decryptContentPayload(encryptedTranscript))
-          ?.trim();
+        const transcript = (
+          await decryptContentPayload(encryptedTranscript)
+        )?.trim();
         if (!transcript) {
           throw new Error("Transcription was empty.");
         }
@@ -2018,7 +1984,7 @@ export function ChatArea({
     if (scrollRef.current) {
       const el = scrollRef.current;
       const behavior: ScrollBehavior =
-        hasActiveTurn ? "smooth" : "auto";
+        reduceMotion || !hasActiveTurn ? "auto" : "smooth";
       requestAnimationFrame(() => {
         el.scrollTo({ top: el.scrollHeight, behavior });
       });
@@ -2030,90 +1996,8 @@ export function ChatArea({
     visibleRunTrace,
     hasActiveRunTrace,
     hasActiveTurn,
+    reduceMotion,
   ]);
-
-  useEffect(() => {
-    const assistantMessages = messages.filter(
-      (message) => message.role === "assistant",
-    );
-
-    if (!hasInitializedAssistantRef.current) {
-      lastAssistantContentRef.current = new Map(
-        assistantMessages.map((message) => [message.id, message.content]),
-      );
-      hasInitializedAssistantRef.current = true;
-      return;
-    }
-
-    if (!historyReadyRef.current) {
-      lastAssistantContentRef.current = new Map(
-        assistantMessages.map((message) => [message.id, message.content]),
-      );
-      setStreamingAssistantId(null);
-      return;
-    }
-
-    let latestChangedId: string | null = null;
-    for (const message of assistantMessages) {
-      const previousContent = lastAssistantContentRef.current.get(message.id);
-      const seenContent = seenAssistantContentRef.current.get(message.id);
-
-      if (
-        previousContent !== undefined &&
-        previousContent !== message.content &&
-        seenContent !== message.content
-      ) {
-        latestChangedId = message.id;
-        seenAssistantContentRef.current.set(message.id, message.content);
-        seenAssistantContentRef.current.set(
-          getSeenAssistantContentKey(message.content),
-          message.id,
-        );
-      } else if (
-        previousContent === undefined &&
-        assistantMessages[assistantMessages.length - 1]?.id === message.id &&
-        seenContent !== message.content
-      ) {
-        latestChangedId = message.id;
-        seenAssistantContentRef.current.set(message.id, message.content);
-        seenAssistantContentRef.current.set(
-          getSeenAssistantContentKey(message.content),
-          message.id,
-        );
-      }
-      lastAssistantContentRef.current.set(message.id, message.content);
-    }
-    writeSeenAssistantMap(sessionId, seenAssistantContentRef.current);
-    setStreamingAssistantId((currentId) => {
-      if (latestChangedId) return latestChangedId;
-      if (
-        currentId &&
-        assistantMessages.some((message) => message.id === currentId)
-      ) {
-        return currentId;
-      }
-      return null;
-    });
-  }, [messages, sessionId]);
-
-  useEffect(() => {
-    if (isLoadingHistory) return;
-    historyReadyRef.current = true;
-    const assistantMessages = messages.filter(
-      (message) => message.role === "assistant",
-    );
-    lastAssistantContentRef.current = new Map(
-      assistantMessages.map((message) => [message.id, message.content]),
-    );
-    for (const message of assistantMessages) {
-      seenAssistantContentRef.current.set(message.id, message.content);
-      seenAssistantContentRef.current.set(
-        getSeenAssistantContentKey(message.content),
-        message.id,
-      );
-    }
-    writeSeenAssistantMap(sessionId, seenAssistantContentRef.current);
-  }, [isLoadingHistory, messages, sessionId]);
 
   useEffect(() => {
     if (
@@ -2126,13 +2010,16 @@ export function ChatArea({
     const timeoutId = window.setTimeout(() => {
       const el = scrollRef.current;
       if (!el) return;
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: reduceMotion ? "auto" : "smooth",
+      });
       pendingSessionScrollRef.current = false;
       setShowScrollToLatest(false);
     }, 60);
 
     return () => window.clearTimeout(timeoutId);
-  }, [isLoadingHistory, messages.length]);
+  }, [isLoadingHistory, messages.length, reduceMotion]);
 
   // Scroll-to-top pagination
   const handleScroll = useCallback(() => {
@@ -2159,10 +2046,10 @@ export function ChatArea({
     if (!scrollRef.current) return;
     scrollRef.current.scrollTo({
       top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
+      behavior: reduceMotion ? "auto" : "smooth",
     });
     setShowScrollToLatest(false);
-  }, []);
+  }, [reduceMotion]);
 
   // Close @mention flow entirely and clear any leftover @text from input
   const closeMentionFlow = useCallback(() => {
@@ -2439,9 +2326,15 @@ export function ChatArea({
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text && !pendingCommand && artifactAttachments.artifactIds.length === 0) return;
+    if (
+      !text &&
+      !pendingCommand &&
+      artifactAttachments.artifactIds.length === 0
+    )
+      return;
     if (!artifactAttachments.isReady) return;
-    if (artifactAttachments.artifactIds.length > 0 && attachmentDisabled) return;
+    if (artifactAttachments.artifactIds.length > 0 && attachmentDisabled)
+      return;
 
     // Close any open mention flow
     closeMentionFlow();
@@ -2797,7 +2690,7 @@ export function ChatArea({
   }, []);
 
   const messageContent = useMemo(() => {
-    if (isLoadingHistory) {
+    if (shouldShowChatHistoryLoader(isLoadingHistory, messages.length)) {
       return (
         <div className="flex items-center justify-center py-12">
           <div className="flex items-center gap-1.5 font-mono text-xs text-gray-400">
@@ -2839,29 +2732,11 @@ export function ChatArea({
                 userImageUrl={userImageUrl}
                 userInitials={userInitials}
                 onDelete={msg.id !== "welcome" ? deleteMessage : undefined}
+                onRetry={msg.retryable ? retryMessage : undefined}
                 compact
-                animateStream={
-                  msg.role === "assistant" && msg.id === streamingAssistantId
-                }
               />
             </div>
           ))}
-          {hasActiveRunTrace && (
-            <motion.div
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.22, ease: "easeOut" }}
-            >
-              <ChatLiveToolPreview
-                trace={visibleRunTrace}
-                TraceComponent={AgentRunTrace}
-                activeAgent={activeAgent}
-                mobile
-              />
-            </motion.div>
-          )}
-          <div className={chatLiveTurnSpacerClass(hasActiveRunTrace, true)} />
         </>
       );
     }
@@ -2888,9 +2763,9 @@ export function ChatArea({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{
-                  duration: 0.2,
+                  duration: reduceMotion ? 0 : 0.2,
                   ease: "easeOut",
-                  delay: staggerDelay,
+                  delay: reduceMotion ? 0 : staggerDelay,
                 }}
               >
                 <MessageBubble
@@ -2901,31 +2776,13 @@ export function ChatArea({
                   userImageUrl={userImageUrl}
                   userInitials={userInitials}
                   onDelete={msg.id !== "welcome" ? deleteMessage : undefined}
+                  onRetry={msg.retryable ? retryMessage : undefined}
                   compact={false}
-                  animateStream={
-                    msg.role === "assistant" && msg.id === streamingAssistantId
-                  }
                 />
               </motion.div>
             );
           })}
-          {hasActiveRunTrace && (
-            <motion.div
-              key="typing"
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.22, ease: "easeOut" }}
-            >
-              <ChatLiveToolPreview
-                trace={visibleRunTrace}
-                TraceComponent={AgentRunTrace}
-                activeAgent={activeAgent}
-              />
-            </motion.div>
-          )}
         </AnimatePresence>
-        <div className={chatLiveTurnSpacerClass(hasActiveRunTrace, false)} />
       </div>
     );
   }, [
@@ -2940,9 +2797,8 @@ export function ChatArea({
     userImageUrl,
     userInitials,
     deleteMessage,
-    streamingAssistantId,
-    hasActiveRunTrace,
-    visibleRunTrace,
+    retryMessage,
+    reduceMotion,
   ]);
 
   const agentColor = activeAgent?.color;
@@ -3368,22 +3224,24 @@ export function ChatArea({
             pendingCommand={pendingCommand}
             onClearPendingCommand={() => setPendingCommand(null)}
             sendDisabled={
-              !artifactAttachments.isReady
-              || (artifactAttachments.artifactIds.length > 0 && attachmentDisabled)
+              !artifactAttachments.isReady ||
+              (artifactAttachments.artifactIds.length > 0 && attachmentDisabled)
             }
             hasReadyAttachments={artifactAttachments.artifactIds.length > 0}
-            attachments={<>
-              <SessionArtifactAttachments messages={messages} />
-              <ArtifactAttachmentComposer
-                attachments={artifactAttachments.attachments}
-                canAdd={artifactAttachments.canAdd}
-                disabled={attachmentDisabled}
-                disabledReason={attachmentDisabledReason}
-                onAdd={artifactAttachments.addFiles}
-                onRemove={artifactAttachments.remove}
-                onRetry={artifactAttachments.retry}
-              />
-            </>}
+            attachments={
+              <>
+                <SessionArtifactAttachments messages={messages} />
+                <ArtifactAttachmentComposer
+                  attachments={artifactAttachments.attachments}
+                  canAdd={artifactAttachments.canAdd}
+                  disabled={attachmentDisabled}
+                  disabledReason={attachmentDisabledReason}
+                  onAdd={artifactAttachments.addFiles}
+                  onRemove={artifactAttachments.remove}
+                  onRetry={artifactAttachments.retry}
+                />
+              </>
+            }
           />
         </div>
       )}
@@ -3873,9 +3731,12 @@ export function ChatArea({
               <Button
                 onClick={handleSend}
                 disabled={
-                  (!input.trim() && !pendingCommand && artifactAttachments.artifactIds.length === 0)
-                  || !artifactAttachments.isReady
-                  || (artifactAttachments.artifactIds.length > 0 && attachmentDisabled)
+                  (!input.trim() &&
+                    !pendingCommand &&
+                    artifactAttachments.artifactIds.length === 0) ||
+                  !artifactAttachments.isReady ||
+                  (artifactAttachments.artifactIds.length > 0 &&
+                    attachmentDisabled)
                 }
                 size="md"
                 className="!bg-deep-space-blue-500 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
