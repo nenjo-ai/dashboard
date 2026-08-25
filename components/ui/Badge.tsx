@@ -106,7 +106,7 @@ export function Badge({
           {isAnimated && (
             <span
               className={cn(
-                "absolute inline-flex h-full w-full animate-ping rounded-full opacity-75",
+                "absolute inline-flex h-full w-full rounded-full opacity-75 motion-safe:animate-ping",
                 dotColors[variant],
               )}
             />

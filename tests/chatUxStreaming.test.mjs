@@ -174,8 +174,9 @@ test("snapshot persistence reuses IndexedDB and orders terminal clears", () => {
   assert.match(durabilitySource, /let mutationTail = Promise\.resolve\(\)/);
   assert.match(
     durabilitySource,
-    /serializeMutation\(\(\) => deleteSnapshotIfOwned/,
+    /serializeMutation\(\(\) =>\s*clearSnapshotIfOwned/,
   );
+  assert.match(durabilitySource, /store\.put\(terminalSnapshot\)/);
   assert.match(serviceWorkerSource, /let streamDbPromise/);
   assert.match(serviceWorkerSource, /serializeStreamMutation/);
 });
@@ -214,7 +215,7 @@ test("only the reducer-owned response can render a thinking animation", () => {
 });
 
 test("assistant activity has stable width and compact live spacing", () => {
-  assert.match(bubbleSource, /md:w-full md:max-w-\[46rem\]/);
+  assert.match(bubbleSource, /md:max-w-\[44rem\]/);
   assert.match(
     bubbleSource,
     /visibleLiveAssistantContent\(displayContent, message\.runTrace\)/,
@@ -230,27 +231,38 @@ test("assistant activity is collapsed by default and remains user-toggleable", (
     assistantActivitySource,
     /const \[activityOpen, setActivityOpen\] = useState\(false\)/,
   );
-  assert.match(
-    assistantActivitySource,
-    /setActivityOpen\(\(open\) => !open\)/,
-  );
+  assert.match(assistantActivitySource, /setActivityOpen\(\(open\) => !open\)/);
   assert.match(assistantActivitySource, /aria-expanded=\{activityOpen\}/);
   assert.match(assistantActivitySource, /aria-controls=\{activityPanelId\}/);
   assert.match(assistantActivitySource, /traceActivitySummary/);
   assert.match(assistantActivitySource, /hasMeaningfulChatActivity/);
+  assert.match(assistantActivitySource, /scrollIntoView/);
+  assert.match(assistantActivitySource, /prefers-reduced-motion: reduce/);
 });
 
 test("completed tool batches collapse into readable progressive disclosure", () => {
   assert.match(traceSource, /function ToolBatchTraceBlock/);
   assert.match(traceSource, /toolBatchLabel\(tools\)/);
-  assert.match(traceSource, /defaultExpanded = status === "running" \|\| status === "queued"/);
+  assert.match(
+    traceSource,
+    /defaultExpanded = status === "running" \|\| status === "queued"/,
+  );
   assert.match(traceSource, /technical details for \$\{span\.name\}/);
-  assert.doesNotMatch(traceSource, />\{detailsOpen \? "Hide" : "Details"\}<\/button>/);
+  assert.doesNotMatch(
+    traceSource,
+    />\{detailsOpen \? "Hide" : "Details"\}<\/button>/,
+  );
 });
 
 test("history appears immediately while new turns keep restrained entry motion", () => {
-  assert.match(areaSource, /const shouldAnimateEntry = !reduceMotion && !isBulkLoad/);
-  assert.match(areaSource, /shouldAnimateEntry \? \{ opacity: 0, y: 8 \} : false/);
+  assert.match(
+    areaSource,
+    /const shouldAnimateEntry = !reduceMotion && !isBulkLoad/,
+  );
+  assert.match(
+    areaSource,
+    /shouldAnimateEntry \? \{ opacity: 0, y: 8 \} : false/,
+  );
   assert.doesNotMatch(areaSource, /staggerDelay/);
 });
 

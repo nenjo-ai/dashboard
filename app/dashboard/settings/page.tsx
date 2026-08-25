@@ -62,7 +62,7 @@ function SettingsSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-black/10 p-5 dark:border-white/10">
+    <section className="theme-surface theme-border overflow-hidden rounded-2xl border p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
       <div className="mb-5">
         <h2 className="theme-text text-base font-semibold">{title}</h2>
         {description ? (

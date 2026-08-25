@@ -1,12 +1,15 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ChevronRight, Cpu, Sparkles } from "lucide-react";
+import { Bot, ChevronRight, Cpu, Plus, Sparkles, TriangleAlert } from "lucide-react";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useAgentAbilities, useAgentDomains, useAgents, useModels } from "@/lib/hooks";
 import type { AgentDefinition } from "@/lib/types";
+import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { MobileAgentCreateDialog } from "@/components/agents/MobileAgentCreateDialog";
 
 function AgentMetaChip({
   icon,
@@ -80,7 +83,8 @@ function MobileAgentRow({ agent }: { agent: AgentDefinition }) {
 }
 
 export function MobileAgentList() {
-  const { agents, isLoading, isError } = useAgents();
+  const { agents, isLoading, isError, mutate } = useAgents();
+  const [createOpen, setCreateOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -107,28 +111,56 @@ export function MobileAgentList() {
 
   if (isError) {
     return (
-      <div className="rounded-[1.6rem] border border-red-200/80 bg-red-50/90 p-5 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-        Failed to load agents.
-      </div>
+      <EmptyState
+        icon={<TriangleAlert className="h-5 w-5" />}
+        title="Agents could not be loaded"
+        description="Check the local worker connection and try again."
+        tone="error"
+      />
     );
   }
 
   if (!agents || agents.length === 0) {
     return (
-      <div className="rounded-[1.8rem] border border-dashed border-black/10 bg-transparent px-6 py-12 text-center dark:border-white/10">
-        <p className="text-base font-semibold text-gray-950 dark:text-gray-50">No agents yet</p>
-        <p className="mt-2 text-sm leading-6 text-gray-500 dark:text-gray-400">
-          Agents will appear here as a clean mobile stack instead of the desktop grid.
-        </p>
-      </div>
+      <>
+        <EmptyState
+          icon={<Bot className="h-5 w-5" />}
+          title="Create your first agent"
+          description="Define a focused identity, specialty, and visual role for your workspace."
+          action={(
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Create agent
+            </Button>
+          )}
+        />
+        <MobileAgentCreateDialog
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          onCreated={async () => { await mutate(); }}
+        />
+      </>
     );
   }
 
   return (
-    <div className="space-y-3">
-      {agents.map((agent) => (
-        <MobileAgentRow key={agent.id} agent={agent} />
-      ))}
-    </div>
+    <>
+      <div className="mb-3 flex justify-end">
+        <Button onClick={() => setCreateOpen(true)}>
+          <Plus className="h-4 w-4" />
+          New agent
+        </Button>
+      </div>
+      <div className="space-y-3">
+        {agents.map((agent) => (
+          <MobileAgentRow key={agent.id} agent={agent} />
+        ))}
+      </div>
+      <MobileAgentCreateDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={async () => { await mutate(); }}
+      />
+    </>
   );
 }

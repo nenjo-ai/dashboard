@@ -56,6 +56,7 @@ import type {
 interface KnowledgeSectionProps {
   packRef: string;
   readOnly?: boolean;
+  activeView?: "documents" | "graph";
 }
 
 interface NewKnowledgeItemForm {
@@ -263,7 +264,7 @@ function formatDate(iso: string): string {
   });
 }
 
-export function KnowledgeSection({ packRef, readOnly = false }: KnowledgeSectionProps) {
+export function KnowledgeSection({ packRef, readOnly = false, activeView: controlledView }: KnowledgeSectionProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const rightPanel = useResizablePanel(360, 300, 560);
 
@@ -284,7 +285,8 @@ export function KnowledgeSection({ packRef, readOnly = false }: KnowledgeSection
   const [contentError, setContentError] = useState<string | null>(null);
   const [isSavingContent, setIsSavingContent] = useState(false);
   const [contentMode, setContentMode] = useState<"edit" | "preview">("edit");
-  const [activeView, setActiveView] = useState<"documents" | "graph">("documents");
+  const [internalView, setInternalView] = useState<"documents" | "graph">("documents");
+  const activeView = controlledView ?? internalView;
 
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [isSavingMetadata, setIsSavingMetadata] = useState(false);
@@ -637,13 +639,13 @@ export function KnowledgeSection({ packRef, readOnly = false }: KnowledgeSection
   );
   const contentDirty = itemContent !== null && editContent !== itemContent;
   const graphManifest = useMemo(
-    () => knowledgeItemsToManifest("Knowledge pack", items ?? [], graphEdges),
+    () => knowledgeItemsToManifest("Knowledge graph", items ?? [], graphEdges),
     [graphEdges, items],
   );
 
   return (
     <>
-    <Card static className="overflow-hidden rounded-lg bg-white dark:bg-gray-900">
+    <Card static className="overflow-hidden rounded-2xl bg-white dark:bg-gray-900">
       <CardHeader className="border-b border-gray-200 bg-gray-50/70 px-4 py-3 dark:border-gray-700 dark:bg-gray-950/20">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
@@ -652,11 +654,11 @@ export function KnowledgeSection({ packRef, readOnly = false }: KnowledgeSection
               <CardTitle className="text-base">Documents</CardTitle>
             </div>
             <CardDescription className="mt-1">
-              {readOnly ? "Browse documents, metadata, tags, and relationships for this pack." : "Edit content, metadata, tags, and relationships for this pack."}
+              {readOnly ? "Browse documents, metadata, tags, and relationships for this graph." : "Edit content, metadata, tags, and relationships for this graph."}
             </CardDescription>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <ViewToggle activeView={activeView} onChange={setActiveView} />
+            {controlledView === undefined ? <ViewToggle activeView={activeView} onChange={setInternalView} /> : null}
             <div className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700">
               {(items?.length ?? 0).toLocaleString()} items
             </div>
@@ -692,8 +694,8 @@ export function KnowledgeSection({ packRef, readOnly = false }: KnowledgeSection
           className="hidden"
         />
 
-        <div className="flex min-h-[780px] overflow-hidden">
-          <div className="theme-border theme-surface-muted flex w-72 shrink-0 flex-col overflow-hidden border-r">
+        <div className="flex min-h-[780px] flex-col overflow-hidden xl:flex-row">
+          <div className="theme-border theme-surface-muted flex max-h-80 w-full shrink-0 flex-col overflow-hidden border-b xl:max-h-none xl:w-72 xl:border-b-0 xl:border-r">
             <div className="theme-border border-b px-3 py-2">
               {!readOnly ? (
               <div
@@ -767,7 +769,7 @@ export function KnowledgeSection({ packRef, readOnly = false }: KnowledgeSection
             </div>
           </div>
 
-          <div className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-gray-900">
+          <div className="flex min-h-[38rem] min-w-0 flex-1 flex-col overflow-hidden bg-white dark:bg-gray-900">
             <div className="theme-border flex shrink-0 items-center justify-between gap-4 border-b bg-white px-4 py-3 dark:bg-gray-900">
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
@@ -911,8 +913,8 @@ export function KnowledgeSection({ packRef, readOnly = false }: KnowledgeSection
             </div>
           </div>
 
-          <ResizeHandle onMouseDown={rightPanel.onMouseDown} />
-          <div style={{ width: rightPanel.width }} className="theme-surface-muted theme-border flex shrink-0 flex-col overflow-hidden border-l">
+          <div className="hidden xl:block"><ResizeHandle onMouseDown={rightPanel.onMouseDown} /></div>
+          <div style={{ "--knowledge-panel-width": `${rightPanel.width}px` } as React.CSSProperties} className="theme-surface-muted theme-border flex w-full shrink-0 flex-col overflow-hidden border-t xl:w-[var(--knowledge-panel-width)] xl:border-l xl:border-t-0">
             <div className="flex-1 overflow-y-auto p-4">
               {selectedItem ? (
                 <div className="space-y-5">

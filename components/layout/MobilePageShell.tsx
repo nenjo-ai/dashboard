@@ -29,7 +29,7 @@ export function MobilePageShell({
   className,
 }: MobilePageShellProps) {
   return (
-    <div className={cn("min-h-full bg-[#f5f7fb] dark:bg-[#05070b] md:hidden", className)}>
+    <div className={cn("theme-app-bg min-h-full overflow-x-hidden md:hidden", className)}>
       <MobileHeroBar
         title={title}
         leading={
@@ -48,8 +48,9 @@ export function MobilePageShell({
         trailing={actionLabel && onAction ? (
           <Button
             size="sm"
+            variant="secondary"
             onClick={onAction}
-            className="h-10 shrink-0 rounded-full border border-black/10 bg-white/78 px-4 text-sm text-gray-900 backdrop-blur-xl hover:bg-white/90 dark:border-white/10 dark:bg-white/6 dark:text-gray-100 dark:hover:bg-white/10"
+            className="h-10 shrink-0 rounded-full px-4 text-sm backdrop-blur-xl"
           >
             <Plus className="h-4 w-4" />
             {actionLabel}
@@ -60,7 +61,7 @@ export function MobilePageShell({
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.16, ease: "easeOut" }}
-        className="bg-[#f5f7fb] px-4 pb-6 pt-4 dark:bg-[#05070b]"
+        className="theme-app-bg min-w-0 max-w-full overflow-x-clip px-4 pb-6 pt-4"
       >
         {children}
       </motion.div>

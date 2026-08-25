@@ -7,7 +7,7 @@ import { forwardRef, type ButtonHTMLAttributes } from "react";
 // ---------------------------------------------------------------------------
 
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-deep-space-blue-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 dark:focus-visible:ring-offset-[#05070b]";
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-deep-space-blue-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 dark:focus-visible:ring-offset-[#05070b]";
 
 const variantStyles: Record<string, string> = {
   primary:
@@ -50,10 +50,16 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       {...props}
     >
       {isLoading && (
-        <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-        </svg>
+        <span className="flex items-center gap-0.5" role="status" aria-label="Loading">
+          {[0, 1, 2].map((dot) => (
+            <span
+              key={dot}
+              aria-hidden="true"
+              className="animate-loading-dot h-1 w-1 rounded-full bg-current"
+              style={{ animationDelay: `${dot * 120}ms` }}
+            />
+          ))}
+        </span>
       )}
       {children}
     </button>

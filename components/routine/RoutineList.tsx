@@ -207,9 +207,6 @@ export function RoutineList({
                         {p.is_default && (
                           <Badge variant="ready">Default</Badge>
                         )}
-                        {!p.is_active && (
-                          <Badge variant="inactive">Inactive</Badge>
-                        )}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-xs text-gray-500 dark:text-gray-400">

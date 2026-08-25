@@ -74,9 +74,7 @@ import { packageInstallJobRunning } from "./packageInstalls";
 import { OFFICIAL_NENJO_PACKAGE_SOURCE } from "./officialNenjoPackageSource";
 import { normalizeHumanReviewInputs } from "./humanReview";
 import {
-  buildCreateRoutineConfigureRequest,
   buildRoutineGraphConfigureRequest,
-  buildUpdateRoutineConfigureRequest,
 } from "./routineConfigure";
 
 // ---------------------------------------------------------------------------
@@ -2914,8 +2912,15 @@ export async function uploadArtifact(
   return artifact;
 }
 
-export async function fetchArtifactCatalog(path = ""): Promise<import("./types").ArtifactCatalog> {
-  const search = new URLSearchParams({ path, depth: "1" });
+export async function fetchArtifactCatalog(
+  path = "",
+  cursor?: string,
+  filters?: { query?: string; media?: string },
+): Promise<import("./types").ArtifactCatalog> {
+  const search = new URLSearchParams({ path, depth: "1", limit: "75" });
+  if (cursor) search.set("cursor", cursor);
+  if (filters?.query) search.set("query", filters.query);
+  if (filters?.media && filters.media !== "all") search.set("media", filters.media);
   return fetcher<import("./types").ArtifactCatalog>(`${API_V1}/artifacts?${search}`);
 }
 
@@ -2925,10 +2930,70 @@ export async function fetchArtifactDetail(
   return fetcher<import("./types").ArtifactDetail>(`${API_V1}/artifacts/${artifactId}`);
 }
 
+export async function createArtifactFolder(
+  path: string,
+): Promise<import("./types").ArtifactCatalogFolder> {
+  const response = await authFetch(`${API_V1}/artifacts/folders`, {
+    method: "POST",
+    body: JSON.stringify({ path }),
+  });
+  if (!response.ok) {
+    throw new ApiError(apiErrorMessageFromBody(await response.text()), response.status);
+  }
+  return response.json();
+}
+
+export async function updateArtifactFolder(
+  folderId: string,
+  path: string,
+): Promise<import("./types").ArtifactCatalogFolder> {
+  const response = await authFetch(
+    `${API_V1}/artifacts/folders/${encodeURIComponent(folderId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ path }),
+    },
+  );
+  if (!response.ok) {
+    throw new ApiError(apiErrorMessageFromBody(await response.text()), response.status);
+  }
+  return response.json();
+}
+
+export async function deleteArtifactFolder(folderId: string): Promise<void> {
+  const response = await authFetch(
+    `${API_V1}/artifacts/folders/${encodeURIComponent(folderId)}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok) {
+    throw new ApiError(apiErrorMessageFromBody(await response.text()), response.status);
+  }
+}
+
+export async function putArtifactCatalogEntry(
+  artifactId: string,
+  path: string,
+): Promise<import("./types").ArtifactCatalogEntry> {
+  const response = await authFetch(
+    `${API_V1}/artifacts/${encodeURIComponent(artifactId)}/catalog-entry`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ path }),
+    },
+  );
+  if (!response.ok) {
+    throw new ApiError(apiErrorMessageFromBody(await response.text()), response.status);
+  }
+  return response.json();
+}
+
 export async function deleteArtifact(artifactId: string): Promise<void> {
-  await authFetch(`${API_V1}/artifacts/${encodeURIComponent(artifactId)}`, {
+  const response = await authFetch(`${API_V1}/artifacts/${encodeURIComponent(artifactId)}`, {
     method: "DELETE",
   });
+  if (!response.ok) {
+    throw new ApiError(apiErrorMessageFromBody(await response.text()), response.status);
+  }
 }
 
 export async function putReviewResponse(
@@ -2993,10 +3058,9 @@ function splitStepInstructions(config: Record<string, unknown> | undefined): {
 export async function createRoutine(
   data: import("./types").CreateRoutineRequest,
 ): Promise<import("./types").Routine> {
-  const body = buildCreateRoutineConfigureRequest(data);
-  const res = await authFetch(configureRoutineUrl(), {
+  const res = await authFetch(routinesUrl(), {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify(data),
   });
   invalidateRoutinesCatalogCache();
   return res.json();
@@ -3006,17 +3070,15 @@ export async function updateRoutine(
   routineId: string,
   data: import("./types").UpdateRoutineRequest,
 ): Promise<import("./types").Routine> {
-  const body = buildUpdateRoutineConfigureRequest(routineId, data);
-  const res = await authFetch(configureRoutineUrl(), {
-    method: "POST",
-    body: JSON.stringify(body),
+  const res = await authFetch(routineUrl(routineId), {
+    method: "PATCH",
+    body: JSON.stringify(data),
   });
   invalidateRoutinesCatalogCache();
   return res.json();
 }
 
 export async function saveRoutineGraph(
-  routineId: string,
   data: import("./types").SaveRoutineGraphRequest,
 ): Promise<import("./types").RoutineDetail> {
   const steps = await Promise.all(
@@ -3034,7 +3096,7 @@ export async function saveRoutineGraph(
       };
     }),
   );
-  const body = buildRoutineGraphConfigureRequest(routineId, data, steps);
+  const body = buildRoutineGraphConfigureRequest(data, steps);
   const res = await authFetch(configureRoutineUrl(), {
     method: "POST",
     body: JSON.stringify(body),
@@ -4379,7 +4441,7 @@ export async function configureChatCommand(
     method: "POST",
     body: JSON.stringify({
       id,
-      ...(data.slug ? { slug: data.slug } : {}),
+      slug: data.slug,
       ...(data.name ? { name: data.name } : {}),
       path: data.path ?? "",
       command: data.command,

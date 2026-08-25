@@ -32,6 +32,10 @@ export interface TemplateVariableReferenceProps {
   includeGroups?: string[];
   /** Optional flat variable group deny-list. */
   excludeGroups?: string[];
+  /** Start reference groups collapsed to keep supporting material quiet. */
+  defaultCollapsed?: boolean;
+  /** Show a compact variable search field. */
+  searchable?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -44,8 +48,12 @@ export function TemplateVariableReference({
   flatVarsOnly = false,
   includeGroups,
   excludeGroups,
+  defaultCollapsed = false,
+  searchable = false,
 }: TemplateVariableReferenceProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
   const { contextBlocks } = useContextBlocks();
   const { varGroups, isLoading: varsLoading, isError: varsError } = useTemplateVars();
 
@@ -130,7 +138,32 @@ export function TemplateVariableReference({
     ];
   }, [contextBlocksOnly, flatVarsOnly, flatVarGroups, contextBlockGroup]);
 
+  const visibleGroups = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return variableGroups;
+    return variableGroups
+      .map((group) => ({
+        ...group,
+        variables: group.variables.filter(
+          (variable) =>
+            group.title.toLowerCase().includes(normalized) ||
+            variable.name.toLowerCase().includes(normalized) ||
+            variable.description.toLowerCase().includes(normalized),
+        ),
+      }))
+      .filter((group) => group.variables.length > 0);
+  }, [query, variableGroups]);
+
   const toggle = (title: string) => {
+    if (defaultCollapsed) {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(title)) next.delete(title);
+        else next.add(title);
+        return next;
+      });
+      return;
+    }
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(title)) next.delete(title);
@@ -145,10 +178,9 @@ export function TemplateVariableReference({
     return (
       <div className="h-full overflow-y-auto p-2">
         <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-          <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
+          <span className="flex gap-0.5" aria-hidden="true">
+            {[0, 1, 2].map((dot) => <span key={dot} className="animate-loading-dot h-1 w-1 rounded-full bg-current" style={{ animationDelay: `${dot * 120}ms` }} />)}
+          </span>
           Loading variables...
         </div>
       </div>
@@ -188,9 +220,24 @@ export function TemplateVariableReference({
           : 'Use {{ variable_name }} syntax in your templates.'}{" "}
       </p>
 
+      {searchable ? (
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search references"
+          aria-label="Search template variables"
+          className="theme-surface theme-border theme-text mb-4 w-full rounded-lg border px-3 py-2 text-xs outline-hidden focus:border-deep-space-blue-400"
+        />
+      ) : null}
+
       <div className="space-y-3">
-        {variableGroups.map((group) => {
-          const isCollapsed = collapsed.has(group.title);
+        {visibleGroups.map((group) => {
+          const isCollapsed = query.trim()
+            ? false
+            : defaultCollapsed
+              ? !expanded.has(group.title)
+              : collapsed.has(group.title);
           return (
             <div key={group.title}>
               {/* Group header */}
@@ -280,6 +327,7 @@ export function TemplateVariableReference({
             </div>
           );
         })}
+        {visibleGroups.length === 0 ? <p className="theme-text-muted py-4 text-center text-xs">No references match your search.</p> : null}
       </div>
 
       {/* Info boxes — only in the agent prompt editor (not context block editors) */}

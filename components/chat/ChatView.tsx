@@ -18,6 +18,9 @@ import { NewChatModal } from "./NewChatModal";
 import { MobileChatContainer } from "./MobileChatContainer";
 import { MobileNotificationContainer } from "./MobileNotificationContainer";
 import { useSafeRouter } from "@/lib/safeRouter";
+import { useAgents } from "@/lib/hooks";
+import { useChatSessionIndicators } from "@/lib/useChatSessionIndicators";
+import { ChatConversationHeader } from "./ChatConversationHeader";
 
 export function ChatView() {
   const searchParams = useSearchParams();
@@ -34,9 +37,9 @@ export function ChatView() {
   const sessionParam = searchParams.get("session");
   const channelParam = searchParams.get("channel");
   const isNotificationView = channelParam === "notifications";
-  const [localSelectedSessionId, setSelectedSessionId] = useState<string | null>(
-    () => sessionParam,
-  );
+  const [localSelectedSessionId, setSelectedSessionId] = useState<
+    string | null
+  >(() => sessionParam);
   const selectedSessionId = sessionParam ?? localSelectedSessionId;
 
   useEffect(() => {
@@ -70,7 +73,11 @@ export function ChatView() {
   } = useSWR<ChatSessionExtended[]>(
     isMobileViewport
       ? null
-      : allChatSessionsUrl(1000, 0, isNotificationView ? "notification" : "chat"),
+      : allChatSessionsUrl(
+          1000,
+          0,
+          isNotificationView ? "notification" : "chat",
+        ),
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 5000 },
   );
@@ -82,6 +89,24 @@ export function ChatView() {
     () => sessions?.find((s) => s.id === selectedSessionId) ?? null,
     [sessions, selectedSessionId],
   );
+  const { agents } = useAgents();
+  const activeAgentColor = useMemo(() => {
+    const activeAgentId =
+      activeSession?.target_agent_id ?? activeSession?.agent_id;
+    return activeAgentId
+      ? agents?.find((agent) => agent.id === activeAgentId)?.color
+      : undefined;
+  }, [activeSession?.agent_id, activeSession?.target_agent_id, agents]);
+  const selectedIndicatorSessionIds = useMemo(
+    () => (!isNotificationView && selectedSessionId ? [selectedSessionId] : []),
+    [isNotificationView, selectedSessionId],
+  );
+  const selectedSessionIndicators = useChatSessionIndicators(
+    selectedIndicatorSessionIds,
+  );
+  const selectedSessionStatus = selectedSessionId
+    ? selectedSessionIndicators[selectedSessionId]?.status
+    : undefined;
 
   useEffect(() => {
     if (!sessionParam) {
@@ -121,7 +146,13 @@ export function ChatView() {
         return () => clearTimeout(timer);
       }
     }
-  }, [searchParams, sessions, selectedSessionId, selectSession, isMobileViewport]);
+  }, [
+    searchParams,
+    sessions,
+    selectedSessionId,
+    selectSession,
+    isMobileViewport,
+  ]);
 
   // Auto-select most recent session when landing with no session param
   useEffect(() => {
@@ -137,7 +168,10 @@ export function ChatView() {
     if (isMobileViewport) return;
     if (!selectedSessionId || sessionsLoading || !sessions) return;
     if (sessions.some((s) => s.id === selectedSessionId)) return;
-    if (sessionParam === selectedSessionId || pendingNavigationSessionRef.current === selectedSessionId) {
+    if (
+      sessionParam === selectedSessionId ||
+      pendingNavigationSessionRef.current === selectedSessionId
+    ) {
       void mutateSessions();
       return;
     }
@@ -158,7 +192,17 @@ export function ChatView() {
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [selectedSessionId, sessions, sessionsLoading, searchParams, router, pathname, isMobileViewport, mutateSessions, sessionParam]);
+  }, [
+    selectedSessionId,
+    sessions,
+    sessionsLoading,
+    searchParams,
+    router,
+    pathname,
+    isMobileViewport,
+    mutateSessions,
+    sessionParam,
+  ]);
 
   // Create new chat
   const handleCreateChat = useCallback(
@@ -171,7 +215,10 @@ export function ChatView() {
       // Count existing sessions for this project+agent to auto-name
       const existingCount =
         sessions?.filter(
-          (s) => s.project_id === projectId && s.target_type === targetType && (s.target_agent_id ?? s.target_council_id) === targetId,
+          (s) =>
+            s.project_id === projectId &&
+            s.target_type === targetType &&
+            (s.target_agent_id ?? s.target_council_id) === targetId,
         ).length ?? 0;
 
       const title = `${targetName.charAt(0).toUpperCase() + targetName.slice(1)} #${existingCount + 1}`;
@@ -237,16 +284,18 @@ export function ChatView() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-transparent md:rounded-xl md:border md:border-black/10 md:bg-transparent md:dark:border-white/10 md:dark:bg-transparent">
+    <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-transparent md:rounded-[1.4rem] md:border md:border-black/[0.07] md:bg-white/65 md:shadow-[0_18px_60px_rgba(15,23,42,0.07)] md:backdrop-blur-xl md:dark:border-white/[0.08] md:dark:bg-[#070a10]/70 md:dark:shadow-[0_22px_70px_rgba(0,0,0,0.35)]">
       {/* Session list — left panel (desktop: always visible, mobile: animated) */}
       {!isMobileViewport && (
-        <div className="w-80 shrink-0 border-r border-black/10 dark:border-white/10">
+        <div className="w-[19rem] shrink-0 border-r border-black/[0.06] bg-slate-50/65 dark:border-white/[0.08] dark:bg-white/[0.025]">
           <GlobalSessionList
             sessions={sessions ?? []}
             activeSessionId={selectedSessionId}
             isLoading={sessionsLoading}
             onSelect={selectSession}
-            onCreate={isNotificationView ? undefined : () => setShowNewChat(true)}
+            onCreate={
+              isNotificationView ? undefined : () => setShowNewChat(true)
+            }
             onRename={isNotificationView ? undefined : handleRename}
             onDelete={handleDelete}
             channelType={isNotificationView ? "notification" : "chat"}
@@ -267,26 +316,15 @@ export function ChatView() {
 
       {/* Chat area — right panel (desktop only) */}
       {!isMobileViewport && (
-        <div className="min-h-0 flex-1 min-w-0">
+        <div className="min-h-0 min-w-0 flex-1 bg-white/55 dark:bg-[#06090f]/55">
           {activeSession ? (
             <div className="flex h-full min-h-0 flex-col">
-              {/* Chat header */}
-              <div className="flex items-center gap-3 border-b border-black/10 px-4 py-2.5 dark:border-white/10">
-                <div className="min-w-0 flex-1">
-                  <h2 className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {activeSession.target_type === "council"
-                      ? activeSession.council_name ?? activeSession.title
-                      : activeSession.agent_name}
-                  </h2>
-                  <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                    {isNotificationView
-                      ? `@${activeSession.agent_name}`
-                      : activeSession.target_type === "council"
-                        ? `${activeSession.project_id ? activeSession.project_name : "General"} · Council`
-                        : `${activeSession.project_id ? activeSession.project_name : "General"} · @${activeSession.agent_name}`}
-                  </p>
-                </div>
-              </div>
+              <ChatConversationHeader
+                session={activeSession}
+                agentColor={activeAgentColor}
+                status={selectedSessionStatus}
+                notificationView={isNotificationView}
+              />
 
               {/* Chat content */}
               <div className="flex-1 min-h-0">
@@ -301,7 +339,10 @@ export function ChatView() {
                   <ChatArea
                     key={`${activeSession.id}:${activeSession.target_type}:${activeSession.target_agent_id ?? activeSession.target_council_id}`}
                     projectId={activeSession.project_id}
-                    agentId={(activeSession.target_agent_id ?? activeSession.target_council_id)!}
+                    agentId={
+                      (activeSession.target_agent_id ??
+                        activeSession.target_council_id)!
+                    }
                     targetType={activeSession.target_type}
                     sessionId={activeSession.id}
                     onNavigateToSession={navigateToSessionById}

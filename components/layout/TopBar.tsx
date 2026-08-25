@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import useSWR from "swr";
-import { Bell, BellOff, BookOpenText, Download, Github, Menu, WifiOff } from "lucide-react";
+import {
+  Bell,
+  BellOff,
+  BookOpenText,
+  Download,
+  Github,
+  Menu,
+  WifiOff,
+} from "lucide-react";
 import { useAppAuth } from "@/components/auth/AppAuth";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { useMobileMenu } from "@/lib/MobileMenuContext";
@@ -60,31 +68,47 @@ export function TopBar({ title, children }: TopBarProps) {
 
   return (
     <>
-      <header className="pwa-topbar theme-border theme-overlay sticky top-0 z-20 flex h-16 items-center justify-between border-b px-4 md:px-8 backdrop-blur-xs">
-        <div className="flex items-center gap-3">
+      <header className="pwa-topbar sticky top-0 z-20 flex h-16 items-center justify-between gap-4 bg-[var(--app-bg)]/85 px-4 backdrop-blur-xl md:px-5 lg:px-6">
+        <div className="flex min-w-0 items-center gap-3">
           {onMenuClick && (
             <button
               onClick={onMenuClick}
-              className="theme-text-muted rounded-lg p-2 transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 md:hidden dark:hover:text-gray-200"
+              className="theme-text-muted rounded-xl p-2 transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 md:hidden dark:hover:text-gray-200"
               aria-label="Open menu"
             >
               <Menu className="h-5 w-5" />
             </button>
           )}
-          <h1 className="theme-text text-xl font-semibold">{title}</h1>
+          <h1 className="theme-text truncate text-[17px] font-semibold tracking-[-0.02em] md:text-lg">
+            {title}
+          </h1>
         </div>
-        <div className="flex items-center gap-3">
+        <div
+          className="theme-border flex shrink-0 items-center gap-1 rounded-2xl border bg-white/70 p-1 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur-xl dark:bg-white/[0.045] dark:shadow-[0_10px_30px_rgba(0,0,0,0.2)]"
+          aria-label="Workspace utilities"
+        >
           {mode === "local" ? (
-            <span className="rounded-full border border-amber-300/70 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300">
-              Local auth
+            <span
+              className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-amber-50/80 px-2 text-[10px] font-medium text-amber-700 dark:bg-amber-400/10 dark:text-amber-300"
+              title="Local authentication"
+            >
+              <span
+                className="h-1.5 w-1.5 rounded-full bg-amber-500"
+                aria-hidden="true"
+              />
+              Local
             </span>
           ) : null}
           <OrgSwitcher />
-          <div className="hidden items-center gap-1 md:flex">
+          <span
+            className="mx-0.5 hidden h-5 w-px bg-black/[0.07] md:block dark:bg-white/10"
+            aria-hidden="true"
+          />
+          <div className="hidden items-center gap-0.5 md:flex">
             <Link
               href="/docs"
               prefetch={false}
-              className="theme-text-muted inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 dark:hover:text-gray-200"
+              className="theme-text-muted inline-flex h-8 w-8 items-center justify-center rounded-xl text-xs font-medium transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 dark:hover:text-gray-200"
               title="Developer Docs"
               aria-label="Developer Docs"
             >
@@ -94,37 +118,38 @@ export function TopBar({ title, children }: TopBarProps) {
               href="https://github.com/nenjo-ai/nenjo"
               target="_blank"
               rel="noopener noreferrer"
-              className="theme-text-muted inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 dark:hover:text-gray-200"
+              className="theme-text-muted inline-flex h-8 w-8 items-center justify-center rounded-xl text-xs font-medium transition-colors hover:[background:var(--app-hover)] hover:text-gray-700 dark:hover:text-gray-200"
               title="GitHub"
               aria-label="GitHub"
             >
               <Github className="h-4 w-4" />
             </Link>
           </div>
-          {!isOnline && (
+          {!isOnline ? (
             <span className="hidden items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 md:inline-flex dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
               <WifiOff className="h-3.5 w-3.5" />
               Offline
             </span>
-          )}
+          ) : null}
           <Link
             href="/dashboard/chat?channel=notifications"
             prefetch={false}
-            className="theme-text-muted relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
+            className="theme-text-muted relative flex h-8 w-8 items-center justify-center rounded-xl transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
             title="Notifications"
+            aria-label="Notifications"
           >
             <Bell className="h-4.5 w-4.5" />
-            {totalUnread > 0 && (
+            {totalUnread > 0 ? (
               <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
                 {totalUnread > 9 ? "9+" : totalUnread}
               </span>
-            )}
+            ) : null}
           </Link>
-          {children && (
-            <div className="theme-border flex items-center gap-3 border-l pl-4">
+          {children ? (
+            <div className="theme-border ml-0.5 flex items-center gap-2 border-l pl-2">
               {children}
             </div>
-          )}
+          ) : null}
         </div>
       </header>
       {(showInstallBanner || showPushBanner) && (
@@ -138,7 +163,8 @@ export function TopBar({ title, children }: TopBarProps) {
                 </span>
               ) : (
                 <span>
-                  Agent push notifications are {notificationsEnabled ? "enabled" : "available"}.
+                  Agent push notifications are{" "}
+                  {notificationsEnabled ? "enabled" : "available"}.
                 </span>
               )}
             </div>
@@ -164,7 +190,9 @@ export function TopBar({ title, children }: TopBarProps) {
                   ) : (
                     <Bell className="h-3.5 w-3.5" />
                   )}
-                  {notificationsEnabled ? "Disable Agent Push" : "Enable Agent Push"}
+                  {notificationsEnabled
+                    ? "Disable Agent Push"
+                    : "Enable Agent Push"}
                 </button>
               )}
             </div>

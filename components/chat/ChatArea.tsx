@@ -1923,7 +1923,7 @@ export function ChatArea({
   const placeholder = activeAgent
     ? isMobile
       ? "What's next?"
-      : `Message @${activeAgent.name}... (type @ to switch agent)`
+      : `Message ${activeAgent.name}…`
     : "What's next?";
 
   // Mobile: handle agent switch — delegates to ChatView-level handler
@@ -1985,7 +1985,7 @@ export function ChatArea({
             </div>
           )}
           {displayMessages.map((msg) => (
-            <div key={msg.id}>
+            <div key={msg.id} className="chat-message-item">
               <ChatMessageBubble
                 message={msg}
                 activeAgent={msg.role === "assistant" ? activeAgent : undefined}
@@ -2003,7 +2003,7 @@ export function ChatArea({
     }
 
     return (
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+      <div className="mx-auto flex w-full max-w-[48rem] flex-col gap-6">
         {isLoadingMore && (
           <div className="flex justify-center py-2">
             <span className="text-xs text-gray-400">
@@ -2020,9 +2020,8 @@ export function ChatArea({
             return (
               <motion.div
                 key={msg.id}
-                initial={
-                  shouldAnimateEntry ? { opacity: 0, y: 8 } : false
-                }
+                className="chat-message-item"
+                initial={shouldAnimateEntry ? { opacity: 0, y: 8 } : false}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{
@@ -2111,12 +2110,7 @@ export function ChatArea({
   }, [inDomain]);
 
   return (
-    <div
-      className={cn(
-        "relative flex h-full flex-col overflow-hidden",
-        isMobile ? "rounded-none" : "rounded-lg",
-      )}
-    >
+    <div className="relative flex h-full flex-col overflow-hidden">
       {/* Conic-gradient border with animated position — entry, idle pulse at top, exit (desktop only) */}
       {!isMobile && borderPhase && agentColor && (
         <div
@@ -2144,14 +2138,14 @@ export function ChatArea({
         ref={scrollRef}
         onScroll={handleScroll}
         className={cn(
-          "flex-1 overflow-y-auto overflow-x-hidden overscroll-contain space-y-4",
-          isMobile ? "px-4 pt-1" : "p-4",
+          "flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain",
+          isMobile ? "px-4 pt-1" : "px-5 py-6 lg:px-8",
         )}
         style={
           isMobile
             ? {
                 paddingBottom:
-                  "calc(var(--mobile-composer-height, 108px) + env(safe-area-inset-bottom, 0px) + 0.2rem)",
+                  "calc(var(--mobile-composer-dock-height, 132px) + env(safe-area-inset-bottom, 0px) + 0.5rem)",
               }
             : undefined
         }
@@ -2174,7 +2168,7 @@ export function ChatArea({
             className={cn(
               "right-4 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-[#f5f7fb]/90 text-gray-700 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-[#05070b]/90 dark:text-gray-100",
               isMobile
-                ? "fixed bottom-[calc(var(--mobile-composer-height,108px)+env(safe-area-inset-bottom,0px)+0.35rem)]"
+                ? "fixed bottom-[calc(var(--mobile-composer-dock-height,132px)+env(safe-area-inset-bottom,0px)+0.35rem)]"
                 : "absolute bottom-4",
             )}
             title="Jump to latest"
@@ -2516,7 +2510,7 @@ export function ChatArea({
 
       {/* Desktop Input */}
       {!isMobile && (
-        <div className="theme-border theme-surface relative z-[90] border-t p-3">
+        <div className="relative z-[90] bg-gradient-to-t from-white via-white/95 to-white/70 px-5 pb-5 pt-3 dark:from-[#06090f] dark:via-[#06090f]/95 dark:to-[#06090f]/70 lg:px-8">
           <SessionArtifactAttachments messages={messages} />
           <ArtifactAttachmentList
             attachments={artifactAttachments.attachments}

@@ -11,6 +11,9 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { MotionList, MotionItem } from "@/components/ui/motion";
 import { toast } from "@/lib/toast";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageIntro } from "@/components/ui/PageIntro";
+import { ListTree, Plus, TriangleAlert } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // RoutineSection — card grid of task-targetable routines
@@ -103,34 +106,28 @@ export function RoutineSection({ allowCreate = true }: RoutineSectionProps) {
   // ── Error ───────────────────────────────────────────────────────────────
   if (isError) {
     return (
-      <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3">
-        <p className="text-sm text-red-600 dark:text-red-400">
-          Failed to load routines: {error?.message ?? "Unknown error"}
-        </p>
-      </div>
+      <EmptyState
+        icon={<TriangleAlert className="h-5 w-5" />}
+        title="Routines could not be loaded"
+        description={error?.message ?? "Check the local worker connection and try again."}
+        tone="error"
+      />
     );
   }
 
   return (
     <>
-      {/* Header with create button */}
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <p className="theme-text-muted text-sm">
-          Manage routine definitions. Assign routines and recurring schedules from tasks.
-        </p>
-        {allowCreate ? (
+      <PageIntro
+        description="Build reusable agent workflows, then attach them to tasks or run them on a recurring schedule."
+        actions={allowCreate ? (
           <Button
             onClick={() => setShowCreate(true)}
-            className="h-10 w-10 shrink-0 !bg-deep-space-blue-500 !px-0 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
-            title="New Routine"
-            aria-label="New Routine"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
+            <Plus className="h-4 w-4" />
+            New routine
           </Button>
-        ) : null}
-      </div>
+        ) : undefined}
+      />
 
       {/* Create form */}
       {allowCreate && showCreate && (
@@ -199,28 +196,17 @@ export function RoutineSection({ allowCreate = true }: RoutineSectionProps) {
           ))}
         </MotionList>
       ) : !showCreate ? (
-        <div className="theme-border rounded-xl border-2 border-dashed py-16 text-center">
-          <div className="theme-surface-muted mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full">
-            <svg className="theme-text-muted h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
-            </svg>
-          </div>
-          <p className="theme-text text-sm font-medium">
-            No routines yet
-          </p>
-          <p className="theme-text-muted mt-1 text-xs">
-            Create your first routine to define how agents process work.
-          </p>
-          <Button
-            className="mt-6 !bg-deep-space-blue-500 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
-            onClick={() => setShowCreate(true)}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            Create Routine
-          </Button>
-        </div>
+        <EmptyState
+          icon={<ListTree className="h-5 w-5" />}
+          title="Create your first routine"
+          description="Define a repeatable sequence of agent steps for work you run more than once."
+          action={allowCreate ? (
+            <Button onClick={() => setShowCreate(true)}>
+              <Plus className="h-4 w-4" />
+              Create routine
+            </Button>
+          ) : undefined}
+        />
       ) : null}
 
       {/* Confirm delete dialog */}

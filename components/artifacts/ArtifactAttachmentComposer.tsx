@@ -1,10 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, FileCheck2, LoaderCircle, Paperclip, RotateCcw, X } from "lucide-react";
+import {
+  AlertCircle,
+  FileCheck2,
+  LoaderCircle,
+  Paperclip,
+  RotateCcw,
+  X,
+} from "lucide-react";
 
 import { uploadArtifact } from "@/lib/api";
 import { useOrgContext } from "@/lib/org-context";
+import { cn } from "@/lib/cn";
 
 const MAX_ATTACHMENTS = 16;
 
@@ -26,83 +34,130 @@ export function useArtifactAttachments(maxAttachments = MAX_ATTACHMENTS) {
   const controllers = useRef(new Map<string, AbortController>());
   const occupiedIds = useRef(new Map<string, string | null>());
 
-  const upload = useCallback((attachment: DraftArtifactAttachment) => {
-    const controller = new AbortController();
-    controllers.current.set(attachment.localId, controller);
-    setAttachments((current) => current.map((item) => (
-      item.localId === attachment.localId
-        ? { ...item, state: "uploading", orgId: activeOrgId, artifactId: undefined, error: undefined }
-        : item
-    )));
-    if (!activeOrgId) {
-      setAttachments((current) => current.map((item) => (
-        item.localId === attachment.localId
-          ? { ...item, state: "failed", error: "Select an organization before attaching files." }
-          : item
-      )));
-      controllers.current.delete(attachment.localId);
-      return;
-    }
-    void uploadArtifact(attachment.file, activeOrgId, { signal: controller.signal })
-      .then((artifact) => {
-        if (controllers.current.get(attachment.localId) !== controller) return;
-        controllers.current.delete(attachment.localId);
-        setAttachments((current) => current.map((item) => (
-          item.localId === attachment.localId
-            ? { ...item, state: "ready", artifactId: artifact.id, error: undefined }
-            : item
-        )));
-      })
-      .catch((cause) => {
-        if (
-          controller.signal.aborted
-          || controllers.current.get(attachment.localId) !== controller
-        ) return;
-        controllers.current.delete(attachment.localId);
-        setAttachments((current) => current.map((item) => (
+  const upload = useCallback(
+    (attachment: DraftArtifactAttachment) => {
+      const controller = new AbortController();
+      controllers.current.set(attachment.localId, controller);
+      setAttachments((current) =>
+        current.map((item) =>
           item.localId === attachment.localId
             ? {
                 ...item,
-                state: "failed",
-                error: cause instanceof Error ? cause.message : "Artifact upload failed.",
+                state: "uploading",
+                orgId: activeOrgId,
+                artifactId: undefined,
+                error: undefined,
               }
-            : item
-        )));
-      });
-  }, [activeOrgId]);
+            : item,
+        ),
+      );
+      if (!activeOrgId) {
+        setAttachments((current) =>
+          current.map((item) =>
+            item.localId === attachment.localId
+              ? {
+                  ...item,
+                  state: "failed",
+                  error: "Select an organization before attaching files.",
+                }
+              : item,
+          ),
+        );
+        controllers.current.delete(attachment.localId);
+        return;
+      }
+      void uploadArtifact(attachment.file, activeOrgId, {
+        signal: controller.signal,
+      })
+        .then((artifact) => {
+          if (controllers.current.get(attachment.localId) !== controller)
+            return;
+          controllers.current.delete(attachment.localId);
+          setAttachments((current) =>
+            current.map((item) =>
+              item.localId === attachment.localId
+                ? {
+                    ...item,
+                    state: "ready",
+                    artifactId: artifact.id,
+                    error: undefined,
+                  }
+                : item,
+            ),
+          );
+        })
+        .catch((cause) => {
+          if (
+            controller.signal.aborted ||
+            controllers.current.get(attachment.localId) !== controller
+          )
+            return;
+          controllers.current.delete(attachment.localId);
+          setAttachments((current) =>
+            current.map((item) =>
+              item.localId === attachment.localId
+                ? {
+                    ...item,
+                    state: "failed",
+                    error:
+                      cause instanceof Error
+                        ? cause.message
+                        : "Artifact upload failed.",
+                  }
+                : item,
+            ),
+          );
+        });
+    },
+    [activeOrgId],
+  );
 
-  const addFiles = useCallback((files: FileList | File[]) => {
-    const selected = Array.from(files).slice(
-      0,
-      Math.max(0, maxAttachments - Array.from(occupiedIds.current.values()).filter(
-        (orgId) => orgId === activeOrgId,
-      ).length),
-    );
-    const additions = selected.map((file) => ({
-      localId: crypto.randomUUID(),
-      file,
-      state: "uploading" as const,
-      orgId: activeOrgId,
-    }));
-    additions.forEach((attachment) => occupiedIds.current.set(attachment.localId, attachment.orgId));
-    setAttachments((current) => [
-      ...current.filter((attachment) => attachment.orgId === activeOrgId),
-      ...additions,
-    ]);
-    additions.forEach(upload);
-  }, [activeOrgId, maxAttachments, upload]);
+  const addFiles = useCallback(
+    (files: FileList | File[]) => {
+      const selected = Array.from(files).slice(
+        0,
+        Math.max(
+          0,
+          maxAttachments -
+            Array.from(occupiedIds.current.values()).filter(
+              (orgId) => orgId === activeOrgId,
+            ).length,
+        ),
+      );
+      const additions = selected.map((file) => ({
+        localId: crypto.randomUUID(),
+        file,
+        state: "uploading" as const,
+        orgId: activeOrgId,
+      }));
+      additions.forEach((attachment) =>
+        occupiedIds.current.set(attachment.localId, attachment.orgId),
+      );
+      setAttachments((current) => [
+        ...current.filter((attachment) => attachment.orgId === activeOrgId),
+        ...additions,
+      ]);
+      additions.forEach(upload);
+    },
+    [activeOrgId, maxAttachments, upload],
+  );
 
   const remove = useCallback((localId: string) => {
     controllers.current.get(localId)?.abort();
     controllers.current.delete(localId);
     occupiedIds.current.delete(localId);
-    setAttachments((current) => current.filter((item) => item.localId !== localId));
+    setAttachments((current) =>
+      current.filter((item) => item.localId !== localId),
+    );
   }, []);
 
-  const retry = useCallback((localId: string) => {
-    const attachment = attachments.find((item) => item.localId === localId);
-    if (attachment) upload(attachment);
-  }, [attachments, upload]);
+  const retry = useCallback(
+    (localId: string) => {
+      const attachment = attachments.find((item) => item.localId === localId);
+      if (attachment) upload(attachment);
+    },
+    [attachments, upload],
+  );
 
   const clear = useCallback(() => {
     controllers.current.forEach((controller) => controller.abort());
@@ -122,7 +177,9 @@ export function useArtifactAttachments(maxAttachments = MAX_ATTACHMENTS) {
     let active = true;
     queueMicrotask(() => {
       if (active) {
-        setAttachments((current) => current.filter((item) => item.orgId === activeOrgId));
+        setAttachments((current) =>
+          current.filter((item) => item.orgId === activeOrgId),
+        );
       }
     });
     return () => {
@@ -130,25 +187,31 @@ export function useArtifactAttachments(maxAttachments = MAX_ATTACHMENTS) {
     };
   }, [activeOrgId]);
 
-  useEffect(() => () => {
-    controllers.current.forEach((controller) => controller.abort());
-    controllers.current.clear();
-    occupiedIds.current.clear();
-  }, []);
+  useEffect(
+    () => () => {
+      controllers.current.forEach((controller) => controller.abort());
+      controllers.current.clear();
+      occupiedIds.current.clear();
+    },
+    [],
+  );
 
   const activeAttachments = useMemo(
     () => attachments.filter((attachment) => attachment.orgId === activeOrgId),
     [activeOrgId, attachments],
   );
   const artifactIds = useMemo(
-    () => activeAttachments.flatMap((attachment) => (
-      attachment.state === "ready" && attachment.artifactId ? [attachment.artifactId] : []
-    )),
+    () =>
+      activeAttachments.flatMap((attachment) =>
+        attachment.state === "ready" && attachment.artifactId
+          ? [attachment.artifactId]
+          : [],
+      ),
     [activeAttachments],
   );
-  const isReady = activeAttachments.every((attachment) => (
-    attachment.state === "ready"
-  ));
+  const isReady = activeAttachments.every(
+    (attachment) => attachment.state === "ready",
+  );
 
   return {
     attachments: activeAttachments,
@@ -232,18 +295,20 @@ export function ArtifactAttachmentButton({
   disabled,
   disabledReason,
   iconOnly = false,
+  className,
   onAdd,
 }: {
   canAdd: boolean;
   disabled?: boolean;
   disabledReason?: string;
   iconOnly?: boolean;
+  className?: string;
   onAdd: (files: FileList) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const isDisabled = disabled || !canAdd;
   const title = disabled
-    ? disabledReason ?? "File attachments are unavailable"
+    ? (disabledReason ?? "File attachments are unavailable")
     : canAdd
       ? "Attach file"
       : `A maximum of ${MAX_ATTACHMENTS} files can be attached at once`;
@@ -265,11 +330,12 @@ export function ArtifactAttachmentButton({
         disabled={isDisabled}
         title={title}
         aria-label={title}
-        className={
+        className={cn(
           iconOnly
             ? "theme-border theme-surface theme-text-muted flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border transition-colors hover:theme-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
-            : "theme-text-muted flex w-fit items-center gap-1 rounded-md px-1.5 py-1 text-xs hover:theme-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
-        }
+            : "theme-text-muted flex w-fit items-center gap-1 rounded-md px-1.5 py-1 text-xs hover:theme-surface-muted disabled:cursor-not-allowed disabled:opacity-50",
+          className,
+        )}
       >
         <Paperclip className={iconOnly ? "h-4 w-4" : "h-3.5 w-3.5"} />
         {iconOnly ? null : "Attach file"}

@@ -9,6 +9,7 @@ import { LocalVaultUnlockGate } from "@/components/auth/LocalVaultUnlockGate";
 import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { PageTransition } from "@/components/ui/motion";
+import { LoadingStatus } from "@/components/ui/LoadingStatus";
 import { fetchBootstrapStatus, fetchCurrentUser } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { bindLocalSecretVaultSession, loadStoredAccountContentKey } from "@/lib/cryptoContent";
@@ -186,14 +187,8 @@ function AuthenticatedDashboardLayout({
     // onboarding make API calls through the dashboard BFF.
     if (!isLoaded) {
       return (
-        <div className="flex min-h-screen items-center justify-center bg-[#f5f7fb] dark:bg-[#05070b]">
-          <div className="flex items-center gap-3 text-gray-400">
-            <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            <span className="text-sm">Loading…</span>
-          </div>
+        <div className="theme-app-bg flex min-h-screen items-center justify-center">
+          <LoadingStatus label="Loading Nenjo" />
         </div>
       );
     }
@@ -209,15 +204,9 @@ function AuthenticatedDashboardLayout({
   // is ready. This prevents SWR hooks from firing unauthenticated requests.
   if (!isLoaded) {
     return (
-      <div className="min-h-screen bg-[#f5f7fb] dark:bg-[#05070b]">
+      <div className="theme-app-bg min-h-screen">
         <main className="min-h-screen flex items-center justify-center">
-          <div className="flex items-center gap-3 text-gray-400">
-            <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            <span className="text-sm">Loading…</span>
-          </div>
+          <LoadingStatus label="Loading Nenjo" />
         </main>
       </div>
     );
@@ -225,22 +214,16 @@ function AuthenticatedDashboardLayout({
 
   if (!routeReady) {
     return (
-      <div className="min-h-screen bg-[#f5f7fb] dark:bg-[#05070b]">
+      <div className="theme-app-bg min-h-screen">
         <main className="min-h-screen flex items-center justify-center">
-          <div className="flex items-center gap-3 text-gray-400">
-            <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            <span className="text-sm">Loading…</span>
-          </div>
+          <LoadingStatus label="Preparing your workspace" />
         </main>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f7fb] dark:bg-[#05070b]">
+    <div className="theme-app-bg min-h-screen">
       <OrgProvider>
         <Sidebar
           collapsed={sidebarCollapsed}
@@ -250,7 +233,7 @@ function AuthenticatedDashboardLayout({
         />
         {/* Main content — offset by sidebar width on desktop */}
         <div className={mainPadding}>
-          <main className={cn("min-h-screen bg-[#f5f7fb] dark:bg-[#05070b] md:bg-transparent md:dark:bg-transparent", showMobileNav && "pb-[calc(5.25rem+env(safe-area-inset-bottom,0px))] md:pb-0")}>
+          <main className={cn("theme-app-bg min-h-screen", showMobileNav && "pb-[calc(5.25rem+env(safe-area-inset-bottom,0px))] md:pb-0")}>
             <MobileMenuProvider onMenuClick={() => {}}>
               <LocalVaultUnlockGate>
                 {isMobileViewport ? (

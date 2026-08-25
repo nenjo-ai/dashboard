@@ -82,15 +82,6 @@ import {
   STREAM_CHANNEL_NAME,
 } from "./chat/constants";
 import {
-  isBrowserReload,
-  readPendingAgentId,
-  readPersistedLivePreview,
-  readPersistedTools,
-  writePendingAgentId,
-  writePersistedLivePreview,
-  writePersistedTools,
-} from "./chat/persistence";
-import {
   lifecycleRunId,
   lifecycleSessionId,
   normalizeSseAgentEvent,
@@ -582,17 +573,7 @@ export function useChatController(
   const [liveTurn, dispatchLiveTurn] = useReducer(
     chatTurnReducer,
     undefined,
-    () => {
-      const isPending =
-        !isBrowserReload() && !!agentId && readPendingAgentId() === agentId;
-      return createChatTurnState({
-        phase: isPending ? "thinking" : "idle",
-        activeTools: isPending
-          ? (readPersistedTools() as ActiveToolEntry[])
-          : [],
-        activityPreview: isPending ? readPersistedLivePreview() : undefined,
-      });
-    },
+    () => createChatTurnState(),
   );
   const lifecycle = useMemo(() => chatLifecycle(liveTurn), [liveTurn]);
   const isTyping = lifecycle.isTyping;
@@ -606,7 +587,6 @@ export function useChatController(
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const isReloadRef = useRef(isBrowserReload());
   const workerAckSyncedRef = useRef(false);
   const [activeDomainSession, setActiveDomainSession] =
     useState<DomainSession | null>(null);
@@ -795,10 +775,14 @@ export function useChatController(
       options: {
         preserveRunTraceForFinalMessage?: boolean;
         broadcastClear?: boolean;
+        terminalStatus?: "completed" | "failed" | "cancelled";
       } = {},
     ) => {
-      const { preserveRunTraceForFinalMessage = false, broadcastClear = true } =
-        options;
+      const {
+        preserveRunTraceForFinalMessage = false,
+        broadcastClear = true,
+        terminalStatus,
+      } = options;
       const clearedResponseId = responseIdRef.current ?? undefined;
       cancelDraftRender();
       if (clearTypingUiTimeoutRef.current) {
@@ -819,12 +803,20 @@ export function useChatController(
       setActiveRunTrace(undefined);
       clearTypingUiTimeoutRef.current = null;
       if (activeSessionId) {
-        void clearChatStreamSnapshot(activeSessionId, clearedResponseId);
+        const updatedAt = Date.now();
+        void clearChatStreamSnapshot(
+          activeSessionId,
+          clearedResponseId,
+          terminalStatus,
+          updatedAt,
+        );
         if (broadcastClear) {
           notifyChatStreamSnapshot({
             sessionId: activeSessionId,
             clear: true,
             responseId: clearedResponseId,
+            terminalStatus,
+            updatedAt,
           });
         }
       }
@@ -833,7 +825,12 @@ export function useChatController(
   );
 
   const finishLiveTurn = useCallback(
-    (status: NonNullable<ChatMessage["runStatus"]>) => {
+    (
+      status: Extract<
+        NonNullable<ChatMessage["runStatus"]>,
+        "completed" | "failed" | "cancelled"
+      >,
+    ) => {
       const finishedResponseId = responseIdRef.current ?? undefined;
       cancelDraftRender();
       activeChatRequestRef.current = undefined;
@@ -853,11 +850,19 @@ export function useChatController(
       );
       setActiveRunTrace(undefined);
       if (activeSessionId) {
-        void clearChatStreamSnapshot(activeSessionId, finishedResponseId);
+        const updatedAt = Date.now();
+        void clearChatStreamSnapshot(
+          activeSessionId,
+          finishedResponseId,
+          status,
+          updatedAt,
+        );
         notifyChatStreamSnapshot({
           sessionId: activeSessionId,
           clear: true,
           responseId: finishedResponseId,
+          terminalStatus: status,
+          updatedAt,
         });
       }
     },
@@ -1053,9 +1058,6 @@ export function useChatController(
     const previousSessionId = prevSessionIdRef.current;
     const sessionChanged =
       previousAgentId !== agentId || previousSessionId !== activeSessionId;
-    const pendingAgentId = readPendingAgentId();
-    const persistedActiveTools = readPersistedTools() as ActiveToolEntry[];
-    const persistedLivePreview = readPersistedLivePreview();
 
     // Save current messages to cache for the previous role+session
     if (previousAgentId) {
@@ -1068,29 +1070,17 @@ export function useChatController(
     prevAgentIdRef.current = agentId;
     prevSessionIdRef.current = activeSessionId;
 
-    // Reset typing state: only show if the NEW role has a pending response
-    const isPending =
-      !isReloadRef.current && !!agentId && pendingAgentId === agentId;
+    // Reset immediately; the per-session IndexedDB checkpoint below is the
+    // only authority allowed to restore active work for the new conversation.
     dispatchLiveTurn({ type: "reset" });
-    if (isPending) {
-      dispatchLiveTurn({
-        type: "tools_replaced",
-        tools: persistedActiveTools,
-      });
-      dispatchLiveTurn({
-        type: "preview_replaced",
-        preview: persistedLivePreview,
-      });
-      dispatchLiveTurn({ type: "phase_changed", phase: "thinking" });
-    }
 
     // Clear the response ref so stray tokens from the old role don't bleed in
     responseIdRef.current = null;
     currentRequestIdRef.current = null;
-    activeToolsRef.current = isPending ? persistedActiveTools : [];
-    livePreviewRef.current = isPending ? persistedLivePreview : undefined;
+    activeToolsRef.current = [];
+    livePreviewRef.current = undefined;
     activeRunEnvelopeIdRef.current = undefined;
-    suppressActiveRunTraceRef.current = !isPending;
+    suppressActiveRunTraceRef.current = true;
 
     // Clear stale domain session only when the role or chat session actually changes.
     if (sessionChanged) {
@@ -1749,12 +1739,28 @@ export function useChatController(
             setActiveRunTrace(undefined);
             if (activeSessionId) {
               const clearedResponseId = responseIdRef.current ?? undefined;
-              void clearChatStreamSnapshot(activeSessionId, clearedResponseId);
-              if (suppressActiveRunTraceRef.current || isFinalizedRun) {
+              const terminalStatus =
+                activeRunStatusRef.current === "completed" ||
+                activeRunStatusRef.current === "failed" ||
+                activeRunStatusRef.current === "cancelled"
+                  ? activeRunStatusRef.current
+                  : undefined;
+              const shouldBroadcastClear =
+                suppressActiveRunTraceRef.current || isFinalizedRun;
+              const updatedAt = Date.now();
+              void clearChatStreamSnapshot(
+                activeSessionId,
+                clearedResponseId,
+                shouldBroadcastClear ? terminalStatus : undefined,
+                updatedAt,
+              );
+              if (shouldBroadcastClear) {
                 notifyChatStreamSnapshot({
                   sessionId: activeSessionId,
                   clear: true,
                   responseId: clearedResponseId,
+                  terminalStatus,
+                  updatedAt,
                 });
               }
             }
@@ -2615,7 +2621,7 @@ export function useChatController(
               mergeLoadedMessages(loadedWithEnvelopes, prev),
             );
             setHasMore(page.has_more);
-            clearLiveTurnIndicators();
+            clearLiveTurnIndicators({ terminalStatus: "completed" });
             return;
           }
         } catch (error) {
@@ -2735,17 +2741,11 @@ export function useChatController(
   }, [activeSessionId, applyStreamSnapshot]);
 
   useEffect(() => {
-    writePendingAgentId(isTyping && agentId ? agentId : null);
-  }, [agentId, isTyping]);
-
-  useEffect(() => {
-    writePersistedTools(activeTools);
     activeToolsRef.current = activeTools;
     persistCurrentStreamSnapshot();
   }, [activeTools, persistCurrentStreamSnapshot]);
 
   useEffect(() => {
-    writePersistedLivePreview(livePreview);
     livePreviewRef.current = livePreview;
     persistCurrentStreamSnapshot();
   }, [livePreview, persistCurrentStreamSnapshot]);
@@ -3004,11 +3004,19 @@ export function useChatController(
         failOptimisticMessage();
         toast.error("Failed to prepare this message on the current device.");
         if (activeSessionId && !queueIntoActiveTurn) {
-          void clearChatStreamSnapshot(activeSessionId, optimisticResponseId);
+          const updatedAt = Date.now();
+          void clearChatStreamSnapshot(
+            activeSessionId,
+            optimisticResponseId,
+            "failed",
+            updatedAt,
+          );
           notifyChatStreamSnapshot({
             sessionId: activeSessionId,
             clear: true,
             responseId: optimisticResponseId,
+            terminalStatus: "failed",
+            updatedAt,
           });
         }
         return;
@@ -3066,11 +3074,19 @@ export function useChatController(
             optimisticUserMessageIdRef.current = null;
           }
           if (activeSessionId && !queueIntoActiveTurn && wasCancelled) {
-            void clearChatStreamSnapshot(activeSessionId, optimisticResponseId);
+            const updatedAt = Date.now();
+            void clearChatStreamSnapshot(
+              activeSessionId,
+              optimisticResponseId,
+              "cancelled",
+              updatedAt,
+            );
             notifyChatStreamSnapshot({
               sessionId: activeSessionId,
               clear: true,
               responseId: optimisticResponseId,
+              terminalStatus: "cancelled",
+              updatedAt,
             });
           }
           if (wasCancelled) {
@@ -3452,11 +3468,19 @@ export function useChatController(
       streamAbortRef.current?.abort();
       streamAbortRef.current = null;
       if (activeSessionId) {
-        void clearChatStreamSnapshot(activeSessionId, cancelledResponseId);
+        const updatedAt = Date.now();
+        void clearChatStreamSnapshot(
+          activeSessionId,
+          cancelledResponseId,
+          "cancelled",
+          updatedAt,
+        );
         notifyChatStreamSnapshot({
           sessionId: activeSessionId,
           clear: true,
           responseId: cancelledResponseId,
+          terminalStatus: "cancelled",
+          updatedAt,
         });
       }
       cancelResponseInFlightRef.current = false;

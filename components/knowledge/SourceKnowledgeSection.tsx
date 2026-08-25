@@ -53,12 +53,13 @@ interface SourceKnowledgeInfo {
   manifestPath: string;
 }
 
-export function SourceKnowledgeSection({ pack }: { pack: KnowledgePack }) {
+export function SourceKnowledgeSection({ pack, activeView: controlledView }: { pack: KnowledgePack; activeView?: "documents" | "graph" }) {
   const source = useMemo(() => sourceInfo(pack), [pack]);
   const [manifestLoad, setManifestLoad] = useState<{ url: string; manifest: SourceKnowledgeManifest | null; error: string | null } | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [contentLoad, setContentLoad] = useState<{ url: string; content: string | null; error: string | null } | null>(null);
-  const [activeView, setActiveView] = useState<"documents" | "graph">("documents");
+  const [internalView, setInternalView] = useState<"documents" | "graph">("documents");
+  const activeView = controlledView ?? internalView;
   const expectedManifestUrl = source
     ? repoRawUrl(source, source.manifestPath)
     : null;
@@ -135,13 +136,13 @@ export function SourceKnowledgeSection({ pack }: { pack: KnowledgePack }) {
   if (!source) {
     return (
       <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-        This knowledge pack is read-only but is missing source metadata.
+        This knowledge graph is read-only but is missing source metadata.
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
       <div className="border-b border-gray-200 bg-gray-50/70 px-4 py-3 dark:border-gray-700 dark:bg-gray-950/20">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
@@ -159,15 +160,15 @@ export function SourceKnowledgeSection({ pack }: { pack: KnowledgePack }) {
               {manifest?.manifest?.description ?? pack.description ?? `${source.owner}/${source.repo}`}
             </p>
           </div>
-          <ViewToggle activeView={activeView} onChange={setActiveView} />
+          {controlledView === undefined ? <ViewToggle activeView={activeView} onChange={setInternalView} /> : null}
         </div>
       </div>
 
       {activeView === "graph" && manifest ? (
         <KnowledgeGraphView manifest={{ name: manifest.name ?? pack.name, docs, edges: manifest.edges }} />
       ) : (
-        <div className="grid min-h-[780px] grid-cols-[290px_minmax(0,1fr)_340px] overflow-hidden">
-          <aside className="border-r border-gray-200 bg-gray-50/50 dark:border-gray-700 dark:bg-gray-950/20">
+        <div className="grid min-h-[780px] overflow-hidden lg:grid-cols-[290px_minmax(0,1fr)_340px]">
+          <aside className="border-b border-gray-200 bg-gray-50/50 dark:border-gray-700 dark:bg-gray-950/20 lg:border-b-0 lg:border-r">
             <div className="border-b border-gray-200 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:border-gray-700 dark:text-gray-400">
               {docs.length.toLocaleString()} documents
             </div>
@@ -230,7 +231,7 @@ export function SourceKnowledgeSection({ pack }: { pack: KnowledgePack }) {
           )}
         </main>
 
-        <aside className="border-l border-gray-200 bg-gray-50/50 p-4 dark:border-gray-700 dark:bg-gray-950/20">
+        <aside className="border-t border-gray-200 bg-gray-50/50 p-4 dark:border-gray-700 dark:bg-gray-950/20 lg:border-l lg:border-t-0">
           {selectedDoc ? (
             <div className="space-y-4">
               <MetadataBlock label="Title" value={selectedDoc.title ?? selectedDoc.source_path} />

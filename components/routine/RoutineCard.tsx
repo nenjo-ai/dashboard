@@ -62,9 +62,6 @@ export function RoutineCard({ routine, onDelete, isDeleting }: RoutineCardProps)
               {routine.is_default && (
                 <Badge variant="ready">Default</Badge>
               )}
-              {!routine.is_active && (
-                <Badge variant="inactive">Inactive</Badge>
-              )}
             </div>
           </div>
         </div>

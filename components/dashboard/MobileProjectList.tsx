@@ -4,6 +4,9 @@ import Link from "next/link";
 import { ArrowUpRight, FolderKanban, Link2 } from "lucide-react";
 import type { Project } from "@/lib/types";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Button } from "@/components/ui/Button";
+import { Plus, TriangleAlert } from "lucide-react";
 
 function hasRepoUrl(project: Project): boolean {
   const settings = project.settings;
@@ -56,29 +59,28 @@ export function MobileProjectList({
 
   if (isError) {
     return (
-      <div className="rounded-[1.6rem] border border-red-200/80 bg-red-50/90 p-5 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-        Failed to load projects.
-      </div>
+      <EmptyState
+        icon={<TriangleAlert className="h-5 w-5" />}
+        title="Projects could not be loaded"
+        description="Check the local worker connection and try again."
+        tone="error"
+      />
     );
   }
 
   if (!projects || projects.length === 0) {
     return (
-      <div className="rounded-[1.8rem] border border-dashed border-black/10 bg-transparent px-6 py-12 text-center dark:border-white/10">
-        <p className="text-base font-semibold text-gray-950 dark:text-gray-50">No projects yet</p>
-        <p className="mt-2 text-sm leading-6 text-gray-500 dark:text-gray-400">
-          Create a project when related tasks, routines, and runs benefit from shared context.
-        </p>
-        {onCreateProject ? (
-          <button
-            type="button"
-            onClick={onCreateProject}
-            className="mt-5 inline-flex h-10 items-center justify-center rounded-full bg-deep-space-blue-500 px-4 text-sm font-medium text-white transition-colors hover:bg-deep-space-blue-400 active:scale-[0.98] active:bg-deep-space-blue-600"
-          >
-            New Project
-          </button>
-        ) : null}
-      </div>
+      <EmptyState
+        icon={<FolderKanban className="h-5 w-5" />}
+        title="Create your first project"
+        description="Give related tasks, routines, and runs a shared place for context."
+        action={onCreateProject ? (
+          <Button onClick={onCreateProject}>
+            <Plus className="h-4 w-4" />
+            New project
+          </Button>
+        ) : undefined}
+      />
     );
   }
 
@@ -88,7 +90,7 @@ export function MobileProjectList({
         <Link
           key={project.id}
           href={`/dashboard/projects/${project.slug || project.id}`}
-          className="group block rounded-[1.6rem] border border-black/10 bg-transparent p-4 transition-transform active:scale-[0.99] dark:border-white/10"
+          className="theme-surface theme-border group block rounded-2xl border p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-transform active:scale-[0.99]"
         >
           <div className="flex items-start gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[1rem] bg-deep-space-blue-50 text-deep-space-blue-600 dark:bg-deep-space-blue-900/40 dark:text-deep-space-blue-300">

@@ -12,6 +12,8 @@ import { CouncilFormModal } from "@/components/councils/CouncilFormModal";
 import { CouncilDetailModal } from "@/components/councils/CouncilDetailModal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { toast } from "@/lib/toast";
+import { PageIntro } from "@/components/ui/PageIntro";
+import { Plus } from "lucide-react";
 
 interface CouncilsSectionProps {
   allowCreate?: boolean;
@@ -84,30 +86,17 @@ export function CouncilsSection({ allowCreate = true }: CouncilsSectionProps) {
 
   return (
     <>
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <p className="theme-text-muted text-sm">
-          Manage agent councils for multi-agent collaboration. Councils group agents with a leader
-          and delegation strategy to work together on complex tasks.
-        </p>
-        {allowCreate ? (
+      <PageIntro
+        description="Coordinate multiple agents under a leader and delegation strategy for work that benefits from several perspectives."
+        actions={allowCreate ? (
           <Button
-            className="h-10 w-10 shrink-0 !bg-deep-space-blue-500 !px-0 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
             onClick={handleCreate}
-            title="New Council"
-            aria-label="New Council"
           >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={2}
-              stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
+            <Plus className="h-4 w-4" />
+            New council
           </Button>
-        ) : null}
-      </div>
+        ) : undefined}
+      />
 
       <CouncilList
         councils={councils}

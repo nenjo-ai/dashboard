@@ -274,7 +274,7 @@ export function KnowledgeGlobeView({ manifest, headerControls }: { manifest: Kno
   if (!graph.nodes.length) {
     return (
       <div className="flex min-h-[520px] items-center justify-center rounded-lg border border-dashed border-gray-300 bg-white text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
-        No documents are declared in this knowledge pack manifest.
+        No documents are declared in this knowledge graph manifest.
       </div>
     );
   }

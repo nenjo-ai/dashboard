@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import matter from "gray-matter";
-import { BookOpen, Braces, ChevronRight, Save } from "lucide-react";
+import { BookOpen, Braces, ChevronRight, Save, Search } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Textarea";
@@ -39,6 +39,13 @@ interface SourceKnowledgeInfo {
   basePath: string;
   manifestPath: string;
 }
+
+const CONTEXT_STARTERS = [
+  { label: "Goals", content: "## Goals\n\n- Primary outcome\n- Success criteria\n" },
+  { label: "Architecture", content: "## Architecture\n\n- Key systems and boundaries\n- Important data flows\n" },
+  { label: "Conventions", content: "## Conventions\n\n- Coding and review standards\n- Naming and organization rules\n" },
+  { label: "Constraints", content: "## Constraints\n\n- Security and compliance requirements\n- Technical or product limitations\n" },
+] as const;
 
 function normalizeLibraryVarSegment(segment: string): string {
   return segment
@@ -293,7 +300,7 @@ function LibraryPackReference({
   pack: KnowledgePack;
   onInsertVariable: (text: string) => void;
 }) {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [sourceDocsLoad, setSourceDocsLoad] = useState<{
     key: string;
     docs: SourceKnowledgeDoc[];
@@ -352,7 +359,7 @@ function LibraryPackReference({
           type="button"
           onClick={() => setIsExpanded((current) => !current)}
           className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300"
-          aria-label={isExpanded ? "Collapse knowledge pack" : "Expand knowledge pack"}
+          aria-label={isExpanded ? "Collapse knowledge graph" : "Expand knowledge graph"}
         >
           <ChevronRight
             className={`h-3.5 w-3.5 transition-transform ${
@@ -458,9 +465,13 @@ function LibraryReferenceList({
   onInsertVariable: (text: string) => void;
 }) {
   const { packs, isLoading, isError } = useKnowledgePacks();
-  const activePacks = (packs ?? []).sort((left, right) =>
-    left.name.localeCompare(right.name),
-  );
+  const [query, setQuery] = useState("");
+  const activePacks = (packs ?? [])
+    .filter((pack) => {
+      const normalized = query.trim().toLowerCase();
+      return !normalized || pack.name.toLowerCase().includes(normalized) || pack.description?.toLowerCase().includes(normalized) || pack.slug.toLowerCase().includes(normalized);
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
 
   if (isLoading) {
     return (
@@ -480,7 +491,7 @@ function LibraryReferenceList({
     );
   }
 
-  if (activePacks.length === 0) {
+  if ((packs ?? []).length === 0) {
     return (
       <div className="p-2 text-xs text-gray-500 dark:text-gray-400">
         No active library packs.
@@ -496,6 +507,10 @@ function LibraryReferenceList({
       <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
         Click a pack to insert its context variable.
       </p>
+      <label className="relative mb-4 block">
+        <Search className="theme-text-muted pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" aria-hidden="true" />
+        <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search library" aria-label="Search library references" className="theme-surface theme-border theme-text w-full rounded-lg border py-2 pl-8 pr-3 text-xs outline-hidden focus:border-deep-space-blue-400" />
+      </label>
       <div className="space-y-1">
         {activePacks.map((pack: KnowledgePack) => (
           <LibraryPackReference
@@ -504,6 +519,7 @@ function LibraryReferenceList({
             onInsertVariable={onInsertVariable}
           />
         ))}
+        {activePacks.length === 0 && query ? <p className="theme-text-muted py-4 text-center text-xs">No library references match your search.</p> : null}
       </div>
     </div>
   );
@@ -516,6 +532,9 @@ export function ProjectContextTab({ project, onUpdated }: ProjectContextTabProps
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const persistedContext = project && typeof (project.settings as Record<string, unknown>).context === "string"
+    ? (project.settings as Record<string, unknown>).context as string
+    : "";
 
   useEffect(() => {
     if (project) {
@@ -543,9 +562,17 @@ export function ProjectContextTab({ project, onUpdated }: ProjectContextTabProps
     }
   }, [project, value, onUpdated]);
 
-  const isDirty =
-    project != null &&
-    value !== ((project.settings as Record<string, unknown>)?.context ?? "");
+  const isDirty = project != null && value !== persistedContext;
+
+  useEffect(() => {
+    const saveFromKeyboard = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
+      event.preventDefault();
+      if (isDirty && !isSaving) void handleSave();
+    };
+    window.addEventListener("keydown", saveFromKeyboard);
+    return () => window.removeEventListener("keydown", saveFromKeyboard);
+  }, [handleSave, isDirty, isSaving]);
 
   const insertVariable = useCallback((token: string) => {
     const textarea = textareaRef.current;
@@ -588,12 +615,23 @@ export function ProjectContextTab({ project, onUpdated }: ProjectContextTabProps
           </div>
         </CardHeader>
         <CardContent>
+          {!value.trim() ? (
+            <div className="theme-surface-muted theme-border mb-4 rounded-xl border border-dashed p-4">
+              <p className="theme-text text-sm font-medium">Start with a useful project outline</p>
+              <p className="theme-text-muted mt-1 text-xs leading-5">Add one section or combine several. You can edit every line before saving.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {CONTEXT_STARTERS.map((starter) => (
+                  <button key={starter.label} type="button" onClick={() => setValue((current) => `${current}${current ? "\n" : ""}${starter.content}`)} className="theme-surface theme-border theme-text rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:[background:var(--app-hover)]">+ {starter.label}</button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <Textarea
             ref={textareaRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="Architecture, goals, conventions, constraints, library references..."
-            className="min-h-[420px] resize-y font-mono text-sm leading-6"
+            className="min-h-[360px] resize-y font-mono text-sm leading-6 md:min-h-[480px]"
           />
         </CardContent>
         <CardFooter className="gap-3">
@@ -604,11 +642,12 @@ export function ProjectContextTab({ project, onUpdated }: ProjectContextTabProps
             className="gap-2"
           >
             <Save className="h-3.5 w-3.5" />
-            {isSaving ? "Saving..." : "Save"}
+            {isSaving ? "Saving..." : "Save context"}
           </Button>
-          {saved && (
-            <span className="text-sm text-green-600 dark:text-green-400">Saved</span>
-          )}
+          <span className={`text-xs ${saved ? "text-emerald-600 dark:text-emerald-300" : "theme-text-muted"}`} role="status" aria-live="polite">
+            {isSaving ? "Saving changes" : saved ? "Saved" : isDirty ? "Unsaved changes" : "Up to date"}
+          </span>
+          <span className="theme-text-muted ml-auto hidden text-[11px] sm:inline">⌘/Ctrl + S</span>
           {error && (
             <span className="text-sm text-flag-red-600 dark:text-flag-red-400">{error}</span>
           )}
@@ -656,6 +695,8 @@ export function ProjectContextTab({ project, onUpdated }: ProjectContextTabProps
                 onInsertVariable={insertVariable}
                 flatVarsOnly
                 excludeGroups={["Knowledge"]}
+                defaultCollapsed
+                searchable
               />
             ) : (
               <LibraryReferenceList onInsertVariable={insertVariable} />

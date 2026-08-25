@@ -1,16 +1,22 @@
 "use client";
 
-import { BookOpen, Files } from "lucide-react";
+import { Files, LayoutDashboard, Network } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { Tabs } from "@/components/ui/Tabs";
 
 const LIBRARY_TABS = [
   {
-    id: "knowledge",
-    label: "Knowledge Packs",
+    id: "overview",
+    label: "Overview",
     href: "/dashboard/library",
-    icon: <BookOpen className="h-4 w-4" />,
+    icon: <LayoutDashboard className="h-4 w-4" />,
+  },
+  {
+    id: "graphs",
+    label: "Knowledge Graphs",
+    href: "/dashboard/library/graphs",
+    icon: <Network className="h-4 w-4" />,
   },
   {
     id: "artifacts",
@@ -25,7 +31,9 @@ export function LibraryTabs() {
   const router = useRouter();
   const activeTab = pathname.startsWith("/dashboard/library/artifacts")
     ? "artifacts"
-    : "knowledge";
+    : pathname.startsWith("/dashboard/library/graphs")
+      ? "graphs"
+      : "overview";
 
   return (
     <Tabs

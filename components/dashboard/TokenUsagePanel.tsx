@@ -16,6 +16,9 @@ import { useAgents, useProjects, useTokenUsage } from "@/lib/hooks";
 import { formatCompactTokens, formatExactTokens } from "@/lib/formatTokens";
 import { buildSevenDayTokenUsageRange } from "@/lib/tokenUsageRange";
 import type { TokenUsageSource } from "@/lib/types";
+import { SlidersHorizontal } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { cn } from "@/lib/cn";
 
 const SOURCE_OPTIONS: Array<{ value: TokenUsageSource | ""; label: string }> = [
   { value: "", label: "All sources" },
@@ -32,7 +35,8 @@ type DailyUsagePoint = {
   total_tokens: number;
 };
 
-export function TokenUsagePanel() {
+export function TokenUsagePanel({ compact = false }: { compact?: boolean }) {
+  const [showFilters, setShowFilters] = useState(false);
   const [source, setSource] = useState<TokenUsageSource | "">("");
   const [projectId, setProjectId] = useState("");
   const [agentId, setAgentId] = useState("");
@@ -69,21 +73,47 @@ export function TokenUsagePanel() {
   const sevenDayInput = data.reduce((sum, day) => sum + day.input_tokens, 0);
   const sevenDayOutput = data.reduce((sum, day) => sum + day.output_tokens, 0);
   const today = data.find((day) => day.label === "Today") ?? data[data.length - 1];
+  const activeFilterCount = [source, projectId, agentId].filter(Boolean).length;
 
   return (
     <section
       id="token-usage"
-      className="theme-border theme-surface mt-6 rounded-xl border p-4 shadow-xs md:p-5"
+      className={cn(
+        "theme-border theme-surface rounded-[1.4rem] border p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)] md:p-5",
+        compact ? "h-full" : "mt-6",
+      )}
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h2 className="theme-text text-sm font-semibold">Token usage</h2>
-          <p className="theme-text-muted mt-1 text-sm">
-            Past 7 days plus today, grouped by day
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="theme-text text-sm font-semibold">
+              {compact ? "Usage" : "Token usage"}
+            </h2>
+            <p className="theme-text-muted mt-1 text-sm">
+              {compact
+                ? "Token activity over the past 8 days."
+                : "Past 7 days plus today, grouped by day"}
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className={compact ? undefined : "sm:hidden"}
+            onClick={() => setShowFilters((visible) => !visible)}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Filters{activeFilterCount ? ` · ${activeFilterCount}` : ""}
+          </Button>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-3 lg:w-[620px]">
+        <div
+          className={cn(
+            showFilters ? "grid" : "hidden",
+            "gap-2 sm:grid-cols-3",
+            compact ? "lg:w-[620px]" : "sm:grid lg:w-[620px]",
+          )}
+        >
           <Select
             value={source}
             onChange={(event) => setSource(event.target.value as TokenUsageSource | "")}
@@ -122,23 +152,44 @@ export function TokenUsagePanel() {
         </div>
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_220px]">
-        <div className="h-[300px] min-w-0">
+      <div
+        className={cn(
+          "mt-5 grid gap-4",
+          compact ? "lg:grid-cols-[1fr_190px]" : "lg:grid-cols-[1fr_220px]",
+        )}
+      >
+        <div
+          className={cn(
+            "min-w-0",
+            compact ? "h-[190px] md:h-[220px]" : "h-[230px] md:h-[280px]",
+          )}
+        >
           {isError ? (
             <div className="theme-border theme-text-muted flex h-full items-center justify-center rounded-lg border text-sm">
               Token usage is unavailable.
             </div>
           ) : isLoading ? (
-            <div className="theme-border flex h-full items-center justify-center rounded-lg border">
-              <svg className="theme-text-muted h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
+            <div className="theme-border theme-text-muted flex h-full items-center justify-center gap-2 rounded-lg border text-sm" role="status">
+              <span>Loading usage</span>
+              <span className="flex gap-0.5" aria-hidden="true">
+                {[0, 1, 2].map((dot) => (
+                  <span key={dot} className="animate-loading-dot h-1 w-1 rounded-full bg-current" style={{ animationDelay: `${dot * 120}ms` }} />
+                ))}
+              </span>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer
+              width="100%"
+              height="100%"
+              minWidth={0}
+              minHeight={0}
+              initialDimension={{
+                width: compact ? 640 : 920,
+                height: compact ? 220 : 280,
+              }}
+            >
               <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--app-border)" />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--app-border-color)" />
                 <XAxis
                   dataKey="label"
                   tickLine={false}
@@ -166,7 +217,7 @@ export function TokenUsagePanel() {
                   }}
                   contentStyle={{
                     background: "var(--app-surface)",
-                    border: "1px solid var(--app-border)",
+                    border: "1px solid var(--app-border-color)",
                     borderRadius: 8,
                     color: "var(--app-text)",
                   }}
@@ -190,7 +241,7 @@ export function TokenUsagePanel() {
           )}
         </div>
 
-        <div className="theme-border grid content-start gap-3 rounded-lg border p-4">
+        <div className="theme-surface-muted theme-border grid content-start gap-3 rounded-xl border p-4">
           <div>
             <p className="theme-text-muted text-xs">8-day total</p>
             <p className="theme-text mt-1 text-2xl font-semibold">

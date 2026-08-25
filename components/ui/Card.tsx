@@ -8,7 +8,7 @@ import { forwardRef, type HTMLAttributes } from "react";
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   size?: "default" | "compact";
-  /** When true, disables the hover scale / shadow animation. */
+  /** When true, disables the subtle interactive shadow. */
   static?: boolean;
 }
 
@@ -17,8 +17,8 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
     <div
       ref={ref}
       className={cn(
-        "rounded-xl border border-gray-200 bg-transparent shadow-xs dark:border-gray-700 dark:bg-transparent",
-        isStatic ? "" : "transition-all hover:shadow-md hover:scale-[1.01]",
+        "theme-surface theme-border rounded-2xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)]",
+        isStatic ? "" : "transition-[border-color,box-shadow] duration-200 hover:[border-color:var(--app-border-strong)] hover:shadow-[0_10px_28px_rgba(15,23,42,0.07)]",
         size === "compact" && "[&>div]:p-5 [&>div]:pt-0 [&>div:first-child]:pt-5",
         className,
       )}

@@ -152,11 +152,8 @@ function makeTriggerNode(): Node {
   };
 }
 
-/** Build visual-only trigger edges from routine metadata entry_steps */
-function triggerEdgesFromMetadata(metadata: Record<string, unknown>): Edge[] {
-  const entrySteps = Array.isArray(metadata?.entry_steps)
-    ? (metadata.entry_steps as string[])
-    : [];
+/** Build visual-only trigger edges from the canonical entry step collection. */
+function triggerEdgesFromEntrySteps(entrySteps: string[]): Edge[] {
   return entrySteps.map((targetId) => ({
     id: `trigger-edge-${targetId}`,
     source: TRIGGER_NODE_ID,
@@ -203,13 +200,21 @@ function routineEdgesToFlowEdges(edges: RoutineEdgeType[], steps: RoutineStep[])
       animated: style.animated,
       markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: style.stroke },
       style: { strokeWidth: 2, stroke: style.stroke },
-      data: { condition: edge.condition, metadata: edge.metadata ?? {} },
+      data: {
+        condition: edge.condition,
+        edgeConfig: {
+          purpose: edge.purpose,
+          handoff_instructions: edge.handoff_instructions,
+          handoff_schema: edge.handoff_schema,
+          max_retries: edge.max_retries,
+        },
+      },
     };
   });
 }
 
 function edgeMetadata(edge: Edge | undefined): Record<string, unknown> {
-  const metadata = (edge?.data as Record<string, unknown> | undefined)?.metadata;
+  const metadata = (edge?.data as Record<string, unknown> | undefined)?.edgeConfig;
   return metadata && typeof metadata === "object" && !Array.isArray(metadata)
     ? metadata as Record<string, unknown>
     : {};
@@ -241,6 +246,7 @@ function formatJson(value: unknown): string {
 function canonicalEdgeMetadata(
   metadata: Record<string, unknown>,
   sourceStepType: RoutineStepType | undefined,
+  condition: RoutineEdgeCondition,
 ): Record<string, unknown> {
   const nextMetadata = { ...metadata };
   delete nextMetadata.handoff;
@@ -248,6 +254,9 @@ function canonicalEdgeMetadata(
 
   if (requiresRouteHandoffSchema(sourceStepType) && !isRecord(nextMetadata.handoff_schema)) {
     nextMetadata.handoff_schema = defaultHandoffSchema();
+  }
+  if (sourceStepType !== "gate" || condition !== "on_fail") {
+    delete nextMetadata.max_retries;
   }
 
   return nextMetadata;
@@ -292,7 +301,7 @@ function RoutineEditorInner({
   const [loadingRoles, setLoadingRoles] = useState(true);
   const [nodes, setNodes, onNodesChange] = useNodesState([makeTriggerNode()]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([
-    ...triggerEdgesFromMetadata(routine.metadata),
+    ...triggerEdgesFromEntrySteps(routine.entry_steps),
     ...routineEdgesToFlowEdges(routine.edges, routine.steps),
   ]);
 
@@ -355,13 +364,13 @@ function RoutineEditorInner({
     if (routine.updated_at !== lastRoutineUpdatedAt.current) {
       lastRoutineUpdatedAt.current = routine.updated_at;
       setEdges([
-        ...triggerEdgesFromMetadata(routine.metadata),
+        ...triggerEdgesFromEntrySteps(routine.entry_steps),
         ...routineEdgesToFlowEdges(routine.edges, routine.steps),
       ]);
       setIsDirty(false);
       setPendingStepUpdates(new Map());
     }
-  }, [routine.updated_at, routine.metadata, routine.edges, routine.steps, setEdges]);
+  }, [routine.updated_at, routine.entry_steps, routine.edges, routine.steps, setEdges]);
 
   // ── Selected node data ─────────────────────────────────────────────────
   const selectedNode = useMemo(
@@ -434,7 +443,7 @@ function RoutineEditorInner({
             animated: style.animated,
             markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: style.stroke },
             style: { strokeWidth: 2, stroke: style.stroke },
-            data: { condition, metadata },
+            data: { condition, edgeConfig: metadata },
           },
           eds,
         ),
@@ -458,7 +467,7 @@ function RoutineEditorInner({
   }, []);
 
   const handleUpdateEdge = useCallback(
-    (edgeId: string, metadata: Record<string, unknown>) => {
+    (edgeId: string, edgeConfig: Record<string, unknown>) => {
       setEdges((eds) =>
         eds.map((edge) =>
           edge.id === edgeId
@@ -466,7 +475,7 @@ function RoutineEditorInner({
                 ...edge,
                 data: {
                   ...(edge.data as Record<string, unknown> | undefined),
-                  metadata,
+                  edgeConfig,
                 },
               }
             : edge,
@@ -723,19 +732,25 @@ function RoutineEditorInner({
         }),
       );
 
-      const edgePayload = currentRegularEdges.map((edge) => ({
-        source_step: edge.source,
-        target_step: edge.target,
-        condition: ((edge.data as Record<string, unknown>)?.condition as RoutineEdgeCondition | undefined) ?? "always",
-        metadata: canonicalEdgeMetadata(edgeMetadata(edge), stepTypeBySlug.get(edge.source)),
-      }));
+      const edgePayload = currentRegularEdges.map((edge) => {
+        const condition = ((edge.data as Record<string, unknown>)?.condition as RoutineEdgeCondition | undefined) ?? "always";
+        return {
+          source_step: edge.source,
+          target_step: edge.target,
+          condition,
+          ...canonicalEdgeMetadata(edgeMetadata(edge), stepTypeBySlug.get(edge.source), condition),
+        };
+      });
 
       const entrySteps = edges
         .filter((e) => (e.data as Record<string, unknown>)?.isTriggerEdge)
         .map((e) => e.target);
 
-      await saveRoutineGraph(routine.id, {
-        metadata: routine.metadata,
+      await saveRoutineGraph({
+        slug: routine.slug,
+        name: routine.name,
+        description: routine.description,
+        project_id: routine.project_id,
         entry_steps: entrySteps,
         steps: stepPayload,
         edges: edgePayload,
@@ -925,7 +940,8 @@ function EdgeConfigPanel({
   const sourceData = sourceStep?.data as StepNodeData | undefined;
   const sourceLabel = sourceData?.label;
   const targetLabel = steps.find((step) => step.id === edge.target)?.data?.label as string | undefined;
-  const canRetry = sourceData?.stepType === "gate";
+  const condition = (edge.data as Record<string, unknown> | undefined)?.condition;
+  const canRetry = sourceData?.stepType === "gate" && condition === "on_fail";
   const requiresHandoffSchema = requiresRouteHandoffSchema(sourceData?.stepType);
   const [purpose, setPurpose] = useState(typeof metadata.purpose === "string" ? metadata.purpose : "");
   const initialHandoffInstructions =
@@ -938,8 +954,8 @@ function EdgeConfigPanel({
   const [handoffSchema, setHandoffSchema] = useState(
     formatJson(isRecord(metadata.handoff_schema) ? metadata.handoff_schema : defaultHandoffSchema()),
   );
-  const [maxAttempts, setMaxAttempts] = useState(
-    metadata.max_attempts != null ? String(metadata.max_attempts) : "",
+  const [maxRetries, setMaxRetries] = useState(
+    metadata.max_retries != null ? String(metadata.max_retries) : "",
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -972,15 +988,15 @@ function EdgeConfigPanel({
       nextMetadata.handoff_schema = parsedSchema;
     }
 
-    if (canRetry && maxAttempts.trim()) {
-      const parsed = Number.parseInt(maxAttempts, 10);
-      if (!Number.isFinite(parsed) || parsed <= 0) {
-        setError("Max attempts must be a positive number");
+    if (canRetry && maxRetries.trim()) {
+      const parsed = Number(maxRetries);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        setError("Max retries must be a whole number zero or greater");
         return;
       }
-      nextMetadata.max_attempts = parsed;
+      nextMetadata.max_retries = parsed;
     } else {
-      delete nextMetadata.max_attempts;
+      delete nextMetadata.max_retries;
     }
     delete nextMetadata.on_exhausted;
     delete nextMetadata.on_exhausted_step;
@@ -1052,19 +1068,22 @@ function EdgeConfigPanel({
 
         {canRetry ? (
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Max Attempts</label>
+            <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Max Retries</label>
             <input
               type="number"
-              min={1}
-              value={maxAttempts}
-              onChange={(event) => setMaxAttempts(event.target.value)}
-              placeholder="No limit"
+              min={0}
+              value={maxRetries}
+              onChange={(event) => setMaxRetries(event.target.value)}
+              placeholder="Worker default"
               className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
             />
+            <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+              Counts rework traversals after the initial gate evaluation. Leave blank to use the worker default; zero disables retries.
+            </p>
           </div>
         ) : (
           <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
-            Retry attempts are only available on edges leaving gate steps.
+            Retries count rework traversals after the initial gate evaluation and are only available on gate on_fail edges.
           </p>
         )}
 

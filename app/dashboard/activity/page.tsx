@@ -6,6 +6,7 @@ import { activityUrl, fetcher } from "@/lib/api";
 import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { TopBar } from "@/components/layout/TopBar";
 import { PageContent } from "@/components/ui/PageContent";
+import { PageIntro } from "@/components/ui/PageIntro";
 import { Badge } from "@/components/ui/Badge";
 import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
@@ -37,6 +38,17 @@ function formatRelativeTime(iso: string): string {
     month: "short",
     day: "numeric",
   });
+}
+
+function formatActivityDay(iso: string): string {
+  const date = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const key = date.toDateString();
+  if (key === today.toDateString()) return "Today";
+  if (key === yesterday.toDateString()) return "Yesterday";
+  return date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
 }
 
 function formatTokens(n: number): string {
@@ -175,7 +187,7 @@ function ActivityRow({ entry, isExpanded, onToggle }: { entry: ActivityEntry; is
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0 mt-0.5">
-          {entry.metadata && <TokenBadge metadata={entry.metadata} />}
+          {entry.metadata && <span className="hidden sm:inline"><TokenBadge metadata={entry.metadata} /></span>}
           <span className="theme-text-muted text-xs">
             {formatRelativeTime(entry.created_at)}
           </span>
@@ -225,6 +237,30 @@ export default function ActivityPage() {
     () => [...(firstPage ?? []), ...olderEntries],
     [firstPage, olderEntries],
   );
+  const activityGroups = useMemo(() => {
+    const groups = new Map<string, ActivityEntry[]>();
+    allEntries.forEach((entry) => {
+      const label = formatActivityDay(entry.created_at);
+      groups.set(label, [...(groups.get(label) ?? []), entry]);
+    });
+    return Array.from(groups, ([label, entries]) => ({ label, entries }));
+  }, [allEntries]);
+
+  const activityRows = activityGroups.map((group) => (
+    <section key={group.label}>
+      <div className="theme-surface-muted theme-border border-b px-5 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--app-text-muted)]">
+        {group.label}
+      </div>
+      {group.entries.map((entry) => (
+        <ActivityRow
+          key={entry.id}
+          entry={entry}
+          isExpanded={expandedId === entry.id}
+          onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
+        />
+      ))}
+    </section>
+  ));
 
   const loadMore = useCallback(async () => {
     const last = allEntries[allEntries.length - 1];
@@ -266,18 +302,11 @@ export default function ActivityPage() {
             </button>
           ))}
         </div>
-        <div className="rounded-[1.5rem] border border-black/10 bg-transparent dark:border-white/10">
+        <div className="theme-surface theme-border overflow-hidden rounded-2xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
           <div className="divide-y divide-black/5 dark:divide-white/10">
             {isLoading && <div className="px-5 py-8 text-center text-sm text-gray-400">Loading activity...</div>}
             {!isLoading && allEntries.length === 0 && <div className="px-5 py-8 text-center text-sm text-gray-400">No activity yet.</div>}
-            {allEntries.map((entry) => (
-              <ActivityRow
-                key={entry.id}
-                entry={entry}
-                isExpanded={expandedId === entry.id}
-                onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
-              />
-            ))}
+            {activityRows}
           </div>
           {!isLoading && allEntries.length > 0 && hasMore && (
             <div className="border-t border-black/5 px-6 py-3 text-center dark:border-white/10">
@@ -296,11 +325,15 @@ export default function ActivityPage() {
       <>
         <TopBar title="Activity" />
         <PageContent>
-          <div className="theme-border theme-surface rounded-xl border shadow-xs">
+          <PageIntro
+            title="Organization activity"
+            description="Follow execution progress, resource changes, and system events in chronological context."
+          />
+          <div className="theme-border theme-surface overflow-hidden rounded-2xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
             <div className="theme-border flex items-center justify-between border-b px-6 py-4">
               <div>
-                <h2 className="theme-text text-lg font-semibold">
-                  Activity Feed
+                <h2 className="theme-text text-sm font-semibold">
+                  Event feed
                 </h2>
                 <p className="theme-text-muted text-sm">
                   Resource changes, execution progress, and system events.
@@ -336,14 +369,7 @@ export default function ActivityPage() {
                 </div>
               )}
 
-              {allEntries.map((entry) => (
-                <ActivityRow
-                  key={entry.id}
-                  entry={entry}
-                  isExpanded={expandedId === entry.id}
-                  onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
-                />
-              ))}
+              {activityRows}
             </div>
 
             {!isLoading && allEntries.length > 0 && hasMore && (

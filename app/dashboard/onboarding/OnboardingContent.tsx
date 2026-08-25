@@ -51,6 +51,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Label } from "@/components/ui/Label";
+import { LoadingStatus } from "@/components/ui/LoadingStatus";
 import { UnlockMethodSetup } from "@/components/auth/UnlockMethodSetup";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
 import {
@@ -86,6 +87,12 @@ import {
   shouldRunOnboardingEntryGate,
   shouldUseExistingWorkspaceRestoreMode,
 } from "@/lib/vaultRestoreGate.mjs";
+import {
+  RECOVERY_PHRASE_FILENAME,
+  RECOVERY_PHRASE_MIME_TYPE,
+  isRecoveryDownloadComplete,
+  recoveryPhraseFileContents,
+} from "@/lib/recoveryPhraseFile";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -153,16 +160,16 @@ function StepIndicator({
   currentStep: 1 | 2 | 3 | 4 | 5;
 }) {
   return (
-    <div className="mb-10 grid w-full grid-cols-5 items-start">
+    <ol aria-label="Onboarding progress" className="theme-border theme-surface-muted mb-6 grid w-full grid-cols-5 items-start rounded-2xl border px-3 py-3 sm:px-5">
       {STEPS.map((label, i) => {
         const step = (i + 1) as 1 | 2 | 3 | 4 | 5;
         const isCompleted = step < currentStep;
         const isActive = step === currentStep;
         return (
-          <div key={label} className="relative flex flex-col items-center">
+          <li key={label} className="relative flex flex-col items-center" aria-current={isActive ? "step" : undefined}>
             {i < STEPS.length - 1 && (
               <div
-                className={`absolute left-[calc(50%+1.25rem)] right-[calc(-50%+1.25rem)] top-4 h-0.5 ${
+                className={`absolute left-[calc(50%+1rem)] right-[calc(-50%+1rem)] top-3 h-px ${
                   isCompleted
                     ? "bg-deep-space-blue-500"
                     : "bg-gray-300 dark:bg-gray-600"
@@ -171,7 +178,7 @@ function StepIndicator({
             )}
 
             <div
-              className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
+              className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold transition-colors ${
                 isCompleted
                   ? "bg-deep-space-blue-500 text-white"
                   : isActive
@@ -188,7 +195,7 @@ function StepIndicator({
               )}
             </div>
             <span
-              className={`mt-3 min-h-8 px-1 text-center text-xs font-medium leading-tight ${
+              className={`mt-2 min-h-7 px-0.5 text-center text-[10px] font-medium leading-tight sm:text-[11px] ${
                 isActive
                   ? "text-deep-space-blue-600 dark:text-deep-space-blue-400"
                   : isCompleted
@@ -198,10 +205,10 @@ function StepIndicator({
             >
               {label}
             </span>
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ol>
   );
 }
 
@@ -222,10 +229,8 @@ function StepSecureWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [recoveryPhrase, setRecoveryPhrase] = useState("");
   const [recoveryBundle, setRecoveryBundle] = useState<RecoveryBundlePayload | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
   const [backupAcknowledged, setBackupAcknowledged] = useState(false);
-  const [confirmWordA, setConfirmWordA] = useState("");
-  const [confirmWordB, setConfirmWordB] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [recoveryCommitted, setRecoveryCommitted] = useState(false);
   const [installingPackages, setInstallingPackages] = useState(false);
@@ -234,14 +239,13 @@ function StepSecureWorkspace({
     useState<PackageInstallProgress | null>(null);
 
   const phraseWords = recoveryPhrase.split(" ").filter(Boolean);
-  const promptIndexes = [2, 7] as const;
-  const expectedWordA = phraseWords[promptIndexes[0]] ?? "";
-  const expectedWordB = phraseWords[promptIndexes[1]] ?? "";
-  const confirmed =
-    confirmWordA.trim().toLowerCase() === expectedWordA &&
-    confirmWordB.trim().toLowerCase() === expectedWordB;
+  const recoveryDownloadComplete = isRecoveryDownloadComplete({
+    hasRecoveryBundle: Boolean(recoveryBundle),
+    recoveryFileDownloaded: downloaded,
+    backupAcknowledged,
+  });
 
-  const initializeWorkspace = useCallback(async (regeneratePhrase = false) => {
+  const initializeWorkspace = useCallback(async () => {
     setError(null);
     setLoading(true);
     try {
@@ -258,9 +262,7 @@ function StepSecureWorkspace({
 
       let nextPhrase = "";
       let nextBundle: RecoveryBundlePayload | null = null;
-      const storedDraft = !regeneratePhrase
-        ? sessionStorage.getItem(RECOVERY_DRAFT_SESSION_KEY)
-        : null;
+      const storedDraft = sessionStorage.getItem(RECOVERY_DRAFT_SESSION_KEY);
 
       if (storedDraft) {
         const parsed = JSON.parse(storedDraft) as {
@@ -280,9 +282,7 @@ function StepSecureWorkspace({
 
       setRecoveryPhrase(nextPhrase);
       setRecoveryBundle(nextBundle);
-      setConfirmWordA("");
-      setConfirmWordB("");
-      setCopied(false);
+      setDownloaded(false);
       setBackupAcknowledged(false);
       setRecoveryCommitted(false);
       setInstallingPackages(false);
@@ -299,12 +299,23 @@ function StepSecureWorkspace({
     void initializeWorkspace();
   }, [initializeWorkspace]);
 
-  const handleCopy = useCallback(async () => {
+  const handleDownload = useCallback(() => {
     try {
-      await navigator.clipboard.writeText(recoveryPhrase);
-      setCopied(true);
+      const file = new Blob([recoveryPhraseFileContents(recoveryPhrase)], {
+        type: RECOVERY_PHRASE_MIME_TYPE,
+      });
+      const objectUrl = URL.createObjectURL(file);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = RECOVERY_PHRASE_FILENAME;
+      anchor.hidden = true;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      setDownloaded(true);
     } catch {
-      setError("Could not copy the recovery phrase to your clipboard.");
+      setError("Could not download the recovery phrase file.");
     }
   }, [recoveryPhrase]);
 
@@ -334,7 +345,7 @@ function StepSecureWorkspace({
   }, [onContinue]);
 
   const handleContinue = useCallback(async () => {
-    if (!recoveryBundle || !confirmed || !copied || !backupAcknowledged) return;
+    if (!recoveryBundle || !recoveryDownloadComplete) return;
     setSubmitting(true);
     try {
       await storeRecoveryBundle(recoveryBundle);
@@ -367,9 +378,7 @@ function StepSecureWorkspace({
       sessionStorage.removeItem(RECOVERY_DRAFT_SESSION_KEY);
       setRecoveryPhrase("");
       setRecoveryBundle(null);
-      setConfirmWordA("");
-      setConfirmWordB("");
-      setCopied(false);
+      setDownloaded(false);
       setBackupAcknowledged(false);
       setRecoveryCommitted(true);
       await installRequiredPackages();
@@ -379,11 +388,9 @@ function StepSecureWorkspace({
       setSubmitting(false);
     }
   }, [
-    backupAcknowledged,
-    confirmed,
-    copied,
     installRequiredPackages,
     recoveryBundle,
+    recoveryDownloadComplete,
   ]);
 
   return (
@@ -396,12 +403,10 @@ function StepSecureWorkspace({
       </div>
 
       {loading ? (
-        <div className="flex flex-col items-center gap-3 py-8">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-deep-space-blue-500 border-t-transparent" />
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Generating local encryption material and recovery bundle...
-          </p>
-        </div>
+        <LoadingStatus
+          label="Securing this workspace"
+          description="Generating local encryption material and your recovery bundle."
+        />
       ) : null}
 
       {error ? (
@@ -457,63 +462,46 @@ function StepSecureWorkspace({
             ))}
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void handleCopy()}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                copied
-                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                  : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-              }`}
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleDownload}
+            className="w-full"
+          >
+            <svg
+              aria-hidden="true"
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.75}
+              stroke="currentColor"
             >
-              {copied ? "Copied!" : "Copy recovery phrase"}
-            </button>
-            <button
-              type="button"
-              onClick={() => void initializeWorkspace(true)}
-              className="rounded-md bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-            >
-              Regenerate phrase
-            </button>
-          </div>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-4.5-4.5L12 16.5m0 0L7.5 12m4.5 4.5V3"
+              />
+            </svg>
+            {downloaded ? "Recovery file downloaded" : "Download recovery file"}
+          </Button>
 
           <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
             <input
               type="checkbox"
               checked={backupAcknowledged}
-              disabled={!copied}
+              disabled={!downloaded}
               onChange={(event) => setBackupAcknowledged(event.target.checked)}
               className="mt-0.5 h-4 w-4 rounded border-gray-300 text-deep-space-blue-600 focus:ring-deep-space-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900"
             />
             <span>
-              I have backed up my recovery phrase and understand I will need it to recover encrypted resources.
+              I downloaded the recovery file and stored it somewhere secure.
             </span>
           </label>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label required>Type word #{promptIndexes[0] + 1}</Label>
-              <Input
-                value={confirmWordA}
-                onChange={(event) => setConfirmWordA(event.target.value)}
-                placeholder={`Enter ${promptIndexes[0] + 1}th word`}
-              />
-            </div>
-            <div>
-              <Label required>Type word #{promptIndexes[1] + 1}</Label>
-              <Input
-                value={confirmWordB}
-                onChange={(event) => setConfirmWordB(event.target.value)}
-                placeholder={`Enter ${promptIndexes[1] + 1}th word`}
-              />
-            </div>
-          </div>
 
           <Button
             onClick={() => void handleContinue()}
             isLoading={submitting}
-            disabled={!confirmed || !recoveryBundle || !copied || !backupAcknowledged}
+            disabled={!recoveryDownloadComplete}
             className="w-full"
           >
             Continue
@@ -851,10 +839,7 @@ function StepApiKey({
       )}
 
       {loading && (
-        <div className="flex flex-col items-center gap-3 py-8">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-deep-space-blue-500 border-t-transparent" />
-          <p className="text-sm text-gray-500 dark:text-gray-400">Creating API key...</p>
-        </div>
+        <LoadingStatus label="Creating your worker key" />
       )}
 
       {rawKey && !loading && (
@@ -1553,12 +1538,7 @@ function StepRestoreDevice({
       </div>
 
       {loading ? (
-        <div className="flex flex-col items-center gap-3 py-8">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-deep-space-blue-500 border-t-transparent" />
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Checking for a recovery bundle...
-          </p>
-        </div>
+        <LoadingStatus label="Checking for your recovery bundle" />
       ) : null}
 
       {error ? (
@@ -1574,7 +1554,7 @@ function StepRestoreDevice({
               <div className="rounded-2xl border border-black/10 bg-white/70 p-5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
                 <div className="flex items-start gap-4 rounded-xl border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.02]">
                   <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-deep-space-blue-50 text-deep-space-blue-600 dark:bg-deep-space-blue-500/15 dark:text-deep-space-blue-300">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    <div className="h-2.5 w-2.5 rounded-full bg-current motion-safe:animate-pulse motion-reduce:animate-none" />
                   </div>
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -1604,7 +1584,7 @@ function StepRestoreDevice({
                   <div className="flex items-start gap-4 rounded-xl border border-black/10 bg-black/[0.02] p-4 dark:border-white/10 dark:bg-white/[0.02]">
                     <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-deep-space-blue-50 text-deep-space-blue-600 dark:bg-deep-space-blue-500/15 dark:text-deep-space-blue-300">
                       {deviceEnrollmentId || registering ? (
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        <div className="h-2.5 w-2.5 rounded-full bg-current motion-safe:animate-pulse motion-reduce:animate-none" />
                       ) : (
                         <div className="h-2.5 w-2.5 rounded-full bg-current/70" />
                       )}
@@ -1896,37 +1876,18 @@ export default function OnboardingContent() {
     };
   }, [entryGateKey, forceRestore, isLoaded, router, signedInUserId]);
 
-  const maxWidth =
-    onboardingMode === "restore"
-      ? "max-w-5xl"
-      : currentStep === 5
-        ? "max-w-2xl"
-        : currentStep === 4
-          ? "max-w-md"
-          : currentStep === 3
-            ? "max-w-sm"
-            : currentStep === 2
-              ? "max-w-2xl"
-              : "max-w-sm";
+  const maxWidth = onboardingMode === "restore" ? "max-w-5xl" : "max-w-2xl";
 
   const loadingSpinner = (
-    <div className="flex items-center justify-center py-12">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-deep-space-blue-500 border-t-transparent" />
-    </div>
+    <LoadingStatus label="Loading your account" className="py-12" />
   );
 
   const gateSpinner = (
-    <div className="flex flex-col items-center gap-4 py-12">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-deep-space-blue-500 border-t-transparent" />
-      <div className="space-y-1 text-center">
-        <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
-          Checking your Nenjo account state
-        </p>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          This decides whether this browser should start fresh or enroll as another trusted device.
-        </p>
-      </div>
-    </div>
+    <LoadingStatus
+      label="Checking your Nenjo account state"
+      description="This decides whether this browser should start fresh or enroll as another trusted device."
+      className="py-12"
+    />
   );
 
   const gateFailure = (
@@ -2032,7 +1993,7 @@ export default function OnboardingContent() {
   return (
     <div className="onboarding-landing dark flex min-h-screen bg-[#05070f] text-[#eaeef8] lg:overflow-hidden">
       {/* Left panel – branding */}
-      <div className="onboarding-brand-panel relative hidden overflow-hidden border-r border-white/10 bg-[#05070f] p-12 text-white lg:flex lg:w-1/2 lg:flex-col lg:justify-between">
+      <div className="onboarding-brand-panel relative hidden overflow-hidden border-r border-white/10 bg-[#05070f] p-10 text-white lg:flex lg:w-[44%] lg:flex-col lg:justify-between xl:p-12">
         <div className="onboarding-brand-grid" />
         <div className="onboarding-brand-glow" />
 
@@ -2086,7 +2047,7 @@ export default function OnboardingContent() {
       </div>
 
       {/* Right panel – onboarding wizard */}
-      <div className="onboarding-wizard-panel flex min-h-screen w-full flex-col items-center justify-center overflow-y-auto bg-[#080c18] px-4 py-8 sm:px-6 sm:py-10 lg:w-1/2 lg:px-8 lg:py-12">
+      <div className="onboarding-wizard-panel flex min-h-screen w-full flex-col items-center justify-center overflow-y-auto bg-[#080c18] px-4 py-8 sm:px-6 sm:py-10 lg:w-[56%] lg:px-10 lg:py-12">
         <div className={`onboarding-wizard-card w-full transition-[max-width] duration-300 ease-in-out ${maxWidth}`}>
           <div className="mb-6 text-center lg:hidden">
             <Link

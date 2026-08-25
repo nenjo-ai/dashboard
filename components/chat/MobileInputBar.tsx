@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  type ReactNode,
+} from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
@@ -102,9 +108,9 @@ export function MobileInputBar({
   const cancelArmTimerRef = useRef<number | null>(null);
   const currentAgentId = activeAgent?.id;
   const interruptActive = isTyping || hasActiveRunTrace;
-  const canSend = (
-    input.trim().length > 0 || !!pendingCommand || !!hasReadyAttachments
-  ) && !sendDisabled;
+  const canSend =
+    (input.trim().length > 0 || !!pendingCommand || !!hasReadyAttachments) &&
+    !sendDisabled;
   const voiceInputBusy =
     voiceInputState === "requesting" || voiceInputState === "processing";
   const voiceInputTitle =
@@ -112,15 +118,16 @@ export function MobileInputBar({
       ? "Stop recording"
       : voiceInputState === "requesting"
         ? "Preparing microphone"
-      : voiceInputState === "processing"
-        ? "Transcribing audio"
-        : "Record audio";
+        : voiceInputState === "processing"
+          ? "Transcribing audio"
+          : "Record audio";
   const shouldRenderComposer =
-    isMobileViewport
-    && pathname.startsWith("/dashboard/chat")
-    && searchParams.get("channel") !== "notifications"
-    && Boolean(searchParams.get("session"));
-  const flushToKeyboard = shouldRenderComposer && (keyboardVisible || isInputFocused);
+    isMobileViewport &&
+    pathname.startsWith("/dashboard/chat") &&
+    searchParams.get("channel") !== "notifications" &&
+    Boolean(searchParams.get("session"));
+  const flushToKeyboard =
+    shouldRenderComposer && (keyboardVisible || isInputFocused);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -134,10 +141,13 @@ export function MobileInputBar({
     return () => mediaQuery.removeEventListener("change", updateViewport);
   }, []);
 
-  const openSheet = useCallback((sheet: "agent" | "domain") => {
-    inputRef.current?.blur();
-    setSheetOpen(sheet);
-  }, [inputRef]);
+  const openSheet = useCallback(
+    (sheet: "agent" | "domain") => {
+      inputRef.current?.blur();
+      setSheetOpen(sheet);
+    },
+    [inputRef],
+  );
 
   const closeSheet = useCallback(() => {
     setSheetOpen(null);
@@ -272,7 +282,10 @@ export function MobileInputBar({
     if (!viewport) return;
 
     const updateKeyboardVisibility = () => {
-      const bottomInset = Math.max(window.innerHeight - (viewport.height + viewport.offsetTop), 0);
+      const bottomInset = Math.max(
+        window.innerHeight - (viewport.height + viewport.offsetTop),
+        0,
+      );
       const inputFocused = document.activeElement === inputRef.current;
       setKeyboardVisible(inputFocused || bottomInset > 24);
     };
@@ -298,14 +311,18 @@ export function MobileInputBar({
     const setComposerHeight = () => {
       const height = composerRef.current?.offsetHeight ?? 108;
       root.style.setProperty("--mobile-composer-height", `${height}px`);
-      root.style.setProperty("--mobile-composer-dock-height", `${height + 24}px`);
+      root.style.setProperty(
+        "--mobile-composer-dock-height",
+        `${height + 24}px`,
+      );
     };
 
     setComposerHeight();
 
-    const observer = typeof ResizeObserver !== "undefined"
-      ? new ResizeObserver(() => setComposerHeight())
-      : null;
+    const observer =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => setComposerHeight())
+        : null;
 
     if (observer && composerRef.current) {
       observer.observe(composerRef.current);
@@ -319,9 +336,12 @@ export function MobileInputBar({
   }, [inDomain, pendingCommand, pendingDomain, shouldRenderComposer]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setInterruptReady(interruptActive);
-    }, interruptActive ? 250 : 0);
+    const timer = window.setTimeout(
+      () => {
+        setInterruptReady(interruptActive);
+      },
+      interruptActive ? 250 : 0,
+    );
 
     return () => window.clearTimeout(timer);
   }, [interruptActive]);
@@ -342,16 +362,17 @@ export function MobileInputBar({
         height: flushToKeyboard
           ? "calc(var(--mobile-composer-height, 108px) + env(safe-area-inset-bottom, 0px))"
           : "calc(var(--mobile-composer-dock-height, 132px) + env(safe-area-inset-bottom, 0px))",
-        paddingBottom: flushToKeyboard ? "0px" : "max(env(safe-area-inset-bottom, 0px), 0.1rem)",
+        paddingBottom: flushToKeyboard
+          ? "0px"
+          : "max(env(safe-area-inset-bottom, 0px), 0.1rem)",
       }}
     >
       <motion.div
         ref={composerRef}
         initial={false}
         animate={{
-          scale: inDomain ? 1.02 : 1,
-          y: flushToKeyboard ? 0 : (inDomain ? -10 : -2),
-          boxShadow: "0 0 0 rgba(0,0,0,0)",
+          scale: 1,
+          y: flushToKeyboard ? 0 : inDomain ? -8 : -2,
         }}
         transition={{
           type: "spring",
@@ -359,7 +380,7 @@ export function MobileInputBar({
           damping: 24,
           mass: 0.9,
         }}
-        className="pointer-events-auto relative box-border mx-auto w-full max-w-full overflow-hidden rounded-[1.55rem] border-[3px] border-black/12 bg-transparent transition-[border-color] duration-300 dark:border-white/20 dark:shadow-[0_20px_64px_rgba(0,0,0,0.46)]"
+        className="pointer-events-auto relative box-border mx-auto w-full max-w-full overflow-hidden rounded-[1.45rem] border border-black/[0.09] bg-white/[0.82] shadow-[0_14px_42px_rgba(15,23,42,0.14)] backdrop-blur-2xl transition-[border-color] duration-300 dark:border-white/[0.12] dark:bg-[#070b12]/[0.86] dark:shadow-[0_20px_64px_rgba(0,0,0,0.42)]"
         style={{
           borderColor: inDomain && agentColor ? agentColor : undefined,
           marginBottom: flushToKeyboard ? "0px" : undefined,
@@ -379,11 +400,13 @@ export function MobileInputBar({
               : undefined,
           }}
         />
-        <div className="pointer-events-none absolute inset-[3px] overflow-hidden rounded-[calc(1.55rem-3px)]">
-          <div className="absolute inset-0 bg-[#f5f7fb]/50 backdrop-blur-[26px] [-webkit-backdrop-filter:blur(26px)] dark:bg-[#05070b]/48" />
+        <div className="pointer-events-none absolute inset-px overflow-hidden rounded-[calc(1.45rem-1px)]">
+          <div className="absolute inset-0 bg-white/45 backdrop-blur-[26px] [-webkit-backdrop-filter:blur(26px)] dark:bg-[#05070b]/40" />
         </div>
 
-        {attachments ? <div className="relative z-10 px-3 pt-2">{attachments}</div> : null}
+        {attachments ? (
+          <div className="relative z-10 px-3 pt-2">{attachments}</div>
+        ) : null}
 
         {/* Text input */}
         <div className="relative z-10 flex items-end gap-2 px-3 pt-3">
@@ -415,7 +438,7 @@ export function MobileInputBar({
                   ? "Describe what to do..."
                   : pendingCommand
                     ? `Arguments for ${pendingCommand.command}...`
-                  : placeholder
+                    : placeholder
             }
             disabled={disabled || isDomainPending}
             rows={1}
@@ -439,11 +462,25 @@ export function MobileInputBar({
               <MobileTouchButton
                 onPress={() => onExitDomain?.()}
                 className="flex h-8 min-w-0 max-w-full items-center gap-1 rounded-full px-2.5 text-xs font-medium active:opacity-70"
-                style={agentColor ? { backgroundColor: `${agentColor}20`, color: agentColor } : undefined}
+                style={
+                  agentColor
+                    ? { backgroundColor: `${agentColor}20`, color: agentColor }
+                    : undefined
+                }
               >
                 <span className="truncate">{activeDomainLabel}</span>
-                <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                <svg
+                  className="h-3 w-3 shrink-0"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2.5}
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </MobileTouchButton>
             ) : (
@@ -451,6 +488,7 @@ export function MobileInputBar({
                 {availableDomains.length > 0 && (
                   <MobileTouchButton
                     onPress={() => openSheet("domain")}
+                    title="Choose domain"
                     className={cn(
                       "flex h-9 w-9 items-center justify-center rounded-full border border-black/5 backdrop-blur-sm dark:border-white/10",
                       sheetOpen === "domain"
@@ -458,8 +496,18 @@ export function MobileInputBar({
                         : "bg-black/[0.04] text-gray-500 active:bg-black/[0.07] dark:bg-white/[0.06] dark:text-gray-400",
                     )}
                   >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 8.25h15m-16.5 7.5h15m-1.8-13.5-3.9 19.5m-2.1-19.5-3.9 19.5" />
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M5.25 8.25h15m-16.5 7.5h15m-1.8-13.5-3.9 19.5m-2.1-19.5-3.9 19.5"
+                      />
                     </svg>
                   </MobileTouchButton>
                 )}
@@ -467,6 +515,7 @@ export function MobileInputBar({
                 {availableAgents.length > 1 && (
                   <MobileTouchButton
                     onPress={() => openSheet("agent")}
+                    title="Switch agent"
                     className={cn(
                       "flex h-9 w-9 items-center justify-center rounded-full border border-black/5 backdrop-blur-sm dark:border-white/10",
                       sheetOpen === "agent"
@@ -474,9 +523,23 @@ export function MobileInputBar({
                         : "bg-black/[0.04] text-gray-500 active:bg-black/[0.07] dark:bg-white/[0.06] dark:text-gray-400",
                     )}
                   >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m3.75-1.5v1.5m-9 13.5v1.5M12 19.5V21m3.75-1.5v1.5M6 7.5h12A1.5 1.5 0 0119.5 9v6a1.5 1.5 0 01-1.5 1.5H6A1.5 1.5 0 014.5 15V9A1.5 1.5 0 016 7.5z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12a.75.75 0 100-1.5.75.75 0 000 1.5zm6 0a.75.75 0 100-1.5.75.75 0 000 1.5z" />
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m3.75-1.5v1.5m-9 13.5v1.5M12 19.5V21m3.75-1.5v1.5M6 7.5h12A1.5 1.5 0 0119.5 9v6a1.5 1.5 0 01-1.5 1.5H6A1.5 1.5 0 014.5 15V9A1.5 1.5 0 016 7.5z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M9 12a.75.75 0 100-1.5.75.75 0 000 1.5zm6 0a.75.75 0 100-1.5.75.75 0 000 1.5z"
+                      />
                     </svg>
                   </MobileTouchButton>
                 )}
@@ -502,12 +565,20 @@ export function MobileInputBar({
                     transition={{ duration: 0.16, ease: "easeOut" }}
                     className="whitespace-nowrap text-[10px] font-medium text-gray-400 dark:text-gray-500"
                   >
-                    {cancelArmed ? "Press again to cancel" : "Press twice to cancel"}
+                    {cancelArmed
+                      ? "Press again to cancel"
+                      : "Press twice to cancel"}
                   </motion.span>
                 </AnimatePresence>
                 <button
                   type="button"
                   onClick={handleCancelPress}
+                  title={
+                    cancelArmed ? "Confirm stop response" : "Stop response"
+                  }
+                  aria-label={
+                    cancelArmed ? "Confirm stop response" : "Stop response"
+                  }
                   className={cn(
                     "relative flex h-9 w-9 items-center justify-center rounded-full transition-colors",
                     cancelArmed
@@ -515,7 +586,11 @@ export function MobileInputBar({
                       : "bg-flag-red-100 text-flag-red-600 dark:bg-flag-red-900/40 dark:text-flag-red-400",
                   )}
                 >
-                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                  <svg
+                    className="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
                     <rect x="6" y="6" width="12" height="12" rx="2" />
                   </svg>
                 </button>
@@ -536,7 +611,11 @@ export function MobileInputBar({
               >
                 {voiceInputBusy ? (
                   <ChatProgressIndicator
-                    phase={voiceInputState === "requesting" ? "connecting" : "finalizing"}
+                    phase={
+                      voiceInputState === "requesting"
+                        ? "connecting"
+                        : "finalizing"
+                    }
                     compact
                   />
                 ) : voiceInputState === "recording" ? (
@@ -549,6 +628,7 @@ export function MobileInputBar({
             <MobileTouchButton
               onPress={handleSendPress}
               disabled={!canSend}
+              title="Send message"
               className={cn(
                 "flex h-10 w-10 items-center justify-center rounded-full border border-black/5 transition-colors dark:border-white/10",
                 canSend
@@ -556,8 +636,18 @@ export function MobileInputBar({
                   : "bg-black/[0.04] text-gray-400 dark:bg-white/[0.06] dark:text-gray-500",
               )}
             >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2.5}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18"
+                />
               </svg>
             </MobileTouchButton>
           </div>
@@ -584,7 +674,13 @@ export function MobileInputBar({
                   : "hover:bg-gray-50 dark:hover:bg-gray-800/50",
               )}
             >
-              <RoleIdenticon roleId={agent.id} color={agent.color} size={28} className="shrink-0" name={agent.name} />
+              <RoleIdenticon
+                roleId={agent.id}
+                color={agent.color}
+                size={28}
+                className="shrink-0"
+                name={agent.name}
+              />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
                   {agent.name}

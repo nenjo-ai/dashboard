@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, ChevronRight, CircleAlert } from "lucide-react";
 import { AgentRunTrace } from "@/components/agent-run-trace/AgentRunTrace";
 import { cn } from "@/lib/cn";
 import { loadEnvelopeEvents } from "@/lib/agentRunTrace/envelopeStore";
@@ -38,6 +38,7 @@ export function AssistantActivity({
   const [activityOpen, setActivityOpen] = useState(false);
   const [hasOpened, setHasOpened] = useState(false);
   const activityPanelId = useId();
+  const activityPanelRef = useRef<HTMLDivElement>(null);
   const [loadedEnvelope, setLoadedEnvelope] = useState<{
     envelopeId: string;
     trace?: RunTrace;
@@ -97,6 +98,9 @@ export function AssistantActivity({
                   : "Completed";
     return { status, ariaLabel: `Activity, ${status}` };
   }, [activityTrace, displaySpans, message.runStatus]);
+  const normalizedStatus = summary.status.toLowerCase();
+  const activityFailed = normalizedStatus.includes("failed");
+  const activityCompleted = normalizedStatus.includes("completed");
 
   useEffect(() => {
     if (!activityOpen || message.runTrace || !message.runEnvelopeId) return;
@@ -128,34 +132,66 @@ export function AssistantActivity({
     message.runTrace,
   ]);
 
+  // Expansion happens beside a docked composer. Once the short reveal finishes,
+  // keep the complete trace in view instead of allowing its last rows to sit
+  // beneath the composer.
+  useEffect(() => {
+    if (!activityOpen) return;
+    const timer = window.setTimeout(() => {
+      activityPanelRef.current?.scrollIntoView({
+        block: "nearest",
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+      });
+    }, 210);
+    return () => window.clearTimeout(timer);
+  }, [activityOpen]);
+
   if (!hasActivity) return null;
 
   return (
-    <div
-      className={cn(
-        "not-prose w-full",
-        responseContentVisible &&
-          "border-t border-gray-200/70 pt-2 dark:border-gray-700/70",
-      )}
-    >
+    <div className={cn("not-prose w-full", responseContentVisible && "pt-1")}>
       <button
         type="button"
         onClick={() => {
           if (!activityOpen) setHasOpened(true);
           setActivityOpen((open) => !open);
         }}
-        className="flex min-h-9 w-full items-center gap-2 rounded-md px-1 text-left text-xs font-medium text-gray-600 transition-colors hover:bg-black/[0.025] hover:text-gray-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-deep-space-blue-500 dark:text-gray-400 dark:hover:bg-white/[0.04] dark:hover:text-gray-200"
+        className="flex min-h-8 w-fit max-w-full items-center gap-1.5 rounded-full border border-black/[0.06] bg-gray-50/80 px-2.5 py-1 text-left text-[11px] font-medium text-gray-600 shadow-sm transition-[background-color,border-color,color] hover:border-black/10 hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-deep-space-blue-500 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:border-white/15 dark:hover:bg-white/[0.07] dark:hover:text-gray-100"
         aria-expanded={activityOpen}
         aria-controls={activityPanelId}
         aria-label={`${activityOpen ? "Hide" : "Show"} ${summary.ariaLabel}`}
       >
         {activityOpen ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+          <ChevronDown
+            className="h-3.5 w-3.5 shrink-0 text-gray-400"
+            aria-hidden="true"
+          />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+          <ChevronRight
+            className="h-3.5 w-3.5 shrink-0 text-gray-400"
+            aria-hidden="true"
+          />
         )}
-        <span className="shrink-0">Activity</span>
-        <span className="min-w-0 flex-1 truncate text-[11px] font-normal text-gray-400 dark:text-gray-500">
+        {activityFailed ? (
+          <CircleAlert
+            className="h-3 w-3 shrink-0 text-rose-500"
+            aria-hidden="true"
+          />
+        ) : activityCompleted ? (
+          <Check
+            className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-300"
+            aria-hidden="true"
+          />
+        ) : (
+          <span
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-deep-space-blue-500 motion-safe:animate-pulse motion-reduce:animate-none"
+            aria-hidden="true"
+          />
+        )}
+        <span className="shrink-0 font-semibold">Activity</span>
+        <span className="min-w-0 truncate font-normal text-gray-400 dark:text-gray-500">
           · {summary.status}
           {summary.detail ? ` · ${summary.detail}` : ""}
         </span>
@@ -168,6 +204,7 @@ export function AssistantActivity({
       </button>
       {hasOpened ? (
         <div
+          ref={activityPanelRef}
           id={activityPanelId}
           role="region"
           aria-label="Agent activity"
@@ -181,22 +218,24 @@ export function AssistantActivity({
           )}
         >
           <div className="min-h-0 overflow-hidden">
-            {activityTrace ? (
-              <AgentRunTrace
-                trace={activityTrace}
-                mode={isLive ? "live" : "history"}
-                density={compact ? "compact" : "regular"}
-                embedded
-              />
-            ) : activityLoadFailed ? (
-              <p className="px-1 py-2 text-xs text-gray-500 dark:text-gray-400">
-                Activity unavailable on this device.
-              </p>
-            ) : (
-              <p className="px-1 py-2 text-xs text-gray-500 dark:text-gray-400">
-                Loading activity…
-              </p>
-            )}
+            <div className="mt-2 overflow-hidden rounded-xl border border-black/[0.06] bg-gray-50/65 px-3 py-2.5 dark:border-white/[0.08] dark:bg-white/[0.035]">
+              {activityTrace ? (
+                <AgentRunTrace
+                  trace={activityTrace}
+                  mode={isLive ? "live" : "history"}
+                  density={compact ? "compact" : "regular"}
+                  embedded
+                />
+              ) : activityLoadFailed ? (
+                <p className="px-1 py-2 text-xs text-gray-500 dark:text-gray-400">
+                  Activity unavailable on this device.
+                </p>
+              ) : (
+                <p className="px-1 py-2 text-xs text-gray-500 dark:text-gray-400">
+                  Loading activity…
+                </p>
+              )}
+            </div>
           </div>
         </div>
       ) : null}

@@ -5947,7 +5947,7 @@ function ImportsTab(props: {
             props.onModeChange(event.target.value as ImportMode)
           }
         >
-          <option value="knowledge_pack">Knowledge pack</option>
+          <option value="knowledge_pack">Knowledge graph</option>
           <option value="skill">Skill</option>
         </Select>
         <Input

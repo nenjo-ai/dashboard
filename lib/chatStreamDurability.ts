@@ -1,10 +1,11 @@
 "use client";
 
-import type { ChatStreamRequest } from "./types";
+import type { ChatRunStatus, ChatStreamRequest } from "./types";
 
 const DB_NAME = "nenjo-chat-streams";
 const STORE_NAME = "snapshots";
 const CHANNEL_NAME = "nenjo-chat-stream";
+export const CHAT_STREAM_SNAPSHOT_EVENT = "nenjo:chat-stream-snapshot";
 
 let databasePromise: Promise<IDBDatabase> | undefined;
 let mutationTail = Promise.resolve();
@@ -55,7 +56,14 @@ export type ChatStreamClearSnapshot = {
   clear: true;
   /** Only clear state owned by this response; older clears must not stop a new turn. */
   responseId?: string;
+  /** Terminal state projected to browser-only session navigation UI. */
+  terminalStatus?: Extract<ChatRunStatus, "completed" | "failed" | "cancelled">;
+  updatedAt: number;
 };
+
+export type ChatStreamStoredSnapshot =
+  | ChatStreamSnapshot
+  | ChatStreamClearSnapshot;
 
 function openDb(): Promise<IDBDatabase> {
   if (databasePromise) return databasePromise;
@@ -112,13 +120,15 @@ function serializeMutation(work: () => Promise<void>): Promise<void> {
 }
 
 /**
- * Delete a persisted stream only when the clear still owns the stored turn.
- * The ownership check and deletion share one transaction so a newer snapshot
- * cannot be written between them and then removed by an older cleanup task.
+ * Clear a resumable stream only when the event still owns the stored turn.
+ * Terminal markers replace the active checkpoint so session navigation can
+ * survive remounts without treating a finished response as resumable work.
  */
-async function deleteSnapshotIfOwned(
+async function clearSnapshotIfOwned(
   sessionId: string,
   responseId?: string,
+  terminalStatus?: NonNullable<ChatStreamClearSnapshot["terminalStatus"]>,
+  updatedAt = Date.now(),
 ): Promise<void> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -130,7 +140,9 @@ async function deleteSnapshotIfOwned(
 
     const existingRequest = store.get(sessionId);
     existingRequest.onsuccess = () => {
-      const existing = existingRequest.result as ChatStreamSnapshot | undefined;
+      const existing = existingRequest.result as
+        | ChatStreamStoredSnapshot
+        | undefined;
       const unscopedClearWouldDeleteActiveResponse =
         responseId === undefined && existing?.responseId !== undefined;
       const clearBelongsToDifferentResponse =
@@ -143,7 +155,18 @@ async function deleteSnapshotIfOwned(
       ) {
         return;
       }
-      store.delete(sessionId);
+      if (terminalStatus) {
+        const terminalSnapshot: ChatStreamClearSnapshot = {
+          sessionId,
+          clear: true,
+          responseId,
+          terminalStatus,
+          updatedAt,
+        };
+        store.put(terminalSnapshot);
+      } else {
+        store.delete(sessionId);
+      }
     };
   });
 }
@@ -152,12 +175,24 @@ export async function loadChatStreamSnapshot(
   sessionId: string,
 ): Promise<ChatStreamSnapshot | undefined> {
   try {
-    return (
-      (await withStore("readonly", (store) => store.get(sessionId))) ??
-      undefined
-    );
+    const stored = (await withStore("readonly", (store) =>
+      store.get(sessionId),
+    )) as ChatStreamStoredSnapshot | undefined;
+    if (!stored || "clear" in stored) return undefined;
+    return stored;
   } catch {
     return undefined;
+  }
+}
+
+/** Read active and terminal markers in one transaction for session navigation. */
+export async function loadChatStreamSnapshots(): Promise<
+  ChatStreamStoredSnapshot[]
+> {
+  try {
+    return await withStore("readonly", (store) => store.getAll());
+  } catch {
+    return [];
   }
 }
 
@@ -176,9 +211,13 @@ export async function persistChatStreamSnapshot(
 export async function clearChatStreamSnapshot(
   sessionId: string,
   responseId?: string,
+  terminalStatus?: NonNullable<ChatStreamClearSnapshot["terminalStatus"]>,
+  updatedAt = Date.now(),
 ): Promise<void> {
   try {
-    await serializeMutation(() => deleteSnapshotIfOwned(sessionId, responseId));
+    await serializeMutation(() =>
+      clearSnapshotIfOwned(sessionId, responseId, terminalStatus, updatedAt),
+    );
   } catch {
     // ignore
   }
@@ -187,6 +226,14 @@ export async function clearChatStreamSnapshot(
 export function notifyChatStreamSnapshot(
   snapshot: ChatStreamSnapshot | ChatStreamClearSnapshot,
 ): void {
+  try {
+    window.dispatchEvent(
+      new CustomEvent(CHAT_STREAM_SNAPSHOT_EVENT, { detail: snapshot }),
+    );
+  } catch {
+    // ignore
+  }
+
   try {
     const channel = new BroadcastChannel(CHANNEL_NAME);
     channel.postMessage(snapshot);
