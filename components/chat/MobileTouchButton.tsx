@@ -8,6 +8,7 @@ interface MobileTouchButtonProps {
   style?: React.CSSProperties;
   disabled?: boolean;
   title?: string;
+  ariaLabel?: string;
   children: React.ReactNode;
 }
 
@@ -17,6 +18,7 @@ export function MobileTouchButton({
   style,
   disabled,
   title,
+  ariaLabel,
   children,
 }: MobileTouchButtonProps) {
   const touchedRef = useRef(false);
@@ -29,6 +31,7 @@ export function MobileTouchButton({
       style={style}
       disabled={disabled}
       title={title}
+      aria-label={ariaLabel ?? title}
       onTouchStart={() => {
         touchedRef.current = true;
         suppressClickRef.current = false;

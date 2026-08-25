@@ -7,6 +7,8 @@ import remarkGfm from "remark-gfm";
 
 import { ArtifactViewer } from "@/components/artifacts/ArtifactViewer";
 import { Modal } from "@/components/ui/Modal";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ClipboardCheck, TriangleAlert } from "lucide-react";
 import {
   ApiError,
   fetchReview,
@@ -221,15 +223,37 @@ export function HumanReviewInbox({ executionId, taskId }: { executionId?: string
     });
     return () => controller.abort();
   }, [activeOrgId, refresh, refreshList]);
+
+  if (!isLoading && listError) {
+    return (
+      <EmptyState
+        icon={<TriangleAlert className="h-5 w-5" />}
+        title="Reviews could not be loaded"
+        description="Check the local worker connection, then refresh this page to try again."
+        tone="error"
+      />
+    );
+  }
+
+  if (!isLoading && requests && requests.length === 0) {
+    return (
+      <EmptyState
+        icon={<ClipboardCheck className="h-5 w-5" />}
+        title="You’re all caught up"
+        description="New checkpoints will appear here when an agent needs a decision, correction, or approval."
+      />
+    );
+  }
+
   return <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
-    <aside className="theme-border overflow-hidden rounded-xl border">
+    <aside className="theme-surface theme-border overflow-hidden rounded-2xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
       <div className="theme-surface-muted border-b p-3 text-sm font-semibold theme-border">Pending reviews</div>
       {isLoading ? <p className="p-3 text-sm theme-text-muted">Loading…</p> : requests?.length ? requests.map((request) => <button key={request.id} onClick={() => activeOrgId && setSelection({ orgId: activeOrgId, reviewId: request.id })}
-        className={`block w-full border-b p-3 text-left theme-border ${request.id === activeId ? "bg-cyan-50 dark:bg-cyan-950/30" : "hover:theme-surface-muted"}`}>
+        className={`block w-full border-b p-3 text-left theme-border ${request.id === activeId ? "theme-selected" : "hover:theme-surface-muted"}`}>
         <p className="theme-text text-sm font-medium">{request.title}</p><p className="theme-text-muted text-xs">Round {request.round} · {request.step}</p>
       </button>) : listError ? <p className="p-3 text-sm text-red-600">Reviews could not be loaded.</p> : <p className="p-3 text-sm theme-text-muted">No reviews are waiting.</p>}
     </aside>
-    <main className="theme-border rounded-xl border p-5">
+    <main className="theme-surface theme-border min-h-72 rounded-2xl border p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
       {detail && selected ? <div className="space-y-5">
         <header><h2 className="theme-text text-xl font-semibold">{detail.title}</h2><p className="theme-text-muted text-sm">Round {detail.round} · execution {detail.execution_id.slice(0, 8)}</p></header>
         {detail.content !== undefined ? <div className="space-y-4">{detail.content.map((input) => <section key={input.input} className="theme-border rounded-xl border p-4">
@@ -238,7 +262,7 @@ export function HumanReviewInbox({ executionId, taskId }: { executionId?: string
           <InputValue schema={input.schema} value={input.value} artifactIds={linkedArtifactIds} />
         </section>)}</div> : <p className="text-sm text-amber-600">Unlock organization content to view this review.</p>}
         {detail.status === "pending" ? <ReviewForm request={detail} onResolved={refresh} /> : <p className="theme-text-muted text-sm">This review is {detail.status}.</p>}
-      </div> : <p className="theme-text-muted text-sm">Select a pending review.</p>}
+      </div> : <div className="flex min-h-56 items-center justify-center"><p className="theme-text-muted text-sm">Loading review details…</p></div>}
     </main>
   </div>;
 }

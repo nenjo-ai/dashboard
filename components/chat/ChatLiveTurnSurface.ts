@@ -28,26 +28,26 @@ export function ChatCancelControl({
       onTouchStart: onHoldStart,
       onTouchEnd: onHoldEnd,
       className:
-        "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-flag-red-100 hover:bg-flag-red-200 text-flag-red-600 dark:bg-flag-red-900/40 dark:hover:bg-flag-red-800/50 dark:text-flag-red-400 transition-colors",
-      title: "Hold for 1 second to cancel",
-      "aria-label": "Cancel response",
+        "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-flag-red-200/70 bg-flag-red-50 text-flag-red-600 transition-colors hover:border-flag-red-300 hover:bg-flag-red-100 dark:border-flag-red-700/35 dark:bg-flag-red-900/25 dark:text-flag-red-300 dark:hover:bg-flag-red-900/40",
+      title: "Stop response",
+      "aria-label": "Stop response",
     },
     createElement(
       "svg",
       {
-        className: "h-4 w-4",
+        className: "h-3.5 w-3.5",
         viewBox: "0 0 24 24",
         fill: "currentColor",
         "aria-hidden": "true",
       },
-      createElement("rect", { x: "6", y: "6", width: "12", height: "12", rx: "2" }),
+      createElement("rect", {
+        x: "6",
+        y: "6",
+        width: "12",
+        height: "12",
+        rx: "2",
+      }),
     ),
-    !holdProgress
-      ? createElement("span", {
-          className:
-            "absolute inset-0 rounded-lg border-2 border-flag-red-400 dark:border-flag-red-500 animate-cancel-pulse",
-        })
-      : null,
     holdProgress
       ? createElement(
           "svg",

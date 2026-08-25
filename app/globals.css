@@ -1,7 +1,7 @@
-@import 'tailwindcss';
-@import 'fumadocs-ui/css/neutral.css';
-@import 'fumadocs-ui/css/preset.css';
-@import '../components/landing/landing-product.css';
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+@import "../components/landing/landing-product.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -275,7 +275,7 @@
     --fd-layout-width: var(--nenjo-docs-shell-width);
   }
 
-  #nd-sidebar[data-collapsed='false'] {
+  #nd-sidebar[data-collapsed="false"] {
     position: fixed !important;
     top: var(--fd-docs-row-1, 0px) !important;
     bottom: 0 !important;
@@ -333,13 +333,13 @@
     --background: 0 0% 98%;
     --foreground: 222.2 84% 4.9%;
     --border: 220 13% 91%;
-    --app-bg: #f5f7fb;
-    --app-surface: transparent;
+    --app-bg: #f4f6f9;
+    --app-surface: #ffffff;
     --app-surface-elevated: #ffffff;
-    --app-surface-muted: rgba(15, 23, 42, 0.04);
-    --app-surface-muted-strong: rgba(15, 23, 42, 0.08);
-    --app-border-color: rgba(15, 23, 42, 0.1);
-    --app-border-strong: rgba(15, 23, 42, 0.16);
+    --app-surface-muted: #f7f8fa;
+    --app-surface-muted-strong: #eef1f5;
+    --app-border-color: rgba(15, 23, 42, 0.09);
+    --app-border-strong: rgba(15, 23, 42, 0.15);
     --app-hover: rgba(15, 23, 42, 0.04);
     --app-hover-strong: rgba(15, 23, 42, 0.08);
     --app-overlay: rgba(245, 247, 251, 0.88);
@@ -367,9 +367,9 @@
     --background: 222 47% 6%;
     --foreground: 210 40% 98%;
     --border: 217 33% 17%;
-    --app-bg: #05070b;
-    --app-surface: transparent;
-    --app-surface-elevated: #05070b;
+    --app-bg: #07090d;
+    --app-surface: #0d1016;
+    --app-surface-elevated: #11151d;
     --app-surface-muted: rgba(255, 255, 255, 0.04);
     --app-surface-muted-strong: rgba(255, 255, 255, 0.08);
     --app-border-color: rgba(255, 255, 255, 0.1);
@@ -484,8 +484,13 @@
 
 /* Blinking cursor for typing indicator */
 @keyframes blink-cursor {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 
 .animate-blink-cursor {
@@ -494,28 +499,71 @@
 
 /* Hold-to-cancel ring progress */
 @keyframes hold-arc {
-  from { stroke-dashoffset: 100; }
-  to   { stroke-dashoffset: 0; }
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 /* Message delivery status animations */
 @keyframes status-fade-in {
-  from { opacity: 0; transform: translateY(2px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes check-draw {
-  from { stroke-dashoffset: 12; }
-  to   { stroke-dashoffset: 0; }
+  from {
+    stroke-dashoffset: 12;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 @keyframes sending-pulse {
-  0%, 100% { opacity: 0.4; }
-  50%      { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .animate-status-in {
   animation: status-fade-in 200ms ease-out forwards;
+}
+
+@keyframes loading-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.32;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+}
+
+.animate-loading-dot {
+  animation: loading-dot 1.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-loading-dot {
+    animation: none;
+    opacity: 0.72;
+  }
 }
 
 .animate-check-draw {
@@ -534,20 +582,16 @@
   animation: sending-pulse 1.5s ease-in-out infinite;
 }
 
-/* Idle pulse ring on cancel button */
-@keyframes cancel-pulse {
-  0%, 100% { opacity: 0.4; transform: scale(1); }
-  50%      { opacity: 0; transform: scale(1.35); }
-}
-
-.animate-cancel-pulse {
-  animation: cancel-pulse 2s ease-in-out infinite;
-}
-
 /* Onboarding step transition */
 @keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .animate-fade-in-up {
@@ -570,7 +614,10 @@
 
 /* Prevent rubber-band / overscroll on mobile — stabilizes viewport */
 @media (display-mode: standalone) {
-  html, body { overscroll-behavior: none; }
+  html,
+  body {
+    overscroll-behavior: none;
+  }
   body {
     background: var(--app-bg);
   }
@@ -579,7 +626,8 @@
     height: calc(4rem + env(safe-area-inset-top, 0px));
   }
 }
-html, body {
+html,
+body {
   overscroll-behavior-x: none;
   overflow-x: hidden;
   max-width: 100vw;
@@ -587,8 +635,12 @@ html, body {
 
 /* Shimmer skeleton animation */
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* Hide scrollbars globally while preserving scroll behavior */
@@ -627,8 +679,15 @@ body {
 
 /* ── Landing page animations ───────────────────────────────────────────── */
 @keyframes landing-orb-pulse {
-  0%, 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  50%      { opacity: 0.6; transform: translate(-50%, -50%) scale(1.08); }
+  0%,
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: translate(-50%, -50%) scale(1.08);
+  }
 }
 
 .landing-orb-pulse {
@@ -645,27 +704,57 @@ body {
 
 /* Entry: starts at bottom-left (45deg), orbits smoothly to top (180deg) */
 @keyframes domain-border-enter {
-  0%   { --border-angle: 45deg; opacity: 0; }
-  8%   { opacity: 1; }
-  100% { --border-angle: 180deg; opacity: 1; }
+  0% {
+    --border-angle: 45deg;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  100% {
+    --border-angle: 180deg;
+    opacity: 1;
+  }
 }
 
 /* Idle: gentle sway around the top (180deg), ±10deg — smooth sine wave */
 @keyframes domain-border-idle {
-  0%   { --border-angle: 180deg; }
-  16%  { --border-angle: 189deg; }
-  33%  { --border-angle: 190deg; }
-  50%  { --border-angle: 180deg; }
-  66%  { --border-angle: 170deg; }
-  83%  { --border-angle: 171deg; }
-  100% { --border-angle: 180deg; }
+  0% {
+    --border-angle: 180deg;
+  }
+  16% {
+    --border-angle: 189deg;
+  }
+  33% {
+    --border-angle: 190deg;
+  }
+  50% {
+    --border-angle: 180deg;
+  }
+  66% {
+    --border-angle: 170deg;
+  }
+  83% {
+    --border-angle: 171deg;
+  }
+  100% {
+    --border-angle: 180deg;
+  }
 }
 
 /* Exit: from top (180deg) orbits back to bottom-left (45deg) and fades */
 @keyframes domain-border-exit {
-  0%   { --border-angle: 180deg; opacity: 1; }
-  80%  { opacity: 0.5; }
-  100% { --border-angle: 45deg; opacity: 0; }
+  0% {
+    --border-angle: 180deg;
+    opacity: 1;
+  }
+  80% {
+    opacity: 0.5;
+  }
+  100% {
+    --border-angle: 45deg;
+    opacity: 0;
+  }
 }
 
 /* ── Domain input border animations ────────────────────────────────────── */
@@ -678,10 +767,23 @@ body {
 
 /* Entry: sweeps left to right, then tapers into resting shape */
 @keyframes input-border-enter {
-  0%   { --input-border-pos: 0%; --input-idle-spread: 0%; opacity: 0; }
-  5%   { opacity: 1; }
-  70%  { --input-border-pos: 100%; --input-idle-spread: 0%; }
-  100% { --input-border-pos: 100%; --input-idle-spread: 30%; opacity: 1; }
+  0% {
+    --input-border-pos: 0%;
+    --input-idle-spread: 0%;
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  70% {
+    --input-border-pos: 100%;
+    --input-idle-spread: 0%;
+  }
+  100% {
+    --input-border-pos: 100%;
+    --input-idle-spread: 30%;
+    opacity: 1;
+  }
 }
 
 @property --input-idle-spread {
@@ -692,14 +794,27 @@ body {
 
 /* Idle: center mass breathes — the bright middle portion expands and contracts */
 @keyframes input-border-idle {
-  0%, 100% { --input-idle-spread: 30%; }
-  50%      { --input-idle-spread: 15%; }
+  0%,
+  100% {
+    --input-idle-spread: 30%;
+  }
+  50% {
+    --input-idle-spread: 15%;
+  }
 }
 
 /* Exit: tapered border recedes from right back to left */
 @keyframes input-border-exit {
-  0%   { --input-border-pos: 100%; --input-idle-spread: 30%; opacity: 1; }
-  100% { --input-border-pos: 0%; --input-idle-spread: 0%; opacity: 0; }
+  0% {
+    --input-border-pos: 100%;
+    --input-idle-spread: 30%;
+    opacity: 1;
+  }
+  100% {
+    --input-border-pos: 0%;
+    --input-idle-spread: 0%;
+    opacity: 0;
+  }
 }
 
 /* ── Onboarding landing theme ─────────────────────────────────────────── */
@@ -749,7 +864,11 @@ body {
     linear-gradient(var(--onboarding-rule) 1px, transparent 1px),
     linear-gradient(90deg, var(--onboarding-rule) 1px, transparent 1px);
   background-size: 72px 72px;
-  mask-image: radial-gradient(ellipse 80% 80% at 45% 50%, black 0%, transparent 74%);
+  mask-image: radial-gradient(
+    ellipse 80% 80% at 45% 50%,
+    black 0%,
+    transparent 74%
+  );
   opacity: 0.36;
 }
 
@@ -759,7 +878,11 @@ body {
   pointer-events: none;
   background:
     radial-gradient(circle at 44% 42%, rgb(184 132 26 / 0.18), transparent 34%),
-    radial-gradient(ellipse at 50% 100%, rgb(184 132 26 / 0.08), transparent 58%);
+    radial-gradient(
+      ellipse at 50% 100%,
+      rgb(184 132 26 / 0.08),
+      transparent 58%
+    );
 }
 
 .onboarding-brand-link {
@@ -785,7 +908,11 @@ body {
 
 .onboarding-wizard-panel {
   background:
-    radial-gradient(ellipse 65% 50% at 50% 0%, rgb(184 132 26 / 0.06), transparent 62%),
+    radial-gradient(
+      ellipse 65% 50% at 50% 0%,
+      rgb(184 132 26 / 0.06),
+      transparent 62%
+    ),
     var(--onboarding-void-2);
 }
 
@@ -855,7 +982,11 @@ body {
 .onboarding-landing .dark\:bg-gray-800,
 .onboarding-landing .dark\:bg-white\/5,
 .onboarding-landing .bg-white\/70 {
-  background-color: color-mix(in oklab, var(--onboarding-void-2) 82%, transparent) !important;
+  background-color: color-mix(
+    in oklab,
+    var(--onboarding-void-2) 82%,
+    transparent
+  ) !important;
 }
 
 .onboarding-landing .border-gray-200,
@@ -887,9 +1018,14 @@ body {
   border-color: var(--onboarding-rule-s) !important;
 }
 
+/* Long conversations should not pay layout and paint cost for off-screen turns. */
+.chat-message-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}
+
 @media (max-width: 1023px) {
   .onboarding-step-panel {
     padding: 24px;
   }
 }
-

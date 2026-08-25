@@ -11,14 +11,17 @@ import {
   executionHistoryLabel,
   formatExecutionRelativeTime,
 } from "@/lib/executionHistory";
-import type { ExecutionDetails } from "@/lib/types";
+import type { ExecutionDetails, TaskExecutionRun } from "@/lib/types";
 
 interface TaskExecutionHistoryProps {
-  executions: ExecutionDetails[] | undefined;
+  executions: Array<ExecutionDetails | TaskExecutionRun> | undefined;
   isError?: boolean;
   isLoading: boolean;
   onRefresh: () => void;
+  onRetry?: (executionId: string) => Promise<void>;
   title?: string;
+  emptyTitle?: string;
+  emptyDescription?: string;
 }
 
 /**
@@ -31,7 +34,10 @@ export function TaskExecutionHistory({
   isError = false,
   isLoading,
   onRefresh,
+  onRetry,
   title = "Task activity",
+  emptyTitle = "No task activity yet",
+  emptyDescription = "Run a task assigned to this routine to see its live agent trace here.",
 }: TaskExecutionHistoryProps) {
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
 
@@ -56,9 +62,9 @@ export function TaskExecutionHistory({
     return (
       <div className="theme-surface theme-border rounded-xl border p-6 text-center">
         <History className="theme-text-muted mx-auto mb-2 h-5 w-5" />
-        <p className="theme-text text-sm font-medium">No task activity yet</p>
+        <p className="theme-text text-sm font-medium">{emptyTitle}</p>
         <p className="theme-text-muted mt-1 text-sm">
-          Run a task assigned to this routine to see its live agent trace here.
+          {emptyDescription}
         </p>
       </div>
     );
@@ -89,7 +95,7 @@ export function TaskExecutionHistory({
                     )}
                     <div className="min-w-0">
                       <p className="theme-text truncate text-sm font-medium">
-                        {executionHistoryLabel(execution)}
+                        {"task_title" in execution ? executionHistoryLabel(execution) : `Run ${execution.id.slice(0, 8)}`}
                       </p>
                       <p className="theme-text-muted text-xs">
                         {formatExecutionRelativeTime(execution.created_at)}
@@ -97,7 +103,7 @@ export function TaskExecutionHistory({
                     </div>
                   </div>
                   <Badge
-                    className={cn(execution.status === "running" && "animate-pulse")}
+                    className={cn(execution.status === "running" && "motion-safe:animate-pulse")}
                     showDot
                     variant={execution.status}
                   >
@@ -111,6 +117,9 @@ export function TaskExecutionHistory({
                   >
                     Review
                   </a>
+                ) : null}
+                {execution.status === "failed" && onRetry ? (
+                  <button className="theme-text-muted shrink-0 rounded-md px-2 py-1.5 text-xs font-medium hover:[background:var(--app-hover)]" onClick={() => void onRetry(execution.id)} type="button">Retry</button>
                 ) : null}
               </div>
               {expanded ? (

@@ -29,7 +29,7 @@ const NAV_LOGO = "/nenjo-logo-dark.png";
 const packages = [
   {
     icon: Network,
-    title: "Knowledge packages",
+    title: "Knowledge graphs",
     body: "Turn documents and domain context into living concept graphs with metadata-first search, graph traversal, and relationships agents can actually use.",
   },
   {
@@ -48,7 +48,7 @@ const layers = [
   {
     label: "Knowledge Layer",
     title: "Documents become graphs.",
-    body: "Knowledge packages organize docs into concepts, relationships, and metadata so agents retrieve context by meaning instead of guessing from flat chunks.",
+    body: "Knowledge graphs organize documents into concepts, relationships, and metadata so agents retrieve context by meaning instead of guessing from flat chunks.",
     points: ["Concept graph traversal", "Metadata-first search", "Fresh context after package updates"],
   },
   {

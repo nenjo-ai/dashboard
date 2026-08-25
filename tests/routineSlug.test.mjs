@@ -6,10 +6,7 @@ import {
   ROUTINE_SLUG_MAX_LENGTH,
   withRoutineCreationSlug,
 } from "../lib/routineSlug.ts";
-import {
-  buildCreateRoutineConfigureRequest,
-  buildUpdateRoutineConfigureRequest,
-} from "../lib/routineConfigure.ts";
+import { buildRoutineGraphConfigureRequest } from "../lib/routineConfigure.ts";
 
 test("routine slugs mirror the Rust derivation rules", () => {
   assert.equal(deriveRoutineSlug("Release Approval"), "release-approval");
@@ -46,32 +43,56 @@ test("routine creation preserves and trims an explicit slug", () => {
   );
 });
 
-test("routine creation places the slug in platform metadata", () => {
+test("routine graph configure request uses the canonical flat shape", () => {
+  const steps = [{
+    slug: "done",
+    name: "Done",
+    step_type: "terminal",
+    order_index: 0,
+  }];
+  const edges = [{
+    source_step: "review",
+    target_step: "implement",
+    condition: "on_fail",
+    purpose: "Return findings for rework",
+    handoff_instructions: "Include required fixes",
+    handoff_schema: { type: "object", additionalProperties: false },
+    max_retries: 2,
+  }];
   assert.deepEqual(
-    buildCreateRoutineConfigureRequest({
-      id: "routine-id",
+    buildRoutineGraphConfigureRequest({
+      slug: "release-approval",
       name: "Release Approval",
       description: "Gate releases",
-      metadata: { owner: "release-team" },
-    }),
+      project_id: null,
+      entry_steps: ["done"],
+      steps,
+      edges,
+    }, steps),
     {
-      id: "routine-id",
-      metadata: {
-        slug: "release-approval",
-        name: "Release Approval",
-        description: "Gate releases",
-      },
-      runtime_metadata: { owner: "release-team" },
+      slug: "release-approval",
+      name: "Release Approval",
+      description: "Gate releases",
+      project_id: null,
+      entry_steps: ["done"],
+      steps,
+      edges,
     },
   );
 });
 
-test("routine updates do not derive a new slug from a renamed routine", () => {
-  assert.deepEqual(
-    buildUpdateRoutineConfigureRequest("routine-id", { name: "Renamed Routine" }),
-    {
-      routine: "routine-id",
-      metadata: { name: "Renamed Routine" },
-    },
-  );
+test("routine graph configure request does not expose legacy metadata wrappers", () => {
+  const request = buildRoutineGraphConfigureRequest({
+    slug: "stable-routine",
+    name: "Renamed Routine",
+    description: null,
+    project_id: null,
+    entry_steps: ["done"],
+    steps: [],
+    edges: [],
+  }, []);
+
+  for (const removed of ["routine", "metadata", "runtime_metadata", "graph", "is_active", "max_retries"]) {
+    assert.equal(removed in request, false);
+  }
 });

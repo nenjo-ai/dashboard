@@ -4,6 +4,8 @@ import type { Project } from "@/lib/types";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { ProjectCardSkeleton } from "@/components/ui/Skeleton";
+import { EmptyState as EmptyStatePanel } from "@/components/ui/EmptyState";
+import { FolderKanban, Plus, TriangleAlert } from "lucide-react";
 
 function hasRepoUrl(project: Project): boolean {
   const s = project.settings;
@@ -27,62 +29,28 @@ function formatDate(iso: string): string {
 
 function EmptyState({ onCreateProject }: { onCreateProject: () => void }) {
   return (
-    <div className="theme-border theme-surface flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-16">
-      <div className="rounded-full bg-deep-space-blue-50 p-4">
-        <svg
-          className="h-10 w-10 text-deep-space-blue-400"
-          fill="none"
-          viewBox="0 0 24 24"
-          strokeWidth={1.5}
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
-          />
-        </svg>
-      </div>
-      <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">No projects yet</h3>
-      <p className="mt-2 max-w-sm text-center text-sm text-gray-500 dark:text-gray-400">
-        Projects provide optional shared context for related tasks, agents, and execution runs.
-      </p>
-      <Button
-        onClick={onCreateProject}
-        className="mt-6 !bg-deep-space-blue-500 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
-      >
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
-        Create Project
-      </Button>
-    </div>
+    <EmptyStatePanel
+      icon={<FolderKanban className="h-5 w-5" />}
+      title="Create your first project"
+      description="Give related tasks, routines, and execution runs a shared place for context and resources."
+      action={(
+        <Button onClick={onCreateProject}>
+          <Plus className="h-4 w-4" />
+          Create project
+        </Button>
+      )}
+    />
   );
 }
 
 function ErrorState() {
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-red-200 bg-red-50 px-6 py-12 dark:border-red-900 dark:bg-red-950/50">
-      <svg
-        className="h-10 w-10 text-flag-red-400"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={1.5}
-        stroke="currentColor"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
-        />
-      </svg>
-      <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
-        Failed to load projects
-      </h3>
-      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-        Please check your connection and try again.
-      </p>
-    </div>
+    <EmptyStatePanel
+      icon={<TriangleAlert className="h-5 w-5" />}
+      title="Projects could not be loaded"
+      description="Check the local worker connection, then refresh this page to try again."
+      tone="error"
+    />
   );
 }
 

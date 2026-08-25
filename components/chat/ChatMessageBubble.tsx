@@ -89,13 +89,13 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
     : message.content;
   const commandDisplay = messageCommandDisplay(message, rawContent);
   const displayContent = commandDisplay?.content ?? rawContent;
-  const isLiveResponse = message.isLiveDraft === true && livePhase !== undefined;
+  const isLiveResponse =
+    message.isLiveDraft === true && livePhase !== undefined;
   const assistantContent = isLiveResponse
     ? visibleLiveAssistantContent(displayContent, message.runTrace)
     : displayContent;
   const isStreamingResponse =
-    isLiveResponse &&
-    Boolean(assistantContent.trim());
+    isLiveResponse && Boolean(assistantContent.trim());
   const progressLabel =
     livePhase === "using_tool" && message.runTrace
       ? traceActivitySummary(message.runTrace).status
@@ -104,8 +104,8 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   return (
     <div
       className={cn(
-        "group flex items-start gap-3",
-        isUser ? "flex-row-reverse md:flex-row" : "flex-row",
+        "group flex w-full items-start gap-3.5",
+        isUser ? "flex-row-reverse" : "flex-row",
       )}
     >
       <div className="hidden md:block">
@@ -115,7 +115,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
           <RoleIdenticon
             roleId={activeAgent.id}
             color={activeAgent.color}
-            size={32}
+            size={30}
             className="shrink-0"
             name={activeAgent.name}
           />
@@ -127,10 +127,10 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
       </div>
       <div
         className={cn(
-          "overflow-hidden break-normal text-[15px] leading-7 md:break-words md:text-sm md:leading-relaxed rounded-2xl md:rounded-xl",
+          "overflow-hidden break-normal text-[15px] leading-7 md:break-words md:text-[15px] md:leading-7",
           isUser
-            ? "max-w-[85%] px-4 py-2.5 md:max-w-[72%] bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100 rounded-tr-sm md:rounded-tr-2xl md:rounded-tl-sm md:bg-deep-space-blue-500 md:text-white md:dark:bg-deep-space-blue-500 md:dark:text-white"
-            : "w-full max-w-full bg-transparent px-0 py-1 text-gray-800 md:w-full md:max-w-[46rem] md:px-2 md:py-1 rounded-tl-sm dark:text-gray-200",
+            ? "max-w-[84%] rounded-2xl rounded-tr-md border border-deep-space-blue-700/10 bg-deep-space-blue-600 px-4 py-3 text-white shadow-[0_8px_22px_rgba(37,55,105,0.12)] md:max-w-[68%] dark:border-white/5 dark:bg-deep-space-blue-500 dark:text-white"
+            : "w-full max-w-full bg-transparent px-0 py-0.5 text-gray-800 md:max-w-[44rem] dark:text-gray-200",
         )}
       >
         {isUser ? (
@@ -152,7 +152,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
             ) : null}
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3.5">
             {isLiveResponse && !isStreamingResponse ? (
               <ChatProgressIndicator
                 phase={livePhase}
@@ -173,13 +173,16 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
             <ChatErrorState message={message} onRetry={onRetry} />
           </div>
         )}
-        <div className="mt-1 flex items-center gap-1.5">
+        <div
+          className={cn(
+            "mt-1.5 flex items-center gap-1.5",
+            isUser && "justify-end",
+          )}
+        >
           <span
             className={cn(
               "text-[10px]",
-              isUser
-                ? "text-gray-400 md:text-deep-space-blue-200"
-                : "text-gray-400",
+              isUser ? "text-deep-space-blue-100" : "text-gray-400",
             )}
             suppressHydrationWarning
           >

@@ -98,11 +98,14 @@ test("review response uses a singleton PUT resource and If-Match", async () => {
 });
 
 test("waiting review is reachable from task and routine execution history", async () => {
-  const [taskDetail, sharedHistory] = await Promise.all([
+  const [taskDetail, activeRun, sharedHistory] = await Promise.all([
     readFile(new URL("../components/tasks/TaskDetailClient.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/tasks/TaskActiveRun.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/tasks/TaskExecutionHistory.tsx", import.meta.url), "utf8"),
   ]);
-  for (const surface of [taskDetail, sharedHistory]) {
+  assert.match(taskDetail, /TaskActiveRun/);
+  assert.match(taskDetail, /TaskExecutionHistory/);
+  for (const surface of [activeRun, sharedHistory]) {
     assert.match(surface, /pending_reviews > 0/);
     assert.match(surface, /\/dashboard\/reviews\?execution_id=/);
   }
@@ -147,7 +150,7 @@ test("inbox has safe renderers, automatic artifact downloads, conflict refresh, 
   assert.match(artifactBrowser, /fetchArtifactCatalog/);
   assert.match(artifactBrowser, /detail\.revisions\.map/);
   assert.match(artifactBrowser, /LibraryTabs/);
-  assert.match(libraryTabs, /Knowledge Packs/);
+  assert.match(libraryTabs, /Knowledge Graphs/);
   assert.match(libraryTabs, /Artifacts/);
   assert.match(api, /artifacts\/\$\{encodeURIComponent\(artifactId\)\}\/content/);
   assert.doesNotMatch(api, /fetch\(grant\.download_url\)/);

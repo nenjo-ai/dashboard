@@ -551,7 +551,7 @@ export interface ChatCommand {
 
 export interface ConfigureChatCommandRequest {
   id?: string;
-  slug?: string;
+  slug: string;
   name?: string;
   path?: string;
   command: string;
@@ -2266,6 +2266,7 @@ export interface ArtifactCatalog {
   folders: ArtifactCatalogFolder[];
   artifacts: ArtifactCatalogEntry[];
   unfiled: UnfiledArtifactEntry[];
+  next_cursor: string | null;
 }
 
 export interface ArtifactRevision {
@@ -2306,12 +2307,11 @@ export type HumanDecision =
 export interface Routine {
   id: string;
   project_id: string | null;
+  slug: string;
   name: string;
   description: string | null;
-  is_active: boolean;
   is_default: boolean;
-  max_retries: number;
-  metadata: Record<string, unknown>;
+  entry_steps: string[];
   encrypted_payload?: EncryptedPayload | null;
   last_run_at: string | null;
   next_run_at: string | null;
@@ -2345,7 +2345,10 @@ export interface RoutineEdge {
   target_step_id: string;
   target_step: string;
   condition: RoutineEdgeCondition;
-  metadata: Record<string, unknown>;
+  purpose?: string | null;
+  handoff_instructions?: string | null;
+  handoff_schema?: Record<string, unknown> | null;
+  max_retries?: number | null;
   created_at: string;
 }
 
@@ -2357,10 +2360,12 @@ export interface RoutineDetail extends Routine {
 export interface RoutineSummary {
   id: string;
   project_id: string | null;
+  slug: string;
   name: string;
-  is_active: boolean;
+  description: string | null;
   is_default: boolean;
   step_count: number;
+  entry_steps: string[];
   last_run_at: string | null;
   next_run_at: string | null;
   created_at: string;
@@ -2377,9 +2382,6 @@ export interface CreateRoutineRequest {
   name: string;
   description?: string | null;
   project_id?: string | null;
-  is_active?: boolean;
-  max_retries?: number;
-  metadata?: Record<string, unknown>;
   encrypted_payload?: EncryptedPayload | null;
 }
 
@@ -2388,9 +2390,6 @@ export interface UpdateRoutineRequest {
   name?: string;
   description?: string | null;
   project_id?: string | null;
-  is_active?: boolean;
-  max_retries?: number;
-  metadata?: Record<string, unknown>;
   encrypted_payload?: EncryptedPayload | null;
 }
 
@@ -2445,35 +2444,30 @@ export interface SaveRoutineGraphEdgeRequest {
   source_step: string;
   target_step: string;
   condition?: RoutineEdgeCondition;
-  metadata?: Record<string, unknown>;
+  purpose?: string;
+  handoff_instructions?: string;
+  handoff_schema?: Record<string, unknown>;
+  max_retries?: number;
 }
 
-export interface SaveRoutineGraphRequest extends UpdateRoutineRequest {
+export interface SaveRoutineGraphRequest {
+  slug: string;
+  name: string;
+  description?: string | null;
+  project_id?: string | null;
   entry_steps: string[];
   steps: SaveRoutineGraphStepRequest[];
   edges: SaveRoutineGraphEdgeRequest[];
 }
 
-export interface ConfigureRoutineMetadataRequest {
-  slug?: string;
-  name?: string;
+export interface ConfigureRoutineRequest {
+  slug: string;
+  name: string;
   description?: string | null;
   project_id?: string | null;
-  is_active?: boolean;
-  max_retries?: number;
-}
-
-export interface ConfigureRoutineRequest {
-  id?: string;
-  routine?: string;
-  metadata?: ConfigureRoutineMetadataRequest;
-  runtime_metadata?: Record<string, unknown>;
-  encrypted_payload?: EncryptedPayload | null;
-  graph?: {
-    entry_steps: string[];
-    steps: SaveRoutineGraphStepRequest[];
-    edges: SaveRoutineGraphEdgeRequest[];
-  };
+  entry_steps: string[];
+  steps: SaveRoutineGraphStepRequest[];
+  edges: SaveRoutineGraphEdgeRequest[];
 }
 
 export type DelegationStrategy =

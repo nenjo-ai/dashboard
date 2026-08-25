@@ -103,9 +103,6 @@ export function RoutineDetailClient({ routineRef }: { routineRef: string }) {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Badge variant={routine.is_active ? "active" : "inactive"}>
-              {routine.is_active ? "Active" : "Inactive"}
-            </Badge>
             {routine.is_default && <Badge variant="ready">Default</Badge>}
           </div>
         </div>

@@ -243,6 +243,7 @@ function CommandEditor({
     try {
       const saved = await configureChatCommand({
         id: command.id,
+        slug: command.slug,
         path,
         command: slashCommand,
         description,
@@ -469,7 +470,7 @@ function CommandMetadataModal({
     try {
       const saved = await configureChatCommand({
         id: command?.id,
-        slug: isEditing ? undefined : normalizedSlug,
+        slug: command?.slug ?? normalizedSlug,
         name: normalizedName,
         path: cleanPath(path),
         command: normalizedCommand,

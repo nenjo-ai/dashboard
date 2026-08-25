@@ -129,8 +129,12 @@ export function OrgSwitcher() {
                           )}
                         >
                           <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium">{org.name}</span>
-                            <span className="block truncate text-xs text-gray-400">{org.role}</span>
+                            <span className="block truncate text-sm font-medium">
+                              {org.name}
+                            </span>
+                            <span className="block truncate text-xs text-gray-400">
+                              {org.role}
+                            </span>
                           </span>
                           {selected && <Check className="h-4 w-4 shrink-0" />}
                         </button>
@@ -160,7 +164,7 @@ export function OrgSwitcher() {
         <button
           type="button"
           onClick={() => setOpen(open === "desktop" ? null : "desktop")}
-          className="theme-border theme-surface inline-flex h-10 min-w-0 items-center gap-2 rounded-full border px-3 text-sm text-gray-700 shadow-xs transition-colors hover:[background:var(--app-hover)] dark:text-gray-200"
+          className="inline-flex h-9 min-w-0 items-center gap-2 rounded-xl px-2.5 text-sm text-gray-700 transition-colors hover:[background:var(--app-hover)] dark:text-gray-200"
           aria-haspopup="menu"
           aria-expanded={open === "desktop"}
         >
@@ -175,7 +179,7 @@ export function OrgSwitcher() {
         </button>
 
         {open === "desktop" && (
-          <div className="theme-border theme-surface-elevated absolute right-0 top-12 z-40 w-80 rounded-2xl border p-2 shadow-xl">
+          <div className="theme-border theme-surface-elevated absolute right-0 top-11 z-40 w-80 rounded-2xl border p-2 shadow-xl">
             <div className="px-3 pb-2 pt-1">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
                 Organization
@@ -198,8 +202,12 @@ export function OrgSwitcher() {
                     )}
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">{org.name}</span>
-                      <span className="block truncate text-xs text-gray-400">{org.role}</span>
+                      <span className="block truncate text-sm font-medium">
+                        {org.name}
+                      </span>
+                      <span className="block truncate text-xs text-gray-400">
+                        {org.role}
+                      </span>
                     </span>
                     {selected && <Check className="h-4 w-4 shrink-0" />}
                   </button>

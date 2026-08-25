@@ -8,5 +8,5 @@ import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
 export default function RoutinesPage() {
   const mobile = useIsMobileViewport();
-  return mobile ? <MobilePageShell title="Routines"><RoutineSection allowCreate={false} /></MobilePageShell> : <><TopBar title="Routines" /><PageContent><RoutineSection /></PageContent></>;
+  return mobile ? <MobilePageShell title="Routines"><RoutineSection /></MobilePageShell> : <><TopBar title="Routines" /><PageContent><RoutineSection /></PageContent></>;
 }

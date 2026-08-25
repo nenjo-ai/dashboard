@@ -1,281 +1,103 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { ReactNode } from "react";
-import { BookOpen, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
+import useSWR from "swr";
+import { ArrowRight, Files, FolderTree, Network, Plus, RefreshCw, Upload } from "lucide-react";
+
+import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { TopBar } from "@/components/layout/TopBar";
-import { PageContent } from "@/components/ui/PageContent";
-import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
-import { Button } from "@/components/ui/Button";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { Input } from "@/components/ui/Input";
-import { Textarea } from "@/components/ui/Textarea";
-import { KnowledgeSection } from "@/components/knowledge/KnowledgeSection";
-import { SourceKnowledgeSection } from "@/components/knowledge/SourceKnowledgeSection";
 import { LibraryTabs } from "@/components/library/LibraryTabs";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
+import { LoadingStatus } from "@/components/ui/LoadingStatus";
+import { PageContent } from "@/components/ui/PageContent";
+import { PageIntro } from "@/components/ui/PageIntro";
+import { fetchArtifactCatalog } from "@/lib/api";
 import { useKnowledgePacks } from "@/lib/hooks";
-import { createKnowledgePack, deleteKnowledgePack } from "@/lib/api";
-import type { KnowledgePack } from "@/lib/types";
+import { isLibraryKnowledgeGraph, knowledgeGraphSourceLabel, summarizeKnowledgeGraphs } from "@/lib/libraryWorkspace";
+import { useOrgContext } from "@/lib/org-context";
+import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
-function knowledgeSelector(pack: KnowledgePack): string {
-  return pack.selector || `lib:${pack.slug}`;
-}
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "Never";
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-export default function KnowledgePage() {
-  const { packs, isLoading, mutate } = useKnowledgePacks();
-  const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
-  const [packName, setPackName] = useState("");
-  const [packDescription, setPackDescription] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [confirmDeletePack, setConfirmDeletePack] = useState<KnowledgePack | null>(null);
-  const [deletingPack, setDeletingPack] = useState(false);
-
-  const platformPacks = useMemo(
-    () => (packs ?? []).filter((pack) => pack.source_type !== "package"),
-    [packs],
+export default function LibraryPage() {
+  const mobile = useIsMobileViewport();
+  const { activeOrgId } = useOrgContext();
+  const { packs, isLoading: packsLoading } = useKnowledgePacks();
+  const { data: artifactCatalog, isLoading: artifactsLoading } = useSWR(
+    activeOrgId ? ["library-overview-artifacts", activeOrgId] as const : null,
+    () => fetchArtifactCatalog(""),
   );
-  const selectedPack = platformPacks.find((pack) => pack.id === selectedPackId) ?? null;
+  const graphs = (packs ?? []).filter(isLibraryKnowledgeGraph);
+  const summary = summarizeKnowledgeGraphs(graphs);
+  const artifactCount = (artifactCatalog?.artifacts.length ?? 0) + (artifactCatalog?.unfiled.length ?? 0);
+  const recentGraphs = graphs.toSorted((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime()).slice(0, 4);
 
-  const handleCreatePack = async () => {
-    const name = packName.trim();
-    if (!name) {
-      setError("Pack name is required");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const created = await createKnowledgePack({
-        name,
-        description: packDescription.trim() || null,
-      });
-      await mutate();
-      setSelectedPackId(created.id);
-      setPackName("");
-      setPackDescription("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create knowledge pack");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const body = <div className="space-y-5 md:space-y-6">
+    <div className="hidden md:block"><Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Library" }]} /></div>
+    <PageIntro
+      eyebrow="Knowledge workspace"
+      description="Curate connected knowledge for agents and preserve the files, outputs, and revisions that support it."
+      actions={<>
+        <Link className="theme-surface theme-border theme-text inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-sm font-medium hover:[background:var(--app-hover)]" href="/dashboard/library/artifacts"><Upload className="h-4 w-4" />Upload artifacts</Link>
+        <Link className="inline-flex h-10 items-center gap-2 rounded-lg bg-[var(--app-accent)] px-4 text-sm font-medium text-[var(--app-accent-foreground)] hover:bg-[var(--app-accent-hover)]" href="/dashboard/library/graphs?create=1"><Plus className="h-4 w-4" />New graph</Link>
+      </>}
+      className="mb-0"
+    />
+    <LibraryTabs />
 
-  const handleDeletePack = async () => {
-    if (!confirmDeletePack) return;
-    setDeletingPack(true);
-    setError(null);
-    try {
-      await deleteKnowledgePack(confirmDeletePack.slug);
-      await mutate();
-      if (selectedPackId === confirmDeletePack.id) {
-        setSelectedPackId(null);
-      }
-      setConfirmDeletePack(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete knowledge pack");
-    } finally {
-      setDeletingPack(false);
-    }
-  };
-
-  if (selectedPack) {
-    return (
-      <>
-        <TopBar title="Library" />
-        <PageContent className="space-y-4">
-          <Breadcrumbs
-            items={[
-              { label: "Dashboard", href: "/dashboard" },
-              { label: "Library", href: "/dashboard/library", onClick: () => setSelectedPackId(null) },
-              { label: selectedPack.name },
-            ]}
-          />
-          <LibraryTabs />
-          {error ? <Notice tone="error">{error}</Notice> : null}
-
-          <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <h1 className="truncate text-xl font-semibold text-gray-950 dark:text-gray-50">{selectedPack.name}</h1>
-              <p className="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">{knowledgeSelector(selectedPack)}</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex flex-wrap gap-2">
-                <Badge>Platform</Badge>
-                {selectedPack.version ? <Badge>{selectedPack.version}</Badge> : null}
-              </div>
-              {!selectedPack.read_only ? (
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
-                  onClick={() => setConfirmDeletePack(selectedPack)}
-                  disabled={deletingPack}
-                  title="Delete knowledge pack"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete
-                </Button>
-              ) : null}
-            </div>
-          </div>
-          {selectedPack.source_type === "package" && selectedPack.read_only ? (
-            <SourceKnowledgeSection pack={selectedPack} />
-          ) : (
-            <KnowledgeSection packRef={selectedPack.slug} readOnly={selectedPack.read_only} />
-          )}
-          <ConfirmDialog
-            open={!!confirmDeletePack}
-            onClose={() => {
-              if (!deletingPack) setConfirmDeletePack(null);
-            }}
-            onConfirm={handleDeletePack}
-            title="Delete Knowledge Pack"
-            message={`Delete "${confirmDeletePack?.name ?? "this knowledge pack"}" and all of its documents? This cannot be undone.`}
-            confirmLabel="Delete"
-            loading={deletingPack}
-          />
-        </PageContent>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <TopBar title="Library" />
-      <PageContent className="space-y-6">
-        <Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Library" }]} />
-        <div>
-          <h1 className="theme-text text-2xl font-semibold">Knowledge Packs</h1>
-          <p className="theme-text-muted mt-3 max-w-2xl text-sm leading-6">
-            Platform-managed knowledge documents and editable org knowledge packs.
-          </p>
+    {packsLoading || artifactsLoading ? <LoadingStatus className="min-h-44" label="Loading Library" description="Gathering knowledge graphs and artifact activity." /> : <>
+      <section className="theme-surface theme-border overflow-hidden rounded-2xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)]" aria-label="Library pulse">
+        <div className="grid grid-cols-2 divide-x divide-y theme-border sm:grid-cols-4 sm:divide-y-0">
+          <Metric icon={Network} label="Knowledge graphs" value={summary.totalCount} tone="text-violet-600 dark:text-violet-400" />
+          <Metric icon={FolderTree} label="Workspace graphs" value={summary.workspaceCount} tone="text-blue-600 dark:text-blue-400" />
+          <Metric icon={RefreshCw} label="Managed sources" value={summary.managedCount} tone="text-amber-600 dark:text-amber-400" />
+          <Metric icon={Files} label="Artifacts" value={artifactCount} tone="text-emerald-600 dark:text-emerald-400" />
         </div>
+      </section>
 
-        <LibraryTabs />
-
-        {error ? <Notice tone="error">{error}</Notice> : null}
-
-        {isLoading ? (
-          <LoadingGrid />
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {platformPacks.map((pack) => (
-              <button key={pack.id} type="button" onClick={() => setSelectedPackId(pack.id)} className="h-full text-left">
-                <KnowledgePackCard pack={pack} />
-              </button>
-            ))}
-            <CreateKnowledgePackCard
-              packName={packName}
-              packDescription={packDescription}
-              onPackNameChange={setPackName}
-              onPackDescriptionChange={setPackDescription}
-              onCreatePack={handleCreatePack}
-              creatingPack={busy}
-            />
-          </div>
-        )}
-      </PageContent>
-    </>
-  );
-}
-
-function KnowledgePackCard({ pack }: { pack: KnowledgePack }) {
-  return (
-    <div className="h-full min-h-44 rounded-lg border border-gray-200 bg-white p-4 text-left shadow-xs transition-colors hover:border-deep-space-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-deep-space-blue-700">
-      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-deep-space-blue-50 text-deep-space-blue-600 dark:bg-deep-space-blue-950/40 dark:text-deep-space-blue-300">
-        <BookOpen className="h-5 w-5" />
-      </div>
-      <div className="mt-4 min-w-0">
-        <h3 className="truncate text-base font-semibold text-gray-950 dark:text-gray-50">{pack.name}</h3>
-        <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{knowledgeSelector(pack)}</p>
-        <p className="mt-3 line-clamp-2 min-h-10 text-sm leading-5 text-gray-600 dark:text-gray-300">
-          {pack.description || "No description available."}
-        </p>
-      </div>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Badge>Platform</Badge>
-        <span className="ml-auto text-[11px] text-gray-400">{formatDate(pack.updated_at)}</span>
-      </div>
-    </div>
-  );
-}
-
-function CreateKnowledgePackCard({
-  packName,
-  packDescription,
-  onPackNameChange,
-  onPackDescriptionChange,
-  onCreatePack,
-  creatingPack,
-}: {
-  packName: string;
-  packDescription: string;
-  onPackNameChange: (value: string) => void;
-  onPackDescriptionChange: (value: string) => void;
-  onCreatePack: () => void;
-  creatingPack: boolean;
-}) {
-  return (
-    <div className="flex min-h-44 h-full flex-col rounded-lg border border-dashed border-gray-300 bg-white p-4 shadow-xs dark:border-gray-700 dark:bg-gray-900">
-      <div className="flex items-center gap-2">
-        <Plus className="h-4 w-4 text-gray-500" />
-        <h3 className="text-sm font-semibold text-gray-950 dark:text-gray-50">New Knowledge Pack</h3>
-      </div>
-      <div className="mt-4 flex flex-1 flex-col gap-3">
-        <Input value={packName} onChange={(event) => onPackNameChange(event.target.value)} placeholder="Pack name" />
-        <Textarea
-          value={packDescription}
-          onChange={(event) => onPackDescriptionChange(event.target.value)}
-          placeholder="Short description"
-          className="min-h-16 flex-1"
+      <div className="grid gap-4 lg:grid-cols-2">
+        <LibraryDestination
+          href="/dashboard/library/graphs"
+          icon={Network}
+          eyebrow="Connected context"
+          title="Knowledge Graphs"
+          description="Organize documents, concepts, and relationships into context agents can retrieve by meaning."
+          meta={`${summary.totalCount} graph${summary.totalCount === 1 ? "" : "s"} · ${summary.recentlyUpdatedCount} updated this week`}
         />
-        <Button size="sm" className="w-full" onClick={onCreatePack} isLoading={creatingPack}>
-          <Plus className="h-4 w-4" />
-          Create Pack
-        </Button>
+        <LibraryDestination
+          href="/dashboard/library/artifacts"
+          icon={Files}
+          eyebrow="Immutable files"
+          title="Artifacts"
+          description="Browse uploaded references and agent outputs with revision history and review provenance."
+          meta={`${artifactCount} artifact${artifactCount === 1 ? "" : "s"} · ${artifactCatalog?.folders.length ?? 0} folders`}
+        />
       </div>
-    </div>
-  );
-}
 
-function Badge({ children }: { children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-      {children}
-    </span>
-  );
-}
-
-function Notice({ children, tone }: { children: ReactNode; tone: "error" | "success" }) {
-  return (
-    <div className={`rounded-lg border px-4 py-3 text-sm ${
-      tone === "error"
-        ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300"
-        : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300"
-    }`}
-    >
-      {children}
-    </div>
-  );
-}
-
-function LoadingGrid() {
-  return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      {[0, 1, 2, 3].map((item) => (
-        <div key={item} className="h-44 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-          <div className="h-10 w-10 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-800" />
-          <div className="mt-4 h-4 w-2/3 animate-pulse rounded bg-gray-200 dark:bg-gray-800" />
-          <div className="mt-2 h-3 w-1/2 animate-pulse rounded bg-gray-200 dark:bg-gray-800" />
-          <div className="mt-5 h-10 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+      <section className="theme-surface theme-border overflow-hidden rounded-2xl border">
+        <div className="theme-border flex items-center justify-between border-b px-4 py-3.5 sm:px-5">
+          <div><h2 className="theme-text text-sm font-semibold">Recently updated graphs</h2><p className="theme-text-muted mt-0.5 text-xs">Continue curating the knowledge agents use most recently.</p></div>
+          <Link className="theme-text-muted text-xs font-medium hover:theme-text" href="/dashboard/library/graphs">View all</Link>
         </div>
-      ))}
-    </div>
-  );
+        {recentGraphs.length ? <div className="theme-border divide-y">{recentGraphs.map((graph) => <Link className="group flex items-center gap-3 px-4 py-3.5 hover:[background:var(--app-hover)] sm:px-5" href={`/dashboard/library/graphs/${graph.slug}`} key={graph.id}>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-300"><Network className="h-4 w-4" /></span>
+          <span className="min-w-0 flex-1"><span className="theme-text block truncate text-sm font-medium">{graph.name}</span><span className="theme-text-muted block truncate text-xs">{knowledgeGraphSourceLabel(graph)} · updated {new Date(graph.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></span>
+          <ArrowRight className="theme-text-muted h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+        </Link>)}</div> : <div className="px-6 py-9 text-center"><p className="theme-text text-sm font-medium">No knowledge graphs yet</p><p className="theme-text-muted mt-1 text-sm">Create a graph to give agents reusable, connected context.</p></div>}
+      </section>
+    </>}
+  </div>;
+
+  return mobile
+    ? <MobilePageShell title="Library">{body}</MobilePageShell>
+    : <><TopBar title="Library" /><PageContent>{body}</PageContent></>;
+}
+
+function Metric({ icon: Icon, label, value, tone }: { icon: typeof Network; label: string; value: number; tone: string }) {
+  return <div className="px-4 py-4 sm:px-5"><div className="flex items-center gap-2"><Icon className={`h-4 w-4 ${tone}`} /><span className="theme-text-muted text-xs font-medium">{label}</span></div><p className="theme-text mt-2 text-2xl font-semibold tracking-[-0.03em]">{value}</p></div>;
+}
+
+function LibraryDestination({ href, icon: Icon, eyebrow, title, description, meta }: { href: string; icon: typeof Network; eyebrow: string; title: string; description: string; meta: string }) {
+  return <Link className="theme-surface theme-border group relative overflow-hidden rounded-2xl border p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-[border-color,box-shadow] hover:[border-color:var(--app-border-strong)] hover:shadow-[0_10px_28px_rgba(15,23,42,0.06)] sm:p-6" href={href}>
+    <div className="pointer-events-none absolute -right-10 -top-14 h-32 w-32 rounded-full bg-violet-500/[0.06] blur-2xl" />
+    <div className="relative flex items-start gap-4"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-300"><Icon className="h-5 w-5" /></span><div className="min-w-0 flex-1"><p className="theme-text-muted text-[11px] font-semibold uppercase tracking-[0.14em]">{eyebrow}</p><h2 className="theme-text mt-1 text-lg font-semibold tracking-[-0.02em]">{title}</h2><p className="theme-text-muted mt-2 text-sm leading-6">{description}</p><p className="theme-text-muted mt-4 text-xs">{meta}</p></div><ArrowRight className="theme-text-muted mt-1 h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5" /></div>
+  </Link>;
 }

@@ -6,6 +6,8 @@ import { DELEGATION_STRATEGIES } from "@/lib/types";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { MotionList, MotionItem } from "@/components/ui/motion";
 import { Button } from "@/components/ui/Button";
+import { EmptyState as EmptyStatePanel } from "@/components/ui/EmptyState";
+import { Plus, TriangleAlert, UsersRound } from "lucide-react";
 
 
 interface CouncilListProps {
@@ -91,47 +93,19 @@ function CardSkeleton() {
 
 function EmptyState({ onCreate }: { onCreate?: () => void }) {
   return (
-    <div className="theme-surface theme-border flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-16">
-      <div className="theme-surface-muted rounded-full p-4">
-        <svg
-          className="h-10 w-10 text-deep-space-blue-400"
-          fill="none"
-          viewBox="0 0 24 24"
-          strokeWidth={1.5}
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"
-          />
-        </svg>
-      </div>
-      <h3 className="theme-text mt-4 text-lg font-semibold">
-        No councils yet
-      </h3>
-      <p className="theme-text-muted mt-2 max-w-sm text-center text-sm">
-        Create your first agent council to enable multi-agent collaboration.
-        Councils group agents with a leader and configurable delegation strategies.
-      </p>
-      {onCreate ? (
+    <EmptyStatePanel
+      icon={<UsersRound className="h-5 w-5" />}
+      title="Create your first council"
+      description="Bring agents together under a leader and choose how they delegate, compare, and combine their work."
+      action={onCreate ? (
         <Button
           onClick={onCreate}
-          className="mt-6 !bg-deep-space-blue-500 !text-white hover:!bg-deep-space-blue-400 active:!bg-deep-space-blue-600"
         >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          Create Council
+          <Plus className="h-4 w-4" />
+          Create council
         </Button>
-      ) : null}
-    </div>
+      ) : undefined}
+    />
   );
 }
 
@@ -281,27 +255,12 @@ export function CouncilList({
 
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-red-200 bg-red-50 px-6 py-12 dark:border-red-900 dark:bg-red-950/50">
-        <svg
-          className="h-10 w-10 text-red-400"
-          fill="none"
-          viewBox="0 0 24 24"
-          strokeWidth={1.5}
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
-          />
-        </svg>
-        <h3 className="theme-text mt-4 text-lg font-semibold">
-          Failed to load councils
-        </h3>
-        <p className="theme-text-muted mt-2 text-sm">
-          Please check your connection and try again.
-        </p>
-      </div>
+      <EmptyStatePanel
+        icon={<TriangleAlert className="h-5 w-5" />}
+        title="Councils could not be loaded"
+        description="Check the local worker connection, then refresh this page to try again."
+        tone="error"
+      />
     );
   }
 

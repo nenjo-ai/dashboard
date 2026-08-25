@@ -218,7 +218,7 @@ function LibraryPackReference({
           type="button"
           onClick={() => setIsExpanded((current) => !current)}
           className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300"
-          aria-label={isExpanded ? "Collapse knowledge pack" : "Expand knowledge pack"}
+          aria-label={isExpanded ? "Collapse knowledge graph" : "Expand knowledge graph"}
         >
           <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
         </button>

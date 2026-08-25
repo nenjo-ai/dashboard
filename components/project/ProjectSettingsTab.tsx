@@ -1,362 +1,242 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  AlertTriangle,
+  ExternalLink,
+  GitBranch,
+  Link2,
+  Plus,
+  Tags,
+  Trash2,
+  Unlink,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
 import {
   Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
 } from "@/components/ui/Card";
-import { updateProject, syncRepo, disconnectRepo } from "@/lib/api";
-import type { Project, ProjectRepoSettings, RepoSyncStatus } from "@/lib/types";
-
-interface ProjectSettingsTabProps {
-  project: Project | undefined;
-  onUpdated: () => void;
-}
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { deleteProject, disconnectRepo, syncRepo, updateProject } from "@/lib/api";
+import type { Project, ProjectRepoSettings } from "@/lib/types";
 
 type MetadataEntry = { key: string; value: string };
 
 function getMetadata(project: Project): MetadataEntry[] {
-  const raw = (project.settings as Record<string, unknown>)?.metadata;
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    return Object.entries(raw as Record<string, string>).map(([key, value]) => ({
-      key,
-      value: String(value),
-    }));
-  }
-  return [];
+  const raw = (project.settings as Record<string, unknown>).metadata;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  return Object.entries(raw as Record<string, unknown>).map(([key, value]) => ({
+    key,
+    value: String(value),
+  }));
 }
 
-export function ProjectSettingsTab({ project, onUpdated }: ProjectSettingsTabProps) {
-  // -- Git settings state --
-  const repoSettings = (project?.settings ?? {}) as ProjectRepoSettings;
-  const repoUrl = repoSettings.repo_url ?? "";
-  const repoSyncStatus: RepoSyncStatus | undefined = repoSettings.repo_sync_status;
-  const repoSyncError = repoSettings.repo_sync_error;
-  const targetBranch = repoSettings.target_branch ?? "main";
+function normalizedMetadata(entries: MetadataEntry[]) {
+  return entries
+    .filter((entry) => entry.key.trim())
+    .map((entry) => ({ key: entry.key.trim(), value: entry.value }));
+}
 
-  const [repoUrlInput, setRepoUrlInput] = useState("");
-  const [branchInput, setBranchInput] = useState("");
+export function ProjectSettingsTab({ project, onUpdated }: { project: Project | undefined; onUpdated: () => void }) {
+  const router = useRouter();
+  const repo = (project?.settings ?? {}) as ProjectRepoSettings;
+  const repoUrl = repo.repo_url ?? "";
+  const targetBranch = repo.target_branch ?? "main";
+  const [showRepoForm, setShowRepoForm] = useState(Boolean(repoUrl));
+  const [repoUrlInput, setRepoUrlInput] = useState(repoUrl);
+  const [branchInput, setBranchInput] = useState(targetBranch);
   const [syncing, setSyncing] = useState(false);
-  const [gitError, setGitError] = useState<string | null>(null);
-  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [repoError, setRepoError] = useState<string | null>(null);
+  const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
-
-  // -- Metadata state --
-  const [entries, setEntries] = useState<MetadataEntry[]>([]);
-  const [savingMeta, setSavingMeta] = useState(false);
-  const [metaSaved, setMetaSaved] = useState(false);
-  const [metaError, setMetaError] = useState<string | null>(null);
+  const [entries, setEntries] = useState<MetadataEntry[]>(project ? getMetadata(project) : []);
+  const [savingMetadata, setSavingMetadata] = useState(false);
+  const [metadataSaved, setMetadataSaved] = useState(false);
+  const [metadataError, setMetadataError] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    if (project) {
-      setRepoUrlInput(repoUrl);
-      setBranchInput(targetBranch);
-      setEntries(getMetadata(project));
-    }
+    if (!project) return;
+    setRepoUrlInput(repoUrl);
+    setBranchInput(targetBranch);
+    setShowRepoForm(Boolean(repoUrl));
+    setEntries(getMetadata(project));
   }, [project, repoUrl, targetBranch]);
 
-  // -- Git handlers --
-  const handleSaveAndSync = useCallback(async () => {
+  const repositoryDirty = repoUrlInput.trim() !== repoUrl || (branchInput.trim() || "main") !== targetBranch;
+  const metadataDirty = useMemo(() => {
+    if (!project) return false;
+    return JSON.stringify(normalizedMetadata(entries)) !== JSON.stringify(normalizedMetadata(getMetadata(project)));
+  }, [entries, project]);
+
+  const saveAndSync = useCallback(async () => {
     if (!project || !repoUrlInput.trim()) return;
     setSyncing(true);
-    setGitError(null);
+    setRepoError(null);
     try {
-      // Save branch setting alongside sync
       await updateProject(project.id, {
-        settings: {
-          ...project.settings,
-          target_branch: branchInput.trim() || "main",
-        },
+        settings: { ...project.settings, target_branch: branchInput.trim() || "main" },
       });
       await syncRepo(project.id, repoUrlInput.trim());
       onUpdated();
-    } catch (err) {
-      setGitError(err instanceof Error ? err.message : "Failed to save & sync repo");
+    } catch (error) {
+      setRepoError(error instanceof Error ? error.message : "Could not connect the repository.");
     } finally {
       setSyncing(false);
     }
-  }, [project, repoUrlInput, branchInput, onUpdated]);
+  }, [branchInput, onUpdated, project, repoUrlInput]);
 
-  const handleDisconnect = useCallback(async () => {
+  const disconnect = useCallback(async () => {
     if (!project) return;
     setDisconnecting(true);
+    setRepoError(null);
     try {
       await disconnectRepo(project.id);
-      setConfirmDisconnect(false);
+      setDisconnectOpen(false);
+      setShowRepoForm(false);
       setRepoUrlInput("");
       onUpdated();
-    } catch (err) {
-      setGitError(err instanceof Error ? err.message : "Failed to disconnect");
+    } catch (error) {
+      setRepoError(error instanceof Error ? error.message : "Could not disconnect the repository.");
     } finally {
       setDisconnecting(false);
     }
-  }, [project, onUpdated]);
-
-  // -- Metadata handlers --
-  const addEntry = () => setEntries((prev) => [...prev, { key: "", value: "" }]);
-
-  const updateEntry = (index: number, field: "key" | "value", val: string) => {
-    setEntries((prev) => prev.map((e, i) => (i === index ? { ...e, [field]: val } : e)));
-  };
-
-  const removeEntry = (index: number) => {
-    setEntries((prev) => prev.filter((_, i) => i !== index));
-  };
+  }, [onUpdated, project]);
 
   const saveMetadata = useCallback(async () => {
-    if (!project) return;
-    setSavingMeta(true);
-    setMetaError(null);
-    setMetaSaved(false);
-    const metadata: Record<string, string> = {};
-    for (const e of entries) {
-      const k = e.key.trim();
-      if (k) metadata[k] = e.value;
-    }
+    if (!project || !metadataDirty) return;
+    setSavingMetadata(true);
+    setMetadataError(null);
+    setMetadataSaved(false);
+    const metadata = Object.fromEntries(normalizedMetadata(entries).map((entry) => [entry.key, entry.value]));
     try {
-      await updateProject(project.id, {
-        settings: { ...project.settings, metadata },
-      });
+      await updateProject(project.id, { settings: { ...project.settings, metadata } });
       onUpdated();
-      setMetaSaved(true);
-      setTimeout(() => setMetaSaved(false), 2000);
-    } catch (err) {
-      setMetaError(err instanceof Error ? err.message : "Failed to save metadata");
+      setMetadataSaved(true);
+      window.setTimeout(() => setMetadataSaved(false), 2000);
+    } catch (error) {
+      setMetadataError(error instanceof Error ? error.message : "Could not save metadata.");
     } finally {
-      setSavingMeta(false);
+      setSavingMetadata(false);
     }
-  }, [project, entries, onUpdated]);
+  }, [entries, metadataDirty, onUpdated, project]);
 
-  // -- Derived --
-  const syncStatusBadge = (() => {
-    if (!repoSyncStatus) return null;
-    const map: Record<RepoSyncStatus, { variant: string; label: string }> = {
-      syncing: { variant: "running", label: "Syncing..." },
-      synced: { variant: "completed", label: "Synced" },
-      error: { variant: "failed", label: "Sync failed" },
-    };
-    const { variant, label } = map[repoSyncStatus];
-    return (
-      <Badge variant={variant} showDot title={repoSyncStatus === "error" ? repoSyncError : undefined}>
-        {label}
-      </Badge>
-    );
-  })();
+  const removeProject = useCallback(async () => {
+    if (!project) return;
+    setDeleting(true);
+    try {
+      await deleteProject(project.id);
+      router.push("/dashboard/projects");
+    } finally {
+      setDeleting(false);
+    }
+  }, [project, router]);
 
-  if (!project) {
-    return (
-      <div className="theme-text-muted flex items-center justify-center py-12 text-sm">
-        Loading...
-      </div>
-    );
-  }
-
-  const gitDirty = repoUrlInput.trim() !== repoUrl || branchInput.trim() !== targetBranch;
+  if (!project) return null;
 
   return (
-    <div className="space-y-6">
-      {/* ---------------------------------------------------------------- */}
-      {/* Git Repository Card                                              */}
-      {/* ---------------------------------------------------------------- */}
+    <div className="space-y-5">
       <Card static>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <svg className="theme-text-muted h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z" />
-            </svg>
-            <CardTitle>Git Repository</CardTitle>
-            {syncStatusBadge}
-          </div>
-          <CardDescription>
-            Connect a git repository so agents can read and write code for this project.
-            To switch repositories, disconnect the current one first.
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent className="space-y-5">
-          {/* Repo URL */}
-          <div className="space-y-1.5">
-            <label className="theme-text block text-xs font-medium">
-              Repository URL
-            </label>
-            <input
-              type="url"
-              value={repoUrlInput}
-              onChange={(e) => setRepoUrlInput(e.target.value)}
-              placeholder="https://github.com/owner/repo.git"
-              className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400"
-              disabled={syncing}
-            />
-          </div>
-
-          {/* Branch */}
-          <div className="space-y-1.5">
-            <label className="theme-text block text-xs font-medium">
-              Branch
-            </label>
-            <input
-              value={branchInput}
-              onChange={(e) => setBranchInput(e.target.value)}
-              placeholder="main"
-              className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400"
-              disabled={syncing}
-            />
-            <p className="theme-text-muted text-xs">
-              Agents will pull and push from this branch
-            </p>
-          </div>
-
-          {gitError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400">
-              {gitError}
-            </div>
-          )}
-        </CardContent>
-
-        <CardFooter className="gap-3 flex-wrap">
-          <Button size="sm" onClick={handleSaveAndSync} disabled={syncing || !repoUrlInput.trim().endsWith(".git")}>
-            <span className="inline-flex items-center gap-1.5">
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 19.644l3.181-3.182" />
-              </svg>
-              {syncing ? "Syncing..." : gitDirty ? "Save & Sync" : "Sync"}
-            </span>
-          </Button>
-          {repoUrl && !confirmDisconnect && (
-            <button
-              type="button"
-              onClick={() => setConfirmDisconnect(true)}
-              className="ml-auto inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13.181 8.68a4.503 4.503 0 0 1 1.903 6.405m-9.768-2.782L3.56 14.06a4.5 4.5 0 0 0 6.364 6.364l3.75-3.75m-6-6 3.75-3.75a4.5 4.5 0 0 1 6.364 0m-4.773 4.773L18.44 5.56" />
-              </svg>
-              Disconnect
-            </button>
-          )}
-          {repoUrl && confirmDisconnect && (
-            <div className="ml-auto inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 dark:border-red-800 dark:bg-red-950/30">
-              <span className="text-xs text-red-700 dark:text-red-400">
-                Disconnect repo? This cannot be undone.
-              </span>
-              <button
-                type="button"
-                onClick={handleDisconnect}
-                disabled={disconnecting}
-                className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 transition-colors disabled:opacity-50"
-              >
-                {disconnecting ? "..." : "Confirm"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDisconnect(false)}
-                disabled={disconnecting}
-                className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </CardFooter>
-      </Card>
-
-      {/* ---------------------------------------------------------------- */}
-      {/* Metadata Card                                                    */}
-      {/* ---------------------------------------------------------------- */}
-      <Card static>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <svg className="theme-text-muted h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
-            </svg>
-            <CardTitle>Metadata</CardTitle>
-          </div>
-          <CardDescription>
-            Custom key-value metadata attached to this project. Available to agents during execution.
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent className="space-y-3">
-          {entries.length > 0 && (
-            <div className="space-y-2">
-              {/* Header row */}
-              <div className="flex items-center gap-2 px-1">
-                <span className="theme-text-muted w-80 text-xs font-medium uppercase tracking-wider">Key</span>
-                <span className="theme-text-muted flex-1 text-xs font-medium uppercase tracking-wider">Value</span>
-                <span className="w-9" />
+        <CardHeader className="p-5 md:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <GitBranch className="theme-text-muted h-4 w-4" aria-hidden="true" />
+                <CardTitle className="text-base">Repository</CardTitle>
+                {repo.repo_sync_status ? (
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${repo.repo_sync_status === "synced" ? "border-emerald-200/80 bg-emerald-50/80 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-300" : repo.repo_sync_status === "error" ? "border-rose-200/80 bg-rose-50/80 text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-300" : "border-blue-200/80 bg-blue-50/80 text-blue-700 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-300"}`} role="status">
+                    <span className={`h-1.5 w-1.5 rounded-full bg-current ${repo.repo_sync_status === "syncing" ? "motion-safe:animate-pulse motion-reduce:animate-none" : ""}`} aria-hidden="true" />
+                    {repo.repo_sync_status === "synced" ? "Synced" : repo.repo_sync_status === "error" ? "Sync failed" : "Syncing"}
+                  </span>
+                ) : null}
               </div>
-              {entries.map((entry, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input
-                    value={entry.key}
-                    onChange={(e) => updateEntry(i, "key", e.target.value)}
-                    placeholder="key"
-                    className="theme-surface theme-border theme-text w-80 rounded-lg border px-3 py-2 text-sm font-mono outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400"
-                  />
-                  <input
-                    value={entry.value}
-                    onChange={(e) => updateEntry(i, "value", e.target.value)}
-                    placeholder="value"
-                    className="theme-surface theme-border theme-text flex-1 rounded-lg border px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeEntry(i)}
-                    className="theme-text-muted rounded-lg p-2 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
-                    title="Remove"
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
+              <CardDescription className="mt-1.5">Connect source code so agents can work with the project repository.</CardDescription>
             </div>
-          )}
+            {repoUrl ? (
+              <a href={repoUrl} target="_blank" rel="noreferrer" className="theme-text-muted inline-flex items-center gap-1.5 text-xs font-medium hover:text-deep-space-blue-600 dark:hover:text-deep-space-blue-300">
+                Open repository <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              </a>
+            ) : null}
+          </div>
+        </CardHeader>
 
-          {entries.length === 0 && (
-            <div className="theme-border theme-surface-muted rounded-lg border border-dashed py-8 text-center">
-              <svg className="theme-text-muted mx-auto h-8 w-8" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
-              </svg>
-              <p className="theme-text-muted mt-2 text-sm">
-                No metadata yet
-              </p>
+        {!repoUrl && !showRepoForm ? (
+          <CardContent className="px-5 pb-5 md:px-6 md:pb-6">
+            <div className="theme-surface-muted theme-border flex flex-col items-center rounded-xl border border-dashed px-6 py-9 text-center">
+              <span className="theme-surface theme-border theme-text-muted flex h-11 w-11 items-center justify-center rounded-xl border"><Link2 className="h-5 w-5" aria-hidden="true" /></span>
+              <h3 className="theme-text mt-3 text-sm font-semibold">No repository connected</h3>
+              <p className="theme-text-muted mt-1 max-w-md text-sm leading-6">Connect a Git repository when this project needs code-aware agents. You can also keep the project context-only.</p>
+              <Button className="mt-4" size="sm" onClick={() => setShowRepoForm(true)}><Plus className="h-3.5 w-3.5" aria-hidden="true" />Connect repository</Button>
             </div>
-          )}
+          </CardContent>
+        ) : (
+          <>
+            <CardContent className="grid gap-4 px-5 md:grid-cols-[minmax(0,1fr)_14rem] md:px-6">
+              <label className="space-y-1.5">
+                <span className="theme-text block text-xs font-medium">Repository URL</span>
+                <input type="url" value={repoUrlInput} onChange={(event) => setRepoUrlInput(event.target.value)} placeholder="https://github.com/owner/repository.git" className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400" disabled={syncing} />
+              </label>
+              <label className="space-y-1.5">
+                <span className="theme-text block text-xs font-medium">Working branch</span>
+                <input value={branchInput} onChange={(event) => setBranchInput(event.target.value)} placeholder="main" className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400 focus:ring-1 focus:ring-deep-space-blue-400" disabled={syncing} />
+              </label>
+              {repo.repo_sync_error ? <p className="text-sm text-rose-600 dark:text-rose-300 md:col-span-2">{repo.repo_sync_error}</p> : null}
+              {repoError ? <p className="text-sm text-rose-600 dark:text-rose-300 md:col-span-2">{repoError}</p> : null}
+            </CardContent>
+            <CardFooter className="flex-wrap gap-2 px-5 pb-5 md:px-6 md:pb-6">
+              <Button size="sm" onClick={() => void saveAndSync()} disabled={syncing || !repoUrlInput.trim()} isLoading={syncing}>
+                {repoUrl ? (repositoryDirty ? "Save & sync" : "Sync now") : "Connect & sync"}
+              </Button>
+              {!repoUrl ? <Button size="sm" variant="ghost" onClick={() => setShowRepoForm(false)}>Cancel</Button> : null}
+              {repoUrl ? <Button size="sm" variant="ghost" className="ml-auto text-rose-600 dark:text-rose-300" onClick={() => setDisconnectOpen(true)}><Unlink className="h-3.5 w-3.5" aria-hidden="true" />Disconnect</Button> : null}
+            </CardFooter>
+          </>
+        )}
+      </Card>
 
-          <button
-            type="button"
-            onClick={addEntry}
-            className="theme-border theme-text-muted inline-flex items-center gap-1.5 rounded-lg border border-dashed px-3 py-1.5 text-sm transition-colors hover:border-deep-space-blue-400 hover:text-deep-space-blue-600 dark:hover:text-deep-space-blue-400"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            Add field
-          </button>
+      <Card static>
+        <CardHeader className="p-5 md:p-6">
+          <div className="flex items-center gap-2"><Tags className="theme-text-muted h-4 w-4" aria-hidden="true" /><CardTitle className="text-base">Metadata</CardTitle></div>
+          <CardDescription>Optional key-value details exposed to agents during project work.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 px-5 md:px-6">
+          {entries.length === 0 ? (
+            <div className="theme-surface-muted theme-border rounded-xl border border-dashed px-5 py-6 text-center"><p className="theme-text text-sm font-medium">No metadata fields</p><p className="theme-text-muted mt-1 text-xs">Add only the structured details agents need repeatedly.</p></div>
+          ) : entries.map((entry, index) => (
+            <div key={index} className="grid gap-2 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_2.25rem]">
+              <input value={entry.key} onChange={(event) => setEntries((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} placeholder="Key" aria-label={`Metadata key ${index + 1}`} className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 font-mono text-sm outline-hidden focus:border-deep-space-blue-400" />
+              <input value={entry.value} onChange={(event) => setEntries((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} placeholder="Value" aria-label={`Metadata value ${index + 1}`} className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm outline-hidden focus:border-deep-space-blue-400" />
+              <button type="button" onClick={() => setEntries((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="theme-text-muted flex h-9 w-9 items-center justify-center rounded-lg hover:bg-rose-500/10 hover:text-rose-600" aria-label={`Remove metadata field ${index + 1}`}><X className="h-4 w-4" /></button>
+            </div>
+          ))}
+          <button type="button" onClick={() => setEntries((current) => [...current, { key: "", value: "" }])} className="theme-border theme-text-muted inline-flex items-center gap-1.5 rounded-lg border border-dashed px-3 py-1.5 text-sm hover:border-deep-space-blue-400 hover:text-deep-space-blue-600"><Plus className="h-3.5 w-3.5" aria-hidden="true" />Add field</button>
+          {metadataError ? <p className="text-sm text-rose-600 dark:text-rose-300">{metadataError}</p> : null}
         </CardContent>
-
-        <CardFooter className="gap-3">
-          <Button size="sm" onClick={saveMetadata} disabled={savingMeta}>
-            {savingMeta ? "Saving..." : "Save Metadata"}
-          </Button>
-          {metaSaved && (
-            <span className="text-sm text-green-600 dark:text-green-400">Saved</span>
-          )}
-          {metaError && (
-            <span className="text-sm text-flag-red-600 dark:text-flag-red-400">{metaError}</span>
-          )}
+        <CardFooter className="gap-3 px-5 pb-5 pt-4 md:px-6 md:pb-6">
+          <Button size="sm" onClick={() => void saveMetadata()} disabled={!metadataDirty || savingMetadata} isLoading={savingMetadata}>Save metadata</Button>
+          <span className="theme-text-muted text-xs" role="status" aria-live="polite">{metadataSaved ? "Saved" : metadataDirty ? "Unsaved changes" : "Up to date"}</span>
         </CardFooter>
       </Card>
+
+      <section className="rounded-[1.4rem] border border-rose-200/80 bg-rose-50/40 p-5 dark:border-rose-400/20 dark:bg-rose-500/[0.055] md:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-300"><AlertTriangle className="h-4 w-4" aria-hidden="true" /></span>
+            <div><h2 className="text-sm font-semibold text-rose-900 dark:text-rose-100">Danger zone</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-rose-700/80 dark:text-rose-200/70">Deleting this project permanently removes its project record. This action cannot be undone.</p></div>
+          </div>
+          <Button variant="danger" size="sm" onClick={() => setDeleteOpen(true)}><Trash2 className="h-3.5 w-3.5" aria-hidden="true" />Delete project</Button>
+        </div>
+      </section>
+
+      <ConfirmDialog open={disconnectOpen} onClose={() => setDisconnectOpen(false)} onConfirm={() => void disconnect()} title="Disconnect repository?" message="This removes the synced repository and project worktrees. Project tasks, conversations, and history will remain." confirmLabel="Disconnect" loading={disconnecting} />
+      <ConfirmDialog open={deleteOpen} onClose={() => setDeleteOpen(false)} onConfirm={() => void removeProject()} title={`Delete ${project.name}?`} message="This permanently removes the project. This action cannot be undone." confirmLabel="Delete project" loading={deleting} />
     </div>
   );
 }
