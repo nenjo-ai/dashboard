@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   isLibraryKnowledgeGraph,
+  knowledgeGraphSourceDetail,
   knowledgeGraphSourceLabel,
   selectKnowledgeGraphs,
   summarizeKnowledgeGraphs,
@@ -22,24 +23,30 @@ const graph = (id, overrides = {}) => ({
   ...overrides,
 });
 
-test("Library graphs exclude package and system resources without changing backend types", () => {
+test("Library graphs include package-managed resources while excluding system resources", () => {
   assert.equal(isLibraryKnowledgeGraph(graph("workspace")), true);
   assert.equal(isLibraryKnowledgeGraph(graph("github", { source_type: "github" })), true);
-  assert.equal(isLibraryKnowledgeGraph(graph("package", { source_type: "package" })), false);
+  assert.equal(isLibraryKnowledgeGraph(graph("package", { source_type: "package" })), true);
   assert.equal(isLibraryKnowledgeGraph(graph("system", { is_system: true })), false);
   assert.equal(knowledgeGraphSourceLabel(graph("workspace")), "Workspace");
   assert.equal(knowledgeGraphSourceLabel(graph("managed", { source_type: "github" })), "Source managed");
+  assert.equal(knowledgeGraphSourceLabel(graph("package", { source_type: "package" })), "Package managed");
+  assert.equal(knowledgeGraphSourceDetail(graph("package", {
+    source_type: "package",
+    metadata: { package: { logical_name: "@nenjo/nenji" } },
+  })), "@nenjo/nenji");
 });
 
-test("graph pulse separates workspace and managed sources", () => {
+test("graph summary separates workspace and managed sources", () => {
   const now = new Date("2026-08-24T12:00:00.000Z").getTime();
   assert.deepEqual(summarizeKnowledgeGraphs([
     graph("recent"),
     graph("managed", { source_type: "github", updated_at: "2026-08-01T12:00:00.000Z" }),
+    graph("package", { source_type: "package", updated_at: "2026-08-01T12:00:00.000Z" }),
   ], now), {
-    totalCount: 2,
+    totalCount: 3,
     workspaceCount: 1,
-    managedCount: 1,
+    managedCount: 2,
     recentlyUpdatedCount: 1,
   });
 });
@@ -48,9 +55,11 @@ test("graph search covers names, descriptions, selectors, and source filters", (
   const graphs = [
     graph("product", { name: "Product model", description: "Canonical entities", selector: "lib:product" }),
     graph("policies", { name: "Policies", source_type: "github", version: "2.0.0" }),
+    graph("nenji", { name: "Agent context", source_type: "package", metadata: { package: { logical_name: "@nenjo/nenji" } } }),
   ];
   assert.deepEqual(selectKnowledgeGraphs(graphs, "canonical", "all").map(({ id }) => id), ["product"]);
   assert.deepEqual(selectKnowledgeGraphs(graphs, "2.0", "managed").map(({ id }) => id), ["policies"]);
+  assert.deepEqual(selectKnowledgeGraphs(graphs, "@nenjo/nenji", "managed").map(({ id }) => id), ["nenji"]);
   assert.deepEqual(selectKnowledgeGraphs(graphs, "", "workspace").map(({ id }) => id), ["product"]);
 });
 
@@ -71,6 +80,8 @@ test("Library exposes dedicated overview, graph, graph-detail, and artifact work
   assert.match(graphDetail, /label: "Documents"/);
   assert.match(graphDetail, /label: "Map"/);
   assert.match(graphDetail, /dynamic\(\(\) => import\("@\/components\/knowledge\/KnowledgeSection"\)/);
+  assert.match(graphDetail, /Browse package documents/);
+  assert.match(graphDetail, /Documents and relationships load from the installed package/);
   assert.match(artifactToolbar, /Search this folder/);
   assert.match(artifacts, /Artifact workspace/);
   for (const source of [overview, tabs, graphIndex, graphDetail]) {

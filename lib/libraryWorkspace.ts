@@ -10,11 +10,24 @@ export interface KnowledgeGraphSummary {
 }
 
 export function isLibraryKnowledgeGraph(pack: KnowledgePack): boolean {
-  return pack.source_type !== "package" && !pack.is_system;
+  return pack.is_system !== true;
 }
 
-export function knowledgeGraphSourceLabel(pack: KnowledgePack): "Workspace" | "Source managed" {
-  return pack.source_type === "uploaded" ? "Workspace" : "Source managed";
+export function knowledgeGraphSourceLabel(pack: KnowledgePack): "Workspace" | "Source managed" | "Package managed" {
+  if (pack.source_type === "uploaded") return "Workspace";
+  return pack.source_type === "package" ? "Package managed" : "Source managed";
+}
+
+export function knowledgeGraphSourceDetail(pack: KnowledgePack): string | null {
+  if (pack.source_type !== "package") return null;
+  const packageMetadata = pack.metadata.package;
+  if (!packageMetadata || typeof packageMetadata !== "object" || Array.isArray(packageMetadata)) return null;
+  const record = packageMetadata as Record<string, unknown>;
+  for (const field of ["logical_name", "name"]) {
+    const value = record[field];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return null;
 }
 
 export function summarizeKnowledgeGraphs(
@@ -45,6 +58,7 @@ export function selectKnowledgeGraphs(
       pack.description ?? "",
       pack.selector ?? `lib:${pack.slug}`,
       pack.version ?? "",
+      knowledgeGraphSourceDetail(pack) ?? "",
     ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)))
     .toSorted((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime());
 }

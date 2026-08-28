@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAppAuth } from "@/components/auth/AppAuth";
-import { Copy, Mail, Trash2 } from "lucide-react";
+import { Building2, Copy, Mail, ShieldCheck, Trash2, UserRoundCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
   approveOrgContentKeyRequest,
@@ -100,6 +100,31 @@ function ScopeSummary({ scopes }: { scopes: string[] }) {
           +{scopes.length - 4} more
         </span>
       )}
+    </div>
+  );
+}
+
+function OrganizationMetric({
+  icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  detail: string;
+}) {
+  return (
+    <div className="theme-border theme-surface flex min-w-0 items-start gap-3 rounded-2xl border p-4">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-deep-space-blue-500/10 text-deep-space-blue-600 dark:text-deep-space-blue-300">
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="theme-text truncate text-lg font-semibold tracking-[-0.02em]">{value}</p>
+        <p className="theme-text mt-0.5 text-xs font-medium">{label}</p>
+        <p className="theme-text-muted mt-1 text-[11px] leading-4">{detail}</p>
+      </div>
     </div>
   );
 }
@@ -781,7 +806,7 @@ function AccessRequestsPanel({
               {request.requester_user_id === currentUserId ? (
                 <Button
                   disabled
-                  className="disabled:opacity-100 animate-pulse shadow-[0_0_0_1px_rgba(217,119,6,0.35)]"
+                  className="disabled:opacity-100 motion-safe:animate-pulse shadow-[0_0_0_1px_rgba(217,119,6,0.35)]"
                   style={{ backgroundColor: "#f59e0b", color: "#ffffff" }}
                 >
                   Waiting for approval
@@ -789,7 +814,7 @@ function AccessRequestsPanel({
               ) : (
                 <Button
                   isLoading={busyRequestId === request.id}
-                  className="animate-pulse shadow-[0_0_0_1px_rgba(22,163,74,0.35)]"
+                  className="motion-safe:animate-pulse shadow-[0_0_0_1px_rgba(22,163,74,0.35)]"
                   style={{ backgroundColor: "#16a34a", color: "#ffffff" }}
                   onClick={async () => {
                     try {
@@ -890,19 +915,10 @@ export function OrgSettingsSection() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-2xl border border-black/10 p-5 dark:border-white/10 md:grid-cols-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-400">Organization</p>
-          <p className="theme-text mt-2 text-lg font-semibold">{activeOrganization?.name ?? "Organization"}</p>
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-400">Your role</p>
-          <p className="theme-text mt-2 text-sm">{currentRole ?? "Unknown"}</p>
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-400">Effective scopes</p>
-          <p className="theme-text mt-2 text-sm">{currentScopes.length}</p>
-        </div>
+      <section aria-label="Organization summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <OrganizationMetric icon={<Building2 className="h-4 w-4" />} label="Organization" value={activeOrganization?.name ?? "Organization"} detail="Active workspace boundary" />
+        <OrganizationMetric icon={<UserRoundCheck className="h-4 w-4" />} label="Your role" value={currentRole ?? "Unknown"} detail="Membership authority" />
+        <OrganizationMetric icon={<ShieldCheck className="h-4 w-4" />} label="Effective scopes" value={currentScopes.length} detail="Explicit access grants" />
       </section>
 
       <MyDeviceAccessPanel

@@ -201,8 +201,8 @@ export function Sidebar({
       )}
     >
       {/* Logo / Brand */}
-      <div className="flex h-16 items-center gap-2.5 px-5">
-        <NenjoLogoMark className="h-8 w-8 rounded-lg" />
+      <div className="flex h-16 items-center gap-3 px-6">
+        <NenjoLogoMark className="h-8 w-5 rounded-lg" />
         <span
           className={cn(
             "whitespace-nowrap text-[17px] font-semibold tracking-[-0.02em] text-deep-space-blue-900 transition-[opacity,transform] duration-200 ease-in-out dark:text-white",
@@ -318,8 +318,8 @@ export function Sidebar({
               transition={{ type: "spring", bounce: 0, duration: 0.3 }}
             >
               {/* Logo / Brand */}
-              <div className="flex h-16 items-center gap-2.5 px-5">
-                <NenjoLogoMark className="h-8 w-8 rounded-lg" />
+              <div className="flex h-16 items-center gap-3 px-6">
+                <NenjoLogoMark className="h-8 w-5 rounded-lg" />
                 <span className="text-[17px] font-semibold tracking-[-0.02em] text-deep-space-blue-900 dark:text-white">
                   Nenjo
                 </span>

@@ -60,6 +60,16 @@ Keep the subject stable: it is also the browser vault account identifier and
 the platform external user identifier. Clerk remains the default whenever
 `NENJO_AUTH_MODE` is unset.
 
+Fresh local identities enter the same onboarding flow as Clerk identities. To
+exercise onboarding again, use a new subject and email together because both
+the external subject and email participate in platform user provisioning:
+
+```bash
+NENJO_LOCAL_AUTH_SUBJECT=onboarding_dev_001 \
+NENJO_LOCAL_AUTH_EMAIL=onboarding_dev_001@nenjo.dev \
+npm run dev:local-auth
+```
+
 ## Project Structure
 
 - `/app` - Next.js 13+ app directory with routing

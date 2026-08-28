@@ -1,11 +1,10 @@
 import { Suspense } from "react";
+import { LoadingStatus } from "@/components/ui/LoadingStatus";
 import { RoutineDetailClient } from "./RoutineDetailClient";
 
 function RoutineDetailFallback() {
   return (
-    <div className="flex min-h-screen items-center justify-center text-sm text-gray-400">
-      Loading routine...
-    </div>
+    <LoadingStatus className="min-h-screen" description="Preparing the workflow workspace." label="Loading routine" />
   );
 }
 

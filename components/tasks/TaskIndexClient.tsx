@@ -24,7 +24,7 @@ import {
   type TaskWorkspaceView,
 } from "@/lib/taskWorkspace";
 import { TaskList } from "@/components/project/TaskList";
-import { TaskWorkspacePulse } from "@/components/tasks/TaskWorkspacePulse";
+import { TaskWorkspaceSummary } from "@/components/tasks/TaskWorkspaceSummary";
 import { Button } from "@/components/ui/Button";
 
 const filterClass = "theme-surface theme-border min-w-0 rounded-xl border px-3 py-2.5 text-sm";
@@ -85,7 +85,7 @@ export function TaskIndexClient() {
 
   return (
     <div className="space-y-4">
-      <TaskWorkspacePulse summary={summary} />
+      <TaskWorkspaceSummary summary={summary} />
       <section className="theme-surface theme-border space-y-3 rounded-2xl border p-3 shadow-[0_1px_2px_rgba(15,23,42,0.03)] sm:p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <label className="relative min-w-0 flex-1">

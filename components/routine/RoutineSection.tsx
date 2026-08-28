@@ -1,78 +1,55 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { useRoutines } from "@/lib/hooks";
-import { createRoutine, deleteRoutine } from "@/lib/api";
-import type { RoutineSummary, CreateRoutineRequest } from "@/lib/types";
-import { RoutineCard } from "./RoutineCard";
-import { Button } from "@/components/ui/Button";
-import { Skeleton } from "@/components/ui/Skeleton";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { MotionList, MotionItem } from "@/components/ui/motion";
-import { toast } from "@/lib/toast";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { PageIntro } from "@/components/ui/PageIntro";
-import { ListTree, Plus, TriangleAlert } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { ListFilter, ListTree, Plus, Search, TriangleAlert, Workflow } from "lucide-react";
 
-// ---------------------------------------------------------------------------
-// RoutineSection — card grid of task-targetable routines
-// ---------------------------------------------------------------------------
+import { deleteRoutine } from "@/lib/api";
+import { useRoutines } from "@/lib/hooks";
+import {
+  filterAndSortRoutines,
+  summarizeRoutineWorkspace,
+  type RoutineSort,
+} from "@/lib/routineWorkspace";
+import { toast } from "@/lib/toast";
+import type { RoutineSummary } from "@/lib/types";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
+import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Input } from "@/components/ui/Input";
+import { LoadingStatus } from "@/components/ui/LoadingStatus";
+import { MotionItem, MotionList } from "@/components/ui/motion";
+import { PageIntro } from "@/components/ui/PageIntro";
+import { Select } from "@/components/ui/Select";
+import { CreateRoutineDialog } from "./CreateRoutineDialog";
+import { RoutineCard } from "./RoutineCard";
 
 interface RoutineSectionProps {
   allowCreate?: boolean;
 }
 
 export function RoutineSection({ allowCreate = true }: RoutineSectionProps) {
-  const router = useRouter();
-  const { routines: allRoutines, isLoading, isError, error, mutate } = useRoutines();
-
-  const routines = allRoutines;
-
-  // ── Create form ─────────────────────────────────────────────────────────
-  const [showCreate, setShowCreate] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newDescription, setNewDescription] = useState("");
-
-  // ── Delete state ────────────────────────────────────────────────────────
+  const { routines, isLoading, isError, error, mutate } = useRoutines();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<RoutineSort>("updated");
   const [confirmDelete, setConfirmDelete] = useState<RoutineSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const resetForm = useCallback(() => {
-    setNewName("");
-    setNewDescription("");
-    setShowCreate(false);
-  }, []);
-
-  const handleCreate = useCallback(async () => {
-    if (!newName.trim()) return;
-    setCreating(true);
-    try {
-      const data: CreateRoutineRequest = {
-        name: newName.trim(),
-        description: newDescription.trim() || undefined,
-      };
-      const created = await createRoutine(data);
-      resetForm();
-      mutate();
-      toast.success("Routine created.");
-      router.push(`/dashboard/routines/${created.id}?tab=edit`);
-    } catch {
-      toast.error("Failed to create routine.");
-    } finally {
-      setCreating(false);
-    }
-  }, [newName, newDescription, resetForm, mutate, router]);
+  const summary = useMemo(() => summarizeRoutineWorkspace(routines ?? []), [routines]);
+  const visibleRoutines = useMemo(
+    () => filterAndSortRoutines(routines ?? [], query, sort),
+    [query, routines, sort],
+  );
 
   const handleDelete = useCallback(async () => {
     if (!confirmDelete) return;
     setDeleting(true);
     try {
       await deleteRoutine(confirmDelete.id);
+      toast.success(`“${confirmDelete.name}” deleted.`);
       setConfirmDelete(null);
-      mutate();
-      toast.success(`"${confirmDelete.name}" deleted.`);
+      await mutate();
     } catch {
       toast.error("Failed to delete routine.");
     } finally {
@@ -80,146 +57,126 @@ export function RoutineSection({ allowCreate = true }: RoutineSectionProps) {
     }
   }, [confirmDelete, mutate]);
 
-  // ── Loading ─────────────────────────────────────────────────────────────
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="theme-surface theme-border rounded-xl border p-5">
-            <div className="flex items-start gap-3">
-              <Skeleton className="h-9 w-9 rounded-lg" />
-              <div className="flex-1 space-y-2">
-                <Skeleton className="h-5 w-2/3" />
-                <Skeleton className="h-4 w-1/3" />
-              </div>
-            </div>
-            <div className="mt-6 flex items-center gap-4">
-              <Skeleton className="h-4 w-16" />
-              <Skeleton className="h-4 w-20" />
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  // ── Error ───────────────────────────────────────────────────────────────
-  if (isError) {
-    return (
-      <EmptyState
-        icon={<TriangleAlert className="h-5 w-5" />}
-        title="Routines could not be loaded"
-        description={error?.message ?? "Check the local worker connection and try again."}
-        tone="error"
-      />
-    );
-  }
-
   return (
-    <>
+    <div className="space-y-5 md:space-y-6">
+      <div className="hidden md:block">
+        <Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Routines" }]} />
+      </div>
+
       <PageIntro
-        description="Build reusable agent workflows, then attach them to tasks or run them on a recurring schedule."
         actions={allowCreate ? (
-          <Button
-            onClick={() => setShowCreate(true)}
-          >
-            <Plus className="h-4 w-4" />
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
             New routine
           </Button>
         ) : undefined}
+        className="mb-0"
+        description="Design reusable agent workflows, attach them to tasks, and review every run from one focused workspace."
+        eyebrow="Workflow library"
+        title="Routines"
       />
 
-      {/* Create form */}
-      {allowCreate && showCreate && (
-        <div className="theme-surface theme-border mb-6 rounded-xl border p-5 shadow-xs">
-          <h3 className="theme-text mb-4 text-sm font-semibold">
-            New Routine
-          </h3>
-          <div className="space-y-3">
-            <div>
-              <label className="theme-text-muted mb-1 block text-xs font-medium">
-                Name
-              </label>
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="e.g., Code Review Pipeline"
-                autoFocus
-                className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
-              />
-            </div>
+      {!isLoading && !isError && routines?.length ? (
+        <section aria-label="Routine summary" className="theme-surface theme-border grid overflow-hidden rounded-2xl border sm:grid-cols-3">
+          <SummaryMetric label="Routines" value={summary.routines} />
+          <SummaryMetric className="theme-border border-t sm:border-l sm:border-t-0" label="Workflow steps" value={summary.steps} />
+          <SummaryMetric className="theme-border border-t sm:border-l sm:border-t-0" label="With run history" value={summary.previouslyRun} />
+        </section>
+      ) : null}
 
-            <div>
-              <label className="theme-text-muted mb-1 block text-xs font-medium">
-                Description
-              </label>
-              <input
-                type="text"
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                placeholder="Optional description"
-                className="theme-surface theme-border theme-text w-full rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--app-text-muted)] focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400"
-              />
-            </div>
-
-
-            <div className="flex justify-end gap-2 pt-1">
-              <Button variant="secondary" size="sm" onClick={resetForm} disabled={creating}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleCreate}
-                disabled={creating || !newName.trim()}
-                isLoading={creating}
-              >
-                Create
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Card grid */}
-      {routines && routines.length > 0 ? (
-        <MotionList className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {routines.map((routine) => (
-            <MotionItem key={routine.id}>
-              <RoutineCard
-                routine={routine}
-                onDelete={setConfirmDelete}
-                isDeleting={deleting && confirmDelete?.id === routine.id}
-              />
-            </MotionItem>
-          ))}
-        </MotionList>
-      ) : !showCreate ? (
+      {isLoading ? (
+        <LoadingStatus className="min-h-72" description="Gathering workflow structure and recent run activity." label="Loading routines" />
+      ) : isError ? (
         <EmptyState
-          icon={<ListTree className="h-5 w-5" />}
-          title="Create your first routine"
-          description="Define a repeatable sequence of agent steps for work you run more than once."
+          action={<Button onClick={() => void mutate()} variant="secondary">Try again</Button>}
+          description={error?.message ?? "Check the local worker connection and try again."}
+          icon={<TriangleAlert className="h-5 w-5" />}
+          title="Routines could not be loaded"
+          tone="error"
+        />
+      ) : routines?.length ? (
+        <>
+          <div className="theme-surface theme-border flex flex-col gap-3 rounded-2xl border p-3 sm:flex-row sm:items-center">
+            <label className="relative min-w-0 flex-1">
+              <span className="sr-only">Search routines</span>
+              <Search className="theme-text-muted pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" aria-hidden="true" />
+              <Input className="pl-9" onChange={(event) => setQuery(event.target.value)} placeholder="Search routines" value={query} />
+            </label>
+            <label className="relative w-full sm:w-48">
+              <span className="sr-only">Sort routines</span>
+              <ListFilter className="theme-text-muted pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2" aria-hidden="true" />
+              <Select className="pl-9" onChange={(event) => setSort(event.target.value as RoutineSort)} value={sort}>
+                <option value="updated">Recently updated</option>
+                <option value="name">Name</option>
+                <option value="steps">Most steps</option>
+              </Select>
+            </label>
+          </div>
+
+          {visibleRoutines.length ? (
+            <MotionList className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              {visibleRoutines.map((routine) => (
+                <MotionItem className="h-full" key={routine.id}>
+                  <RoutineCard
+                    isDeleting={deleting && confirmDelete?.id === routine.id}
+                    onDelete={setConfirmDelete}
+                    routine={routine}
+                  />
+                </MotionItem>
+              ))}
+            </MotionList>
+          ) : (
+            <EmptyState
+              action={<Button onClick={() => setQuery("")} variant="secondary">Clear search</Button>}
+              description="Try a different name, description, or routine slug."
+              icon={<Search className="h-5 w-5" />}
+              title="No matching routines"
+            />
+          )}
+        </>
+      ) : (
+        <EmptyState
           action={allowCreate ? (
-            <Button onClick={() => setShowCreate(true)}>
+            <Button onClick={() => setCreateOpen(true)}>
               <Plus className="h-4 w-4" />
               Create routine
             </Button>
           ) : undefined}
+          description="Start with a task entry, add agent or review steps, then connect the paths that move work forward."
+          icon={<ListTree className="h-5 w-5" />}
+          title="Create your first routine"
         />
-      ) : null}
+      )}
 
-      {/* Confirm delete dialog */}
+      <CreateRoutineDialog
+        onClose={() => setCreateOpen(false)}
+        onCreated={() => void mutate()}
+        open={allowCreate && createOpen}
+      />
       <ConfirmDialog
-        open={!!confirmDelete}
+        confirmLabel="Delete routine"
+        loading={deleting}
+        message={`Delete “${confirmDelete?.name}”? Assigned tasks will no longer be able to use this workflow. This action cannot be undone.`}
         onClose={() => setConfirmDelete(null)}
         onConfirm={handleDelete}
-        title="Delete Routine"
-        message={`Are you sure you want to delete "${confirmDelete?.name}"? This action cannot be undone.`}
-        confirmLabel="Delete"
+        open={Boolean(confirmDelete)}
+        title="Delete routine"
         variant="danger"
-        loading={deleting}
       />
-    </>
+    </div>
+  );
+}
+
+function SummaryMetric({ label, value, className }: { label: string; value: number; className?: string }) {
+  return (
+    <div className={`flex items-center gap-3 px-4 py-3.5 sm:px-5 ${className ?? ""}`}>
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-deep-space-blue-500/10 text-deep-space-blue-600 dark:text-deep-space-blue-300">
+        <Workflow className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <div>
+        <p className="theme-text text-lg font-semibold leading-none">{value}</p>
+        <p className="theme-text-muted mt-1 text-xs">{label}</p>
+      </div>
+    </div>
   );
 }

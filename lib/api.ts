@@ -3917,11 +3917,8 @@ export async function fetchAllChatSessions(params?: {
 
 export const notificationsUnreadUrl = () => `${API_V1}/notifications/unread`;
 
-export const notificationMessagesUrl = (sessionId: string, limit = 100) =>
-  `${API_V1}/notifications?session_id=${encodeURIComponent(sessionId)}&limit=${limit}`;
-
-export async function markNotificationRead(sessionId: string): Promise<void> {
-  await authFetch(`${API_V1}/notifications/${sessionId}/read`, {
+export async function markChatSessionRead(sessionId: string): Promise<void> {
+  await authFetch(`${API_V1}/chat-sessions/${sessionId}/read`, {
     method: "POST",
   });
 }

@@ -24,7 +24,7 @@ test("project overview filters conversations and keeps running work first", () =
   assert.deepEqual(selected.map((item) => item.id), ["running", "recent"]);
 });
 
-test("project pulse derives lifecycle and readiness from authoritative data", () => {
+test("project summary derives lifecycle and readiness from authoritative data", () => {
   const now = new Date(2026, 7, 24, 14, 0, 0);
   const summary = summarizeProjectExecutions(
     [

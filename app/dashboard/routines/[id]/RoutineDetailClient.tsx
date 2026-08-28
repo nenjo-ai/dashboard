@@ -1,125 +1,100 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { Activity, ListTodo, Workflow } from "lucide-react";
+
 import {
-  useRoutine,
   useAgents,
   useCouncils,
+  useRoutine,
   useRoutineExecutions,
+  useTabParam,
   useTasks,
 } from "@/lib/hooks";
-import { updateRoutine } from "@/lib/api";
+import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
+import { MobilePageShell } from "@/components/layout/MobilePageShell";
 import { TopBar } from "@/components/layout/TopBar";
-import { PageContent } from "@/components/ui/PageContent";
-import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
-import { Skeleton } from "@/components/ui/Skeleton";
-import { RoutineEditor } from "@/components/routine/RoutineEditor";
 import { TaskList } from "@/components/project/TaskList";
+import { RoutineEditor } from "@/components/routine/RoutineEditor";
+import { RoutineMasthead } from "@/components/routine/RoutineMasthead";
 import { TaskExecutionHistory } from "@/components/tasks/TaskExecutionHistory";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { LoadingStatus } from "@/components/ui/LoadingStatus";
+import { PageContent } from "@/components/ui/PageContent";
+import { Tabs } from "@/components/ui/Tabs";
+
+const ROUTINE_TABS = ["workflow", "activity", "tasks"] as const;
+type RoutineTab = (typeof ROUTINE_TABS)[number];
 
 export function RoutineDetailClient({ routineRef }: { routineRef: string }) {
-  const id = routineRef;
-  const router = useRouter();
-
-  const { routine, isLoading, isError, mutate: mutateRoutine } = useRoutine(id);
+  const mobile = useIsMobileViewport();
+  const [activeTab, setActiveTab] = useTabParam<RoutineTab>("workflow", ROUTINE_TABS);
+  const { routine, isLoading, isError, mutate: mutateRoutine } = useRoutine(routineRef);
   const { agents, isLoading: agentsLoading } = useAgents();
   const { councils } = useCouncils();
-  const { tasks, isLoading: tasksLoading, isError: tasksError, mutate: mutateTasks } = useTasks({ routine_id: id });
+  const { tasks, isLoading: tasksLoading, isError: tasksError, mutate: mutateTasks } = useTasks({ routine_id: routineRef });
   const {
     executions,
     isLoading: executionsLoading,
     isError: executionsError,
     mutate: mutateExecutions,
-  } = useRoutineExecutions(id);
+  } = useRoutineExecutions(routineRef);
 
-  const handleSaved = useCallback(() => {
-    mutateRoutine();
-  }, [mutateRoutine]);
-
-  // ── Loading / Error ─────────────────────────────────────────────────────
-  if (isLoading || agentsLoading) {
-    return (
-      <>
-        <TopBar title="Routine" />
-        <PageContent>
-          <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard/routines")}>
-            <BackArrow />
-            Routines
-          </Button>
-          <div className="mt-4 space-y-4">
-            <Skeleton className="h-8 w-1/3" />
-            <Skeleton className="h-4 w-2/3" />
-            <Skeleton className="h-[500px] w-full rounded-xl" />
-          </div>
-        </PageContent>
-      </>
-    );
+  if (isLoading) {
+    const loading = <LoadingStatus className="min-h-72" description="Gathering workflow structure, assigned tasks, and recent runs." label="Loading routine" />;
+    return mobile
+      ? <MobilePageShell backHref="/dashboard/routines" backLabel="Routines" title="Routine">{loading}</MobilePageShell>
+      : <><TopBar title="Routines" /><PageContent>{loading}</PageContent></>;
   }
 
   if (isError || !routine) {
-    return (
-      <>
-        <TopBar title="Routine" />
-        <PageContent>
-          <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard/routines")}>
-            <BackArrow />
-            Routines
-          </Button>
-          <div className="mt-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3">
-            <p className="text-sm text-red-600 dark:text-red-400">
-              Routine not found or failed to load.
-            </p>
-          </div>
-        </PageContent>
-      </>
-    );
+    const missing = <EmptyState description="This routine may have been removed, or the workspace could not load it." title="Routine unavailable" tone="error" />;
+    return mobile
+      ? <MobilePageShell backHref="/dashboard/routines" backLabel="Routines" title="Routine">{missing}</MobilePageShell>
+      : <><TopBar title="Routines" /><PageContent>{missing}</PageContent></>;
   }
 
-  return (
-    <>
-      <TopBar title={routine.name} />
-      <PageContent>
-        {/* Back + header */}
-        <div className="mb-1">
-          <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard/routines")}>
-            <BackArrow />
-            Routines
-          </Button>
-        </div>
+  const tabs = [
+    { id: "workflow", label: "Workflow", count: routine.steps.length, icon: <Workflow className="h-4 w-4" aria-hidden="true" /> },
+    { id: "activity", label: "Activity", count: executions?.length ?? 0, icon: <Activity className="h-4 w-4" aria-hidden="true" /> },
+    { id: "tasks", label: "Tasks", count: tasks?.length ?? 0, icon: <ListTodo className="h-4 w-4" aria-hidden="true" /> },
+  ];
 
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 truncate">
-              {routine.name}
-            </h2>
-            <div className="mt-1">
-              <InlineDescription
-                routineId={routine.id}
-                value={routine.description}
-                onSaved={handleSaved}
+  const body = (
+    <div className="space-y-5 md:space-y-6">
+      <div className="hidden md:block">
+        <Breadcrumbs items={[{ label: "Dashboard", href: "/dashboard" }, { label: "Routines", href: "/dashboard/routines" }, { label: routine.name }]} />
+      </div>
+
+      <RoutineMasthead routine={routine} onUpdated={() => void mutateRoutine()} />
+      <Tabs
+        activeTab={activeTab}
+        indicatorAnimation="slide"
+        layoutId="routine-detail-tab"
+        mobileVariant="scroll"
+        onChange={(id) => setActiveTab(id as RoutineTab)}
+        tabs={tabs}
+      />
+
+      <div className="min-h-[32rem]">
+        {activeTab === "workflow" ? (
+          agentsLoading ? (
+            <LoadingStatus className="min-h-[34rem]" description="Preparing agents, roles, and the workflow canvas." label="Loading workflow editor" />
+          ) : (
+            <section aria-label="Workflow editor" className="theme-surface theme-border h-[calc(100vh-19rem)] min-h-[34rem] max-h-[48rem] overflow-hidden rounded-2xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+              <RoutineEditor
+                agents={agents ?? []}
+                councils={councils}
+                onSaved={() => void mutateRoutine()}
+                routine={routine}
               />
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {routine.is_default && <Badge variant="ready">Default</Badge>}
-          </div>
-        </div>
+            </section>
+          )
+        ) : null}
 
-        <div className="space-y-5">
-          <div
-            className="theme-border theme-surface overflow-hidden rounded-xl border"
-            style={{ height: "calc(100vh - 18rem)" }}
-          >
-            <RoutineEditor
-              routine={routine}
-              agents={agents ?? []}
-              councils={councils}
-              onSaved={handleSaved}
-            />
-          </div>
+        {activeTab === "activity" ? (
           <TaskExecutionHistory
+            emptyDescription="Run an assigned task to see its live agent trace and completed execution record here."
             executions={executions}
             isError={executionsError}
             isLoading={executionsLoading}
@@ -127,114 +102,26 @@ export function RoutineDetailClient({ routineRef }: { routineRef: string }) {
               void mutateExecutions();
               void mutateTasks();
             }}
+            title="Routine activity"
           />
-          <section>
-            <h2 className="theme-text mb-3 font-semibold">Assigned tasks</h2>
-            <TaskList
-              isError={tasksError}
-              isLoading={tasksLoading}
-              onDeleted={() => mutateTasks()}
-              tasks={tasks}
-            />
-          </section>
-        </div>
-      </PageContent>
-    </>
+        ) : null}
+
+        {activeTab === "tasks" ? (
+          <TaskList
+            description="Tasks that use this routine as their execution target."
+            emptyMessage="Create a task and select this routine as its execution target."
+            heading="Assigned tasks"
+            isError={tasksError}
+            isLoading={tasksLoading}
+            onDeleted={() => void mutateTasks()}
+            tasks={tasks}
+          />
+        ) : null}
+      </div>
+    </div>
   );
-}
 
-// ---------------------------------------------------------------------------
-// Back arrow icon
-// ---------------------------------------------------------------------------
-
-function BackArrow() {
-  return (
-    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-    </svg>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Inline-editable description (reused pattern)
-// ---------------------------------------------------------------------------
-
-function InlineDescription({
-  routineId,
-  value,
-  onSaved,
-}: {
-  routineId: string;
-  value: string | null;
-  onSaved: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value ?? "");
-  const [saving, setSaving] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!editing) setDraft(value ?? "");
-  }, [value, editing]);
-
-  useEffect(() => {
-    if (editing) inputRef.current?.focus();
-  }, [editing]);
-
-  const save = useCallback(async () => {
-    const trimmed = draft.trim();
-    if (trimmed === (value ?? "")) {
-      setEditing(false);
-      return;
-    }
-    setSaving(true);
-    try {
-      await updateRoutine(routineId, { description: trimmed });
-      onSaved();
-    } catch {
-      setDraft(value ?? "");
-    } finally {
-      setSaving(false);
-      setEditing(false);
-    }
-  }, [draft, value, routineId, onSaved]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") { e.preventDefault(); save(); }
-    else if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); }
-  };
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        type="text"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={save}
-        onKeyDown={handleKeyDown}
-        disabled={saving}
-        placeholder="Add a description..."
-        className="w-full rounded-sm border border-gray-300 bg-white px-2 py-0.5 text-sm text-gray-700 placeholder-gray-400 focus:border-deep-space-blue-400 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:placeholder-gray-500 disabled:opacity-50"
-      />
-    );
-  }
-
-  return (
-    <button
-      onClick={() => setEditing(true)}
-      className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors truncate max-w-full text-left group flex items-center gap-1"
-      title="Click to edit description"
-    >
-      <span className={value ? "" : "italic"}>
-        {value || "Add a description..."}
-      </span>
-      <svg
-        className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 shrink-0"
-        fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" />
-      </svg>
-    </button>
-  );
+  return mobile
+    ? <MobilePageShell backHref="/dashboard/routines" backLabel="Routines" title={routine.name}>{body}</MobilePageShell>
+    : <><TopBar title="Routines" /><PageContent>{body}</PageContent></>;
 }

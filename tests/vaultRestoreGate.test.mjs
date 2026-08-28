@@ -8,6 +8,42 @@ import {
   shouldRunOnboardingEntryGate,
   shouldUseExistingWorkspaceRestoreMode,
 } from "../lib/vaultRestoreGate.mjs";
+import {
+  DEFAULT_AUTHENTICATED_ENTRY_PATH,
+  shouldEnterFreshOnboarding,
+} from "../lib/dashboardEntry.ts";
+
+test("authenticated entry defaults to the normal onboarding flow", () => {
+  assert.equal(DEFAULT_AUTHENTICATED_ENTRY_PATH, "/dashboard/onboarding");
+});
+
+test("only a genuinely fresh workspace enters onboarding automatically", () => {
+  const freshWorkspace = {
+    hasSignedInAccount: true,
+    hasOrg: true,
+    isOnboarded: false,
+    hasRecoveryBundle: false,
+    trustedDeviceCount: 0,
+  };
+
+  assert.equal(shouldEnterFreshOnboarding(freshWorkspace), true);
+  assert.equal(
+    shouldEnterFreshOnboarding({ ...freshWorkspace, isOnboarded: true }),
+    false,
+  );
+  assert.equal(
+    shouldEnterFreshOnboarding({ ...freshWorkspace, hasRecoveryBundle: true }),
+    false,
+  );
+  assert.equal(
+    shouldEnterFreshOnboarding({ ...freshWorkspace, trustedDeviceCount: 1 }),
+    false,
+  );
+  assert.equal(
+    shouldEnterFreshOnboarding({ ...freshWorkspace, hasOrg: false }),
+    false,
+  );
+});
 
 const existingWorkspace = {
   hasSignedInAccount: true,

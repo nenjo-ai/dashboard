@@ -15,12 +15,10 @@ export function ChatConversationHeader({
   session,
   agentColor,
   status,
-  notificationView = false,
 }: {
   session: ChatSessionExtended;
   agentColor?: string;
   status?: ChatSessionIndicatorStatus;
-  notificationView?: boolean;
 }) {
   const targetName =
     session.target_type === "council"
@@ -48,12 +46,8 @@ export function ChatConversationHeader({
         </h2>
         <p className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-xs text-gray-500 dark:text-gray-400">
           <span className="truncate">{targetName}</span>
-          {!notificationView ? (
-            <>
-              <span aria-hidden="true">·</span>
-              <span className="truncate">{context}</span>
-            </>
-          ) : null}
+          <span aria-hidden="true">·</span>
+          <span className="truncate">{context}</span>
         </p>
       </div>
       <div className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-black/[0.06] bg-white/80 px-2.5 py-1.5 text-[11px] font-medium text-gray-500 shadow-sm dark:border-white/10 dark:bg-white/[0.05] dark:text-gray-300">

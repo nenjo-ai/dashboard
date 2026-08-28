@@ -53,18 +53,31 @@ test("mobile agents retain an explicit creation workflow", async () => {
 });
 
 test("dashboard header uses cohesive floating utility chrome", async () => {
-  const [topBar, orgSwitcher, sidebar, mobileHero] = await Promise.all([
+  const [topBar, orgSwitcher, sidebar, mobileHero, logoMark, pageContent] = await Promise.all([
     readSource("components/layout/TopBar.tsx"),
     readSource("components/layout/OrgSwitcher.tsx"),
     readSource("components/layout/Sidebar.tsx"),
     readSource("components/layout/MobileHeroBar.tsx"),
+    readSource("components/layout/NenjoLogoMark.tsx"),
+    readSource("components/ui/PageContent.tsx"),
   ]);
 
   assert.match(topBar, /aria-label="Workspace utilities"/);
   assert.match(topBar, /rounded-2xl border bg-white\/70/);
+  assert.match(topBar, /PAGE_CONTENT_FRAME_CLASS/);
+  assert.match(pageContent, /max-w-\[96rem\] px-4 md:px-6 lg:px-8/);
   assert.doesNotMatch(topBar, /pwa-topbar[^\"]*border-b/);
   assert.match(orgSwitcher, /h-9 min-w-0[\s\S]*rounded-xl/);
-  assert.match(sidebar, /flex h-16 items-center gap-2\.5 px-5/);
+  assert.equal(
+    sidebar.match(/flex h-16 items-center gap-3 px-6/g)?.length,
+    2,
+  );
+  assert.equal(
+    sidebar.match(/NenjoLogoMark className="h-8 w-5 rounded-lg"/g)?.length,
+    2,
+  );
+  assert.equal(logoMark.match(/h-8\.5 w-8\.5 max-w-none shrink-0/g)?.length, 2);
+  assert.doesNotMatch(logoMark, /translate-[xy]-/);
   assert.match(mobileHero, /bg-\[var\(--app-overlay\)\]/);
   assert.match(mobileHero, /backdrop-blur-2xl/);
 });
@@ -81,7 +94,7 @@ test("projects is a flat primary navigation destination", async () => {
   assert.doesNotMatch(source, /Collapse projects|Expand projects|New project/);
 });
 
-test("dashboard execution pulse keeps lifecycle groups mutually understandable", () => {
+test("dashboard execution summary keeps lifecycle groups mutually understandable", () => {
   const now = new Date(2026, 7, 24, 14, 0, 0);
   const today = new Date(2026, 7, 24, 10, 0, 0).toISOString();
   const yesterday = new Date(2026, 7, 23, 18, 0, 0).toISOString();
@@ -137,10 +150,10 @@ test("dashboard continuation prioritizes running sessions before recency", () =>
 });
 
 test("dashboard overview is organized around work, not equal metric cards", async () => {
-  const [overview, pulse, continuation, quickActions, activity, usage] =
+  const [overview, summary, continuation, quickActions, activity, usage] =
     await Promise.all([
       readSource("components/dashboard/DashboardOverview.tsx"),
-      readSource("components/dashboard/DashboardWorkspacePulse.tsx"),
+      readSource("components/dashboard/DashboardWorkspaceSummary.tsx"),
       readSource("components/dashboard/DashboardContinueWorking.tsx"),
       readSource("components/dashboard/DashboardQuickActions.tsx"),
       readSource("components/dashboard/DashboardActivityTimeline.tsx"),
@@ -150,8 +163,8 @@ test("dashboard overview is organized around work, not equal metric cards", asyn
   assert.match(overview, /useWorkerStatus/);
   assert.match(overview, /useChatSessionIndicators/);
   assert.match(overview, /<TokenUsagePanel compact \/>/);
-  assert.match(pulse, /Workspace pulse/);
-  assert.match(pulse, /motion-reduce:animate-none/);
+  assert.match(summary, /Workspace summary/);
+  assert.match(summary, /motion-reduce:animate-none/);
   assert.match(continuation, /Continue working/);
   assert.match(continuation, /SessionStatusIndicator/);
   assert.match(quickActions, /New chat/);

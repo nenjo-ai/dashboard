@@ -19,10 +19,12 @@ import { MobileNewChatSheet } from "./MobileNewChatSheet";
 
 interface MobileChatContainerProps {
   onSessionCreated?: () => void;
+  unreadCounts?: Record<string, number>;
 }
 
 export function MobileChatContainer({
   onSessionCreated,
+  unreadCounts,
 }: MobileChatContainerProps) {
   const router = useSafeRouter();
   const pathname = usePathname();
@@ -40,7 +42,7 @@ export function MobileChatContainer({
   } = useSWR<ChatSessionExtended[]>(
     allChatSessionsUrl(200, 0, "chat"),
     fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
+    { refreshInterval: 10000, revalidateOnFocus: true, dedupingInterval: 5000 },
   );
 
   useEffect(() => {
@@ -198,6 +200,7 @@ export function MobileChatContainer({
           await onSessionCreated?.();
         }}
         onSwitchAgent={handleSwitchAgent}
+        unreadCounts={unreadCounts}
       />
       {!mobileShowChat && <MobileTabBar />}
       <MobileNewChatSheet

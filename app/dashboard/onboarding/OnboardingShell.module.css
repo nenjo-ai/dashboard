@@ -1,0 +1,50 @@
+.artCard {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 30rem;
+  background:
+    radial-gradient(circle at 34% 30%, rgb(184 132 26 / 0.22), transparent 30%),
+    radial-gradient(ellipse at 70% 100%, rgb(45 70 130 / 0.24), transparent 52%),
+    #07090d;
+}
+
+.artCard::before {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  content: "";
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.045) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 90% 78% at 42% 42%, black, transparent 78%);
+}
+
+.artCard::after {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  content: "";
+  background: linear-gradient(180deg, transparent 30%, rgb(7 9 13 / 0.88) 100%);
+}
+
+.kanji {
+  color: rgb(205 151 45 / 0.86);
+  font-family: var(--f-disp, "Cormorant Garamond", Georgia, serif);
+  font-weight: 300;
+  line-height: 0.8;
+  text-shadow: 0 0 50px rgb(184 132 26 / 0.26);
+}
+
+@media (max-width: 1023px) {
+  .artCard {
+    min-height: 15rem;
+  }
+}
+
+@media (max-width: 639px) {
+  .artCard {
+    min-height: 11rem;
+  }
+}

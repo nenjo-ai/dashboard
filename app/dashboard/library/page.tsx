@@ -13,7 +13,7 @@ import { PageContent } from "@/components/ui/PageContent";
 import { PageIntro } from "@/components/ui/PageIntro";
 import { fetchArtifactCatalog } from "@/lib/api";
 import { useKnowledgePacks } from "@/lib/hooks";
-import { isLibraryKnowledgeGraph, knowledgeGraphSourceLabel, summarizeKnowledgeGraphs } from "@/lib/libraryWorkspace";
+import { isLibraryKnowledgeGraph, knowledgeGraphSourceDetail, knowledgeGraphSourceLabel, summarizeKnowledgeGraphs } from "@/lib/libraryWorkspace";
 import { useOrgContext } from "@/lib/org-context";
 import { useIsMobileViewport } from "@/lib/useIsMobileViewport";
 
@@ -44,7 +44,7 @@ export default function LibraryPage() {
     <LibraryTabs />
 
     {packsLoading || artifactsLoading ? <LoadingStatus className="min-h-44" label="Loading Library" description="Gathering knowledge graphs and artifact activity." /> : <>
-      <section className="theme-surface theme-border overflow-hidden rounded-2xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)]" aria-label="Library pulse">
+      <section className="theme-surface theme-border overflow-hidden rounded-2xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)]" aria-label="Library summary">
         <div className="grid grid-cols-2 divide-x divide-y theme-border sm:grid-cols-4 sm:divide-y-0">
           <Metric icon={Network} label="Knowledge graphs" value={summary.totalCount} tone="text-violet-600 dark:text-violet-400" />
           <Metric icon={FolderTree} label="Workspace graphs" value={summary.workspaceCount} tone="text-blue-600 dark:text-blue-400" />
@@ -79,7 +79,7 @@ export default function LibraryPage() {
         </div>
         {recentGraphs.length ? <div className="theme-border divide-y">{recentGraphs.map((graph) => <Link className="group flex items-center gap-3 px-4 py-3.5 hover:[background:var(--app-hover)] sm:px-5" href={`/dashboard/library/graphs/${graph.slug}`} key={graph.id}>
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-300"><Network className="h-4 w-4" /></span>
-          <span className="min-w-0 flex-1"><span className="theme-text block truncate text-sm font-medium">{graph.name}</span><span className="theme-text-muted block truncate text-xs">{knowledgeGraphSourceLabel(graph)} · updated {new Date(graph.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></span>
+          <span className="min-w-0 flex-1"><span className="theme-text block truncate text-sm font-medium">{graph.name}</span><span className="theme-text-muted block truncate text-xs">{[knowledgeGraphSourceLabel(graph), knowledgeGraphSourceDetail(graph)].filter(Boolean).join(" · ")} · updated {new Date(graph.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></span>
           <ArrowRight className="theme-text-muted h-4 w-4 transition-transform group-hover:translate-x-0.5" />
         </Link>)}</div> : <div className="px-6 py-9 text-center"><p className="theme-text text-sm font-medium">No knowledge graphs yet</p><p className="theme-text-muted mt-1 text-sm">Create a graph to give agents reusable, connected context.</p></div>}
       </section>

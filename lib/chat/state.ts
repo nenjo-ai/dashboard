@@ -17,6 +17,7 @@ export type ChatTurnEvent =
       responseId: string;
       runTrace?: RunTrace;
     }
+  | { type: "model_invoked" }
   | { type: "phase_changed"; phase: ChatPhase }
   | { type: "text_delta"; delta: string }
   | { type: "content_replaced"; content: string }
@@ -74,6 +75,8 @@ export function chatTurnReducer(
         responseId: event.responseId,
         runTrace: event.runTrace,
       });
+    case "model_invoked":
+      return { ...state, phase: "thinking" };
     case "phase_changed":
       return { ...state, phase: event.phase };
     case "text_delta":

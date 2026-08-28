@@ -4,20 +4,20 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSWRConfig } from "swr";
 import { updateAgent, deleteAgent, agentsUrl } from "@/lib/api";
-import { useModels } from "@/lib/hooks";
+import { agentSettingsHaveChanges } from "@/lib/agentWorkspace";
 import { Button } from "@/components/ui/Button";
 import { ColorSwatchPicker } from "@/components/ui/ColorSwatchPicker";
-import type { AgentDefinition } from "@/lib/types";
+import type { AgentDefinition, Model } from "@/lib/types";
 
 interface AgentSettingsTabProps {
   agent: AgentDefinition;
+  models?: Model[];
   onUpdated: (agent?: AgentDefinition) => void;
 }
 
-export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
+export function AgentSettingsTab({ agent, models, onUpdated }: AgentSettingsTabProps) {
   const router = useRouter();
   const { mutate } = useSWRConfig();
-  const { models } = useModels();
 
   const [name, setName] = useState(agent.name);
   const [description, setDescription] = useState(agent.description ?? "");
@@ -28,6 +28,7 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const dirty = agentSettingsHaveChanges(agent, { name, description, color, modelId });
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -63,12 +64,13 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
   }, [agent.id, router]);
 
   return (
-    <div className="max-w-2xl space-y-8">
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
       {/* Metadata */}
-      <section className="space-y-4">
-        <h3 className="theme-text text-sm font-semibold">
-          Agent Details
-        </h3>
+      <section className="theme-surface theme-border space-y-5 rounded-2xl border p-5 sm:p-6">
+        <div>
+          <h2 className="theme-text text-base font-semibold">Identity and model</h2>
+          <p className="theme-text-muted mt-1 text-sm">Update the workspace-facing profile and primary chat model.</p>
+        </div>
 
         <div>
           <label className="theme-text mb-1 block text-sm font-medium">
@@ -116,55 +118,50 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
           </label>
           <ColorSwatchPicker value={color} onChange={setColor} />
         </div>
+
+        <div className="theme-border border-t pt-5">
+          <label className="theme-text mb-1 block text-sm font-medium">
+            Primary model
+          </label>
+          <select
+            value={modelId ?? ""}
+            onChange={(e) => setModelId(e.target.value || null)}
+            className="theme-border theme-surface theme-text w-full rounded-lg border px-3 py-2 text-sm focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400/20"
+          >
+            <option value="">No model assigned</option>
+            {models?.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.model_provider} / {m.model} ({m.temperature})
+              </option>
+            ))}
+          </select>
+          <p className="theme-text-muted mt-1 text-xs">Used for chat and standard agent execution. Media operations are assigned separately under Capabilities.</p>
+        </div>
+
+        <div className="theme-border flex flex-wrap items-center gap-3 border-t pt-5">
+          <Button disabled={!dirty || saved} isLoading={saving} onClick={handleSave}>
+            {saving ? "Saving" : saved ? "Saved" : "Save changes"}
+          </Button>
+          {saved ? <span className="text-sm text-emerald-600 dark:text-emerald-300" aria-live="polite">Changes saved.</span> : null}
+          {error ? <span className="text-sm text-red-500" role="alert">{error}</span> : null}
+        </div>
       </section>
-
-      <hr className="theme-border" />
-
-      {/* Model Assignment */}
-      <section className="space-y-4">
-        <h3 className="theme-text text-sm font-semibold">
-          Model
-        </h3>
-        <select
-          value={modelId ?? ""}
-          onChange={(e) => setModelId(e.target.value || null)}
-          className="theme-border theme-surface theme-text w-full rounded-lg border px-3 py-2 text-sm focus:border-deep-space-blue-400 focus:outline-none focus:ring-2 focus:ring-deep-space-blue-400/20"
-        >
-          <option value="">No model assigned</option>
-          {models?.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.model_provider} / {m.model} ({m.temperature})
-            </option>
-          ))}
-        </select>
-      </section>
-
-      {/* Save */}
-      <div className="flex items-center gap-3">
-        <Button onClick={handleSave} disabled={saving || saved}>
-          {saving ? "Saving..." : saved ? "Saved!" : "Save Changes"}
-        </Button>
-        {error && <span className="text-sm text-red-500">{error}</span>}
-      </div>
-
-      <hr className="theme-border" />
 
       {/* Danger Zone */}
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-red-600 dark:text-red-400">
-          Danger Zone
-        </h3>
+      <section className="h-fit rounded-2xl border border-red-200/80 bg-red-50/50 p-5 dark:border-red-400/20 dark:bg-red-400/[0.06]">
+        <h2 className="text-sm font-semibold text-red-700 dark:text-red-300">Danger zone</h2>
+        <p className="mt-1 text-xs leading-5 text-red-600/80 dark:text-red-300/70">Deleting an agent removes its assignments and cannot be undone.</p>
         {!confirmDelete ? (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setConfirmDelete(true)}
-            className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
+            className="mt-4 text-red-600 hover:bg-red-100 hover:text-red-700 dark:text-red-300 dark:hover:bg-red-400/10"
           >
             Delete Agent
           </Button>
         ) : (
-          <div className="flex items-center gap-3">
+          <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button
               variant="ghost"
               size="sm"
@@ -172,13 +169,13 @@ export function AgentSettingsTab({ agent, onUpdated }: AgentSettingsTabProps) {
               disabled={deleting}
               className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
             >
-              {deleting ? "Deleting..." : "Confirm Delete"}
+              {deleting ? "Deleting" : "Confirm delete"}
             </Button>
             <button
               onClick={() => setConfirmDelete(false)}
               className="theme-text-muted text-sm transition-colors hover:[color:var(--app-text)]"
             >
-              Cancel
+              Keep agent
             </button>
           </div>
         )}

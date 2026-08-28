@@ -1,11 +1,14 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { Activity, KeyRound, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { useApiKeyCatalog, useApiKeys, useCurrentUser } from "@/lib/hooks";
 import { createApiKey, deleteApiKey } from "@/lib/api";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
+import { Button } from "@/components/ui/Button";
+import { LoadingStatus } from "@/components/ui/LoadingStatus";
 import type { CreateApiKeyResponse } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -72,6 +75,18 @@ function summarizeScopes(scopes: string[]): { resource: string; access: string }
   }));
 }
 
+function KeyMetric({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+  return (
+    <div className="theme-border theme-surface-muted flex items-center gap-3 rounded-xl border px-4 py-3">
+      <span className="text-deep-space-blue-600 dark:text-deep-space-blue-300">{icon}</span>
+      <div>
+        <p className="theme-text text-base font-semibold">{value}</p>
+        <p className="theme-text-muted text-[10px] font-semibold uppercase tracking-[0.12em]">{label}</p>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -100,6 +115,9 @@ export function ApiKeysSection() {
 
   // Delete confirmation
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const keys = apiKeys ?? [];
+  const usedKeys = keys.filter((key) => key.last_used_at).length;
+  const restrictedKeys = keys.filter((key) => key.scopes.length > 0 || key.capabilities.length > 0).length;
 
   const handleCreate = useCallback(async () => {
     if (!keyName.trim()) return;
@@ -165,50 +183,40 @@ export function ApiKeysSection() {
 
   return (
     <>
-      <div className="theme-border theme-surface rounded-2xl border p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              API Keys
-            </h2>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Create long-lived API keys for programmatic access to the Nenjo API.
-            </p>
+      <div className="theme-border theme-surface rounded-2xl border p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] md:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-deep-space-blue-500/10 text-deep-space-blue-600 dark:text-deep-space-blue-300"><KeyRound className="h-4 w-4" /></span>
+            <div>
+              <h2 className="theme-text text-lg font-semibold">API keys</h2>
+              <p className="theme-text-muted mt-1 max-w-2xl text-sm leading-6">Create long-lived credentials for programmatic access. Prefer explicit scopes and expiration for production integrations.</p>
+            </div>
           </div>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-deep-space-blue-600 px-4 py-2 text-sm font-medium text-white shadow-xs transition-colors hover:bg-deep-space-blue-700 focus:outline-hidden focus:ring-2 focus:ring-deep-space-blue-500 focus:ring-offset-2 dark:focus:ring-offset-[#05070b]"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            <span className="hidden sm:inline">Create API Key</span>
-          </button>
+          <Button onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" />Create API key</Button>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          <KeyMetric icon={<KeyRound className="h-4 w-4" />} label="Active keys" value={keys.length} />
+          <KeyMetric icon={<Activity className="h-4 w-4" />} label="Used keys" value={usedKeys} />
+          <KeyMetric icon={<ShieldCheck className="h-4 w-4" />} label="Restricted keys" value={restrictedKeys} />
         </div>
 
         {/* Key list */}
         <div className="mt-6">
           {isLoading ? (
-            <div className="space-y-3">
-              {[1, 2].map((i) => (
-                <div key={i} className="theme-surface-muted h-16 animate-pulse" />
-              ))}
-            </div>
+            <LoadingStatus className="min-h-40" description="Reading credentials and recent use." label="Loading API keys" />
           ) : !apiKeys || apiKeys.length === 0 ? (
-            <div className="theme-border theme-surface-muted rounded-2xl border border-dashed px-6 py-8 text-center">
-              <svg className="mx-auto h-10 w-10 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
-              </svg>
-              <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-                No API keys yet. Create one to get started.
-              </p>
+            <div className="theme-border theme-surface-muted rounded-2xl border border-dashed px-6 py-10 text-center">
+              <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-deep-space-blue-500/10 text-deep-space-blue-600 dark:text-deep-space-blue-300"><KeyRound className="h-5 w-5" /></span>
+              <p className="theme-text mt-3 text-sm font-medium">No API keys yet</p>
+              <p className="theme-text-muted mx-auto mt-1 max-w-md text-xs leading-5">Create a scoped key when an integration needs access outside this dashboard.</p>
             </div>
           ) : (
-            <div className="theme-border overflow-hidden rounded-2xl divide-y">
+            <div className="theme-border overflow-hidden rounded-xl border divide-y">
               {apiKeys.map((key) => (
                 <div
                   key={key.id}
-                  className="flex items-center justify-between py-4 first:pt-0 last:pb-0"
+                  className="flex items-center justify-between gap-4 px-4 py-4"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-3">
@@ -279,23 +287,7 @@ export function ApiKeysSection() {
                       </span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(key.id)}
-                    disabled={deletingId === key.id}
-                    className="ml-4 rounded-lg p-2 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-900/20 dark:hover:text-red-400"
-                    title="Revoke API key"
-                  >
-                    {deletingId === key.id ? (
-                      <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                    ) : (
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                      </svg>
-                    )}
-                  </button>
+                  <Button aria-label={`Revoke ${key.name}`} isLoading={deletingId === key.id} onClick={() => handleDelete(key.id)} size="sm" title="Revoke API key" variant="ghost"><Trash2 className="h-4 w-4" /></Button>
                 </div>
               ))}
             </div>
@@ -530,7 +522,8 @@ export function ApiKeysSection() {
 
           {/* Actions */}
           <div className="flex justify-end gap-3 pt-2">
-            <button
+            <Button
+              variant="secondary"
               onClick={() => {
                 setShowCreate(false);
                 setKeyName("");
@@ -539,23 +532,16 @@ export function ApiKeysSection() {
                 setSelectedCapabilities([]);
                 setCreateError(null);
               }}
-              className="theme-border theme-surface rounded-lg border px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:[background:var(--app-hover)] dark:text-gray-300"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleCreate}
               disabled={!keyName.trim() || creating}
-              className="inline-flex items-center gap-2 rounded-lg bg-deep-space-blue-600 px-4 py-2 text-sm font-medium text-white shadow-xs transition-colors hover:bg-deep-space-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              isLoading={creating}
             >
-              {creating && (
-                <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              )}
               Create Key
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>

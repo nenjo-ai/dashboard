@@ -13,6 +13,7 @@ import { LoadingStatus } from "@/components/ui/LoadingStatus";
 import { fetchBootstrapStatus, fetchCurrentUser } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { bindLocalSecretVaultSession, loadStoredAccountContentKey } from "@/lib/cryptoContent";
+import { shouldEnterFreshOnboarding } from "@/lib/dashboardEntry";
 import { MobileMenuProvider } from "@/lib/MobileMenuContext";
 import { OrgProvider } from "@/lib/org-context";
 import { shouldRetryDashboardRequest } from "@/lib/apiRetryPolicy";
@@ -133,6 +134,20 @@ function AuthenticatedDashboardLayout({
         if (cancelled) return;
 
         const hasOrg = Boolean(me.org_id);
+        if (
+          bootstrap &&
+          shouldEnterFreshOnboarding({
+            hasSignedInAccount: Boolean(accountId),
+            hasOrg,
+            isOnboarded: Boolean(me.onboarded),
+            hasRecoveryBundle: bootstrap.has_recovery_bundle,
+            trustedDeviceCount: bootstrap.trusted_device_count,
+          })
+        ) {
+          router.replace("/dashboard/onboarding");
+          return;
+        }
+
         const hasExistingWorkspace =
           Boolean(me.onboarded) ||
           Boolean(bootstrap?.has_recovery_bundle) ||

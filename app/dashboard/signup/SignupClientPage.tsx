@@ -8,6 +8,7 @@ import { useAppAuth } from "@/components/auth/AppAuth";
 
 import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
+import { DEFAULT_AUTHENTICATED_ENTRY_PATH } from "@/lib/dashboardEntry";
 import { useSafeRouter } from "@/lib/safeRouter";
 
 function SignupContent() {
@@ -15,7 +16,7 @@ function SignupContent() {
   const router = useSafeRouter();
   const searchParams = useSearchParams();
   const requestedRedirect = searchParams.get("redirect_url");
-  const redirectUrl = requestedRedirect || (mode === "local" ? "/dashboard" : "/dashboard/onboarding");
+  const redirectUrl = requestedRedirect || DEFAULT_AUTHENTICATED_ENTRY_PATH;
 
   useEffect(() => {
     if (isLoaded && isSignedIn) {

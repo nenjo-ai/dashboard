@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { memo } from "react";
 import { AnimatePresence } from "motion/react";
+import { BellDot, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { visibleLiveAssistantContent } from "@/lib/chat/derivations";
@@ -94,8 +95,9 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   const assistantContent = isLiveResponse
     ? visibleLiveAssistantContent(displayContent, message.runTrace)
     : displayContent;
+  const hasAssistantContent = Boolean(assistantContent.trim());
   const isStreamingResponse =
-    isLiveResponse && Boolean(assistantContent.trim());
+    isLiveResponse && livePhase === "streaming" && hasAssistantContent;
   const progressLabel =
     livePhase === "using_tool" && message.runTrace
       ? traceActivitySummary(message.runTrace).status
@@ -130,7 +132,9 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
           "overflow-hidden break-normal text-[15px] leading-7 md:break-words md:text-[15px] md:leading-7",
           isUser
             ? "max-w-[84%] rounded-2xl rounded-tr-md border border-deep-space-blue-700/10 bg-deep-space-blue-600 px-4 py-3 text-white shadow-[0_8px_22px_rgba(37,55,105,0.12)] md:max-w-[68%] dark:border-white/5 dark:bg-deep-space-blue-500 dark:text-white"
-            : "w-full max-w-full bg-transparent px-0 py-0.5 text-gray-800 md:max-w-[44rem] dark:text-gray-200",
+            : message.agentUpdate
+              ? "w-full max-w-full rounded-2xl border border-deep-space-blue-100/80 bg-deep-space-blue-50/45 px-4 py-3 text-gray-800 shadow-[0_8px_24px_rgba(37,55,105,0.05)] md:max-w-[44rem] dark:border-deep-space-blue-400/15 dark:bg-deep-space-blue-400/[0.055] dark:text-gray-200"
+              : "w-full max-w-full bg-transparent px-0 py-0.5 text-gray-800 md:max-w-[44rem] dark:text-gray-200",
         )}
       >
         {isUser ? (
@@ -153,6 +157,16 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
           </div>
         ) : (
           <div className="space-y-3.5">
+            {message.agentUpdate ? (
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-deep-space-blue-600 dark:text-deep-space-blue-300">
+                <BellDot className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Agent update</span>
+              </div>
+            ) : null}
+            <AssistantResponseContent
+              content={assistantContent}
+              streaming={isStreamingResponse}
+            />
             {isLiveResponse && !isStreamingResponse ? (
               <ChatProgressIndicator
                 phase={livePhase}
@@ -160,17 +174,22 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
                 agentName={activeAgent?.name}
               />
             ) : null}
-            <AssistantResponseContent
-              content={assistantContent}
-              streaming={isStreamingResponse}
-            />
             <ChatActivityTimeline
               message={message}
               compact={compact}
-              hasResponseContent={Boolean(assistantContent.trim())}
+              hasResponseContent={hasAssistantContent}
               isLive={isLiveResponse}
             />
             <ChatErrorState message={message} onRetry={onRetry} />
+            {message.agentUpdate?.link ? (
+              <a
+                href={message.agentUpdate.link}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-deep-space-blue-600 hover:text-deep-space-blue-700 dark:text-deep-space-blue-300 dark:hover:text-deep-space-blue-200"
+              >
+                View details
+                <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              </a>
+            ) : null}
           </div>
         )}
         <div

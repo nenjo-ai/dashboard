@@ -26,6 +26,7 @@ interface MobileChatShellProps {
   onNavigateToSession?: (sessionId: string) => void;
   onSessionCreated?: () => void;
   onSwitchAgent?: (agent: AgentDefinition) => void;
+  unreadCounts?: Record<string, number>;
 }
 
 export function MobileChatShell({
@@ -41,6 +42,7 @@ export function MobileChatShell({
   onNavigateToSession,
   onSessionCreated,
   onSwitchAgent,
+  unreadCounts,
 }: MobileChatShellProps) {
   const { agents: allAgents } = useAgents();
 
@@ -150,9 +152,9 @@ export function MobileChatShell({
               onCreate={onCreate}
               onRename={onRename}
               onDelete={onDelete}
-              channelType="chat"
               hideHeaderControls={true}
               mobile={true}
+              unreadCounts={unreadCounts}
             />
           </div>
         ) : (

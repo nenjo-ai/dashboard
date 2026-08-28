@@ -27,7 +27,7 @@ import {
 import { useChatSessionIndicators } from "@/lib/useChatSessionIndicators";
 import type { ChatSessionExtended, Project } from "@/lib/types";
 
-function ProjectPulse({
+function ProjectSummary({
   project,
   activeCount,
   attentionCount,
@@ -50,7 +50,7 @@ function ProjectPulse({
       <div className="pointer-events-none absolute -right-20 -top-28 h-60 w-60 rounded-full bg-violet-500/[0.06] blur-3xl dark:bg-violet-400/[0.07]" aria-hidden="true" />
       <div className="relative">
         <p className="theme-text-muted text-[11px] font-semibold uppercase tracking-[0.13em]">Live overview</p>
-        <h2 className="theme-text mt-1.5 text-xl font-semibold tracking-[-0.025em]">Project pulse</h2>
+        <h2 className="theme-text mt-1.5 text-xl font-semibold tracking-[-0.025em]">Project summary</h2>
         <p className="theme-text-muted mt-3 max-w-2xl text-sm leading-6">
           {activeCount > 0
             ? `${activeCount} ${activeCount === 1 ? "execution is" : "executions are"} currently moving through this project.`
@@ -139,7 +139,7 @@ export function ProjectOverviewTab({ project }: { project: Project }) {
   return (
     <div className="grid gap-4 lg:grid-cols-12 lg:gap-5">
       <div className="lg:col-span-8">
-        <ProjectPulse project={project} {...summary} />
+        <ProjectSummary project={project} {...summary} />
       </div>
       <div className="lg:col-span-4">
         <ProjectQuickActions />

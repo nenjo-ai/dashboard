@@ -9,14 +9,14 @@ import {
   createChatSession,
   updateChatSession,
   deleteChatSession,
+  markChatSessionRead,
+  notificationsUnreadUrl,
 } from "@/lib/api";
-import type { ChatSessionExtended } from "@/lib/types";
+import type { ChatSessionExtended, UnreadSummary } from "@/lib/types";
 import GlobalSessionList from "./GlobalSessionList";
 import { ChatArea } from "./ChatArea";
-import { NotificationArea } from "./NotificationArea";
 import { NewChatModal } from "./NewChatModal";
 import { MobileChatContainer } from "./MobileChatContainer";
-import { MobileNotificationContainer } from "./MobileNotificationContainer";
 import { useSafeRouter } from "@/lib/safeRouter";
 import { useAgents } from "@/lib/hooks";
 import { useChatSessionIndicators } from "@/lib/useChatSessionIndicators";
@@ -36,7 +36,6 @@ export function ChatView() {
   // Active session from URL
   const sessionParam = searchParams.get("session");
   const channelParam = searchParams.get("channel");
-  const isNotificationView = channelParam === "notifications";
   const [localSelectedSessionId, setSelectedSessionId] = useState<
     string | null
   >(() => sessionParam);
@@ -65,7 +64,19 @@ export function ChatView() {
     return () => mediaQuery.removeEventListener("change", updateViewport);
   }, []);
 
-  // Fetch sessions — filtered by channel type
+  // Legacy notification URLs now land in the unified conversation view.
+  useEffect(() => {
+    if (channelParam !== "notifications") return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("channel");
+    params.delete("session");
+    router.replace(
+      params.size > 0 ? `${pathname}?${params.toString()}` : pathname,
+      { scroll: false },
+    );
+  }, [channelParam, pathname, router, searchParams]);
+
+  // Fetch the one authoritative set of conversational sessions.
   const {
     data: sessions,
     isLoading: sessionsLoading,
@@ -73,13 +84,24 @@ export function ChatView() {
   } = useSWR<ChatSessionExtended[]>(
     isMobileViewport
       ? null
-      : allChatSessionsUrl(
-          1000,
-          0,
-          isNotificationView ? "notification" : "chat",
-        ),
+      : allChatSessionsUrl(1000, 0, "chat"),
     fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 5000 },
+    { refreshInterval: 10000, revalidateOnFocus: true, dedupingInterval: 5000 },
+  );
+  const { data: unread, mutate: mutateUnread } = useSWR<UnreadSummary>(
+    notificationsUnreadUrl(),
+    fetcher,
+    { refreshInterval: 10000, revalidateOnFocus: true },
+  );
+  const unreadCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        (unread?.by_agent ?? []).map((entry) => [
+          entry.session_id,
+          entry.unread_count,
+        ]),
+      ),
+    [unread?.by_agent],
   );
 
   const [showNewChat, setShowNewChat] = useState(false);
@@ -98,8 +120,8 @@ export function ChatView() {
       : undefined;
   }, [activeSession?.agent_id, activeSession?.target_agent_id, agents]);
   const selectedIndicatorSessionIds = useMemo(
-    () => (!isNotificationView && selectedSessionId ? [selectedSessionId] : []),
-    [isNotificationView, selectedSessionId],
+    () => (selectedSessionId ? [selectedSessionId] : []),
+    [selectedSessionId],
   );
   const selectedSessionIndicators = useChatSessionIndicators(
     selectedIndicatorSessionIds,
@@ -107,6 +129,15 @@ export function ChatView() {
   const selectedSessionStatus = selectedSessionId
     ? selectedSessionIndicators[selectedSessionId]?.status
     : undefined;
+
+  useEffect(() => {
+    if (!selectedSessionId || !unreadCounts[selectedSessionId]) return;
+    void markChatSessionRead(selectedSessionId)
+      .then(() => mutateUnread())
+      .catch(() => {
+        // The selected session may have been removed between refreshes.
+      });
+  }, [mutateUnread, selectedSessionId, unreadCounts]);
 
   useEffect(() => {
     if (!sessionParam) {
@@ -293,12 +324,10 @@ export function ChatView() {
             activeSessionId={selectedSessionId}
             isLoading={sessionsLoading}
             onSelect={selectSession}
-            onCreate={
-              isNotificationView ? undefined : () => setShowNewChat(true)
-            }
-            onRename={isNotificationView ? undefined : handleRename}
+            onCreate={() => setShowNewChat(true)}
+            onRename={handleRename}
             onDelete={handleDelete}
-            channelType={isNotificationView ? "notification" : "chat"}
+            unreadCounts={unreadCounts}
           />
         </div>
       )}
@@ -306,11 +335,10 @@ export function ChatView() {
       {/* Mobile: Grok-style shell */}
       {isMobileViewport && (
         <div className="relative min-h-0 flex-1 min-w-0 overflow-hidden">
-          {isNotificationView ? (
-            <MobileNotificationContainer />
-          ) : (
-            <MobileChatContainer onSessionCreated={() => mutateSessions()} />
-          )}
+          <MobileChatContainer
+            onSessionCreated={() => mutateSessions()}
+            unreadCounts={unreadCounts}
+          />
         </div>
       )}
 
@@ -323,20 +351,11 @@ export function ChatView() {
                 session={activeSession}
                 agentColor={activeAgentColor}
                 status={selectedSessionStatus}
-                notificationView={isNotificationView}
               />
 
               {/* Chat content */}
               <div className="flex-1 min-h-0">
-                {isNotificationView ? (
-                  <NotificationArea
-                    agentId={activeSession.agent_id!}
-                    sessionId={activeSession.id}
-                    agentName={activeSession.agent_name}
-                    variant="desktop"
-                  />
-                ) : (
-                  <ChatArea
+                <ChatArea
                     key={`${activeSession.id}:${activeSession.target_type}:${activeSession.target_agent_id ?? activeSession.target_council_id}`}
                     projectId={activeSession.project_id}
                     agentId={
@@ -348,7 +367,6 @@ export function ChatView() {
                     onNavigateToSession={navigateToSessionById}
                     onSessionCreated={() => mutateSessions()}
                   />
-                )}
               </div>
             </div>
           ) : (
@@ -376,8 +394,7 @@ export function ChatView() {
         </div>
       )}
 
-      {/* New chat modal — hidden in notification view */}
-      {showNewChat && !isNotificationView && (
+      {showNewChat && (
         <NewChatModal
           onClose={() => setShowNewChat(false)}
           onCreate={handleCreateChat}
