@@ -2,19 +2,24 @@
 
 import type { ReactNode } from "react";
 import { Cpu, Globe, PlugZap, ShieldCheck } from "lucide-react";
+import { agentSourceLabel } from "@/lib/agentWorkspace";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { Tabs } from "@/components/ui/Tabs";
 import { AgentMediaTab } from "@/components/agents/AgentMediaTab";
+import { AgentOverviewTab } from "@/components/agents/AgentOverviewTab";
+import { TaskExecutionHistory } from "@/components/tasks/TaskExecutionHistory";
 import { useAgentAbilities, useAgentDomains, useAgentMcpServers } from "@/lib/hooks";
-import type { AgentDefinition, PromptConfig } from "@/lib/types";
+import type { AgentDefinition, ExecutionDetails, Model, PromptConfig } from "@/lib/types";
 
 type MobileAgentTab =
+  | "overview"
   | "prompts"
   | "abilities"
   | "domains"
   | "media"
   | "mcp"
   | "scopes"
+  | "activity"
   | "settings";
 
 function formatTimestamp(value: string | null | undefined): string {
@@ -86,13 +91,21 @@ export function MobileAgentDetail({
   activeTab,
   onTabChange,
   tabs,
+  executions,
+  executionsLoading,
+  executionsError,
+  onRefreshExecutions,
 }: {
   agent: AgentDefinition;
   promptConfig: PromptConfig;
-  models: Array<{ id: string; model: string }> | undefined;
+  models: Model[] | undefined;
   activeTab: MobileAgentTab;
   onTabChange: (tab: MobileAgentTab) => void;
   tabs: { id: MobileAgentTab; label: string; icon: ReactNode }[];
+  executions: ExecutionDetails[] | undefined;
+  executionsLoading: boolean;
+  executionsError: boolean;
+  onRefreshExecutions: () => void;
 }) {
   const { abilities } = useAgentAbilities(agent.id);
   const { agentDomains } = useAgentDomains(agent.id);
@@ -116,7 +129,7 @@ export function MobileAgentDetail({
               {agent.name}
             </h2>
             <p className="mt-0.5 truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
-              {agent.name}
+              {agent.slug || agent.id}
             </p>
             {agent.description && (
               <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">{agent.description}</p>
@@ -124,6 +137,7 @@ export function MobileAgentDetail({
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
+          <StatChip icon={<ShieldCheck className="h-3 w-3" />} label={agentSourceLabel(agent)} />
           <StatChip icon={<Cpu className="h-3 w-3" />} label={assignedModel?.model ?? "No model"} />
           <StatChip icon={<Globe className="h-3 w-3" />} label={`${enabledDomains.length} domains`} />
           <StatChip icon={<PlugZap className="h-3 w-3" />} label={`${abilities?.length ?? 0} abilities`} />
@@ -131,7 +145,20 @@ export function MobileAgentDetail({
         </div>
       </section>
 
-      <Tabs tabs={tabs} activeTab={activeTab} onChange={(id) => onTabChange(id as MobileAgentTab)} layoutId="agent-detail-tab-mobile" />
+      <Tabs tabs={tabs} activeTab={activeTab} onChange={(id) => onTabChange(id as MobileAgentTab)} layoutId="agent-detail-tab-mobile" mobileVariant="select" />
+
+      {activeTab === "overview" && (
+        <AgentOverviewTab
+          agent={agent}
+          assignmentCounts={{
+            abilities: abilities?.length,
+            domains: agentDomains ? enabledDomains.length : undefined,
+            mcp: mcpServers?.length,
+          }}
+          models={models}
+          onNavigate={onTabChange}
+        />
+      )}
 
       {activeTab === "prompts" && (
         <div className="space-y-4">
@@ -230,9 +257,20 @@ export function MobileAgentDetail({
         </section>
       )}
 
+      {activeTab === "activity" && (
+        <TaskExecutionHistory
+          emptyDescription="Run a task or conversation with this agent to see its completed execution record here."
+          executions={executions}
+          isError={executionsError}
+          isLoading={executionsLoading}
+          onRefresh={onRefreshExecutions}
+          title="Agent activity"
+        />
+      )}
+
       {activeTab === "settings" && (
         <section className="rounded-[1.4rem] border border-black/10 bg-transparent p-4 dark:border-white/10">
-          <MetadataRow label="Type" value={agent.source_agent_id ? "System-derived" : "Custom"} />
+          <MetadataRow label="Type" value={agentSourceLabel(agent)} />
           <MetadataRow label="Prompt lock" value={agent.prompt_locked ? "Locked" : "Editable on desktop"} />
           <MetadataRow label="Model" value={assignedModel?.model ?? "Unassigned"} />
           <MetadataRow label="Created" value={formatTimestamp(agent.created_at)} />

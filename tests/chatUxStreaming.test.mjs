@@ -214,6 +214,23 @@ test("only the reducer-owned response can render a thinking animation", () => {
   );
 });
 
+test("every model invocation restores the animated thinking state", () => {
+  assert.match(
+    hookSource,
+    /case "ModelRequestStarted":[\s\S]*?dispatchLiveTurn\(\{ type: "model_invoked" \}\)/,
+  );
+  assert.match(
+    bubbleSource,
+    /isLiveResponse && livePhase === "streaming" && hasAssistantContent/,
+  );
+  assert.match(
+    bubbleSource,
+    /<AssistantResponseContent[\s\S]*?\{isLiveResponse && !isStreamingResponse \? \([\s\S]*?<ChatProgressIndicator/,
+  );
+  assert.match(progressSource, /thinking: "Thinking"/);
+  assert.match(progressSource, /return <AnimatedDots \/>/);
+});
+
 test("assistant activity has stable width and compact live spacing", () => {
   assert.match(bubbleSource, /md:max-w-\[44rem\]/);
   assert.match(

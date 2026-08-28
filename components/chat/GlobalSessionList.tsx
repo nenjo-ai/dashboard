@@ -23,7 +23,7 @@ interface GlobalSessionListProps {
   onCreate?: () => void;
   onRename?: (id: string, title: string) => void;
   onDelete: (id: string) => void;
-  channelType?: "chat" | "notification";
+  unreadCounts?: Record<string, number>;
   hideHeaderControls?: boolean;
   mobile?: boolean;
 }
@@ -68,7 +68,7 @@ export default function GlobalSessionList({
   onCreate,
   onRename,
   onDelete,
-  channelType = "chat",
+  unreadCounts = {},
   hideHeaderControls = false,
   mobile = false,
 }: GlobalSessionListProps) {
@@ -105,8 +105,8 @@ export default function GlobalSessionList({
     return map;
   }, [agents]);
   const chatSessionIds = useMemo(
-    () => (channelType === "chat" ? sessions.map((session) => session.id) : []),
-    [channelType, sessions],
+    () => sessions.map((session) => session.id),
+    [sessions],
   );
   const sessionIndicators = useChatSessionIndicators(chatSessionIds);
 
@@ -162,11 +162,7 @@ export default function GlobalSessionList({
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder={
-                  channelType === "notification"
-                    ? "Search notifications..."
-                    : "Search conversations..."
-                }
+                placeholder="Search conversations..."
                 className={cn(
                   "w-full border border-black/[0.07] bg-white/75 py-2.5 pl-9 pr-3 text-xs text-gray-900 shadow-sm outline-hidden placeholder:text-gray-400 focus:border-deep-space-blue-300 focus:ring-2 focus:ring-deep-space-blue-100 dark:border-white/10 dark:bg-white/[0.05] dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:ring-deep-space-blue-500/15",
                   mobile ? "rounded-[1.35rem]" : "rounded-xl",
@@ -277,6 +273,7 @@ export default function GlobalSessionList({
                           : undefined;
                       const isActive = session.id === activeSessionId;
                       const sessionIndicator = sessionIndicators[session.id];
+                      const unreadCount = unreadCounts[session.id] ?? 0;
                       return editingId === session.id ? (
                         <div className="flex min-w-0 items-center gap-2.5">
                           {agent && (
@@ -330,6 +327,14 @@ export default function GlobalSessionList({
                             >
                               {session.title || displayAgentName(session)}
                             </span>
+                            {unreadCount > 0 && !isActive ? (
+                              <span
+                                className="absolute right-3 top-3 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-deep-space-blue-600 px-1 text-[9px] font-bold leading-none text-white dark:bg-deep-space-blue-400 dark:text-deep-space-blue-950"
+                                aria-label={`${unreadCount} unread agent ${unreadCount === 1 ? "update" : "updates"}`}
+                              >
+                                {unreadCount > 9 ? "9+" : unreadCount}
+                              </span>
+                            ) : null}
                             <div
                               className={cn(
                                 "mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px]",
@@ -338,11 +343,7 @@ export default function GlobalSessionList({
                                   : "text-gray-500 dark:text-gray-400",
                               )}
                             >
-                              {channelType === "notification" ? (
-                                <span className="truncate">
-                                  @{session.agent_name}
-                                </span>
-                              ) : session.target_type === "council" ? (
+                              {session.target_type === "council" ? (
                                 <>
                                   <span className="shrink-0">Council</span>
                                   <span>·</span>

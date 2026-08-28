@@ -1,8 +1,16 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import {
+  Check,
+  CircleCheck,
+  Copy,
+  Download,
+  Eye,
+  EyeOff,
+  KeyRound,
+} from "lucide-react";
 import { useAppAuth } from "@/components/auth/AppAuth";
 import useSWR from "swr";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
@@ -53,11 +61,15 @@ import { Select } from "@/components/ui/Select";
 import { Label } from "@/components/ui/Label";
 import { LoadingStatus } from "@/components/ui/LoadingStatus";
 import { UnlockMethodSetup } from "@/components/auth/UnlockMethodSetup";
-import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
 import {
   PackageInstallProgressBar,
   type PackageInstallProgress,
 } from "@/components/packages/PackageInstallProgressBar";
+import {
+  OnboardingShell,
+  OnboardingStepCard,
+  type OnboardingStep,
+} from "./OnboardingShell";
 import {
   buildCurrentOrgContentKeyBootstrap,
   buildRecoveryBundle,
@@ -93,12 +105,11 @@ import {
   isRecoveryDownloadComplete,
   recoveryPhraseFileContents,
 } from "@/lib/recoveryPhraseFile";
+import { normalizeRuntimeVerificationCode } from "@/lib/runtimeApproval";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-const STEPS = ["Create Org", "Secure", "Create Agent", "API Key", "Connect"] as const;
 
 const PROVIDER_ENV_VARS: Record<ModelProvider, string> = {
   openai: "OPENAI_API_KEY",
@@ -150,70 +161,41 @@ async function loadOnboardingLocalAccountContentKey(): Promise<{
   }
 }
 
-// ---------------------------------------------------------------------------
-// Step Indicator
-// ---------------------------------------------------------------------------
-
-function StepIndicator({
-  currentStep,
-}: {
-  currentStep: 1 | 2 | 3 | 4 | 5;
-}) {
-  return (
-    <ol aria-label="Onboarding progress" className="theme-border theme-surface-muted mb-6 grid w-full grid-cols-5 items-start rounded-2xl border px-3 py-3 sm:px-5">
-      {STEPS.map((label, i) => {
-        const step = (i + 1) as 1 | 2 | 3 | 4 | 5;
-        const isCompleted = step < currentStep;
-        const isActive = step === currentStep;
-        return (
-          <li key={label} className="relative flex flex-col items-center" aria-current={isActive ? "step" : undefined}>
-            {i < STEPS.length - 1 && (
-              <div
-                className={`absolute left-[calc(50%+1rem)] right-[calc(-50%+1rem)] top-3 h-px ${
-                  isCompleted
-                    ? "bg-deep-space-blue-500"
-                    : "bg-gray-300 dark:bg-gray-600"
-                }`}
-              />
-            )}
-
-            <div
-              className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold transition-colors ${
-                isCompleted
-                  ? "bg-deep-space-blue-500 text-white"
-                  : isActive
-                    ? "border-2 border-deep-space-blue-500 text-deep-space-blue-600 dark:text-deep-space-blue-400"
-                    : "border-2 border-gray-300 text-gray-400 dark:border-gray-600 dark:text-gray-500"
-              }`}
-            >
-              {isCompleted ? (
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                </svg>
-              ) : (
-                step
-              )}
-            </div>
-            <span
-              className={`mt-2 min-h-7 px-0.5 text-center text-[10px] font-medium leading-tight sm:text-[11px] ${
-                isActive
-                  ? "text-deep-space-blue-600 dark:text-deep-space-blue-400"
-                  : isCompleted
-                    ? "text-gray-700 dark:text-gray-300"
-                    : "text-gray-400 dark:text-gray-500"
-              }`}
-            >
-              {label}
-            </span>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
 interface StepSecureWorkspaceContinueOptions {
   onPackageInstallProgress: (progress: PackageInstallProgress) => void;
+}
+
+function SecurityStage({
+  complete,
+  current,
+  label,
+}: {
+  complete: boolean;
+  current: boolean;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl border border-black/[0.055] bg-white/55 px-3 py-2.5 dark:border-white/[0.07] dark:bg-white/[0.025]">
+      <span
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+          complete
+            ? "bg-emerald-500 text-white"
+            : current
+              ? "bg-deep-space-blue-500 text-white"
+              : "theme-surface-muted-strong theme-text-muted"
+        }`}
+      >
+        {complete ? (
+          <Check className="h-3.5 w-3.5" aria-hidden="true" />
+        ) : (
+          <span className={`h-1.5 w-1.5 rounded-full ${current ? "bg-white" : "bg-current opacity-55"}`} />
+        )}
+      </span>
+      <span className={`text-xs font-medium ${current ? "theme-text" : "theme-text-muted"}`}>
+        {label}
+      </span>
+    </div>
+  );
 }
 
 function StepSecureWorkspace({
@@ -238,7 +220,6 @@ function StepSecureWorkspace({
   const [installProgress, setInstallProgress] =
     useState<PackageInstallProgress | null>(null);
 
-  const phraseWords = recoveryPhrase.split(" ").filter(Boolean);
   const recoveryDownloadComplete = isRecoveryDownloadComplete({
     hasRecoveryBundle: Boolean(recoveryBundle),
     recoveryFileDownloaded: downloaded,
@@ -315,7 +296,7 @@ function StepSecureWorkspace({
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
       setDownloaded(true);
     } catch {
-      setError("Could not download the recovery phrase file.");
+      setError("Could not download the recovery file.");
     }
   }, [recoveryPhrase]);
 
@@ -373,7 +354,7 @@ function StepSecureWorkspace({
         orgContentKeyStatus.key_version,
       );
       if (!confirmedOrgKey) {
-        throw new Error("This browser does not have local access to shared org content yet.");
+        throw new Error("This browser does not have local access to shared workspace content yet.");
       }
       sessionStorage.removeItem(RECOVERY_DRAFT_SESSION_KEY);
       setRecoveryPhrase("");
@@ -396,16 +377,44 @@ function StepSecureWorkspace({
   return (
     <div className="space-y-5 md:space-y-6">
       <div>
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Secure Your Workspace</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          This device is generating local encryption keys for your organization.
+        <p className="theme-text-muted text-[11px] font-semibold uppercase tracking-[0.13em]">
+          Private by design
         </p>
+        <h1 className="theme-text mt-1.5 text-2xl font-semibold tracking-[-0.03em] sm:text-[1.7rem]">
+          Secure your workspace
+        </h1>
+        <p className="theme-text-muted mt-2 max-w-2xl text-sm leading-6">
+          This device is creating local encryption keys and a recovery file for your workspace.
+        </p>
+      </div>
+
+      <div className="theme-border theme-surface-muted grid gap-2 rounded-2xl border p-3 sm:grid-cols-2">
+        <SecurityStage
+          complete={!loading && Boolean(recoveryBundle)}
+          current={loading}
+          label="Secure this device"
+        />
+        <SecurityStage
+          complete={downloaded || recoveryCommitted}
+          current={!loading && Boolean(recoveryBundle) && !downloaded && !recoveryCommitted}
+          label="Save recovery file"
+        />
+        <SecurityStage
+          complete={packageSetupComplete}
+          current={recoveryCommitted && !packageSetupComplete}
+          label="Install essentials"
+        />
+        <SecurityStage
+          complete={false}
+          current={packageSetupComplete}
+          label="Choose unlock method"
+        />
       </div>
 
       {loading ? (
         <LoadingStatus
           label="Securing this workspace"
-          description="Generating local encryption material and your recovery bundle."
+          description="Preparing local encryption material and your recovery file."
         />
       ) : null}
 
@@ -416,11 +425,11 @@ function StepSecureWorkspace({
       ) : null}
 
       {installingPackages ? (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800">
-          <p className="text-sm font-medium text-gray-800 dark:text-gray-100">
+        <div className="theme-border theme-surface-muted rounded-2xl border p-4 sm:p-5">
+          <p className="theme-text text-sm font-medium">
             Installing Nenjo packages
           </p>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          <p className="theme-text-muted mt-1 text-sm">
             Setting up the default agent and workspace resources.
           </p>
           {installProgress ? (
@@ -444,48 +453,38 @@ function StepSecureWorkspace({
 
       {!loading && recoveryPhrase && !recoveryCommitted && !installingPackages ? (
         <>
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
-            <p className="text-sm text-amber-700 dark:text-amber-400">
-              Save this recovery phrase now. You can use it later to recover your encrypted resources.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {phraseWords.map((word, index) => (
-              <div
-                key={`${word}-${index}`}
-                className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              >
-                <span className="mr-2 text-xs text-gray-400 dark:text-gray-500">{index + 1}.</span>
-                {word}
+          <div className="theme-border theme-surface-muted rounded-2xl border p-4 sm:p-5">
+            <div className="flex items-start gap-4">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                <Download className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 className="theme-text text-sm font-semibold">Save your recovery file</h2>
+                <p className="theme-text-muted mt-1 text-sm leading-6">
+                  Keep this file somewhere private and separate from this device. Nenjo will not display its recovery contents on this screen.
+                </p>
               </div>
-            ))}
+            </div>
+
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleDownload}
+              className="mt-4 w-full sm:w-auto"
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              {downloaded ? "Download recovery file again" : "Download recovery file"}
+            </Button>
+
+            {downloaded ? (
+              <p className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                <CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                Recovery file downloaded
+              </p>
+            ) : null}
           </div>
 
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={handleDownload}
-            className="w-full"
-          >
-            <svg
-              aria-hidden="true"
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={1.75}
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-4.5-4.5L12 16.5m0 0L7.5 12m4.5 4.5V3"
-              />
-            </svg>
-            {downloaded ? "Recovery file downloaded" : "Download recovery file"}
-          </Button>
-
-          <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+          <label className="theme-border theme-surface-muted flex items-start gap-3 rounded-xl border p-3.5 text-sm">
             <input
               type="checkbox"
               checked={backupAcknowledged}
@@ -493,8 +492,8 @@ function StepSecureWorkspace({
               onChange={(event) => setBackupAcknowledged(event.target.checked)}
               className="mt-0.5 h-4 w-4 rounded border-gray-300 text-deep-space-blue-600 focus:ring-deep-space-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900"
             />
-            <span>
-              I downloaded the recovery file and stored it somewhere secure.
+            <span className="theme-text-muted leading-5">
+              I downloaded the recovery file and stored it somewhere private.
             </span>
           </label>
 
@@ -502,9 +501,9 @@ function StepSecureWorkspace({
             onClick={() => void handleContinue()}
             isLoading={submitting}
             disabled={!recoveryDownloadComplete}
-            className="w-full"
+            className="w-full sm:w-auto sm:min-w-40"
           >
-            Continue
+            Secure workspace
           </Button>
         </>
       ) : null}
@@ -513,15 +512,15 @@ function StepSecureWorkspace({
 }
 
 // ---------------------------------------------------------------------------
-// Step 1: Create Organization
+// Step 1: Name Workspace
 // ---------------------------------------------------------------------------
 
-function StepCreateOrganization({
+function StepCreateWorkspace({
   onContinue,
 }: {
-  onContinue: (orgName: string) => void | Promise<void>;
+  onContinue: (workspaceName: string) => void | Promise<void>;
 }) {
-  const [orgName, setOrgName] = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -529,22 +528,33 @@ function StepCreateOrganization({
     setError(null);
     queueMicrotask(() => setLoading(true));
     try {
-      const trimmed = orgName.trim();
+      const trimmed = workspaceName.trim();
       await updateCurrentOrg({ name: trimmed });
       await onContinue(trimmed);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update organization");
+      setError(err instanceof Error ? err.message : "Failed to name this workspace");
     } finally {
       setLoading(false);
     }
-  }, [onContinue, orgName]);
+  }, [onContinue, workspaceName]);
 
   return (
-    <div className="space-y-5">
+    <form
+      className="space-y-6"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void handleSubmit();
+      }}
+    >
       <div>
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Create Your Organization</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Name the organization that will own your shared resources and worker access.
+        <p className="theme-text-muted text-[11px] font-semibold uppercase tracking-[0.13em]">
+          Welcome to Nenjo
+        </p>
+        <h1 className="theme-text mt-1.5 text-2xl font-semibold tracking-[-0.03em] sm:text-[1.7rem]">
+          Name your workspace
+        </h1>
+        <p className="theme-text-muted mt-2 max-w-2xl text-sm leading-6">
+          Your workspace is the shared home for agents, projects, workers, and everything they create together.
         </p>
       </div>
 
@@ -554,24 +564,32 @@ function StepCreateOrganization({
         </div>
       )}
 
-      <div>
-        <Label required>Organization Name</Label>
+      <div className="max-w-xl">
+        <Label htmlFor="workspace-name" required>Workspace name</Label>
         <Input
-          value={orgName}
-          onChange={(e) => setOrgName(e.target.value)}
-          placeholder="Acme"
+          id="workspace-name"
+          autoComplete="organization"
+          autoFocus
+          value={workspaceName}
+          onChange={(event) => setWorkspaceName(event.target.value)}
+          placeholder="Acme Workspace"
+          className="h-11"
         />
+        <p className="theme-text-muted mt-2 text-xs leading-5">
+          You can invite teammates and change this name later in Settings.
+        </p>
       </div>
 
       <Button
-        onClick={handleSubmit}
+        type="submit"
+        size="lg"
         isLoading={loading}
-        disabled={!orgName.trim()}
-        className="w-full"
+        disabled={!workspaceName.trim()}
+        className="w-full sm:w-auto sm:min-w-44"
       >
-        Continue
+        Create workspace
       </Button>
-    </div>
+    </form>
   );
 }
 
@@ -590,7 +608,8 @@ function StepCreateAgent({
 }) {
   const [provider, setProvider] = useState<ModelProvider>("anthropic");
   const [model, setModel] = useState(MODEL_PROVIDERS.find((p) => p.id === "anthropic")!.models[0]);
-  const [name, setName] = useState("Anthropic Agent");
+  const [name, setName] = useState("Anthropic Configuration");
+  const [baseUrl, setBaseUrl] = useState("");
   const [temperature, setTemperature] = useState(0.7);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -600,9 +619,11 @@ function StepCreateAgent({
       setProvider(newProvider);
       const providerInfo = MODEL_PROVIDERS.find((p) => p.id === newProvider);
       if (providerInfo) {
-        setModel(providerInfo.models[0]);
-        setName(`${providerInfo.label} Agent`);
+        setModel(providerInfo.models[0] ?? "");
+        setName(`${providerInfo.label} Configuration`);
       }
+      setBaseUrl("");
+      setError(null);
       onProviderSelected(newProvider);
     },
     [onProviderSelected],
@@ -610,6 +631,27 @@ function StepCreateAgent({
 
   const handleSubmit = useCallback(async () => {
     setError(null);
+    const modelName = model.trim();
+    const configurationName = name.trim();
+    const endpoint = baseUrl.trim();
+    const requiresBaseUrl = provider === "vllm" || provider === "openai-compatible";
+
+    if (!modelName || !configurationName) return;
+
+    if (requiresBaseUrl) {
+      if (!endpoint) {
+        setError(`Base URL is required for ${provider === "vllm" ? "vLLM" : "OpenAI Compatible"}.`);
+        return;
+      }
+
+      try {
+        new URL(endpoint);
+      } catch {
+        setError("Enter a valid model server URL, including http:// or https://.");
+        return;
+      }
+    }
+
     queueMicrotask(() => setLoading(true));
     try {
       const roles = await fetchAgents();
@@ -621,12 +663,13 @@ function StepCreateAgent({
       }
 
       const agent = await createModel({
-        slug: resourceSlug(name),
-        name,
-        model,
+        slug: resourceSlug(configurationName),
+        name: configurationName,
+        model: modelName,
         model_provider: provider,
         temperature,
         tags: ["nenji"],
+        base_url: endpoint || undefined,
       });
 
       await updateAgent(nenjiAgent.id, {
@@ -635,20 +678,32 @@ function StepCreateAgent({
 
       onCreated(agent);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create agent");
+      setError(err instanceof Error ? err.message : "Failed to configure Nenji");
     } finally {
       setLoading(false);
     }
-  }, [name, model, onCreated, provider, temperature]);
+  }, [baseUrl, name, model, onCreated, provider, temperature]);
 
   const providerInfo = MODEL_PROVIDERS.find((p) => p.id === provider);
+  const requiresBaseUrl = provider === "vllm" || provider === "openai-compatible";
 
   return (
-    <div className="space-y-5">
+    <form
+      className="space-y-6"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void handleSubmit();
+      }}
+    >
       <div>
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Create Your First Agent</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Pick an AI provider and model to power your agent.
+        <p className="theme-text-muted text-[11px] font-semibold uppercase tracking-[0.13em]">
+          Your first collaborator
+        </p>
+        <h1 className="theme-text mt-1.5 text-2xl font-semibold tracking-[-0.03em] sm:text-[1.7rem]">
+          Choose Nenji&apos;s model
+        </h1>
+        <p className="theme-text-muted mt-2 max-w-2xl text-sm leading-6">
+          Select the provider and model Nenji should use. You can add more model configurations later.
         </p>
       </div>
 
@@ -658,10 +713,11 @@ function StepCreateAgent({
         </div>
       )}
 
-      <div className="space-y-4">
-        <div>
-          <Label required>Provider</Label>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="min-w-0">
+          <Label htmlFor="nenji-provider" required>Provider</Label>
           <Select
+            id="nenji-provider"
             value={provider}
             onChange={(e) => handleProviderChange(e.target.value as ModelProvider)}
           >
@@ -673,9 +729,10 @@ function StepCreateAgent({
           </Select>
         </div>
 
-        <div>
-          <Label required>Model</Label>
+        <div className="min-w-0">
+          <Label htmlFor="nenji-model" required>Model</Label>
           <Input
+            id="nenji-model"
             value={model}
             onChange={(e) => setModel(e.target.value)}
             list="model-hints"
@@ -686,19 +743,56 @@ function StepCreateAgent({
               <option key={m} value={m} />
             ))}
           </datalist>
+          {providerInfo?.models.length === 0 && (
+            <p className="theme-text-muted mt-2 text-xs">
+              Enter the exact model identifier exposed by your model server.
+            </p>
+          )}
         </div>
 
-        <div>
-          <Label required>Agent Name</Label>
+        {requiresBaseUrl && (
+          <div className="sm:col-span-2">
+            <Label htmlFor="nenji-base-url" required>Base URL</Label>
+            <Input
+              id="nenji-base-url"
+              type="url"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder={
+                provider === "vllm"
+                  ? "http://localhost:8000/v1"
+                  : "http://localhost:1234/v1"
+              }
+            />
+            <p className="theme-text-muted mt-2 text-xs">
+              Use the OpenAI-compatible API endpoint reachable by your Nenjo worker.
+            </p>
+          </div>
+        )}
+
+        <div className="sm:col-span-2">
+          <Label htmlFor="nenji-configuration-name" required>Configuration name</Label>
           <Input
+            id="nenji-configuration-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="My Agent"
+            placeholder="Primary model"
           />
+          <p className="theme-text-muted mt-2 text-xs">
+            This labels the reusable model configuration, not Nenji itself.
+          </p>
         </div>
 
-        <div>
-          <Label>Temperature: {temperature.toFixed(2)}</Label>
+        <div className="theme-border theme-surface-muted rounded-2xl border p-4 sm:col-span-2">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="theme-text text-sm font-medium">Response style</p>
+              <p className="theme-text-muted mt-0.5 text-xs">Balanced by default; adjust anytime.</p>
+            </div>
+            <span className="theme-border theme-surface rounded-lg border px-2.5 py-1 font-mono text-xs">
+              {temperature.toFixed(2)}
+            </span>
+          </div>
           <input
             type="range"
             min="0"
@@ -706,32 +800,39 @@ function StepCreateAgent({
             step="0.05"
             value={temperature}
             onChange={(e) => setTemperature(parseFloat(e.target.value))}
-            className="mt-1 w-full accent-deep-space-blue-500"
+            aria-label="Model temperature"
+            className="mt-4 w-full accent-deep-space-blue-500"
           />
-          <div className="flex justify-between text-xs text-gray-400">
+          <div className="theme-text-muted mt-1 flex justify-between text-xs">
             <span>Precise</span>
+            <span>Balanced</span>
             <span>Creative</span>
           </div>
         </div>
       </div>
 
       <Button
-        onClick={handleSubmit}
+        type="submit"
+        size="lg"
         isLoading={loading}
-        disabled={!name.trim() || !model.trim()}
-        className="w-full"
+        disabled={
+          !name.trim() ||
+          !model.trim() ||
+          (requiresBaseUrl && !baseUrl.trim())
+        }
+        className="w-full sm:w-auto sm:min-w-52"
       >
-        Create Agent
+        Save Nenji configuration
       </Button>
 
       <button
         type="button"
         onClick={onSkip}
-        className="w-full text-center text-sm text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+        className="theme-text-muted w-full text-center text-sm underline-offset-4 transition-colors hover:underline hover:text-gray-800 dark:hover:text-gray-200 sm:w-auto"
       >
-        Skip - Continue to Dashboard
+        Skip model setup and open dashboard
       </button>
-    </div>
+    </form>
   );
 }
 
@@ -753,12 +854,13 @@ function StepApiKey({
   const [revealed, setRevealed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const hasCreated = useRef(false);
+  const hasRestored = useRef(false);
 
-  // Try to restore from sessionStorage or auto-create
+  // Restore an already-created key after a transient remount, but never create
+  // credentials merely because the user viewed this step.
   useEffect(() => {
-    if (hasCreated.current) return;
-    hasCreated.current = true;
+    if (hasRestored.current) return;
+    hasRestored.current = true;
 
     const stored = sessionStorage.getItem(SESSION_KEY);
     if (stored) {
@@ -773,20 +875,23 @@ function StepApiKey({
         sessionStorage.removeItem(SESSION_KEY);
       }
     }
+  }, []);
 
-    // Auto-create key
-    queueMicrotask(() => setLoading(true));
-    createApiKey({ name: "Worker Key" })
-      .then((key) => {
-        setCreatedKey(key);
-        setRawKey(key.raw_key);
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(key));
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to create API key");
-        hasCreated.current = false; // allow retry
-      })
-      .finally(() => setLoading(false));
+  const createWorkerKey = useCallback(async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const key = await createApiKey({ name: "Worker Key" });
+      setCreatedKey(key);
+      setRawKey(key.raw_key);
+      setHasCopied(false);
+      setRevealed(false);
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(key));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create API key");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const handleCopy = useCallback(async () => {
@@ -801,29 +906,17 @@ function StepApiKey({
     }
   }, [rawKey]);
 
-  const handleRetry = useCallback(() => {
-    hasCreated.current = false;
-    setError(null);
-    setLoading(true);
-    createApiKey({ name: "Worker Key" })
-      .then((key) => {
-        setCreatedKey(key);
-        setRawKey(key.raw_key);
-        hasCreated.current = true;
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(key));
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to create API key");
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Generate API Key</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Your worker needs an API key to communicate with the platform.
+        <p className="theme-text-muted text-[11px] font-semibold uppercase tracking-[0.13em]">
+          Worker access
+        </p>
+        <h1 className="theme-text mt-1.5 text-2xl font-semibold tracking-[-0.03em] sm:text-[1.7rem]">
+          Create a worker key
+        </h1>
+        <p className="theme-text-muted mt-2 max-w-2xl text-sm leading-6">
+          This key lets your local Nenjo worker connect to this workspace. It does not expose your sign-in credentials.
         </p>
       </div>
 
@@ -832,77 +925,84 @@ function StepApiKey({
           <div className="rounded-lg border border-flag-red-200 bg-flag-red-50 p-3 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-400">
             {error}
           </div>
-          <Button onClick={handleRetry} variant="secondary" className="w-full">
-            Retry
+          <Button onClick={() => void createWorkerKey()} variant="secondary">
+            Try again
           </Button>
         </div>
       )}
 
-      {loading && (
-        <LoadingStatus label="Creating your worker key" />
-      )}
-
-      {rawKey && !loading && (
-        <>
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
-            <div className="flex items-start gap-2">
-              <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
-              </svg>
-              <p className="text-sm text-amber-700 dark:text-amber-400">
-                Copy this key now — you won&apos;t see it again after leaving this page.
+      {!rawKey && !loading && !error ? (
+        <div className="theme-border theme-surface-muted rounded-2xl border p-4 sm:p-5">
+          <div className="flex items-start gap-4">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-deep-space-blue-500/10 text-deep-space-blue-600 dark:text-deep-space-blue-300">
+              <KeyRound className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div>
+              <h2 className="theme-text text-sm font-semibold">Generate when you&apos;re ready</h2>
+              <p className="theme-text-muted mt-1 text-sm leading-6">
+                Nenjo shows a new key once. You&apos;ll copy it before continuing to the connection instructions.
               </p>
             </div>
           </div>
+          <Button
+            type="button"
+            size="lg"
+            onClick={() => void createWorkerKey()}
+            className="mt-5 w-full sm:w-auto sm:min-w-48"
+          >
+            Generate worker key
+          </Button>
+        </div>
+      ) : null}
 
-          <div>
-            <code className="block w-full break-all rounded-lg border border-gray-200 bg-gray-50 p-3 font-mono text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">
+      {loading ? <LoadingStatus label="Creating your worker key" /> : null}
+
+      {rawKey && !loading && (
+        <>
+          <div className="rounded-xl border border-amber-200/80 bg-amber-50/80 p-3.5 text-sm text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
+            Copy this key now. Nenjo will hide it when you leave this step.
+          </div>
+
+          <div className="theme-border theme-surface-muted rounded-2xl border p-4">
+            <code className="theme-text block min-h-12 w-full break-all rounded-xl bg-black/[0.035] p-3 font-mono text-sm leading-6 dark:bg-black/20">
               {revealed ? rawKey : "•".repeat(rawKey.length)}
             </code>
-            <div className="mt-2 flex items-center gap-2">
-              <button
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => setRevealed((r) => !r)}
-                className="rounded-md bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
               >
+                {revealed ? <EyeOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Eye className="h-3.5 w-3.5" aria-hidden="true" />}
                 {revealed ? "Hide" : "Reveal"}
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
                 onClick={handleCopy}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                  copied
-                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                    : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                }`}
               >
-                {copied ? (
-                  <span className="flex items-center gap-1">
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                    </svg>
-                    Copied!
-                  </span>
-                ) : (
-                  "Copy"
-                )}
-              </button>
+                {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
+                {copied ? "Copied" : "Copy key"}
+              </Button>
             </div>
           </div>
 
           <Button
+            size="lg"
             onClick={() => {
               if (createdKey) {
-                // Zeroize: clear raw key from state and sessionStorage
                 setRawKey(null);
                 sessionStorage.removeItem(SESSION_KEY);
                 onContinue(createdKey);
               }
             }}
             disabled={!hasCopied}
-            className="w-full"
+            className="w-full sm:w-auto sm:min-w-48"
           >
-            {hasCopied ? "Continue" : "Copy key to continue"}
+            {hasCopied ? "Continue to connection" : "Copy key to continue"}
           </Button>
-
         </>
       )}
 
@@ -910,9 +1010,9 @@ function StepApiKey({
         <button
           type="button"
           onClick={onSkip}
-          className="w-full text-center text-sm text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+          className="theme-text-muted w-full text-center text-sm underline-offset-4 transition-colors hover:underline hover:text-gray-800 dark:hover:text-gray-200 sm:w-auto"
         >
-          Skip for now
+          Skip key creation for now
         </button>
       ) : null}
     </div>
@@ -923,13 +1023,60 @@ function StepApiKey({
 // Step 5: Connect Worker
 // ---------------------------------------------------------------------------
 
+function ConnectionCommand({
+  command,
+  copied,
+  copyLabel = "Copy command",
+  description,
+  number,
+  onCopy,
+  title,
+}: {
+  command: string;
+  copied: boolean;
+  copyLabel?: string;
+  description: string;
+  number: number;
+  onCopy: () => void;
+  title: string;
+}) {
+  return (
+    <div className="theme-border theme-surface-muted rounded-2xl border p-4">
+      <div className="flex items-start gap-3">
+        <span className="theme-border theme-surface flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border text-xs font-semibold">
+          {number}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="theme-text text-sm font-semibold">{title}</h2>
+          <p className="theme-text-muted mt-1 text-xs leading-5">{description}</p>
+        </div>
+      </div>
+      <div className="relative mt-3">
+        <pre className="theme-border theme-text overflow-x-auto rounded-xl border bg-black/[0.035] p-3 pr-32 font-mono text-xs leading-6 dark:bg-black/20">
+          {command}
+        </pre>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={onCopy}
+          className="absolute right-2 top-2 bg-[var(--app-surface)]"
+        >
+          {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
+          {copied ? "Copied" : copyLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function StepConnect({
   provider,
-  keyPrefix,
+  rawWorkerKey,
   accountOrgId,
 }: {
   provider: ModelProvider;
-  keyPrefix: string;
+  rawWorkerKey: string;
   accountOrgId: string;
 }) {
   const router = useSafeRouter();
@@ -940,55 +1087,33 @@ function StepConnect({
     fetcher,
     { refreshInterval: 3000, revalidateOnFocus: false },
   );
-  const [copied, setCopied] = useState(false);
+  const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
   const [sendGreeting, setSendGreeting] = useState(true);
   const [greeting, setGreeting] = useState<"idle" | "priming" | "thinking" | "done">("idle");
   const [nenjiIdentity, setNenjiIdentity] = useState(DEFAULT_NENJI_IDENTITY);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [approvalBusy, setApprovalBusy] = useState(false);
+  const [approvalCode, setApprovalCode] = useState("");
   const hasHandledConnection = useRef(false);
-  const approvalInFlight = useRef(false);
   const navigationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const enrollmentsRef = useRef(enrollments);
-  enrollmentsRef.current = enrollments;
 
   const pendingEnrollment = (enrollments ?? []).find(
     (item) => item.state === "pending" || (item.state === "active" && !item.wrapped_ock),
   );
   const envVar = PROVIDER_ENV_VARS[provider];
-  const maskedKey = keyPrefix ? `${keyPrefix}${"*".repeat(12)}` : "nen_sk_***";
-  const snippet = `# Install the Nenjo CLI
-curl -fsSL https://nenjo.ai/install | bash
+  const installCommand = "curl -fsSL https://nenjo.ai/install | bash";
+  const providerCommand = envVar
+    ? `export ${envVar}=your-provider-key-here`
+    : `# Configure ${provider} credentials for your local runtime`;
+  const visibleWorkerCommand = "export NENJO_API_KEY=paste-your-worker-key-here\nnenjo run";
+  const workerCommand = `export NENJO_API_KEY=${rawWorkerKey || "paste-your-worker-key-here"}\nnenjo run`;
 
-# Set your API keys
-export ${envVar}=your-key-here
-export NENJO_API_KEY=${maskedKey}
-
-# Start the worker
-nenjo run`;
-
-  // Auto-approve the first harness during onboarding. Retry on a timer so a
-  // silent failure (or SWR returning a stable data reference) does not leave
-  // the worker stuck on "pending approval".
-  useEffect(() => {
-    if (!accountOrgId) return;
-
-    let cancelled = false;
-
-    const tryAutoApprove = async () => {
-      if (cancelled || approvalInFlight.current) return;
-      const enrollmentsNeedingOck = (enrollmentsRef.current ?? []).find(
-        (item) => item.state === "pending" || (item.state === "active" && !item.wrapped_ock),
-      );
-      if (!enrollmentsNeedingOck) {
-        setApprovalError(null);
-        setApprovalBusy(false);
-        return;
-      }
-
-      approvalInFlight.current = true;
-      setApprovalBusy(true);
-      try {
+  const handleApproveRuntime = useCallback(async () => {
+    const verificationCode = normalizeRuntimeVerificationCode(approvalCode);
+    if (!pendingEnrollment || !verificationCode || !accountOrgId) return;
+    setApprovalBusy(true);
+    setApprovalError(null);
+    try {
         const [ack, signingPublicKey, orgContentStatus] = await Promise.all([
           loadStoredAccountContentKey(),
           loadAccountSigningPublicKey(),
@@ -996,17 +1121,17 @@ nenjo run`;
         ]);
         if (!ack) {
           throw new Error(
-            "This browser is missing the local account content key needed to approve the harness.",
+            "This browser is missing the local account content key needed to approve the runtime.",
           );
         }
         if (!signingPublicKey) {
           throw new Error(
-            "This browser is missing the account signing key needed to approve the harness.",
+            "This browser is missing the account signing key needed to approve the runtime.",
           );
         }
         const orgId = orgContentStatus.org_id || accountOrgId;
         if (!orgId) {
-          throw new Error("Could not resolve the organization id for harness approval.");
+          throw new Error("Could not resolve the workspace id for runtime approval.");
         }
         const localOck = await loadStoredOrgContentKey(
           orgContentStatus.org_id,
@@ -1014,7 +1139,7 @@ nenjo run`;
         );
         if (!localOck) {
           throw new Error(
-            "This browser does not have the org content key needed to approve the harness. Re-secure the workspace or restore from recovery.",
+            "This browser does not have the workspace content key needed to approve the runtime. Re-secure the workspace or restore from recovery.",
           );
         }
 
@@ -1027,52 +1152,39 @@ nenjo run`;
 
         const certificate = await buildWorkerCertificate({
           accountId: orgId,
-          apiKeyId: enrollmentsNeedingOck.api_key_id,
-          encPublicKey: enrollmentsNeedingOck.request.enc_public_key,
-          signPublicKey: enrollmentsNeedingOck.request.sign_public_key,
+          apiKeyId: pendingEnrollment.api_key_id,
+          encPublicKey: pendingEnrollment.request.enc_public_key,
+          signPublicKey: pendingEnrollment.request.sign_public_key,
         });
         const wrappedAck = await wrapAccountContentKeyForWorker({
-          workerPublicKey: enrollmentsNeedingOck.request.enc_public_key,
+          workerPublicKey: pendingEnrollment.request.enc_public_key,
         });
         const wrappedOck = await wrapOrgContentKeyForWorker({
           orgId,
           keyVersion: orgContentStatus.key_version,
-          workerPublicKey: enrollmentsNeedingOck.request.enc_public_key,
+          workerPublicKey: pendingEnrollment.request.enc_public_key,
         });
-        await approveWorkerEnrollment(enrollmentsNeedingOck.api_key_id, {
+        await approveWorkerEnrollment(pendingEnrollment.api_key_id, {
+          verification_code: verificationCode,
           certificate,
           wrapped_ack: wrappedAck,
           wrapped_ock: wrappedOck,
         });
-        if (cancelled) return;
+        setApprovalCode("");
         setApprovalError(null);
         await mutateEnrollments();
       } catch (err) {
-        if (cancelled) return;
         setApprovalError(
-          err instanceof Error ? err.message : "Failed to auto-approve the harness.",
+          err instanceof Error ? err.message : "Failed to approve the runtime.",
         );
       } finally {
-        approvalInFlight.current = false;
-        if (!cancelled) setApprovalBusy(false);
+        setApprovalBusy(false);
       }
-    };
-
-    void tryAutoApprove();
-    const intervalId = window.setInterval(() => {
-      void tryAutoApprove();
-    }, 3000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
   }, [
     accountOrgId,
+    approvalCode,
     mutateEnrollments,
-    // Re-arm immediately when a new pending harness appears (interval covers retries).
-    pendingEnrollment?.api_key_id,
-    pendingEnrollment?.state,
+    pendingEnrollment,
   ]);
 
   // Handle successful worker connection
@@ -1142,15 +1254,15 @@ nenjo run`;
     };
   }, []);
 
-  const handleCopy = useCallback(async () => {
+  const handleCopyCommand = useCallback(async (name: string, command: string) => {
     try {
-      await navigator.clipboard.writeText(snippet);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(command);
+      setCopiedCommand(name);
+      setTimeout(() => setCopiedCommand(null), 2000);
     } catch {
       // fallback
     }
-  }, [snippet]);
+  }, []);
 
   const handleSkip = useCallback(async () => {
     sessionStorage.removeItem(SESSION_KEY);
@@ -1185,54 +1297,71 @@ nenjo run`;
   }, [router]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Connect Your Worker</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Install the CLI and start the worker to connect your agent.
+        <p className="theme-text-muted text-[11px] font-semibold uppercase tracking-[0.13em]">
+          Bring it online
+        </p>
+        <h1 className="theme-text mt-1.5 text-2xl font-semibold tracking-[-0.03em] sm:text-[1.7rem]">
+          Connect your worker
+        </h1>
+        <p className="theme-text-muted mt-2 max-w-2xl text-sm leading-6">
+          Run these three steps in your terminal. Nenjo will notice the worker as soon as it comes online.
         </p>
       </div>
 
-      <div className="relative">
-        <pre className="overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-4 pr-14 font-mono text-sm leading-relaxed text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-          {snippet}
-        </pre>
-        <button
-          onClick={handleCopy}
-          className={`absolute right-2 top-2 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-            copied
-              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-              : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-          }`}
-        >
-          {copied ? "Copied!" : "Copy"}
-        </button>
+      <div className="grid gap-3">
+        <ConnectionCommand
+          number={1}
+          title="Install the Nenjo CLI"
+          description="Install the local runtime on the machine that will run your agents."
+          command={installCommand}
+          copied={copiedCommand === "install"}
+          onCopy={() => void handleCopyCommand("install", installCommand)}
+        />
+        <ConnectionCommand
+          number={2}
+          title="Add your provider credential"
+          description="Replace the placeholder with the credential from your model provider."
+          command={providerCommand}
+          copied={copiedCommand === "provider"}
+          onCopy={() => void handleCopyCommand("provider", providerCommand)}
+        />
+        <ConnectionCommand
+          number={3}
+          title="Start the worker"
+          description={rawWorkerKey ? "The copied command includes the worker key you just created; the key stays hidden on screen." : "Paste a worker key where shown, then start the runtime."}
+          command={visibleWorkerCommand}
+          copyLabel={rawWorkerKey ? "Copy with key" : "Copy command"}
+          copied={copiedCommand === "worker"}
+          onCopy={() => void handleCopyCommand("worker", workerCommand)}
+        />
       </div>
 
       {/* Greeting checkbox */}
-      <label className="flex items-center gap-2.5 cursor-pointer select-none">
+      <label className="theme-border theme-surface-muted flex cursor-pointer select-none items-center gap-3 rounded-xl border p-3.5">
         <input
           type="checkbox"
           checked={sendGreeting}
           onChange={(e) => setSendGreeting(e.target.checked)}
           className="h-4 w-4 rounded border-gray-300 text-deep-space-blue-600 focus:ring-deep-space-blue-500 dark:border-gray-600 dark:bg-gray-800"
         />
-        <span className="text-sm text-gray-600 dark:text-gray-400">
+        <span className="theme-text-muted text-sm">
           Have Nenji greet me after connecting
         </span>
       </label>
 
       {approvalError ? (
         <div className="rounded-lg border border-flag-red-200 bg-flag-red-50 p-3 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-400">
-          <p className="font-medium">Harness auto-approval failed</p>
+          <p className="font-medium">Runtime approval failed</p>
           <p className="mt-1">{approvalError}</p>
           <p className="mt-2 text-xs opacity-90">
-            Keep this page open while the worker is running. Nenjo will keep retrying approval.
+            Confirm the code shown by the runtime and try again.
           </p>
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
+      <div className="theme-border theme-surface-muted overflow-hidden rounded-2xl border">
         {isConnected ? (
           <div className="relative p-5">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_55%)] dark:bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_55%)]" />
@@ -1285,26 +1414,34 @@ nenjo run`;
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-3 p-4">
+          <div className="flex items-start gap-3 p-4">
             <div className="relative flex h-8 w-8 items-center justify-center">
-              <div className="absolute h-3 w-3 animate-ping rounded-full bg-deep-space-blue-400 opacity-75" />
+              <div className="absolute h-3 w-3 motion-safe:animate-ping rounded-full bg-deep-space-blue-400 opacity-75" />
               <div className="relative h-3 w-3 rounded-full bg-deep-space-blue-500" />
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 {pendingEnrollment
                   ? approvalBusy
-                    ? "Approving harness..."
-                    : "Harness registered — auto-approving..."
-                  : "Waiting for worker connection..."}
+                    ? "Approving runtime..."
+                    : "Runtime awaiting approval"
+                  : "Waiting for runtime connection..."}
               </p>
-              {pendingEnrollment?.request.verification_code ? (
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  Verification code:{" "}
-                  <span className="font-mono font-semibold tracking-wider text-gray-700 dark:text-gray-200">
-                    {pendingEnrollment.request.verification_code}
-                  </span>
-                </p>
+              {pendingEnrollment ? (
+                <div className="mt-3 max-w-md space-y-2">
+                  <Input
+                    aria-label="Runtime verification code"
+                    autoCapitalize="none"
+                    autoComplete="one-time-code"
+                    className="font-mono tracking-[0.12em]"
+                    onChange={(event) => setApprovalCode(event.target.value)}
+                    placeholder="Enter verification code"
+                    spellCheck={false}
+                    value={approvalCode}
+                  />
+                  <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">Type the code shown in the runtime terminal. Nenjo verifies it before granting access.</p>
+                  <Button disabled={!approvalCode.trim()} isLoading={approvalBusy} onClick={() => void handleApproveRuntime()}>Approve runtime</Button>
+                </div>
               ) : null}
             </div>
           </div>
@@ -1315,7 +1452,7 @@ nenjo run`;
         onClick={() => {
           void handleSkip();
         }}
-        className="w-full text-center text-sm text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+        className="theme-text-muted w-full text-center text-sm underline-offset-4 transition-colors hover:underline hover:text-gray-800 dark:hover:text-gray-200 sm:w-auto"
       >
         Skip — I&apos;ll connect later
       </button>
@@ -1354,7 +1491,7 @@ function StepRestoreDevice({
       return "This browser is not running in a secure context, so Web Crypto is unavailable for device enrollment. Open Nenjo over HTTPS or localhost before trying to approve this device.";
     }
     if (/x25519|algorithm|generatekey|derivebits/i.test(message)) {
-      return "This browser could not create the device encryption key needed for approval. On some mobile browsers, X25519 Web Crypto support is incomplete. Use the recovery phrase on this device, or approve from a browser with broader Web Crypto support.";
+      return "This browser could not create the device encryption key needed for approval. On some mobile browsers, X25519 Web Crypto support is incomplete. Use the recovery details from your saved file on this device, or approve from a browser with broader Web Crypto support.";
     }
     return message;
   }, []);
@@ -1506,7 +1643,7 @@ function StepRestoreDevice({
   const handleCreateNewOrg = useCallback(async () => {
     const trimmed = newOrgName.trim();
     if (!trimmed) {
-      setError("Organization name is required.");
+      setError("Workspace name is required.");
       return;
     }
 
@@ -1522,7 +1659,7 @@ function StepRestoreDevice({
       setActiveOrgIdGetter(() => created.org_id);
       onStartFresh(created.org_id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create a new organization.");
+      setError(err instanceof Error ? err.message : "Failed to create a new workspace.");
     } finally {
       setCreatingOrg(false);
     }
@@ -1531,9 +1668,14 @@ function StepRestoreDevice({
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Add This Device</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          This Nenjo account already exists. Approve this browser from a trusted device or restore it with your recovery phrase for <span className="font-medium text-gray-700 dark:text-gray-200">{userId}</span>.
+        <p className="theme-text-muted text-[11px] font-semibold uppercase tracking-[0.13em]">
+          Trusted access
+        </p>
+        <h1 className="theme-text mt-1.5 text-2xl font-semibold tracking-[-0.03em] sm:text-[1.7rem]">
+          Add this device
+        </h1>
+        <p className="theme-text-muted mt-2 text-sm leading-6">
+          This Nenjo workspace already exists. Approve this browser from a trusted device or restore it with the recovery details saved for <span className="theme-text font-medium">{userId}</span>.
         </p>
       </div>
 
@@ -1660,18 +1802,19 @@ function StepRestoreDevice({
                     Option 2
                   </p>
                   <h3 className="mt-2 text-base font-semibold text-gray-900 dark:text-gray-100">
-                    Restore with recovery phrase
+                    Restore with your recovery file
                   </h3>
                   <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                    Use your recovery phrase if you want to restore this browser directly without waiting for another device to approve it.
+                    Open your saved recovery file and paste its recovery phrase here to restore this browser without waiting for another device.
                   </p>
                 </div>
 
                 {hasBundle ? (
                   <>
                     <div>
-                      <Label required>Recovery Phrase</Label>
+                      <Label htmlFor="recovery-phrase" required>Recovery phrase from file</Label>
                       <Input
+                        id="recovery-phrase"
                         value={recoveryPhrase}
                         onChange={(event) => setRecoveryPhrase(event.target.value)}
                         placeholder="Enter your saved recovery phrase"
@@ -1689,7 +1832,7 @@ function StepRestoreDevice({
                   </>
                 ) : (
                   <div className="rounded-xl border border-flag-red-200 bg-flag-red-50 p-4 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-400">
-                    No recovery bundle is available for this account yet, so recovery-phrase restore is not available on this device.
+                    No recovery information is available for this workspace yet, so file-based restore is not available on this device.
                   </div>
                 )}
               </div>
@@ -1702,16 +1845,17 @@ function StepRestoreDevice({
                     Escape hatch
                   </p>
                   <h3 className="mt-2 text-base font-semibold text-gray-900 dark:text-gray-100">
-                    Create a new organization instead
+                    Create a new workspace instead
                   </h3>
                   <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                    If you lost both your trusted devices and your recovery phrase, start a fresh workspace under a new organization on this same account.
+                    If you lost both your trusted devices and your recovery file, start a fresh workspace on this same account.
                   </p>
                 </div>
 
                 <div>
-                  <Label required>New Organization Name</Label>
+                  <Label htmlFor="new-workspace-name" required>New workspace name</Label>
                   <Input
+                    id="new-workspace-name"
                     value={newOrgName}
                     onChange={(event) => setNewOrgName(event.target.value)}
                     placeholder="Acme 2"
@@ -1724,7 +1868,7 @@ function StepRestoreDevice({
                   disabled={!newOrgName.trim()}
                   className="w-full"
                 >
-                  Create New Organization
+                  Create new workspace
                 </Button>
               </div>
             </div>
@@ -1764,7 +1908,7 @@ export default function OnboardingContent() {
       | undefined;
   };
 
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [currentStep, setCurrentStep] = useState<OnboardingStep>(1);
   const [onboardingMode, setOnboardingMode] = useState<"fresh" | "restore">("fresh");
   const [gateStatus, setGateStatus] = useState<"checking" | "ready" | "error">("checking");
   const [gateError, setGateError] = useState<string | null>(null);
@@ -1876,8 +2020,6 @@ export default function OnboardingContent() {
     };
   }, [entryGateKey, forceRestore, isLoaded, router, signedInUserId]);
 
-  const maxWidth = onboardingMode === "restore" ? "max-w-5xl" : "max-w-2xl";
-
   const loadingSpinner = (
     <LoadingStatus label="Loading your account" className="py-12" />
   );
@@ -1892,7 +2034,7 @@ export default function OnboardingContent() {
 
   const gateFailure = (
     <div className="mx-auto w-full max-w-sm space-y-4 py-6">
-      <div className="rounded-lg border border-[#ff5555]/40 bg-[#ff5555]/10 p-4 text-sm text-[#ff8888]">
+      <div className="rounded-xl border border-flag-red-200 bg-flag-red-50 p-4 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-300">
         {gateError ?? "Failed to determine whether this device should onboard or restore."}
       </div>
       <Button onClick={() => window.location.reload()} className="w-full">
@@ -1906,12 +2048,9 @@ export default function OnboardingContent() {
       {gateStatus === "checking" ? gateSpinner : null}
       {gateStatus === "error" ? gateFailure : null}
       {gateStatus !== "ready" ? null : (
-        <>
-      {onboardingMode === "fresh" ? <StepIndicator currentStep={currentStep} /> : null}
-
       <div
         key={`${onboardingMode}-${currentStep}`}
-        className="onboarding-step-panel animate-fade-in-up"
+        className="animate-fade-in-up"
       >
         {onboardingMode === "restore" ? (
           <StepRestoreDevice
@@ -1926,7 +2065,7 @@ export default function OnboardingContent() {
         ) : null}
 
         {onboardingMode === "fresh" && currentStep === 1 && (
-          <StepCreateOrganization
+          <StepCreateWorkspace
             onContinue={() => setCurrentStep(2)}
           />
         )}
@@ -1972,18 +2111,11 @@ export default function OnboardingContent() {
         {onboardingMode === "fresh" && currentStep === 5 && (
           <StepConnect
             provider={selectedProvider}
-            keyPrefix={createdKey?.key_prefix || ""}
+            rawWorkerKey={createdKey?.raw_key || ""}
             accountOrgId={selectedOrgId ?? currentUser?.org_id ?? ""}
           />
         )}
-
-        {onboardingMode === "fresh" && currentStep === 1 && (
-          <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
-            Welcome{user.firstName ? `, ${user.firstName}` : user.primaryEmailAddress?.emailAddress ? `, ${user.primaryEmailAddress.emailAddress}` : ""}! Let&apos;s get your organization set up.
-          </p>
-        )}
       </div>
-        </>
       )}
     </>
   ) : (
@@ -1991,79 +2123,12 @@ export default function OnboardingContent() {
   );
 
   return (
-    <div className="onboarding-landing dark flex min-h-screen bg-[#05070f] text-[#eaeef8] lg:overflow-hidden">
-      {/* Left panel – branding */}
-      <div className="onboarding-brand-panel relative hidden overflow-hidden border-r border-white/10 bg-[#05070f] p-10 text-white lg:flex lg:w-[44%] lg:flex-col lg:justify-between xl:p-12">
-        <div className="onboarding-brand-grid" />
-        <div className="onboarding-brand-glow" />
-
-        <div className="relative z-10">
-          <Link
-            href="/"
-            className="onboarding-brand-link inline-flex items-center gap-3 text-white transition-colors"
-          >
-            <NenjoLogoMark className="h-10 w-10 rounded-lg" />
-            <span className="text-sm font-light tracking-[0.25em] text-white uppercase">
-              Nenjo
-            </span>
-          </Link>
-        </div>
-
-        <div className="relative z-10 flex flex-col items-start gap-8">
-          <div className="flex flex-col gap-2">
-            <span className="onboarding-kanji text-8xl font-light tracking-wider leading-none">念</span>
-            <span className="onboarding-kanji text-8xl font-light tracking-wider leading-none">助</span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="h-px w-12 bg-white/30" />
-            <span className="text-lg font-light tracking-[0.3em] text-white/60 uppercase">Nenjo</span>
-          </div>
-
-          <div className="max-w-md space-y-4">
-            <h2 className="onboarding-quote text-2xl font-semibold leading-snug text-white/95">
-              &ldquo;Mindful assistance&rdquo;
-            </h2>
-            <p className="text-base leading-relaxed text-white/60">
-              <span className="text-white/80 font-medium">念 (nen)</span> — thought, mindfulness, attention.
-              The focused intention behind every action.
-            </p>
-            <p className="text-base leading-relaxed text-white/60">
-              <span className="text-white/80 font-medium">助 (jo)</span> — help, assistance, support.
-              The act of empowering others to achieve more.
-            </p>
-            <p className="mt-6 text-sm leading-relaxed text-white/40">
-              Together, Nenjo represents the philosophy of thoughtful, intelligent assistance —
-              AI agents that work with purpose and precision to help you build faster.
-            </p>
-          </div>
-        </div>
-
-        <div className="relative z-10">
-          <p className="text-xs text-white/30">
-            © {new Date().getFullYear()} Nenjo. All rights reserved.
-          </p>
-        </div>
-      </div>
-
-      {/* Right panel – onboarding wizard */}
-      <div className="onboarding-wizard-panel flex min-h-screen w-full flex-col items-center justify-center overflow-y-auto bg-[#080c18] px-4 py-8 sm:px-6 sm:py-10 lg:w-[56%] lg:px-10 lg:py-12">
-        <div className={`onboarding-wizard-card w-full transition-[max-width] duration-300 ease-in-out ${maxWidth}`}>
-          <div className="mb-6 text-center lg:hidden">
-            <Link
-              href="/"
-              className="onboarding-brand-link inline-flex items-center gap-3 transition-colors"
-            >
-              <NenjoLogoMark className="h-10 w-10 rounded-lg" />
-              <span className="text-sm font-light uppercase tracking-[0.25em]">
-                Nenjo
-              </span>
-            </Link>
-          </div>
-
-          {stepContent}
-        </div>
-      </div>
-    </div>
+    <OnboardingShell
+      currentStep={currentStep}
+      restoreMode={onboardingMode === "restore"}
+      showProgress={Boolean(isLoaded && user && gateStatus === "ready")}
+    >
+      <OnboardingStepCard>{stepContent}</OnboardingStepCard>
+    </OnboardingShell>
   );
 }

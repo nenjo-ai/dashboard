@@ -1,299 +1,184 @@
 "use client";
 
-import { useState } from "react";
-import { useAgents } from "@/lib/hooks";
+import dynamic from "next/dynamic";
+import { useCallback, useDeferredValue, useMemo, useState } from "react";
+import { Bot, Boxes, Cpu, Plus, Search, ShieldCheck, TriangleAlert } from "lucide-react";
+
 import {
-  createAgent,
-  deleteAgent,
-  fetchAgentAbilities,
-  fetchAgentMcpServers,
-  fetchAgentPrompt,
-  updateAgent,
-  updateAgentPrompt,
-} from "@/lib/api";
-import { buildCloneAgentUpdate } from "@/lib/agentClone";
-import { AgentCard } from "./AgentCard";
-import { Skeleton } from "@/components/ui/Skeleton";
+  filterAndSortAgents,
+  summarizeAgentWorkspace,
+  type AgentWorkspaceFilter,
+  type AgentWorkspaceSort,
+} from "@/lib/agentWorkspace";
+import { deleteAgent } from "@/lib/api";
+import { useAgents, useModels } from "@/lib/hooks";
+import { toast } from "@/lib/toast";
+import type { AgentDefinition } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { ColorSwatchPicker } from "@/components/ui/ColorSwatchPicker";
-import { AGENT_COLOR_PALETTE } from "@/lib/agent-colors";
-import type { AgentDefinition } from "@/lib/types";
-import { Plus } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Input } from "@/components/ui/Input";
+import { LoadingStatus } from "@/components/ui/LoadingStatus";
+import { MotionItem, MotionList } from "@/components/ui/motion";
+import { Select } from "@/components/ui/Select";
+import { AgentCard } from "./AgentCard";
+
+const AgentCreateDialog = dynamic(
+  () => import("./MobileAgentCreateDialog").then((module) => module.MobileAgentCreateDialog),
+  { ssr: false },
+);
 
 export function AgentsSection() {
-  const { agents, isLoading, isError, mutate } = useAgents();
-
-  // Create agent form state
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newAgentName, setNewAgentName] = useState("");
-  const [newAgentDescription, setNewAgentDescription] = useState("");
-  const [newAgentColor, setNewAgentColor] = useState<string>(AGENT_COLOR_PALETTE[0]);
-  const [cloneFromId, setCloneFromId] = useState<string>("");
-  const [creating, setCreating] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { agents, isLoading, isError, error, mutate } = useAgents();
+  const { models } = useModels();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
+  const [filter, setFilter] = useState<AgentWorkspaceFilter>("all");
+  const [sort, setSort] = useState<AgentWorkspaceSort>("updated");
   const [confirmDeleteAgent, setConfirmDeleteAgent] = useState<AgentDefinition | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const handleDeleteAgent = (agent: AgentDefinition) => {
-    if (deletingId) return;
-    setConfirmDeleteAgent(agent);
-  };
+  const summary = useMemo(() => summarizeAgentWorkspace(agents ?? []), [agents]);
+  const visibleAgents = useMemo(
+    () => filterAndSortAgents(agents ?? [], deferredQuery, filter, sort),
+    [agents, deferredQuery, filter, sort],
+  );
 
-  const executeDeleteAgent = async () => {
+  const removeAgent = useCallback(async () => {
     if (!confirmDeleteAgent) return;
-    setDeletingId(confirmDeleteAgent.id);
+    setDeleting(true);
     try {
       await deleteAgent(confirmDeleteAgent.id);
-      mutate();
-    } catch {
-      // TODO: toast
-    } finally {
-      setDeletingId(null);
+      toast.success(`“${confirmDeleteAgent.name}” deleted.`);
       setConfirmDeleteAgent(null);
-    }
-  };
-
-  const handleCloneFrom = (agentId: string) => {
-    setCloneFromId(agentId);
-    if (!agentId) return;
-    const source = agents?.find((r) => r.id === agentId);
-    if (!source) return;
-    setNewAgentDescription(source.description ?? "");
-    setNewAgentColor(source.color);
-  };
-
-  const handleCreateAgent = async () => {
-    if (!newAgentName.trim()) return;
-    try {
-      setCreating(true);
-      const sourceAgent = cloneFromId ? agents?.find((r) => r.id === cloneFromId) : null;
-      const created = await createAgent({
-        name: newAgentName.trim(),
-        description: newAgentDescription.trim() || undefined,
-        color: newAgentColor,
-        model_id: sourceAgent?.model_id ?? undefined,
-      });
-      if (sourceAgent) {
-        const [sourcePromptConfig, sourceAbilities, sourceMcpServers] =
-          await Promise.all([
-            fetchAgentPrompt(sourceAgent.id),
-            fetchAgentAbilities(sourceAgent.id),
-            fetchAgentMcpServers(sourceAgent.id),
-          ]);
-        await Promise.all([
-          updateAgent(
-            created.id,
-            buildCloneAgentUpdate(
-              sourceAgent,
-              sourceAbilities,
-              sourceMcpServers,
-            ),
-          ),
-          updateAgentPrompt(created.id, sourcePromptConfig),
-        ]);
-      }
-      setNewAgentName("");
-      setNewAgentDescription("");
-      setNewAgentColor(AGENT_COLOR_PALETTE[0]);
-      setCloneFromId("");
-      setShowCreateForm(false);
-      mutate();
+      await mutate();
     } catch {
-      // TODO: toast
+      toast.error("Failed to delete agent.");
     } finally {
-      setCreating(false);
+      setDeleting(false);
     }
-  };
+  }, [confirmDeleteAgent, mutate]);
 
   if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div
-              key={i}
-              className="theme-border theme-surface rounded-xl border p-5 shadow-xs"
-            >
-              <div className="space-y-3">
-                <Skeleton className="h-5 w-32" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-2/3" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+    return <LoadingStatus className="min-h-72" description="Gathering agent identities, model readiness, and assignments." label="Loading agents" />;
   }
 
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-red-200 bg-red-50 px-6 py-12 dark:border-red-900 dark:bg-red-950/50">
-        <svg
-          className="h-10 w-10 text-flag-red-400"
-          fill="none"
-          viewBox="0 0 24 24"
-          strokeWidth={1.5}
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
-          />
-        </svg>
-        <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
-          Failed to load agents
-        </h3>
-        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-          Please check your connection and try again.
-        </p>
-      </div>
-    );
-  }
-
-  if (!agents || agents.length === 0) {
-    return (
-      <div className="theme-border theme-surface flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-16">
-        <div className="rounded-full bg-deep-space-blue-50 p-4 dark:bg-deep-space-blue-900/50">
-          <svg
-            className="h-10 w-10 text-deep-space-blue-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={1.5}
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z"
-            />
-          </svg>
-        </div>
-        <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
-          No agents yet
-        </h3>
-        <p className="mt-2 max-w-sm text-center text-sm text-gray-500 dark:text-gray-400">
-          Agents define how your AI behaves. Create agents in settings to get started.
-        </p>
-      </div>
+      <EmptyState
+        action={<Button onClick={() => void mutate()} variant="secondary">Try again</Button>}
+        description={error?.message ?? "Check the local worker connection and try again."}
+        icon={<TriangleAlert className="h-5 w-5" />}
+        title="Agents could not be loaded"
+        tone="error"
+      />
     );
   }
 
   return (
-    <div className="relative">
-      <div className="mb-4 flex justify-end">
-        <Button
-          onClick={() => setShowCreateForm((v) => !v)}
-        >
-          <Plus className="h-4 w-4" />
-          New agent
-        </Button>
-      </div>
+    <div className="space-y-5">
+      {agents?.length ? (
+        <section aria-label="Agent summary" className="theme-surface theme-border grid overflow-hidden rounded-2xl border sm:grid-cols-4">
+          <SummaryMetric icon={<Bot className="h-4 w-4" />} label="Agents" value={summary.agents} />
+          <SummaryMetric className="theme-border border-t sm:border-l sm:border-t-0" icon={<Cpu className="h-4 w-4" />} label="Model ready" value={summary.ready} />
+          <SummaryMetric className="theme-border border-t sm:border-l sm:border-t-0" icon={<ShieldCheck className="h-4 w-4" />} label="Custom" value={summary.custom} />
+          <SummaryMetric className="theme-border border-t sm:border-l sm:border-t-0" icon={<Boxes className="h-4 w-4" />} label="Managed" value={summary.managed} />
+        </section>
+      ) : null}
 
-      {/* Create agent form */}
-      {showCreateForm && (
-        <div className="mb-4 rounded-xl border border-deep-space-blue-200 bg-deep-space-blue-50/50 p-4 dark:border-deep-space-blue-800 dark:bg-deep-space-blue-950/30">
-          <div className="space-y-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
-                Clone From
-              </label>
-              <select
-                value={cloneFromId}
-                onChange={(e) => handleCloneFrom(e.target.value)}
-                className="theme-border theme-surface w-full rounded-lg border px-3 py-1.5 text-sm text-gray-900 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:text-gray-100"
-              >
-                <option value="">Start from scratch</option>
-                {agents?.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
-                Agent Name
-              </label>
-              <input
-                type="text"
-                value={newAgentName}
-                onChange={(e) => setNewAgentName(e.target.value)}
-                placeholder="e.g., lead_developer"
-                className="theme-border theme-surface w-full rounded-lg border px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:text-gray-100 dark:placeholder-gray-500"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
-                Description
-              </label>
-              <input
-                type="text"
-                value={newAgentDescription}
-                onChange={(e) => setNewAgentDescription(e.target.value)}
-                placeholder="What does this agent do?"
-                className="theme-border theme-surface w-full rounded-lg border px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-deep-space-blue-500 focus:outline-hidden focus:ring-1 focus:ring-deep-space-blue-500 dark:text-gray-100 dark:placeholder-gray-500"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
-                Color
-              </label>
-              <ColorSwatchPicker
-                value={newAgentColor}
-                onChange={setNewAgentColor}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowCreateForm(false);
-                  setNewAgentName("");
-                  setNewAgentDescription("");
-                  setNewAgentColor(AGENT_COLOR_PALETTE[0]);
-                  setCloneFromId("");
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!newAgentName.trim() || creating}
-                onClick={handleCreateAgent}
-              >
-                {creating ? "Creating..." : "Create Agent"}
-              </Button>
-            </div>
+      {agents?.length ? (
+        <div className="theme-surface theme-border flex flex-col gap-3 rounded-2xl border p-3 lg:flex-row lg:items-center">
+          <label className="relative min-w-0 flex-1">
+            <span className="sr-only">Search agents</span>
+            <Search className="theme-text-muted pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" aria-hidden="true" />
+            <Input className="pl-9" onChange={(event) => setQuery(event.target.value)} placeholder="Search names, roles, models, or slugs" value={query} />
+          </label>
+          <div className="grid grid-cols-2 gap-3 sm:flex">
+            <label>
+              <span className="sr-only">Filter agents</span>
+              <Select className="sm:w-40" onChange={(event) => setFilter(event.target.value as AgentWorkspaceFilter)} value={filter}>
+                <option value="all">All agents</option>
+                <option value="ready">Model ready</option>
+                <option value="needs_model">Needs model</option>
+                <option value="custom">Custom</option>
+                <option value="managed">Managed</option>
+              </Select>
+            </label>
+            <label>
+              <span className="sr-only">Sort agents</span>
+              <Select className="sm:w-44" onChange={(event) => setSort(event.target.value as AgentWorkspaceSort)} value={sort}>
+                <option value="updated">Recently updated</option>
+                <option value="name">Name</option>
+              </Select>
+            </label>
           </div>
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            New agent
+          </Button>
         </div>
+      ) : null}
+
+      {!agents?.length ? (
+        <EmptyState
+          action={<Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4" />Create agent</Button>}
+          description="Define a focused identity, assign a model, and add only the capabilities it needs."
+          icon={<Bot className="h-5 w-5" />}
+          title="Create your first agent"
+        />
+      ) : visibleAgents.length ? (
+        <MotionList className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {visibleAgents.map((agent) => (
+            <MotionItem className="h-full" key={agent.id}>
+              <AgentCard
+                agent={agent}
+                isDeleting={deleting && confirmDeleteAgent?.id === agent.id}
+                models={models}
+                onDelete={setConfirmDeleteAgent}
+              />
+            </MotionItem>
+          ))}
+        </MotionList>
+      ) : (
+        <EmptyState
+          action={<Button onClick={() => { setQuery(""); setFilter("all"); }} variant="secondary">Clear filters</Button>}
+          description="Try a different name, model, source type, or readiness filter."
+          icon={<Search className="h-5 w-5" />}
+          title="No matching agents"
+        />
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {agents.map((agent) => (
-          <AgentCard
-            key={agent.id}
-            agent={agent}
-            onDelete={handleDeleteAgent}
-            isDeleting={deletingId === agent.id}
-            onRefresh={mutate}
-          />
-        ))}
-      </div>
-
+      {createOpen ? (
+        <AgentCreateDialog
+          agents={agents ?? []}
+          onClose={() => setCreateOpen(false)}
+          onCreated={async () => { await mutate(); }}
+          open
+        />
+      ) : null}
       <ConfirmDialog
-        open={!!confirmDeleteAgent}
+        confirmLabel="Delete agent"
+        loading={deleting}
+        message={`Delete “${confirmDeleteAgent?.name}”? Its assignments will be removed and this action cannot be undone.`}
         onClose={() => setConfirmDeleteAgent(null)}
-        onConfirm={executeDeleteAgent}
-        title="Delete Agent"
-        message={`Delete agent "${confirmDeleteAgent?.name}"? This cannot be undone.`}
-        confirmLabel="Delete"
+        onConfirm={removeAgent}
+        open={Boolean(confirmDeleteAgent)}
+        title="Delete agent"
         variant="danger"
-        loading={!!deletingId}
       />
+    </div>
+  );
+}
+
+function SummaryMetric({ icon, label, value, className }: { icon: React.ReactNode; label: string; value: number; className?: string }) {
+  return (
+    <div className={`flex items-center gap-3 px-4 py-3.5 sm:px-5 ${className ?? ""}`}>
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-deep-space-blue-500/10 text-deep-space-blue-600 dark:text-deep-space-blue-300">{icon}</span>
+      <div>
+        <p className="theme-text text-lg font-semibold leading-none">{value}</p>
+        <p className="theme-text-muted mt-1 text-xs">{label}</p>
+      </div>
     </div>
   );
 }

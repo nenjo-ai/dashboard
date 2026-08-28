@@ -115,7 +115,7 @@ export function UnlockMethodsSection() {
   });
 
   return (
-    <section className="theme-border theme-surface overflow-hidden rounded-2xl border p-5">
+    <section className="theme-border theme-surface overflow-hidden rounded-2xl border p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] md:p-6">
       <div className="mb-5">
         <h2 className="theme-text text-base font-semibold">Workspace Unlock</h2>
         <p className="theme-text-muted mt-1 text-sm leading-6">
@@ -124,6 +124,12 @@ export function UnlockMethodsSection() {
       </div>
 
       <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-3" aria-label="Local unlock summary">
+          <UnlockMetric label="Vault coverage" value={hasPassword || localPasskeyIds.size > 0 ? "Protected" : "Needs setup"} ready={hasPassword || localPasskeyIds.size > 0} />
+          <UnlockMetric label="Passphrase" value={hasPassword ? "Configured" : "Not configured"} ready={hasPassword} />
+          <UnlockMetric label="Device unlocks" value={localPasskeyIds.size} ready={localPasskeyIds.size > 0} />
+        </div>
+
         {canAddUnlockMethod ? (
           <UnlockMethodSetup
             compact
@@ -183,7 +189,7 @@ export function UnlockMethodsSection() {
 
         <div className="theme-border overflow-hidden rounded-2xl border">
           {isLoading ? (
-            <div className="theme-surface-muted h-20 animate-pulse" />
+            <div className="theme-surface-muted h-20 motion-safe:animate-pulse" />
           ) : credentials.length === 0 ? (
             <div className="px-4 py-5 text-sm text-gray-500 dark:text-gray-400">
               No device unlock records registered yet.
@@ -231,5 +237,14 @@ export function UnlockMethodsSection() {
         </div>
       </div>
     </section>
+  );
+}
+
+function UnlockMetric({ label, value, ready }: { label: string; value: string | number; ready: boolean }) {
+  return (
+    <div className="theme-border theme-surface-muted rounded-xl border px-4 py-3">
+      <p className={ready ? "text-sm font-semibold text-emerald-600 dark:text-emerald-300" : "theme-text text-sm font-semibold"}>{value}</p>
+      <p className="theme-text-muted mt-1 text-[10px] font-semibold uppercase tracking-[0.12em]">{label}</p>
+    </div>
   );
 }

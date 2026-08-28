@@ -18,6 +18,8 @@ interface SourceManagedResourcePanelProps {
   sections?: SourceManagedDetailSection[];
   showSourceDetails?: boolean;
   showMetadata?: boolean;
+  collapseCodeSections?: boolean;
+  showFallbackContent?: boolean;
 }
 
 export function SourceManagedResourcePanel({
@@ -29,13 +31,15 @@ export function SourceManagedResourcePanel({
   sections = [],
   showSourceDetails = true,
   showMetadata = true,
+  collapseCodeSections = false,
+  showFallbackContent = true,
 }: SourceManagedResourcePanelProps) {
   const source = useMemo(() => sourceManagedMetadata(resource), [resource]);
   const rawUrl = useMemo(() => sourceManagedRawUrl(source), [source]);
   const [loaded, setLoaded] = useState<{ url: string; content: string | null; error: string | null } | null>(null);
 
   useEffect(() => {
-    if (!rawUrl) return;
+    if (!rawUrl || !showFallbackContent) return;
     let cancelled = false;
     fetch(rawUrl)
       .then(async (res) => {
@@ -57,10 +61,10 @@ export function SourceManagedResourcePanel({
     return () => {
       cancelled = true;
     };
-  }, [rawUrl]);
+  }, [rawUrl, showFallbackContent]);
 
   const loadedForUrl = rawUrl && loaded?.url === rawUrl ? loaded : null;
-  const loading = Boolean(rawUrl && !loadedForUrl);
+  const loading = Boolean(showFallbackContent && rawUrl && !loadedForUrl);
   const error = loadedForUrl?.error ?? null;
   const shownContent = loadedForUrl?.content ?? fallbackContent ?? "";
   const isFetchedContent = loadedForUrl?.content != null;
@@ -96,7 +100,7 @@ export function SourceManagedResourcePanel({
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mb-4 space-y-4">
           {sections.map((section) => (
-            <DetailSection key={section.title} section={section} />
+            <DetailSection collapseCode={collapseCodeSections} key={section.title} section={section} />
           ))}
           {showMetadata ? <MetadataDetails metadata={resource.metadata} /> : null}
         </div>
@@ -107,7 +111,7 @@ export function SourceManagedResourcePanel({
             {error}. Showing the stored snapshot.
           </div>
         ) : null}
-        {shownContent ? (
+        {showFallbackContent && shownContent ? (
           isMarkdown ? (
             <div className="prose prose-sm max-w-none dark:prose-invert">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{shownContent}</ReactMarkdown>
@@ -117,9 +121,9 @@ export function SourceManagedResourcePanel({
               <code>{shownContent}</code>
             </pre>
           )
-        ) : (
+        ) : showFallbackContent ? (
           <div className="theme-text-muted text-sm">No source content available.</div>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -148,7 +152,7 @@ export interface SourceManagedDetailSection {
   };
 }
 
-function DetailSection({ section }: { section: SourceManagedDetailSection }) {
+function DetailSection({ section, collapseCode }: { section: SourceManagedDetailSection; collapseCode: boolean }) {
   const visibleFields = (section.fields ?? []).filter(
     (field) => field.value !== null && field.value !== undefined && String(field.value).trim() !== "",
   );
@@ -172,7 +176,17 @@ function DetailSection({ section }: { section: SourceManagedDetailSection }) {
           ))}
         </div>
       ) : null}
-      {codeValue ? (
+      {codeValue && collapseCode ? (
+        <details className={`theme-border theme-surface-muted group overflow-hidden rounded-xl border ${visibleFields.length > 0 ? "mt-3" : ""}`}>
+          <summary className="theme-text flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium transition-colors hover:[background:var(--app-hover)] marker:content-none">
+            <span>{section.code?.label ?? section.title}</span>
+            <span className="theme-text-muted text-xs font-normal">View source</span>
+          </summary>
+          <pre className="theme-border overflow-x-auto border-t p-4 text-xs leading-5">
+            <code>{codeValue}</code>
+          </pre>
+        </details>
+      ) : codeValue ? (
         <div className={visibleFields.length > 0 ? "mt-3" : ""}>
           {section.code?.label ? (
             <div className="theme-text-muted mb-1 text-[10px] font-semibold uppercase tracking-wider">

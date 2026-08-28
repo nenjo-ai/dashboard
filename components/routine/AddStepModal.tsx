@@ -153,6 +153,7 @@ function FlowControlConfig({
           {tabs.map((tab, index) => (
             <button
               key={tab.id}
+              type="button"
               onClick={() => setFnType(tab.id)}
               className={`flex-1 py-1.5 transition-colors ${index > 0 ? "border-l border-gray-200 dark:border-gray-700" : ""} ${
                 fnType === tab.id
@@ -359,10 +360,15 @@ export function AddStepModal({ open, councils, onAdd, onClose }: AddStepModalPro
     <div
       ref={overlayRef}
       onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 backdrop-blur-xs sm:items-center sm:p-4"
     >
-      <div className="flex w-full max-w-2xl overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
-        <div className="w-60 shrink-0 overflow-y-auto border-r border-gray-200 p-4 dark:border-gray-700">
+      <div
+        aria-labelledby="add-routine-step-title"
+        aria-modal="true"
+        className="theme-surface-elevated theme-border flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border shadow-2xl sm:flex-row sm:rounded-2xl"
+        role="dialog"
+      >
+        <div className="theme-border max-h-[42vh] w-full shrink-0 overflow-y-auto border-b p-4 sm:max-h-none sm:w-60 sm:border-b-0 sm:border-r">
           {CATEGORIES.map((category) => (
             <div key={category.label} className="mb-5 last:mb-0">
               <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
@@ -375,6 +381,7 @@ export function AddStepModal({ open, councils, onAdd, onClose }: AddStepModalPro
                   return (
                     <button
                       key={step.type}
+                      type="button"
                       onClick={() => handleSelectType(step.type)}
                       className={`flex flex-col items-center gap-1.5 rounded-lg border p-2.5 text-center transition-all ${
                         isSelected
@@ -395,19 +402,21 @@ export function AddStepModal({ open, councils, onAdd, onClose }: AddStepModalPro
         </div>
 
         <div className="flex flex-1 flex-col">
-          <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3.5 dark:border-gray-700">
+          <div className="theme-border flex items-center justify-between border-b px-5 py-3.5">
             <div className="flex items-center gap-2.5">
               <span className={`flex h-8 w-8 items-center justify-center rounded-lg text-base font-bold ${ICON_BG[selectedMeta.color]}`}>
                 {selectedMeta.icon}
               </span>
               <div>
-                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{selectedMeta.name}</p>
+                <p className="theme-text text-sm font-semibold" id="add-routine-step-title">{selectedMeta.name}</p>
                 <p className="text-[11px] text-gray-500 dark:text-gray-400">{selectedMeta.desc}</p>
               </div>
             </div>
             <button
+              aria-label="Close step picker"
               onClick={onClose}
-              className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+              className="theme-text-muted rounded-lg p-1.5 hover:[background:var(--app-hover)]"
+              type="button"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -434,6 +443,7 @@ export function AddStepModal({ open, councils, onAdd, onClose }: AddStepModalPro
             <button
               onClick={handleAdd}
               disabled={!isValid}
+              type="button"
               className={`w-full rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${ADD_BTN[selectedMeta.color]}`}
             >
               Add {selectedMeta.name}

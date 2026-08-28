@@ -17,7 +17,7 @@ import { useChatSessionIndicators } from "@/lib/useChatSessionIndicators";
 import { DashboardActivityTimeline } from "./DashboardActivityTimeline";
 import { DashboardContinueWorking } from "./DashboardContinueWorking";
 import { DashboardQuickActions } from "./DashboardQuickActions";
-import { DashboardWorkspacePulse } from "./DashboardWorkspacePulse";
+import { DashboardWorkspaceSummary } from "./DashboardWorkspaceSummary";
 import { TokenUsagePanel } from "./TokenUsagePanel";
 
 export function DashboardOverview() {
@@ -57,7 +57,7 @@ export function DashboardOverview() {
   return (
     <div className="grid gap-4 lg:grid-cols-12 lg:gap-5">
       <div className="lg:col-span-8">
-        <DashboardWorkspacePulse
+        <DashboardWorkspaceSummary
           activeCount={activeCount}
           attentionCount={attentionCount}
           completedTodayCount={completedTodayCount}

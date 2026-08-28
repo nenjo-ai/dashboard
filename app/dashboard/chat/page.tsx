@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
 import { TopBar } from "@/components/layout/TopBar";
 import { ChatView } from "@/components/chat/ChatView";
 
@@ -9,18 +8,12 @@ function ChatContent() {
   return <ChatView />;
 }
 
-function ChatPageTitle() {
-  const searchParams = useSearchParams();
-  const isNotifications = searchParams.get("channel") === "notifications";
-  return <TopBar title={isNotifications ? "Notifications" : "Chat"} />;
-}
-
 export default function ChatPage() {
   return (
     <div className="theme-app-bg flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-transparent">
       <Suspense fallback={<TopBar title="Chat" />}>
         <div className="hidden md:block">
-          <ChatPageTitle />
+          <TopBar title="Chat" />
         </div>
       </Suspense>
       <Suspense

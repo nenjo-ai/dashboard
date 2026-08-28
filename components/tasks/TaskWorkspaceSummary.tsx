@@ -9,9 +9,9 @@ const metrics = [
   { key: "completedCount", label: "Completed", icon: CheckCircle2, accent: "text-emerald-600 dark:text-emerald-400" },
 ] as const;
 
-export function TaskWorkspacePulse({ summary }: { summary: TaskWorkspaceSummary }) {
+export function TaskWorkspaceSummary({ summary }: { summary: TaskWorkspaceSummary }) {
   return (
-    <section className="theme-surface theme-border overflow-hidden rounded-2xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)]" aria-label="Task workspace pulse">
+    <section className="theme-surface theme-border overflow-hidden rounded-2xl border shadow-[0_1px_2px_rgba(15,23,42,0.03)]" aria-label="Task summary">
       <div className="grid grid-cols-2 divide-x divide-y theme-border sm:grid-cols-4 sm:divide-y-0">
         {metrics.map(({ key, label, icon: Icon, accent }) => (
           <div className="min-w-0 px-4 py-4 sm:px-5" key={key}>

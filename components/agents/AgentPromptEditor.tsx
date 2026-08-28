@@ -595,12 +595,14 @@ export function AgentPromptEditor({
   if (isSourceManaged) {
     return (
       <SourceManagedResourcePanel
+        collapseCodeSections
         resource={role}
         title={role.name}
         description={role.description}
         fallbackContent={JSON.stringify(promptConfig, null, 2)}
         fallbackLanguage="yaml"
         sections={managedAgentPromptSections(role, promptConfig)}
+        showFallbackContent={false}
         showMetadata={false}
       />
     );
@@ -1082,12 +1084,14 @@ export function AgentPromptEditorContent(props: AgentPromptEditorContentProps) {
   if (role.read_only || role.metadata?.install) {
     return (
       <SourceManagedResourcePanel
+        collapseCodeSections
         resource={role}
         title={role.name}
         description={role.description}
         fallbackContent={JSON.stringify(promptConfig, null, 2)}
         fallbackLanguage="yaml"
         sections={managedAgentPromptSections(role, promptConfig)}
+        showFallbackContent={false}
         showMetadata={false}
       />
     );

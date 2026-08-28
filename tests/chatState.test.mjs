@@ -89,6 +89,32 @@ test("tool calls are upserted without duplicate cards and return to thinking", (
   assert.equal(state.activeTools[0].outputPreview, "Found it");
 });
 
+test("each model invocation returns an existing response to thinking", () => {
+  const state = reduce([
+    {
+      type: "prompt_submitted",
+      requestId: "prompt-1",
+      responseId: "response-1",
+    },
+    { type: "model_invoked" },
+    { type: "text_delta", delta: "I checked the first result." },
+    {
+      type: "tool_upserted",
+      tool: {
+        callId: "tool-1",
+        name: "search",
+        args: "",
+        status: "completed",
+        children: [],
+      },
+    },
+    { type: "model_invoked" },
+  ]);
+
+  assert.equal(state.phase, "thinking");
+  assert.equal(state.content, "I checked the first result.");
+});
+
 test("cancelled and failed turns clean active indicators immediately", () => {
   for (const terminalEvent of [
     { type: "cancelled" },

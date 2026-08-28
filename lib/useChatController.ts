@@ -179,6 +179,7 @@ function mergeLoadedMessages(
       (message) =>
         (message.persistedId ?? message.id) === loadedKey ||
         (message.role === loadedMessage.role &&
+          Boolean(message.agentUpdate) === Boolean(loadedMessage.agentUpdate) &&
           message.content === loadedMessage.content &&
           isRecentMatch(message, loadedMessage.timestamp)),
     );
@@ -213,6 +214,11 @@ function mergeLoadedMessages(
     if (seen.has(key)) continue;
     const duplicateLoadedMessage = loaded.find((loadedMessage) => {
       if (loadedMessage.role !== message.role) return false;
+      if (
+        Boolean(loadedMessage.agentUpdate) !== Boolean(message.agentUpdate)
+      ) {
+        return false;
+      }
       if (loadedMessage.content !== message.content) return false;
 
       const loadedTime = new Date(loadedMessage.timestamp).getTime();
@@ -293,7 +299,11 @@ function normalizeResolvedAssistantContent(content: string): string {
     if (parsed && typeof parsed === "object") {
       const record = parsed as Record<string, unknown>;
       const finalOutput =
-        record.final_output ?? record.message ?? record.text ?? record.output;
+        record.final_output ??
+        record.message ??
+        record.text ??
+        record.output ??
+        record.body;
       if (typeof finalOutput === "string") {
         return finalOutput;
       }
@@ -303,6 +313,16 @@ function normalizeResolvedAssistantContent(content: string): string {
   }
 
   return content;
+}
+
+function persistedAgentUpdate(
+  metadata: PersistedChatMessage["metadata"],
+): ChatMessage["agentUpdate"] | undefined {
+  if (metadata?.kind !== "agent_update") return undefined;
+  return {
+    severity: metadata.severity ?? "info",
+    ...(metadata.link ? { link: metadata.link } : {}),
+  };
 }
 
 function isEncryptedUserMessagePlaceholder(content: string): boolean {
@@ -1138,6 +1158,7 @@ export function useChatController(
               role: m.sender,
               content: await resolvePersistedMessageContent(m),
               command: persistedMessageCommand(m),
+              agentUpdate: persistedAgentUpdate(m.metadata),
               timestamp: m.created_at,
               artifactIds: m.artifact_ids ?? [],
             })),
@@ -1300,6 +1321,7 @@ export function useChatController(
             role: m.sender,
             content: await resolvePersistedMessageContent(m),
             command: persistedMessageCommand(m),
+            agentUpdate: persistedAgentUpdate(m.metadata),
             timestamp: m.created_at,
             artifactIds: m.artifact_ids ?? [],
           })),
@@ -1374,6 +1396,7 @@ export function useChatController(
           const persistedCommand = persistedMessageCommand({
             metadata: msg.metadata ?? null,
           });
+          const agentUpdate = persistedAgentUpdate(msg.metadata ?? null);
 
           setMessages((prev) => {
             const role = msg.sender as "user" | "assistant";
@@ -1399,6 +1422,7 @@ export function useChatController(
                             ? m.content
                             : resolvedContent,
                           command: persistedCommand ?? m.command,
+                          agentUpdate: agentUpdate ?? m.agentUpdate,
                           artifactIds: msg.artifact_ids ?? m.artifactIds,
                           timestamp: msg.created_at,
                           status:
@@ -1411,7 +1435,7 @@ export function useChatController(
                 );
               }
             }
-            if (role === "assistant" && responseIdRef.current) {
+            if (role === "assistant" && responseIdRef.current && !agentUpdate) {
               const responseIdx = prev.findIndex(
                 (m) => m.id === responseIdRef.current,
               );
@@ -1426,6 +1450,7 @@ export function useChatController(
                             msg.reply_to_message_id ?? m.replyToMessageId,
                           content: resolvedContent,
                           command: persistedCommand ?? m.command,
+                          agentUpdate: agentUpdate ?? m.agentUpdate,
                           timestamp: msg.created_at,
                           runEnvelopeId:
                             persistedRunEnvelopeId ?? m.runEnvelopeId,
@@ -1435,7 +1460,7 @@ export function useChatController(
                 );
               }
             }
-            if (role === "assistant") {
+            if (role === "assistant" && !agentUpdate) {
               const partialIdx = findLastIndexCompat(
                 prev,
                 (m) =>
@@ -1453,8 +1478,9 @@ export function useChatController(
                           persistedId: msg.id,
                           replyToMessageId:
                             msg.reply_to_message_id ?? m.replyToMessageId,
-                          content: resolvedContent,
-                          timestamp: msg.created_at,
+                        content: resolvedContent,
+                        agentUpdate: agentUpdate ?? m.agentUpdate,
+                        timestamp: msg.created_at,
                           runEnvelopeId:
                             persistedRunEnvelopeId ?? m.runEnvelopeId,
                         }
@@ -1489,6 +1515,7 @@ export function useChatController(
                           msg.reply_to_message_id ?? m.replyToMessageId,
                         content: resolvedContent,
                         command: persistedCommand ?? m.command,
+                        agentUpdate: agentUpdate ?? m.agentUpdate,
                         timestamp: msg.created_at,
                         runEnvelopeId:
                           role === "assistant"
@@ -1522,6 +1549,7 @@ export function useChatController(
                 role,
                 content: resolvedContent,
                 command: persistedCommand,
+                agentUpdate,
                 timestamp: msg.created_at,
                 runEnvelopeId:
                   role === "assistant" ? persistedRunEnvelopeId : undefined,
@@ -1863,6 +1891,14 @@ export function useChatController(
             activeRunStatusRef.current = "generating";
             dispatchLiveTurn({ type: "phase_changed", phase: "thinking" });
             setTypingIfDelivered();
+            scheduleDraftRender();
+            persistCurrentStreamSnapshot();
+            break;
+          }
+
+          case "ModelRequestStarted": {
+            activeRunStatusRef.current = "generating";
+            dispatchLiveTurn({ type: "model_invoked" });
             scheduleDraftRender();
             persistCurrentStreamSnapshot();
             break;
@@ -2609,6 +2645,7 @@ export function useChatController(
                 role: message.sender,
                 content: await resolvePersistedMessageContent(message),
                 command: persistedMessageCommand(message),
+                agentUpdate: persistedAgentUpdate(message.metadata),
                 timestamp: message.created_at,
                 status: message.sender === "user" ? "delivered" : undefined,
                 artifactIds: message.artifact_ids ?? [],
@@ -3045,6 +3082,7 @@ export function useChatController(
               role: message.sender,
               content: await resolvePersistedMessageContent(message),
               command: persistedMessageCommand(message),
+              agentUpdate: persistedAgentUpdate(message.metadata),
               timestamp: message.created_at,
               status: message.sender === "user" ? "delivered" : undefined,
               artifactIds: message.artifact_ids ?? [],

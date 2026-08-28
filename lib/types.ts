@@ -493,6 +493,11 @@ export interface ChatMessage {
   outputTokens?: number;
   /** Live drafts use lightweight plaintext rendering until finalization. */
   isLiveDraft?: boolean;
+  /** Durable agent-initiated update displayed inside its source conversation. */
+  agentUpdate?: {
+    severity: "info" | "warning" | "action";
+    link?: string;
+  };
 }
 
 // Outbound: frontend → worker
@@ -805,6 +810,7 @@ export interface WorkerEnrollmentStatusResponse {
 }
 
 export interface ApproveWorkerEnrollmentRequest {
+  verification_code: string;
   certificate: WorkerCertificate;
   wrapped_ack: WrappedAccountContentKey;
   wrapped_ock?: WrappedOrgContentKey | null;
@@ -870,6 +876,7 @@ export interface PersistedChatMessage {
 }
 
 export interface NotificationMetadata {
+  kind?: "agent_update";
   severity?: "info" | "warning" | "action";
   link?: string;
   hidden?: boolean;
@@ -877,6 +884,7 @@ export interface NotificationMetadata {
   source_session_id?: string;
   recipient_user_id?: string | null;
   recipient_handle?: string | null;
+  agent_id?: string;
   encrypted_payload?: EncryptedPayload;
 }
 
@@ -1704,7 +1712,7 @@ export interface KnowledgePack {
   description: string | null;
   source_type: "uploaded" | "github" | "package";
   read_only: boolean;
-  is_system: boolean;
+  is_system?: boolean;
   metadata: Record<string, unknown>;
   selector: string | null;
   version: string | null;

@@ -11,6 +11,7 @@ import {
   BookOpen,
   Bot,
   Braces,
+  Check,
   ChevronDown,
   Clock3,
   Download,
@@ -21,6 +22,7 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Search,
   Sparkles,
   ShieldCheck,
   Terminal,
@@ -36,8 +38,12 @@ import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { Tabs } from "@/components/ui/Tabs";
 import { Textarea } from "@/components/ui/Textarea";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { KnowledgeSection } from "@/components/knowledge/KnowledgeSection";
 import { SourceKnowledgeSection } from "@/components/knowledge/SourceKnowledgeSection";
+import { AddPackageDialog } from "@/components/packages/AddPackageDialog";
+import { PackageCatalogView } from "@/components/packages/PackageCatalogView";
+import { PackageHubHeader } from "@/components/packages/PackageHubHeader";
 import {
   PackageInstallProgressBar,
   type PackageInstallProgress,
@@ -68,6 +74,18 @@ import {
   updatePackageSource,
 } from "@/lib/api";
 import { packageInstallVisibleInInstalledList } from "@/lib/packageInstalls";
+import {
+  filterAndSortPackages,
+  groupPackageResources,
+  PACKAGE_CATALOG_PAGE_SIZE,
+  PACKAGE_HUB_TABS,
+  summarizePackageResources,
+  type MarketplacePackage,
+  type MarketplacePackageKind,
+  type PackageCatalogSort,
+  type PackageHubTab,
+  type PackageImportMode,
+} from "@/lib/packageHub";
 import type {
   Ability,
   KnowledgePack,
@@ -80,43 +98,7 @@ import type {
   PackageSourceAdapter,
 } from "@/lib/types";
 
-type LibraryTab = "installed" | "packages" | "sources" | "imports";
 type PackageDetailsTab = "readme" | "metadata";
-type ImportMode = "knowledge_pack" | "skill";
-type MarketplacePackageKind =
-  | "package"
-  | "knowledge"
-  | "agent"
-  | "ability"
-  | "domain"
-  | "context_block"
-  | "mcp"
-  | "routine"
-  | "knowledge_pack"
-  | "skill"
-  | "command"
-  | "hook"
-  | "script_tool"
-  | "plugin";
-
-const LIBRARY_TABS: LibraryTab[] = [
-  "installed",
-  "packages",
-  "sources",
-  "imports",
-];
-
-interface MarketplacePackage {
-  id: string;
-  kind: MarketplacePackageKind;
-  name: string;
-  display_name: string | null;
-  description: string | null;
-  latest_version: string | null;
-  metadata: Record<string, unknown>;
-  synced_at: string | null;
-  source_path: string;
-}
 
 const CLAUDE_PLUGIN_MANIFEST_PATH = ".claude-plugin/plugin.json";
 const CLAUDE_MARKETPLACE_MANIFEST_PATH = ".claude-plugin/marketplace.json";
@@ -1728,14 +1710,20 @@ export default function KnowledgePage() {
     mutate: mutateInstalls,
   } = usePackageInstalls();
 
-  const [activeTab, setActiveTab] = useTabParam<LibraryTab>(
+  const [activeTab, setActiveTab] = useTabParam<PackageHubTab>(
     "installed",
-    LIBRARY_TABS,
+    PACKAGE_HUB_TABS,
   );
   const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
   const [sourceId, setSourceId] = useState<string | undefined>(undefined);
   const [kindFilter, setKindFilter] = useState<MarketplacePackageKind | "all">(
     "all",
+  );
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogSort, setCatalogSort] =
+    useState<PackageCatalogSort>("relevance");
+  const [catalogVisibleCount, setCatalogVisibleCount] = useState(
+    PACKAGE_CATALOG_PAGE_SIZE,
   );
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1762,6 +1750,11 @@ export default function KnowledgePage() {
     ability: Ability;
     envNamesText: string;
   } | null>(null);
+  const [addPackageOpen, setAddPackageOpen] = useState(false);
+  const [pendingUninstall, setPendingUninstall] =
+    useState<PackageInstall | null>(null);
+  const [pendingSourceDelete, setPendingSourceDelete] =
+    useState<PackageSource | null>(null);
 
   const [sourceName, setSourceName] = useState("");
   const [sourceRepoUrl, setSourceRepoUrl] = useState("");
@@ -1769,7 +1762,8 @@ export default function KnowledgePage() {
   const [sourceManifestPath, setSourceManifestPath] = useState("packages.yaml");
   const [sourceAdapter, setSourceAdapter] =
     useState<PackageSourceAdapter>("nenjo_packages");
-  const [importMode, setImportMode] = useState<ImportMode>("knowledge_pack");
+  const [importMode, setImportMode] =
+    useState<PackageImportMode>("knowledge_pack");
   const [importOwner, setImportOwner] = useState("");
   const [importRepo, setImportRepo] = useState("");
   const [importPath, setImportPath] = useState("");
@@ -1871,13 +1865,6 @@ export default function KnowledgePage() {
     }
     return keys;
   }, [activePackageInstalls]);
-  const installedInstallsByKey = useMemo(() => {
-    const map = new Map<string, PackageInstall>();
-    for (const install of activePackageInstalls) {
-      map.set(packageInstallKey(install.package_source_id, install.root_path), install);
-    }
-    return map;
-  }, [activePackageInstalls]);
   const installedSelectors = useMemo(() => {
     const selectors = new Set<string>();
     for (const ability of skillAbilities) {
@@ -1935,12 +1922,15 @@ export default function KnowledgePage() {
     return skillAbilities;
   }, [skillAbilities]);
 
-  const filteredPackages = useMemo(() => {
-    return packages.filter((pkg) => {
-      if (kindFilter !== "all" && pkg.kind !== kindFilter) return false;
-      return true;
-    });
-  }, [kindFilter, packages]);
+  const filteredPackages = useMemo(
+    () =>
+      filterAndSortPackages(packages, catalogSearch, kindFilter, catalogSort),
+    [catalogSearch, catalogSort, kindFilter, packages],
+  );
+
+  useEffect(() => {
+    setCatalogVisibleCount(PACKAGE_CATALOG_PAGE_SIZE);
+  }, [catalogSearch, kindFilter, sourceId]);
 
   const resetNotice = () => {
     setError(null);
@@ -1996,6 +1986,8 @@ export default function KnowledgePage() {
       setSourceName("");
       setSourceRepoUrl("");
       setMarketplaceRefresh((value) => value + 1);
+      setAddPackageOpen(false);
+      setActiveTab("packages");
       setMessage("Package source added.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add source");
@@ -2246,10 +2238,6 @@ export default function KnowledgePage() {
   };
 
   const handleUninstallPackageInstall = async (install: PackageInstall) => {
-    const confirmed = window.confirm(
-      `Uninstall ${install.root_path} and package-owned dependencies that are not used by another install?`,
-    );
-    if (!confirmed) return;
     setBusyKey(`uninstall-install:${install.id}`);
     resetNotice();
     try {
@@ -2273,6 +2261,7 @@ export default function KnowledgePage() {
       setError(err instanceof Error ? err.message : "Package uninstall failed");
     } finally {
       setBusyKey(null);
+      setPendingUninstall(null);
     }
   };
 
@@ -2356,6 +2345,7 @@ export default function KnowledgePage() {
       setError(err instanceof Error ? err.message : "Failed to delete source");
     } finally {
       setBusyKey(null);
+      setPendingSourceDelete(null);
     }
   };
 
@@ -2410,6 +2400,7 @@ export default function KnowledgePage() {
         await mutatePacks();
       }
       setMessage(`${name} imported.`);
+      setAddPackageOpen(false);
       setActiveTab("installed");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
@@ -2480,25 +2471,30 @@ export default function KnowledgePage() {
           ]}
         />
 
-        <div>
-          <h1 className="theme-text text-2xl font-semibold">Packages</h1>
-          <p className="theme-text-muted mt-3 max-w-2xl text-sm leading-6">
-            Installed external packages, skills, plugins, and package sources
-            for this org.
-          </p>
-        </div>
+        <PackageHubHeader
+          activeTab={activeTab}
+          installedCount={activePackageInstalls.length + filteredSkills.length}
+          sourceCount={sources?.length ?? 0}
+          catalogCount={packages.length}
+          onBrowse={() => setActiveTab("packages")}
+          onAdd={() => setAddPackageOpen(true)}
+        />
 
-        <div className="mb-6">
+        <div>
           <Tabs
             tabs={[
-              { id: "installed", label: "Installed" },
-              { id: "packages", label: "Browse" },
-              { id: "sources", label: "Sources" },
-              { id: "imports", label: "Imports" },
+              {
+                id: "installed",
+                label: "Installed",
+                count: activePackageInstalls.length + filteredSkills.length,
+              },
+              { id: "packages", label: "Discover" },
+              { id: "sources", label: "Sources", count: sources?.length ?? 0 },
             ]}
             activeTab={activeTab}
-            onChange={(id) => setActiveTab(id as LibraryTab)}
-            layoutId="library-tab-indicator"
+            onChange={(id) => setActiveTab(id as PackageHubTab)}
+            layoutId="package-hub-tab-indicator"
+            mobileVariant="scroll"
           />
         </div>
 
@@ -2544,7 +2540,7 @@ export default function KnowledgePage() {
             onOpenMcp={() => router.push("/dashboard/agents?tab=mcp")}
             onUpdateInstall={handleUpdateInstall}
             onSavePackageArguments={handleSavePackageArguments}
-            onUninstallInstall={handleUninstallPackageInstall}
+            onUninstallInstall={setPendingUninstall}
             onViewSkill={handleViewInstalledSkill}
             onUninstallSkill={handleUninstallSkill}
             onEditSkillEnv={handleOpenEnvEditor}
@@ -2559,18 +2555,27 @@ export default function KnowledgePage() {
             selectedSourceId={sourceId}
             onSourceChange={setSourceId}
             packages={filteredPackages}
+            totalPackageCount={packages.length}
             isLoading={sourcesLoading || packagesLoading}
             kindFilter={kindFilter}
             onKindFilterChange={setKindFilter}
+            search={catalogSearch}
+            onSearchChange={setCatalogSearch}
+            sort={catalogSort}
+            onSortChange={setCatalogSort}
+            visibleCount={catalogVisibleCount}
+            onLoadMore={() =>
+              setCatalogVisibleCount((count) =>
+                count + PACKAGE_CATALOG_PAGE_SIZE,
+              )
+            }
             onOpen={handleReviewPackage}
             onOpenDetails={(pkg) =>
               setPackageDetails({ pkg, source: selectedSource })
             }
             onInstall={(pkg) => handleInstallPackage(pkg)}
-            onUninstallInstall={handleUninstallPackageInstall}
             onRefresh={() => setMarketplaceRefresh((value) => value + 1)}
             installedKeys={installedCatalogKeys}
-            installedInstallsByKey={installedInstallsByKey}
             installedSelectors={installedSelectors}
             busyKey={busyKey}
             installProgress={installProgress}
@@ -2582,41 +2587,71 @@ export default function KnowledgePage() {
             sources={sources ?? []}
             isLoading={sourcesLoading}
             onRefresh={handleRefreshSource}
-            onDelete={handleDeleteSource}
+            onDelete={setPendingSourceDelete}
+            onAdd={() => setAddPackageOpen(true)}
             busyKey={busyKey}
-            sourceName={sourceName}
-            sourceRepoUrl={sourceRepoUrl}
-            sourceRef={sourceRef}
-            sourceManifestPath={sourceManifestPath}
-            onSourceNameChange={setSourceName}
-            onSourceRepoUrlChange={setSourceRepoUrl}
-            onSourceRefChange={setSourceRef}
-            onSourceManifestPathChange={setSourceManifestPath}
-            sourceAdapter={sourceAdapter}
-            onSourceAdapterChange={handleSourceAdapterChange}
-            onCreateSource={handleCreateSource}
-          />
-        ) : null}
-
-        {activeTab === "imports" ? (
-          <ImportsTab
-            mode={importMode}
-            owner={importOwner}
-            repo={importRepo}
-            path={importPath}
-            refValue={importRef}
-            name={importName}
-            onModeChange={setImportMode}
-            onOwnerChange={setImportOwner}
-            onRepoChange={setImportRepo}
-            onPathChange={setImportPath}
-            onRefChange={setImportRef}
-            onNameChange={setImportName}
-            onImport={handleDirectImport}
-            importing={busyKey === "direct-import"}
           />
         ) : null}
       </PageContent>
+      <AddPackageDialog
+        open={addPackageOpen}
+        onClose={() => setAddPackageOpen(false)}
+        sourceAdapter={sourceAdapter}
+        sourceName={sourceName}
+        sourceRepoUrl={sourceRepoUrl}
+        sourceRef={sourceRef}
+        sourceManifestPath={sourceManifestPath}
+        onSourceAdapterChange={handleSourceAdapterChange}
+        onSourceNameChange={setSourceName}
+        onSourceRepoUrlChange={setSourceRepoUrl}
+        onSourceRefChange={setSourceRef}
+        onSourceManifestPathChange={setSourceManifestPath}
+        onCreateSource={handleCreateSource}
+        importMode={importMode}
+        importOwner={importOwner}
+        importRepo={importRepo}
+        importPath={importPath}
+        importRef={importRef}
+        importName={importName}
+        onImportModeChange={setImportMode}
+        onImportOwnerChange={setImportOwner}
+        onImportRepoChange={setImportRepo}
+        onImportPathChange={setImportPath}
+        onImportRefChange={setImportRef}
+        onImportNameChange={setImportName}
+        onDirectImport={handleDirectImport}
+        busyKey={busyKey}
+      />
+      <ConfirmDialog
+        open={Boolean(pendingUninstall)}
+        onClose={() => setPendingUninstall(null)}
+        onConfirm={() => {
+          if (pendingUninstall) void handleUninstallPackageInstall(pendingUninstall);
+        }}
+        title="Uninstall package?"
+        message={
+          pendingUninstall
+            ? `Remove ${packageInstallTitle(pendingUninstall, packageInstallDetails[pendingUninstall.id])} and package-owned dependencies that no other install uses?`
+            : ""
+        }
+        confirmLabel="Uninstall package"
+        loading={Boolean(pendingUninstall && busyKey === `uninstall-install:${pendingUninstall.id}`)}
+      />
+      <ConfirmDialog
+        open={Boolean(pendingSourceDelete)}
+        onClose={() => setPendingSourceDelete(null)}
+        onConfirm={() => {
+          if (pendingSourceDelete) void handleDeleteSource(pendingSourceDelete);
+        }}
+        title="Delete package source?"
+        message={
+          pendingSourceDelete
+            ? `Remove ${pendingSourceDelete.name} from Discover? Installed packages remain available until you uninstall them.`
+            : ""
+        }
+        confirmLabel="Delete source"
+        loading={Boolean(pendingSourceDelete && busyKey === `delete-source:${pendingSourceDelete.id}`)}
+      />
       <SkillReviewModal
         review={packageReview}
         busyKey={busyKey}
@@ -3515,7 +3550,6 @@ function PackageInstallCard({
   source,
   onInspect,
   onUpdateInstall,
-  onUninstallInstall,
   busyKey,
   installProgress,
 }: {
@@ -3524,71 +3558,59 @@ function PackageInstallCard({
   source: PackageSource | undefined;
   onInspect: () => void;
   onUpdateInstall: (install: PackageInstall) => void;
-  onUninstallInstall: (install: PackageInstall) => void;
   busyKey: string | null;
   installProgress?: PackageInstallProgress;
 }) {
-  const dependencyInfo = packageInstallDependencyInfo(install);
   const resources = installedPackageResources(detail);
-  const uninstallBlocked = dependencyInfo.requiredBy.length > 0;
-  const uninstallTitle = uninstallBlocked
-    ? `Required by ${dependencyRefListLabel(dependencyInfo.requiredBy)}`
-    : undefined;
 
   return (
-    <AssetCard
-      icon={packageInstallIcon(install, detail)}
-      title={packageInstallTitle(install, detail)}
-      subtitle={packageInstallSubtitle(install, source)}
-      description={packageInstallDescription(install, detail, source)}
-      badges={[
-        packageInstallVersionBadge(install),
-        ...packageInstallDependencyBadges(dependencyInfo),
-        detail ? `${resources.length} resources` : null,
-      ]}
-      updatedAt={install.updated_at}
-      isBusy={busyKey === `update-install:${install.id}`}
-      actions={
-        <div className="space-y-2">
-          <div className="grid gap-2 sm:grid-cols-3">
-            <Button
-              size="sm"
-              variant="secondary"
-              className="w-full"
-              onClick={onInspect}
-            >
-              <ChevronDown className="-rotate-90 h-4 w-4" />
-              Inspect
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="w-full"
-              onClick={() => onUpdateInstall(install)}
-              isLoading={busyKey === `update-install:${install.id}`}
-            >
-              <RefreshCw className="h-4 w-4" />
-              Update
-            </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              className="w-full"
-              onClick={() => onUninstallInstall(install)}
-              isLoading={busyKey === `uninstall-install:${install.id}`}
-              disabled={uninstallBlocked}
-              title={uninstallTitle}
-            >
-              <Trash2 className="h-4 w-4" />
-              Uninstall
-            </Button>
+    <article className="theme-surface theme-border rounded-2xl border px-4 py-4 sm:px-5">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-deep-space-blue-500/10 text-deep-space-blue-600 dark:text-deep-space-blue-300">
+            {packageInstallIcon(install, detail)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="theme-text truncate text-sm font-semibold sm:text-base">
+                {packageInstallTitle(install, detail)}
+              </h3>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                <Check className="h-3 w-3" /> Installed
+              </span>
+            </div>
+            <p className="theme-text-muted mt-1 truncate text-xs">
+              {packageInstallSubtitle(install, source)}
+            </p>
+            <p className="theme-text-muted mt-2 line-clamp-1 text-sm">
+              {detail ? summarizePackageResources(resources) : "Loading package contents…"}
+            </p>
+            <div className="theme-text-muted mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+              {packageInstallVersionBadge(install) ? <span>{packageInstallVersionBadge(install)}</span> : null}
+              <span>Updated {formatLibraryDate(install.updated_at)}</span>
+              {detail ? <span>{resources.length} total resources</span> : null}
+            </div>
           </div>
-          {busyKey === `update-install:${install.id}` && installProgress ? (
-            <PackageInstallProgressBar progress={installProgress} />
-          ) : null}
         </div>
-      }
-    />
+        <div className="flex shrink-0 gap-2 pl-14 md:pl-0">
+          <Button size="sm" variant="secondary" onClick={onInspect}>
+            Manage
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => onUpdateInstall(install)}
+            isLoading={busyKey === `update-install:${install.id}`}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Update
+          </Button>
+        </div>
+      </div>
+      {busyKey === `update-install:${install.id}` && installProgress ? (
+        <PackageInstallProgressBar progress={installProgress} className="mt-4" />
+      ) : null}
+    </article>
   );
 }
 
@@ -3602,6 +3624,7 @@ function PackageInstallInspectionModal({
   onOpenInstall,
   onOpenResource,
   onSavePackageArguments,
+  onUninstallInstall,
 }: {
   install: PackageInstall | null;
   detail: PackageInstallDetail | undefined;
@@ -3615,6 +3638,7 @@ function PackageInstallInspectionModal({
     install: PackageInstall,
     bindings: PackageArgumentBinding[],
   ) => void;
+  onUninstallInstall: (install: PackageInstall) => void;
 }) {
   const dependencyInfo = install
     ? packageInstallDependencyInfo(install)
@@ -3632,7 +3656,9 @@ function PackageInstallInspectionModal({
           <div className="space-y-3">
             <div className="flex flex-wrap gap-2">
               {[
-                packageInstallKindLabel(install.root_type),
+                new Set(resources.map((resource) => normalizedPackageResourceType(resource.resource_type))).size > 1
+                  ? "Package"
+                  : packageInstallKindLabel(install.root_type),
                 packageInstallSourceBadge(source),
                 packageInstallVersionBadge(install),
                 ...packageInstallDependencyBadges(dependencyInfo),
@@ -3660,6 +3686,28 @@ function PackageInstallInspectionModal({
             onOpenResource={onOpenResource}
             onSavePackageArguments={onSavePackageArguments}
           />
+          <div className="theme-border flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="theme-text text-sm font-semibold">Remove package</h3>
+              <p className="theme-text-muted mt-1 text-xs">
+                Package-owned resources that no other install uses will also be removed.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => onUninstallInstall(install)}
+              disabled={dependencyInfo.requiredBy.length > 0}
+              title={
+                dependencyInfo.requiredBy.length
+                  ? `Required by ${dependencyRefListLabel(dependencyInfo.requiredBy)}`
+                  : undefined
+              }
+            >
+              <Trash2 className="h-4 w-4" />
+              Uninstall
+            </Button>
+          </div>
         </div>
       ) : null}
     </Modal>
@@ -3692,6 +3740,11 @@ function PackageInstallInspection({
     bindings: PackageArgumentBinding[],
   ) => void;
 }) {
+  const [resourceSearch, setResourceSearch] = useState("");
+  const resourceGroups = useMemo(
+    () => groupPackageResources(resources, resourceSearch),
+    [resourceSearch, resources],
+  );
   return (
     <div className="space-y-4">
       <PackageDependencyList
@@ -3716,26 +3769,40 @@ function PackageInstallInspection({
         onSave={onSavePackageArguments}
       />
       <div className="space-y-2">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          Resources
-        </h4>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            Contents
+          </h4>
+          {resources.length > 6 ? (
+            <span className="relative block sm:w-64">
+              <Search className="theme-text-muted pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
+              <Input
+                value={resourceSearch}
+                onChange={(event) => setResourceSearch(event.target.value)}
+                placeholder="Search package contents"
+                className="h-8 pl-8 text-xs"
+              />
+            </span>
+          ) : null}
+        </div>
         {!detailLoaded ? (
           <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
             Loading resources...
           </p>
-        ) : resources.length ? (
-          <div className="divide-y divide-gray-100 rounded-lg border border-gray-100 dark:divide-gray-800 dark:border-gray-800">
-            {resources.map((resource) => (
-              <PackageResourceRow
-                key={`${resource.resource_type}:${resource.id}`}
-                resource={resource}
+        ) : resourceGroups.length ? (
+          <div className="space-y-2">
+            {resourceGroups.map((group) => (
+              <PackageResourceGroupPanel
+                key={group.type}
+                label={group.label}
+                resources={group.resources}
                 onOpenResource={onOpenResource}
               />
             ))}
           </div>
         ) : (
           <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
-            No installed resources recorded.
+            {resourceSearch ? "No package contents match this search." : "No installed resources recorded."}
           </p>
         )}
       </div>
@@ -4177,6 +4244,43 @@ function PackageResourceRow({
   );
 }
 
+function PackageResourceGroupPanel({
+  label,
+  resources,
+  onOpenResource,
+}: {
+  label: string;
+  resources: PackageInstallResource[];
+  onOpenResource: (resource: PackageInstallResource) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="theme-border overflow-hidden rounded-xl border">
+      <button
+        type="button"
+        className="theme-surface-muted theme-text flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold capitalize"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "" : "-rotate-90"}`} />
+        {label}
+        <span className="theme-text-muted ml-auto font-normal tabular-nums">{resources.length}</span>
+      </button>
+      {open ? (
+        <div className="theme-border divide-y">
+          {resources.map((resource) => (
+            <PackageResourceRow
+              key={`${resource.resource_type}:${resource.id}`}
+              resource={resource}
+              onOpenResource={onOpenResource}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function InstalledTab({
   installs,
   installDetails,
@@ -4274,6 +4378,7 @@ function InstalledTab({
           title="Installed Packages"
           count={installs.length}
           icon={<Package className="h-4 w-4" />}
+          layout="list"
         >
           {installs.map((install) => (
             <PackageInstallCard
@@ -4283,7 +4388,6 @@ function InstalledTab({
               source={sourcesById.get(install.package_source_id)}
               onInspect={() => setInspectingInstallId(install.id)}
               onUpdateInstall={onUpdateInstall}
-              onUninstallInstall={onUninstallInstall}
               busyKey={busyKey}
               installProgress={installProgress[install.id]}
             />
@@ -4309,6 +4413,10 @@ function InstalledTab({
         onOpenInstall={openInstall}
         onOpenResource={openResource}
         onSavePackageArguments={onSavePackageArguments}
+        onUninstallInstall={(install) => {
+          setInspectingInstallId(null);
+          onUninstallInstall(install);
+        }}
       />
 
       {abilities.length ? (
@@ -4381,16 +4489,21 @@ function MarketplaceTab({
   selectedSourceId,
   onSourceChange,
   packages,
+  totalPackageCount,
   isLoading,
   kindFilter,
   onKindFilterChange,
+  search,
+  onSearchChange,
+  sort,
+  onSortChange,
+  visibleCount,
+  onLoadMore,
   onOpen,
   onOpenDetails,
   onInstall,
-  onUninstallInstall,
   onRefresh,
   installedKeys,
-  installedInstallsByKey,
   installedSelectors,
   busyKey,
   installProgress,
@@ -4399,16 +4512,21 @@ function MarketplaceTab({
   selectedSourceId: string | undefined;
   onSourceChange: (id: string) => void;
   packages: MarketplacePackage[];
+  totalPackageCount: number;
   isLoading: boolean;
   kindFilter: MarketplacePackageKind | "all";
   onKindFilterChange: (kind: MarketplacePackageKind | "all") => void;
+  search: string;
+  onSearchChange: (value: string) => void;
+  sort: PackageCatalogSort;
+  onSortChange: (sort: PackageCatalogSort) => void;
+  visibleCount: number;
+  onLoadMore: () => void;
   onOpen: (pkg: MarketplacePackage) => void;
   onOpenDetails: (pkg: MarketplacePackage) => void;
   onInstall: (pkg: MarketplacePackage) => void;
-  onUninstallInstall: (install: PackageInstall) => void;
   onRefresh: () => void;
   installedKeys: Set<string>;
-  installedInstallsByKey: Map<string, PackageInstall>;
   installedSelectors: Set<string>;
   busyKey: string | null;
   installProgress: Record<string, PackageInstallProgress>;
@@ -4416,195 +4534,37 @@ function MarketplaceTab({
   const selectedSource =
     sources.find((source) => source.id === selectedSourceId) ?? null;
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900 md:grid-cols-[minmax(0,1fr)_220px_auto]">
-        <Select
-          value={selectedSourceId ?? ""}
-          onChange={(event) => onSourceChange(event.target.value)}
-          disabled={!sources.length}
-        >
-          {sources.length ? (
-            sources.map((source) => (
-              <option key={source.id} value={source.id}>
-                {source.name}
-              </option>
-            ))
-          ) : (
-            <option value="">No package sources</option>
-          )}
-        </Select>
-        <Select
-          value={kindFilter}
-          onChange={(event) =>
-            onKindFilterChange(
-              event.target.value as MarketplacePackageKind | "all",
-            )
-          }
-        >
-          <option value="all">All package types</option>
-          <option value="package">Packages</option>
-          <option value="knowledge">Knowledge</option>
-          <option value="agent">Agents</option>
-          <option value="ability">Abilities</option>
-          <option value="domain">Domains</option>
-          <option value="context_block">Context blocks</option>
-          <option value="mcp">MCP</option>
-          <option value="routine">Routines</option>
-          <option value="skill">Skills</option>
-          <option value="command">Commands</option>
-          <option value="hook">Hooks</option>
-          <option value="script_tool">Script tools</option>
-          <option value="plugin">Plugins</option>
-        </Select>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={onRefresh}
-          disabled={!selectedSourceId}
-        >
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </Button>
-      </div>
-
-      {isLoading ? (
-        <LoadingGrid />
-      ) : packages.length ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {packages.map((pkg) => (
-            <PackageCatalogCard
-              key={pkg.id}
-              pkg={pkg}
-              installed={isPackageInstalled(
-                pkg,
-                selectedSource,
-                installedKeys,
-                installedSelectors,
-              )}
-              install={
-                selectedSource
-                  ? installedInstallsByKey.get(
-                      packageInstallKey(selectedSource.id, pkg.source_path),
-                    )
-                  : undefined
-              }
-              busyKey={busyKey}
-              installProgress={installProgress[pkg.id]}
-              onOpen={onOpen}
-              onOpenDetails={onOpenDetails}
-              onInstall={onInstall}
-              onUninstallInstall={onUninstallInstall}
-            />
-          ))}
-        </div>
-      ) : (
-        <EmptyState text="No packages found for this source." />
-      )}
-    </div>
-  );
-}
-
-function PackageCatalogCard({
-  pkg,
-  installed,
-  install,
-  busyKey,
-  installProgress,
-  onOpen,
-  onOpenDetails,
-  onInstall,
-  onUninstallInstall,
-}: {
-  pkg: MarketplacePackage;
-  installed: boolean;
-  install?: PackageInstall;
-  busyKey: string | null;
-  installProgress?: PackageInstallProgress;
-  onOpen: (pkg: MarketplacePackage) => void;
-  onOpenDetails: (pkg: MarketplacePackage) => void;
-  onInstall: (pkg: MarketplacePackage) => void;
-  onUninstallInstall: (install: PackageInstall) => void;
-}) {
-  const isSkillLike = pkg.kind === "plugin" || pkg.kind === "skill";
-  const showCatalogMetadata = pkg.kind !== "plugin";
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onOpenDetails(pkg)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpenDetails(pkg);
-        }
-      }}
-      className="flex h-full flex-col rounded-lg border border-gray-200 bg-white p-4 text-left transition-colors hover:border-deep-space-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-deep-space-blue-700"
-    >
-      <AssetCard
-        icon={packageKindIcon(pkg.kind)}
-        title={pkg.display_name ?? pkg.name}
-        subtitle={packageSelector(pkg) ?? pkg.source_path}
-        description={pkg.description}
-        badges={
-          showCatalogMetadata
-            ? [
-                pkg.kind.replace("_", " "),
-                sourceLabel(pkg.metadata),
-                pkg.latest_version,
-              ]
-            : []
-        }
-        updatedAt={pkg.synced_at}
-        framed={false}
-        showMetadata={showCatalogMetadata}
-        statusLabel={installed ? "Installed" : "Available"}
-      />
-      <div className="mt-auto" onClick={(event) => event.stopPropagation()}>
-        <Button
-          size="sm"
-          variant="secondary"
-          className="mt-4 w-full"
-          onClick={() => (isSkillLike ? onOpen(pkg) : onOpenDetails(pkg))}
-          isLoading={busyKey === `review:${pkg.id}`}
-        >
-          <BookOpen className="h-4 w-4" />
-          {isSkillLike ? "View" : "Details"}
-        </Button>
-        {!installed ? (
-          <>
-            <Button
-              size="sm"
-              className="mt-2 w-full"
-              onClick={() => onInstall(pkg)}
-              isLoading={
-                busyKey === `install:${pkg.id}` ||
-                busyKey === `install-arguments:${pkg.id}`
-              }
-            >
-              <Download className="h-4 w-4" />
-              Install
-            </Button>
-            {busyKey === `install:${pkg.id}` && installProgress ? (
-              <PackageInstallProgressBar
-                progress={installProgress}
-                className="mt-2"
-              />
-            ) : null}
-          </>
-        ) : install ? (
-          <Button
-            size="sm"
-            variant="danger"
-            className="mt-2 w-full"
-            onClick={() => onUninstallInstall(install)}
-            isLoading={busyKey === `uninstall-install:${install.id}`}
-          >
-            <Trash2 className="h-4 w-4" />
-            Uninstall
-          </Button>
-        ) : null}
-      </div>
-    </div>
+    <PackageCatalogView
+      sources={sources}
+      selectedSourceId={selectedSourceId}
+      onSourceChange={onSourceChange}
+      items={packages.map((pkg) => ({
+        pkg,
+        installed: isPackageInstalled(
+          pkg,
+          selectedSource,
+          installedKeys,
+          installedSelectors,
+        ),
+        sourceLabel: sourceLabel(pkg.metadata),
+      }))}
+      totalPackageCount={totalPackageCount}
+      isLoading={isLoading}
+      kindFilter={kindFilter}
+      onKindFilterChange={onKindFilterChange}
+      search={search}
+      onSearchChange={onSearchChange}
+      sort={sort}
+      onSortChange={onSortChange}
+      visibleCount={visibleCount}
+      onLoadMore={onLoadMore}
+      onOpen={onOpen}
+      onOpenDetails={onOpenDetails}
+      onInstall={onInstall}
+      onRefresh={onRefresh}
+      busyKey={busyKey}
+      installProgress={installProgress}
+    />
   );
 }
 
@@ -5750,24 +5710,26 @@ function SourcesTab(props: {
   isLoading: boolean;
   onRefresh: (source: PackageSource) => void;
   onDelete: (source: PackageSource) => void;
+  onAdd: () => void;
   busyKey: string | null;
-  sourceAdapter: PackageSourceAdapter;
-  sourceName: string;
-  sourceRepoUrl: string;
-  sourceRef: string;
-  sourceManifestPath: string;
-  onSourceNameChange: (value: string) => void;
-  onSourceRepoUrlChange: (value: string) => void;
-  onSourceRefChange: (value: string) => void;
-  onSourceManifestPathChange: (value: string) => void;
-  onSourceAdapterChange: (value: PackageSourceAdapter) => void;
-  onCreateSource: () => void;
 }) {
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <main className="space-y-3">
+    <section className="theme-surface theme-border overflow-hidden rounded-2xl border">
+      <div className="theme-border flex flex-col gap-3 border-b px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div>
+          <h2 className="theme-text text-sm font-semibold">Package sources</h2>
+          <p className="theme-text-muted mt-1 text-xs leading-5">
+            Registries and repositories Nenjo searches when discovering packages.
+          </p>
+        </div>
+        <Button size="sm" onClick={props.onAdd}>
+          <Plus className="h-4 w-4" />
+          Add source
+        </Button>
+      </div>
+      <div className="theme-border divide-y">
         {props.isLoading ? (
-          <LoadingGrid />
+          <div className="p-4"><LoadingGrid /></div>
         ) : props.sources.length ? (
           props.sources.map((source) => (
             <SourceCard
@@ -5779,68 +5741,10 @@ function SourcesTab(props: {
             />
           ))
         ) : (
-          <EmptyState text="No package sources configured." />
+          <div className="p-4"><EmptyState text="No package sources configured." /></div>
         )}
-      </main>
-      <aside className="h-fit rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-        <div className="flex items-center gap-2">
-          <GitBranch className="h-4 w-4 text-gray-500" />
-          <h2 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
-            Import Public Packages
-          </h2>
-        </div>
-        <div className="mt-4 space-y-3">
-          <Select
-            value={props.sourceAdapter}
-            onChange={(event) =>
-              props.onSourceAdapterChange(
-                event.target.value as PackageSourceAdapter,
-              )
-            }
-          >
-            <option value="nenjo_packages">Nenjo packages</option>
-            <option value="claude_marketplace">Claude plugins</option>
-          </Select>
-          <Input
-            value={props.sourceName}
-            onChange={(event) => props.onSourceNameChange(event.target.value)}
-            placeholder="Display name"
-          />
-          <Input
-            value={props.sourceRepoUrl}
-            onChange={(event) =>
-              props.onSourceRepoUrlChange(event.target.value)
-            }
-            placeholder="https://github.com/owner/repo"
-          />
-          <Input
-            value={props.sourceRef}
-            onChange={(event) => props.onSourceRefChange(event.target.value)}
-            placeholder="Branch, tag, or SHA"
-          />
-          <Input
-            value={props.sourceManifestPath}
-            onChange={(event) =>
-              props.onSourceManifestPathChange(event.target.value)
-            }
-            placeholder={
-              props.sourceAdapter === "claude_marketplace"
-                ? CLAUDE_PLUGIN_MANIFEST_PATH
-                : "packages.yaml"
-            }
-          />
-          <Button
-            size="sm"
-            className="w-full"
-            onClick={props.onCreateSource}
-            isLoading={props.busyKey === "create-source"}
-          >
-            <Plus className="h-4 w-4" />
-            Add
-          </Button>
-        </div>
-      </aside>
-    </div>
+      </div>
+    </section>
   );
 }
 
@@ -5850,8 +5754,7 @@ function SourceCard(props: {
   onRefresh: (source: PackageSource) => void;
   onDelete: (source: PackageSource) => void;
 }) {
-  const licenseSpdx =
-    metadataText(props.source.metadata, ["license", "spdx_id"]) ?? "Unknown";
+  const licenseSpdx = metadataText(props.source.metadata, ["license", "spdx_id"]);
   const licensePolicy = metadataText(props.source.metadata, [
     "license",
     "policy",
@@ -5868,31 +5771,43 @@ function SourceCard(props: {
     ? `${sourceInfo.owner}/${sourceInfo.repo}`
     : (metadataText(props.source.metadata, ["source", "url"]) ??
       "Custom package source");
+  const resolvedCommit =
+    metadataText(props.source.metadata, ["resolved_commit_sha"]) ??
+    metadataText(props.source.metadata, ["source", "resolved_commit_sha"]);
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900 md:flex-row md:items-center md:justify-between">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-semibold text-gray-950 dark:text-gray-50">
+    <article className="flex flex-col gap-4 px-4 py-4 sm:px-5 md:flex-row md:items-center">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-deep-space-blue-500/10 text-deep-space-blue-600 dark:text-deep-space-blue-300">
+          <GitBranch className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+          <h3 className="theme-text font-semibold">
             {props.source.name}
           </h3>
-          <Badge>{props.source.source_type}</Badge>
           <Badge>{props.source.adapter.replace("_", " ")}</Badge>
-          <Badge>
-            {licensePolicy ? `${licenseSpdx} ${licensePolicy}` : licenseSpdx}
-          </Badge>
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            Active
+          </span>
           {requiresReview ? <Badge>review required</Badge> : null}
-        </div>
-        <p className="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">
-          {sourceLabel}
-        </p>
+          </div>
+          <p className="theme-text-muted mt-1 truncate text-sm">{sourceLabel}</p>
+          <div className="theme-text-muted mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            <span>Updated {formatLibraryDate(props.source.updated_at)}</span>
+            {sourceInfo?.ref ? <span>Ref {sourceInfo.ref}</span> : null}
+            {resolvedCommit ? <span>Commit {resolvedCommit.slice(0, 7)}</span> : null}
+            {licenseSpdx ? <span>{licensePolicy ? `${licenseSpdx} ${licensePolicy}` : licenseSpdx}</span> : null}
+          </div>
         {licenseReason ? (
           <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
             {licenseReason}
           </p>
         ) : null}
+        </div>
       </div>
-      <div className="flex gap-2">
+      <div className="flex shrink-0 items-center gap-2 pl-13 md:pl-0">
         <Button
           size="sm"
           variant="secondary"
@@ -5904,87 +5819,16 @@ function SourceCard(props: {
         </Button>
         <Button
           size="sm"
-          variant="danger"
+          variant="ghost"
           onClick={() => props.onDelete(props.source)}
           isLoading={props.busyKey === `delete-source:${props.source.id}`}
+          aria-label={`Delete ${props.source.name}`}
+          title="Delete source"
         >
           <Trash2 className="h-4 w-4" />
-          Delete
         </Button>
       </div>
-    </div>
-  );
-}
-
-function ImportsTab(props: {
-  mode: ImportMode;
-  owner: string;
-  repo: string;
-  path: string;
-  refValue: string;
-  name: string;
-  onModeChange: (mode: ImportMode) => void;
-  onOwnerChange: (value: string) => void;
-  onRepoChange: (value: string) => void;
-  onPathChange: (value: string) => void;
-  onRefChange: (value: string) => void;
-  onNameChange: (value: string) => void;
-  onImport: () => void;
-  importing: boolean;
-}) {
-  return (
-    <div className="max-w-3xl rounded-lg border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900">
-      <div className="flex items-center gap-2">
-        <Braces className="h-4 w-4 text-gray-500" />
-        <h2 className="text-sm font-semibold text-gray-950 dark:text-gray-50">
-          Direct Worker Import
-        </h2>
-      </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <Select
-          value={props.mode}
-          onChange={(event) =>
-            props.onModeChange(event.target.value as ImportMode)
-          }
-        >
-          <option value="knowledge_pack">Knowledge graph</option>
-          <option value="skill">Skill</option>
-        </Select>
-        <Input
-          value={props.name}
-          onChange={(event) => props.onNameChange(event.target.value)}
-          placeholder="Package name"
-        />
-        <Input
-          value={props.owner}
-          onChange={(event) => props.onOwnerChange(event.target.value)}
-          placeholder="GitHub owner"
-        />
-        <Input
-          value={props.repo}
-          onChange={(event) => props.onRepoChange(event.target.value)}
-          placeholder="GitHub repo"
-        />
-        <Input
-          value={props.path}
-          onChange={(event) => props.onPathChange(event.target.value)}
-          placeholder="Path in repo"
-        />
-        <Input
-          value={props.refValue}
-          onChange={(event) => props.onRefChange(event.target.value)}
-          placeholder="Ref, tag, or SHA"
-        />
-      </div>
-      <Button
-        className="mt-4"
-        onClick={props.onImport}
-        isLoading={props.importing}
-      >
-        <Download className="h-4 w-4" />
-        Import
-      </Button>
-    </div>
+    </article>
   );
 }
 
@@ -5993,11 +5837,13 @@ function CollapsibleAssetSection({
   count,
   icon,
   children,
+  layout = "grid",
 }: {
   title: string;
   count: number;
   icon: React.ReactNode;
   children: React.ReactNode;
+  layout?: "grid" | "list";
 }) {
   const [open, setOpen] = useState(true);
   return (
@@ -6017,7 +5863,7 @@ function CollapsibleAssetSection({
         />
       </button>
       {open ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className={layout === "list" ? "space-y-3" : "grid gap-4 md:grid-cols-2 xl:grid-cols-4"}>
           {children}
         </div>
       ) : null}
@@ -6051,7 +5897,7 @@ function AssetCard({
   onClick?: () => void;
   isBusy?: boolean;
   framed?: boolean;
-  statusLabel?: string;
+  statusLabel?: string | null;
   showMetadata?: boolean;
 }) {
   const body = (
@@ -6060,14 +5906,24 @@ function AssetCard({
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-deep-space-blue-50 text-deep-space-blue-600 dark:bg-deep-space-blue-950/40 dark:text-deep-space-blue-300">
           {icon}
         </div>
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
-          <ShieldCheck className="h-3 w-3" />
-          {statusLabel}
-        </span>
+        {statusLabel ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+            <ShieldCheck className="h-3 w-3" />
+            {statusLabel}
+          </span>
+        ) : null}
       </div>
       <div className="mt-4 min-w-0">
         <h3 className="truncate text-base font-semibold text-gray-950 dark:text-gray-50">
-          {title}
+          {onClick ? (
+            <button
+              type="button"
+              className="max-w-full truncate text-left hover:text-deep-space-blue-600 dark:hover:text-deep-space-blue-300"
+              onClick={onClick}
+            >
+              {title}
+            </button>
+          ) : title}
         </h3>
         <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
           {subtitle}
@@ -6081,10 +5937,12 @@ function AssetCard({
           {badges.filter(Boolean).map((badge) => (
             <Badge key={badge}>{badge}</Badge>
           ))}
-          <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-gray-400">
-            <Clock3 className="h-3.5 w-3.5" />
-            {isBusy ? "Loading..." : formatLibraryDate(updatedAt)}
-          </span>
+          {isBusy || updatedAt ? (
+            <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-gray-400">
+              <Clock3 className="h-3.5 w-3.5" />
+              {isBusy ? "Loading..." : formatLibraryDate(updatedAt)}
+            </span>
+          ) : null}
         </div>
       ) : null}
       {children ? (
@@ -6106,24 +5964,6 @@ function AssetCard({
     </>
   );
   if (!framed) return <div>{body}</div>;
-  if (onClick) {
-    return (
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onClick}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onClick();
-          }
-        }}
-        className="h-full min-h-44 rounded-lg border border-gray-200 bg-white p-4 text-left shadow-xs transition-colors hover:border-deep-space-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-deep-space-blue-700"
-      >
-        {body}
-      </div>
-    );
-  }
   return (
     <div className="h-full min-h-44 rounded-lg border border-gray-200 bg-white p-4 shadow-xs dark:border-gray-700 dark:bg-gray-900">
       {body}

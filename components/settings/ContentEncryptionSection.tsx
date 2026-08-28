@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
+import { CircleCheck, Clock3, HardDrive, KeyRound, ServerCog, ShieldCheck } from "lucide-react";
 import {
   approveDeviceEnrollment,
   approveWorkerEnrollment,
@@ -51,6 +52,7 @@ import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Input } from "@/components/ui/Input";
+import { normalizeRuntimeVerificationCode, runtimeApprovalCanSubmit } from "@/lib/runtimeApproval";
 
 function summarizeKey(base64Key: string | null): string {
   if (!base64Key) return "Not configured";
@@ -153,10 +155,10 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="theme-border theme-surface overflow-hidden rounded-2xl border p-5">
-      <div className="mb-4">
+    <section className="theme-border theme-surface overflow-hidden rounded-2xl border p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+      <div className="mb-5">
         <h3 className="theme-text text-base font-semibold">{title}</h3>
-        <p className="theme-text-muted mt-1 text-sm">{description}</p>
+        <p className="theme-text-muted mt-1 max-w-3xl text-sm leading-6">{description}</p>
       </div>
       <div className="space-y-4">{children}</div>
     </section>
@@ -173,23 +175,14 @@ function ItemRow({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="theme-border rounded-2xl border px-4 py-4">
+    <div className="theme-border theme-surface-muted rounded-xl border px-4 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="theme-text text-sm font-medium">{title}</p>
-          <p className="theme-text-muted mt-1 text-xs">{description}</p>
+          <p className="theme-text-muted mt-1 max-w-3xl text-xs leading-5">{description}</p>
         </div>
         {children ? <div className="flex flex-wrap gap-2">{children}</div> : null}
       </div>
-    </div>
-  );
-}
-
-function VerificationWarning({ code }: { code: string }) {
-  return (
-    <div className="rounded-2xl border border-amber-300/80 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200">
-      Check that this code matches the one shown on the requesting device or harness before approving:{" "}
-      <span className="font-mono font-semibold tracking-[0.2em]">{code}</span>
     </div>
   );
 }
@@ -206,7 +199,7 @@ function DangerActionRow({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="border border-red-200/70 bg-red-50/60 p-4 dark:border-red-500/20 dark:bg-red-500/6">
+    <div className="rounded-xl border border-red-200/70 bg-red-50/60 p-4 dark:border-red-500/20 dark:bg-red-500/6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 max-w-2xl space-y-2">
           <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{title}</p>
@@ -223,20 +216,55 @@ function DangerActionRow({
   );
 }
 
+function SecurityStatusCard({
+  icon,
+  label,
+  value,
+  detail,
+  tone = "default",
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  detail: string;
+  tone?: "default" | "ready" | "attention";
+}) {
+  const toneClass = tone === "ready"
+    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+    : tone === "attention"
+      ? "bg-amber-500/10 text-amber-600 dark:text-amber-300"
+      : "bg-deep-space-blue-500/10 text-deep-space-blue-600 dark:text-deep-space-blue-300";
+  return (
+    <div className="theme-border theme-surface flex min-w-0 items-start gap-3 rounded-2xl border p-4">
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${toneClass}`}>{icon}</span>
+      <div className="min-w-0">
+        <p className="theme-text text-lg font-semibold tracking-[-0.02em]">{value}</p>
+        <p className="theme-text mt-0.5 text-xs font-medium">{label}</p>
+        <p className="theme-text-muted mt-1 text-[11px] leading-4">{detail}</p>
+      </div>
+    </div>
+  );
+}
+
 type ContentEncryptionSectionMode = "all" | "devices" | "workers";
 
 export function ContentEncryptionSection({
   mode = "all",
+  afterSummary,
 }: {
   mode?: ContentEncryptionSectionMode;
+  afterSummary?: React.ReactNode;
 }) {
   const { userId, currentUser } = useCurrentUser();
+  const showDevices = mode === "all" || mode === "devices";
+  const showWorkers = mode === "all" || mode === "workers";
   const [busyWorkerId, setBusyWorkerId] = useState<string | null>(null);
   const [approvingDeviceId, setApprovingDeviceId] = useState<string | null>(null);
   const [removingWorkerId, setRemovingWorkerId] = useState<string | null>(null);
   const [removingDeviceId, setRemovingDeviceId] = useState<string | null>(null);
   const [removingPendingDeviceId, setRemovingPendingDeviceId] = useState<string | null>(null);
   const [deviceApprovalCodes, setDeviceApprovalCodes] = useState<Record<string, string>>({});
+  const [workerApprovalCodes, setWorkerApprovalCodes] = useState<Record<string, string>>({});
   const [autoRegisteringDevice, setAutoRegisteringDevice] = useState(false);
   const keyVersion = 1;
   const [ackPreview, setAckPreview] = useState<string | null>(null);
@@ -310,6 +338,7 @@ export function ContentEncryptionSection({
   }, []);
 
   useEffect(() => {
+    if (!showDevices) return;
     let cancelled = false;
 
     const loadDevices = async () => {
@@ -323,9 +352,10 @@ export function ContentEncryptionSection({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [showDevices]);
 
   useEffect(() => {
+    if (!showDevices) return;
     let cancelled = false;
 
     const loadEnrollments = async () => {
@@ -343,9 +373,10 @@ export function ContentEncryptionSection({
       cancelled = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [showDevices]);
 
   useEffect(() => {
+    if (!showDevices) return;
     let cancelled = false;
 
     const loadRecovery = async () => {
@@ -377,9 +408,10 @@ export function ContentEncryptionSection({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [showDevices]);
 
   useEffect(() => {
+    if (!showWorkers) return;
     let cancelled = false;
 
     const loadSigningKey = async () => {
@@ -418,9 +450,10 @@ export function ContentEncryptionSection({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [showWorkers]);
 
   useEffect(() => {
+    if (!showDevices) return;
     if (autoRegisteredRef.current) return;
     if (ackLoading || !ackPreview) return;
     autoRegisteredRef.current = true;
@@ -443,10 +476,10 @@ export function ContentEncryptionSection({
         setAutoRegisteringDevice(false);
       }
     })();
-  }, [ackLoading, ackPreview, keyVersion]);
+  }, [ackLoading, ackPreview, keyVersion, showDevices]);
 
   const { data: enrollments, isLoading, mutate } = useSWR<WorkerEnrollmentStatusResponse[]>(
-    userId ? workerEnrollmentUrl() : null,
+    userId && showWorkers ? workerEnrollmentUrl() : null,
     fetcher,
     { refreshInterval: 5000, revalidateOnFocus: false },
   );
@@ -457,8 +490,6 @@ export function ContentEncryptionSection({
     () => deviceEnrollments.filter((item) => item.state === "pending"),
     [deviceEnrollments],
   );
-  const showDevices = mode === "all" || mode === "devices";
-  const showWorkers = mode === "all" || mode === "workers";
 
   const handleClearKey = async () => {
     await clearStoredAccountContentKey();
@@ -472,7 +503,7 @@ export function ContentEncryptionSection({
     await putWorkerApprovalKey(publicKey);
     setSigningKeyPreview(publicKey);
     setSigningKeySynced(true);
-    toast.success("Stored an encrypted local harness approval key on this device.");
+    toast.success("Stored an encrypted local runtime approval key on this device.");
   };
 
   const handleClearSigningKey = async () => {
@@ -480,7 +511,7 @@ export function ContentEncryptionSection({
     await deleteWorkerApprovalKey().catch(() => undefined);
     setSigningKeyPreview(null);
     setSigningKeySynced(false);
-    toast.success("Removed the local harness approval key from this device.");
+    toast.success("Removed the local runtime approval key from this device.");
   };
 
   const handleRestore = async () => {
@@ -572,6 +603,11 @@ export function ContentEncryptionSection({
   };
 
   const handleApproveHarness = async (enrollment: WorkerEnrollmentStatusResponse) => {
+    const verificationCode = normalizeRuntimeVerificationCode(workerApprovalCodes[enrollment.api_key_id]);
+    if (!verificationCode) {
+      toast.error("Enter the verification code shown by the requesting runtime.");
+      return;
+    }
     if (!userId || !currentUser?.org_id) {
       toast.error("Could not resolve the current account.");
       return;
@@ -596,14 +632,20 @@ export function ContentEncryptionSection({
         workerPublicKey: certificate.enc_public_key,
       });
       await approveWorkerEnrollment(enrollment.api_key_id, {
+        verification_code: verificationCode,
         certificate,
         wrapped_ack: wrappedAck,
         wrapped_ock: wrappedOck,
       });
-      toast.success("Harness approved.");
+      setWorkerApprovalCodes((previous) => {
+        const next = { ...previous };
+        delete next[enrollment.api_key_id];
+        return next;
+      });
+      toast.success("Runtime approved.");
       await mutate();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to approve harness.");
+      toast.error(error instanceof Error ? error.message : "Failed to approve runtime.");
     } finally {
       setBusyWorkerId(null);
     }
@@ -676,10 +718,10 @@ export function ContentEncryptionSection({
     setRemovingWorkerId(workerId);
     try {
       await deleteWorkerEnrollment(workerId);
-      toast.success("Harness removed.");
+      toast.success("Runtime removed.");
       await mutate();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to remove harness.");
+      toast.error(error instanceof Error ? error.message : "Failed to remove runtime.");
     } finally {
       setRemovingWorkerId(null);
     }
@@ -714,6 +756,24 @@ export function ContentEncryptionSection({
 
   return (
     <div className="space-y-6">
+      <section aria-label={showWorkers ? "Runtime trust summary" : "Device trust summary"} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {showWorkers ? (
+          <>
+            <SecurityStatusCard icon={<ServerCog className="h-4 w-4" />} label="Approved runtimes" value={activeEnrollments.length} detail="Allowed to receive workspace work" tone={activeEnrollments.length > 0 ? "ready" : "default"} />
+            <SecurityStatusCard icon={<Clock3 className="h-4 w-4" />} label="Pending approvals" value={pendingEnrollments.length} detail="Waiting for code verification" tone={pendingEnrollments.length > 0 ? "attention" : "default"} />
+            <SecurityStatusCard icon={<KeyRound className="h-4 w-4" />} label="Approval authority" value={signingKeySynced ? "Ready" : "Needs setup"} detail="Local signing key registration" tone={signingKeySynced ? "ready" : "attention"} />
+            <SecurityStatusCard icon={<ShieldCheck className="h-4 w-4" />} label="Content wrapping" value={ackPreview ? "Ready" : "Unavailable"} detail="Encrypted account key access" tone={ackPreview ? "ready" : "attention"} />
+          </>
+        ) : (
+          <>
+            <SecurityStatusCard icon={<ShieldCheck className="h-4 w-4" />} label="Local content" value={ackPreview ? "Unlocked" : "Locked"} detail="Encrypted workspace access here" tone={ackPreview ? "ready" : "attention"} />
+            <SecurityStatusCard icon={<HardDrive className="h-4 w-4" />} label="Trusted devices" value={trustedDevices.length} detail="Devices holding wrapped access" tone={trustedDevices.length > 0 ? "ready" : "default"} />
+            <SecurityStatusCard icon={<Clock3 className="h-4 w-4" />} label="Pending devices" value={pendingDeviceApprovals.length} detail="Waiting for code verification" tone={pendingDeviceApprovals.length > 0 ? "attention" : "default"} />
+            <SecurityStatusCard icon={<CircleCheck className="h-4 w-4" />} label="Recovery bundle" value={hasRecoveryBundle ? "Available" : "Missing"} detail="Encrypted account recovery material" tone={hasRecoveryBundle ? "ready" : "attention"} />
+          </>
+        )}
+      </section>
+      {afterSummary}
       {showDevices && (
         <SectionCard
           title="Recovery"
@@ -842,26 +902,26 @@ export function ContentEncryptionSection({
       {showWorkers && (
         <SectionCard
           title="Approvals"
-          description="Harness approvals use a local signing key and a wrapped copy of the account content key. Pending requests appear here after a harness connects."
+          description="Runtime approvals use a local signing key and a wrapped copy of the account content key. Pending requests appear here after a runtime connects."
         >
         <ItemRow
-          title="Harness Approval Key"
+          title="Runtime Approval Key"
           description={
             signingKeySynced
               ? `Registered with backend · ${summarizeKey(signingKeyPreview)}`
               : summarizeKey(signingKeyPreview)
           }
         >
-          <Button variant="primary" size="md" onClick={() => void handleGenerateSigningKey()}>
-            {signingKeyLoading ? "Loading..." : signingKeyPreview ? "Rotate Key" : "Generate Key"}
+          <Button variant="primary" size="md" isLoading={signingKeyLoading} onClick={() => void handleGenerateSigningKey()}>
+            {signingKeyPreview ? "Rotate key" : "Generate key"}
           </Button>
         </ItemRow>
 
         {isLoading ? (
-          <div className="theme-surface-muted h-20 animate-pulse rounded-lg" />
+          <div className="theme-surface-muted h-20 motion-safe:animate-pulse rounded-lg" />
         ) : pendingEnrollments.length === 0 && activeEnrollments.length === 0 ? (
           <div className="theme-border theme-surface-muted rounded-lg border border-dashed px-4 py-6 text-sm text-gray-500 dark:text-gray-400">
-            No harness requests yet.
+            No runtime requests yet.
           </div>
         ) : (
           <div className="space-y-3">
@@ -870,14 +930,23 @@ export function ContentEncryptionSection({
                 key={enrollment.api_key_id}
                 title={harnessTitle(enrollment)}
                 description={harnessDescription(enrollment, "Pending approval")}
-                verificationCode={enrollment.request.verification_code}
+                verificationCode={workerApprovalCodes[enrollment.api_key_id] ?? ""}
+                onVerificationCodeChange={(verificationCode) =>
+                  setWorkerApprovalCodes((previous) => ({
+                    ...previous,
+                    [enrollment.api_key_id]: verificationCode,
+                  }))
+                }
                 primaryLabel={busyWorkerId === enrollment.api_key_id ? "Approving..." : "Approve"}
                 primaryDisabled={
                   ackLoading ||
-                  !ackPreview ||
                   signingKeyLoading ||
-                  !signingKeyPreview ||
-                  busyWorkerId === enrollment.api_key_id
+                  !runtimeApprovalCanSubmit({
+                    verificationCode: workerApprovalCodes[enrollment.api_key_id],
+                    hasAccountContentKey: Boolean(ackPreview),
+                    hasSigningKey: Boolean(signingKeyPreview),
+                    busy: busyWorkerId === enrollment.api_key_id,
+                  })
                 }
                 onPrimary={() => void handleApproveHarness(enrollment)}
               />
@@ -895,10 +964,10 @@ export function ContentEncryptionSection({
                   setDangerConfirm({
                     kind: "remove_harness",
                     apiKeyId: enrollment.api_key_id,
-                    title: "Remove Harness?",
+                    title: "Remove Runtime?",
                     message:
-                      "This removes the approved harness enrollment. That harness will need to reconnect and be approved again before it can run.",
-                    confirmLabel: "Remove Harness",
+                      "This removes the approved runtime enrollment. That runtime will need to reconnect and be approved again before it can run.",
+                    confirmLabel: "Remove Runtime",
                   })
                 }
               />
@@ -963,8 +1032,8 @@ export function ContentEncryptionSection({
 
         {showWorkers && signingKeyPreview ? (
           <DangerActionRow
-            title="Clear Local Harness Approval Key"
-            danger="This removes the signing key this device uses to approve harness requests. This browser will stop being able to approve harnesses until a new approval key is generated and registered."
+            title="Clear Local Runtime Approval Key"
+            danger="This removes the signing key this device uses to approve runtime requests. This browser will stop being able to approve runtimes until a new approval key is generated and registered."
             reason="Use this when the current approval authority on this device should no longer be trusted or when you are intentionally rotating approval control."
           >
             <Button
@@ -973,9 +1042,9 @@ export function ContentEncryptionSection({
               onClick={() =>
                 setDangerConfirm({
                   kind: "clear_signing_key",
-                  title: "Clear Local Harness Approval Key?",
+                  title: "Clear Local Runtime Approval Key?",
                   message:
-                    "This will remove the signing key this device uses to approve harnesses. This browser will stop being able to approve harnesses until a new approval key is generated and registered.",
+                    "This will remove the signing key this device uses to approve runtimes. This browser will stop being able to approve runtimes until a new approval key is generated and registered.",
                   confirmLabel: "Clear Approval Key",
                 })
               }
@@ -1015,9 +1084,9 @@ export function ContentEncryptionSection({
         {showWorkers && pendingEnrollments.map((enrollment) => (
           <DangerActionRow
             key={`danger-worker-${enrollment.api_key_id}`}
-            title={`Remove Harness Request · ${enrollment.api_key_id}`}
-            danger="This deletes the pending harness approval request. That harness will need to reconnect and register again before it can be approved."
-            reason="Use this when a request is stale, unexpected, or came from a harness you no longer want to trust."
+            title={`Remove Runtime Request · ${enrollment.api_key_id}`}
+            danger="This deletes the pending runtime approval request. That runtime will need to reconnect and register again before it can be approved."
+            reason="Use this when a request is stale, unexpected, or came from a runtime you no longer want to trust."
           >
             <Button
               variant="danger"
@@ -1026,9 +1095,9 @@ export function ContentEncryptionSection({
                 setDangerConfirm({
                   kind: "remove_harness",
                   apiKeyId: enrollment.api_key_id,
-                  title: "Remove Harness Request?",
+                  title: "Remove Runtime Request?",
                   message:
-                    "This deletes the pending harness approval request. That harness will need to reconnect and register again before it can be approved.",
+                    "This deletes the pending runtime approval request. That runtime will need to reconnect and register again before it can be approved.",
                   confirmLabel: "Remove Request",
                 })
               }
@@ -1059,6 +1128,7 @@ function HarnessRow({
   title,
   description,
   verificationCode,
+  onVerificationCodeChange,
   primaryLabel,
   primaryDisabled,
   onPrimary,
@@ -1069,6 +1139,7 @@ function HarnessRow({
   title: string;
   description: string;
   verificationCode?: string;
+  onVerificationCodeChange?: (value: string) => void;
   primaryLabel: string;
   primaryDisabled?: boolean;
   onPrimary?: () => void;
@@ -1078,7 +1149,21 @@ function HarnessRow({
 }) {
   return (
     <ItemRow title={title} description={description}>
-      {verificationCode ? <VerificationWarning code={verificationCode} /> : null}
+      {onVerificationCodeChange ? (
+        <div className="w-full sm:w-72">
+          <Input
+            aria-label={`Verification code for ${title}`}
+            autoCapitalize="none"
+            autoComplete="one-time-code"
+            className="h-9 font-mono text-sm tracking-[0.12em]"
+            onChange={(event) => onVerificationCodeChange(event.target.value)}
+            placeholder="Enter verification code"
+            spellCheck={false}
+            value={verificationCode ?? ""}
+          />
+          <p className="theme-text-muted mt-1.5 text-[11px] leading-4">Enter the code shown in the runtime before approving.</p>
+        </div>
+      ) : null}
       <Button variant={primaryDisabled ? "secondary" : "primary"} size="sm" disabled={primaryDisabled} onClick={onPrimary}>
         {primaryLabel}
       </Button>

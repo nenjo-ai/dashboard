@@ -11,7 +11,7 @@ import { cn } from "@/lib/cn";
 
 type WorkerState = "checking" | "connected" | "disconnected" | "unavailable";
 
-interface DashboardWorkspacePulseProps {
+interface DashboardWorkspaceSummaryProps {
   activeCount: number;
   attentionCount: number;
   completedTodayCount: number;
@@ -19,13 +19,13 @@ interface DashboardWorkspacePulseProps {
   workerState: WorkerState;
 }
 
-function pulseCopy({
+function summaryCopy({
   activeCount,
   attentionCount,
   connectedWorkerCount,
   workerState,
 }: Pick<
-  DashboardWorkspacePulseProps,
+  DashboardWorkspaceSummaryProps,
   "activeCount" | "attentionCount" | "connectedWorkerCount" | "workerState"
 >) {
   if (workerState === "checking") {
@@ -85,13 +85,13 @@ function RuntimeBadge({ state, count }: { state: WorkerState; count: number }) {
   );
 }
 
-export function DashboardWorkspacePulse({
+export function DashboardWorkspaceSummary({
   activeCount,
   attentionCount,
   completedTodayCount,
   connectedWorkerCount,
   workerState,
-}: DashboardWorkspacePulseProps) {
+}: DashboardWorkspaceSummaryProps) {
   const metrics = [
     {
       label: "Active work",
@@ -135,14 +135,14 @@ export function DashboardWorkspacePulse({
               Live overview
             </p>
             <h2 className="theme-text mt-1.5 text-xl font-semibold tracking-[-0.025em]">
-              Workspace pulse
+              Workspace summary
             </h2>
           </div>
           <RuntimeBadge state={workerState} count={connectedWorkerCount} />
         </div>
 
         <p className="theme-text-muted mt-3 max-w-2xl text-sm leading-6">
-          {pulseCopy({
+          {summaryCopy({
             activeCount,
             attentionCount,
             connectedWorkerCount,

@@ -242,6 +242,12 @@ function chatMessageIdentityMatches(
   existing: ChatMessage,
   incoming: ChatMessage,
 ): boolean {
+  // Agent updates are durable timeline events, not alternate renderings of a
+  // model response. Identical content or a temporarily reused local ID must
+  // never collapse an update into the assistant's conversational answer.
+  if (Boolean(existing.agentUpdate) !== Boolean(incoming.agentUpdate)) {
+    return false;
+  }
   if (existing.id === incoming.id) return true;
   if (
     incoming.persistedId &&

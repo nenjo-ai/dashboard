@@ -769,15 +769,21 @@ function RoutineEditorInner({
   }, [nodes, edges, routine, pendingStepUpdates, onSaved, agents, councils]);
 
   // ── Render ─────────────────────────────────────────────────────────────
+  const visibleStepCount = nodes.length - 1;
+  const routeCount = edges.filter(
+    (edge) => !(edge.data as Record<string, unknown>)?.isTriggerEdge,
+  ).length;
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Toolbar */}
-      <div className="theme-border theme-surface flex shrink-0 items-center justify-between gap-2 overflow-hidden border-b px-3 py-2.5 md:px-4">
-        {/* Left: task entry + add step */}
-        <div className="flex items-center gap-2 min-w-0 flex-wrap">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="theme-text-muted text-xs font-medium">Task entry</span>
+      <div className="theme-border theme-surface flex shrink-0 items-center justify-between gap-3 overflow-hidden border-b px-3 py-3 md:px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="hidden min-w-0 sm:block">
+            <p className="theme-text text-xs font-semibold">Workflow canvas</p>
+            <p className="theme-text-muted mt-0.5 truncate text-[10px]">
+              Task entry · {visibleStepCount} {visibleStepCount === 1 ? "step" : "steps"} · {routeCount} {routeCount === 1 ? "route" : "routes"}
+            </p>
           </div>
 
           <Button
@@ -788,12 +794,11 @@ function RoutineEditorInner({
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            <span className="hidden sm:inline">Add Step</span>
+            <span>Add step</span>
           </Button>
 
-          {/* Hint — hidden on mobile */}
-          <span className="hidden lg:inline text-[10px] text-gray-400 dark:text-gray-500">
-            Click an edge to configure retry routing · Gate nodes have pass/fail outputs
+          <span className="theme-text-muted hidden xl:inline text-[10px]">
+            Select a step or route to configure it
           </span>
         </div>
 
@@ -804,29 +809,23 @@ function RoutineEditorInner({
               {error}
             </span>
           )}
-          {isDirty && !saving && !saved && (
-            <span className="hidden md:inline text-[10px] text-amber-500 dark:text-amber-400">
-              Unsaved
-            </span>
-          )}
-          <Button onClick={handleSave} size="sm" disabled={saving || saved || !isDirty}>
-            {saving ? (
-              <>
-                <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                <span className="hidden sm:inline">Saving…</span>
-              </>
+          <span className="hidden items-center gap-1.5 text-[10px] md:flex" role="status" aria-live="polite">
+            {isDirty && !saving && !saved ? (
+              <><span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" /><span className="text-amber-600 dark:text-amber-300">Unsaved changes</span></>
             ) : saved ? (
+              <><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" /><span className="text-emerald-600 dark:text-emerald-300">Saved</span></>
+            ) : null}
+          </span>
+          <Button isLoading={saving} onClick={handleSave} size="sm" disabled={saved || !isDirty}>
+            {saved ? (
               <>
                 <svg className="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                 </svg>
-                <span className="hidden sm:inline">Saved!</span>
+                <span>Saved</span>
               </>
             ) : (
-              "Save"
+              saving ? "Saving" : "Save changes"
             )}
           </Button>
         </div>

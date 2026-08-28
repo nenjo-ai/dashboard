@@ -7,6 +7,7 @@ import { SignIn } from "@clerk/nextjs";
 import { useAppAuth } from "@/components/auth/AppAuth";
 import { ClerkConfigurationNotice } from "@/components/auth/ClerkConfigurationNotice";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
+import { DEFAULT_AUTHENTICATED_ENTRY_PATH } from "@/lib/dashboardEntry";
 import { useSafeRouter } from "@/lib/safeRouter";
 
 function LoginContent() {
@@ -15,7 +16,7 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get("error");
   const requestedRedirect = searchParams.get("redirect_url");
-  const redirectUrl = requestedRedirect || (mode === "local" ? "/dashboard" : "/dashboard/onboarding");
+  const redirectUrl = requestedRedirect || DEFAULT_AUTHENTICATED_ENTRY_PATH;
   const signUpHref = `/dashboard/signup?redirect_url=${encodeURIComponent(redirectUrl)}`;
 
   useEffect(() => {

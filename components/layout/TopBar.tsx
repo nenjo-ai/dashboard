@@ -15,6 +15,7 @@ import { useAppAuth } from "@/components/auth/AppAuth";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { useMobileMenu } from "@/lib/MobileMenuContext";
 import { usePwa } from "@/components/pwa/PwaProvider";
+import { PAGE_CONTENT_FRAME_CLASS } from "@/components/ui/PageContent";
 import { fetcher, notificationsUnreadUrl } from "@/lib/api";
 import type { UnreadSummary } from "@/lib/types";
 
@@ -46,6 +47,9 @@ export function TopBar({ title, children }: TopBarProps) {
     { refreshInterval: 30000, revalidateOnFocus: true },
   );
   const totalUnread = unread?.total ?? 0;
+  const notificationHref = unread?.by_agent[0]?.session_id
+    ? `/dashboard/chat?session=${encodeURIComponent(unread.by_agent[0].session_id)}`
+    : "/dashboard/chat";
   const showInstallButton = isMobile && !isStandalone && (canInstall || isIos);
   const showInstallBanner = isMobile && showInstallButton;
   const showPushBanner = isStandalone && notificationsSupported;
@@ -68,8 +72,9 @@ export function TopBar({ title, children }: TopBarProps) {
 
   return (
     <>
-      <header className="pwa-topbar sticky top-0 z-20 flex h-16 items-center justify-between gap-4 bg-[var(--app-bg)]/85 px-4 backdrop-blur-xl md:px-5 lg:px-6">
-        <div className="flex min-w-0 items-center gap-3">
+      <header className="pwa-topbar sticky top-0 z-20 h-16 bg-[var(--app-bg)]/85 backdrop-blur-xl">
+        <div className={`${PAGE_CONTENT_FRAME_CLASS} flex h-full items-center justify-between gap-4`}>
+          <div className="flex min-w-0 items-center gap-3">
           {onMenuClick && (
             <button
               onClick={onMenuClick}
@@ -83,10 +88,10 @@ export function TopBar({ title, children }: TopBarProps) {
             {title}
           </h1>
         </div>
-        <div
-          className="theme-border flex shrink-0 items-center gap-1 rounded-2xl border bg-white/70 p-1 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur-xl dark:bg-white/[0.045] dark:shadow-[0_10px_30px_rgba(0,0,0,0.2)]"
-          aria-label="Workspace utilities"
-        >
+          <div
+            className="theme-border flex shrink-0 items-center gap-1 rounded-2xl border bg-white/70 p-1 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur-xl dark:bg-white/[0.045] dark:shadow-[0_10px_30px_rgba(0,0,0,0.2)]"
+            aria-label="Workspace utilities"
+          >
           {mode === "local" ? (
             <span
               className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-amber-50/80 px-2 text-[10px] font-medium text-amber-700 dark:bg-amber-400/10 dark:text-amber-300"
@@ -132,7 +137,7 @@ export function TopBar({ title, children }: TopBarProps) {
             </span>
           ) : null}
           <Link
-            href="/dashboard/chat?channel=notifications"
+            href={notificationHref}
             prefetch={false}
             className="theme-text-muted relative flex h-8 w-8 items-center justify-center rounded-xl transition-colors hover:[background:var(--app-hover)] hover:text-gray-600 dark:hover:text-gray-300"
             title="Notifications"
@@ -150,6 +155,7 @@ export function TopBar({ title, children }: TopBarProps) {
               {children}
             </div>
           ) : null}
+          </div>
         </div>
       </header>
       {(showInstallBanner || showPushBanner) && (
