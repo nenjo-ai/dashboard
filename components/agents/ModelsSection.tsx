@@ -69,6 +69,7 @@ interface FormState {
 interface FormErrors {
   slug?: string;
   model?: string;
+  contextWindow?: string;
   baseUrl?: string;
 }
 
@@ -412,6 +413,13 @@ export function ModelsSection({
     const nextErrors: FormErrors = {};
     if (!form.model.trim()) nextErrors.model = "Model is required.";
     if (!resourceSlug(form.slug)) nextErrors.slug = "Stable slug is required.";
+    if (
+      form.contextWindow !== undefined &&
+      (!Number.isSafeInteger(form.contextWindow) || form.contextWindow <= 0)
+    ) {
+      nextErrors.contextWindow =
+        "Context window must be a positive whole number of tokens.";
+    }
     if (
       (form.provider === "openai-compatible" || form.provider === "vllm") &&
       !form.baseUrl.trim()
@@ -946,6 +954,36 @@ export function ModelsSection({
                 disabled={saving}
                 placeholder="Optional label for this model"
               />
+            </div>
+
+            <div>
+              <Label>Context window</Label>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                inputMode="numeric"
+                value={form.contextWindow ?? ""}
+                onChange={(event) =>
+                  setField(
+                    "contextWindow",
+                    event.target.value ? Number(event.target.value) : undefined,
+                  )
+                }
+                className="mt-1"
+                error={!!errors.contextWindow}
+                disabled={saving}
+                placeholder="128000"
+              />
+              {errors.contextWindow ? (
+                <p className="mt-1 text-xs text-red-500">
+                  {errors.contextWindow}
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  Maximum tokens per request. Leave blank to use the provider default.
+                </p>
+              )}
             </div>
 
             {(form.provider === "ollama" ||
