@@ -610,6 +610,7 @@ function StepCreateAgent({
   const [model, setModel] = useState(MODEL_PROVIDERS.find((p) => p.id === "anthropic")!.models[0]);
   const [name, setName] = useState("Anthropic Configuration");
   const [baseUrl, setBaseUrl] = useState("");
+  const [contextWindow, setContextWindow] = useState("");
   const [temperature, setTemperature] = useState(0.7);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -623,6 +624,7 @@ function StepCreateAgent({
         setName(`${providerInfo.label} Configuration`);
       }
       setBaseUrl("");
+      setContextWindow("");
       setError(null);
       onProviderSelected(newProvider);
     },
@@ -634,9 +636,21 @@ function StepCreateAgent({
     const modelName = model.trim();
     const configurationName = name.trim();
     const endpoint = baseUrl.trim();
+    const contextWindowValue = contextWindow.trim();
+    const parsedContextWindow = contextWindowValue
+      ? Number(contextWindowValue)
+      : undefined;
     const requiresBaseUrl = provider === "vllm" || provider === "openai-compatible";
 
     if (!modelName || !configurationName) return;
+
+    if (
+      parsedContextWindow !== undefined &&
+      (!Number.isSafeInteger(parsedContextWindow) || parsedContextWindow <= 0)
+    ) {
+      setError("Context window must be a positive whole number of tokens.");
+      return;
+    }
 
     if (requiresBaseUrl) {
       if (!endpoint) {
@@ -670,6 +684,7 @@ function StepCreateAgent({
         temperature,
         tags: ["nenji"],
         base_url: endpoint || undefined,
+        context_window: parsedContextWindow,
       });
 
       await updateAgent(nenjiAgent.id, {
@@ -682,7 +697,7 @@ function StepCreateAgent({
     } finally {
       setLoading(false);
     }
-  }, [baseUrl, name, model, onCreated, provider, temperature]);
+  }, [baseUrl, contextWindow, name, model, onCreated, provider, temperature]);
 
   const providerInfo = MODEL_PROVIDERS.find((p) => p.id === provider);
   const requiresBaseUrl = provider === "vllm" || provider === "openai-compatible";
@@ -770,7 +785,7 @@ function StepCreateAgent({
           </div>
         )}
 
-        <div className="sm:col-span-2">
+        <div className="min-w-0">
           <Label htmlFor="nenji-configuration-name" required>Configuration name</Label>
           <Input
             id="nenji-configuration-name"
@@ -780,6 +795,23 @@ function StepCreateAgent({
           />
           <p className="theme-text-muted mt-2 text-xs">
             This labels the reusable model configuration, not Nenji itself.
+          </p>
+        </div>
+
+        <div className="min-w-0">
+          <Label htmlFor="nenji-context-window">Context window</Label>
+          <Input
+            id="nenji-context-window"
+            type="number"
+            min="1"
+            step="1"
+            inputMode="numeric"
+            value={contextWindow}
+            onChange={(e) => setContextWindow(e.target.value)}
+            placeholder="128000"
+          />
+          <p className="theme-text-muted mt-2 text-xs">
+            Maximum tokens per request. Leave blank to use the provider default.
           </p>
         </div>
 

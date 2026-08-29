@@ -6,6 +6,7 @@ const readSource = (path) =>
   readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
 const [
+  pageSource,
   viewSource,
   headerSource,
   sessionListSource,
@@ -17,6 +18,7 @@ const [
   mobileShellSource,
   globalStylesSource,
 ] = await Promise.all([
+  readSource("app/dashboard/chat/page.tsx"),
   readSource("components/chat/ChatView.tsx"),
   readSource("components/chat/ChatConversationHeader.tsx"),
   readSource("components/chat/GlobalSessionList.tsx"),
@@ -28,6 +30,14 @@ const [
   readSource("components/chat/MobileChatShell.tsx"),
   readSource("app/globals.css"),
 ]);
+
+test("desktop chat aligns with the shared dashboard page frame", () => {
+  assert.match(
+    pageSource,
+    /mx-auto w-full max-w-\[96rem\] px-0 md:px-6 lg:px-8/,
+  );
+  assert.doesNotMatch(pageSource, /md:px-4[\s\S]*?lg:px-5/);
+});
 
 test("desktop chat uses a cohesive conversation hierarchy", () => {
   assert.match(viewSource, /<ChatConversationHeader/);
