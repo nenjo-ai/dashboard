@@ -86,6 +86,7 @@ test("session-scoped durability is the only lifecycle restore authority", () => 
 
 test("mobile labels the conversation and long histories skip offscreen layout", () => {
   assert.match(mobileShellSource, /activeSession\.title \|\|/);
+  assert.match(mobileShellSource, /<OrgSwitcher \/>/);
   assert.match(areaSource, /--mobile-composer-dock-height/);
   assert.match(globalStylesSource, /\.chat-message-item/);
   assert.match(globalStylesSource, /content-visibility: auto/);

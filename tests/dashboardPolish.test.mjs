@@ -53,11 +53,20 @@ test("mobile agents retain an explicit creation workflow", async () => {
 });
 
 test("dashboard header uses cohesive floating utility chrome", async () => {
-  const [topBar, orgSwitcher, sidebar, mobileHero, logoMark, pageContent] = await Promise.all([
+  const [
+    topBar,
+    orgSwitcher,
+    sidebar,
+    mobileHero,
+    mobilePageShell,
+    logoMark,
+    pageContent,
+  ] = await Promise.all([
     readSource("components/layout/TopBar.tsx"),
     readSource("components/layout/OrgSwitcher.tsx"),
     readSource("components/layout/Sidebar.tsx"),
     readSource("components/layout/MobileHeroBar.tsx"),
+    readSource("components/layout/MobilePageShell.tsx"),
     readSource("components/layout/NenjoLogoMark.tsx"),
     readSource("components/ui/PageContent.tsx"),
   ]);
@@ -68,10 +77,7 @@ test("dashboard header uses cohesive floating utility chrome", async () => {
   assert.match(pageContent, /max-w-\[96rem\] px-4 md:px-6 lg:px-8/);
   assert.doesNotMatch(topBar, /pwa-topbar[^\"]*border-b/);
   assert.match(orgSwitcher, /h-9 min-w-0[\s\S]*rounded-xl/);
-  assert.equal(
-    sidebar.match(/flex h-16 items-center gap-3 px-6/g)?.length,
-    2,
-  );
+  assert.equal(sidebar.match(/flex h-16 items-center gap-3 px-6/g)?.length, 2);
   assert.equal(
     sidebar.match(/NenjoLogoMark className="h-8 w-5 rounded-lg"/g)?.length,
     2,
@@ -80,6 +86,10 @@ test("dashboard header uses cohesive floating utility chrome", async () => {
   assert.doesNotMatch(logoMark, /translate-[xy]-/);
   assert.match(mobileHero, /bg-\[var\(--app-overlay\)\]/);
   assert.match(mobileHero, /backdrop-blur-2xl/);
+  assert.match(mobilePageShell, /<OrgSwitcher \/>/);
+  assert.match(orgSwitcher, /aria-label="Switch organization"/);
+  assert.match(orgSwitcher, /role="dialog"/);
+  assert.doesNotMatch(orgSwitcher, /organizations\.length > 1/);
 });
 
 test("projects is a flat primary navigation destination", async () => {
