@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatRunStatus, ChatStreamRequest } from "./types";
+import type { ChatRunStatus, ChatStreamSubscriptionRequest } from "./types";
 
 const DB_NAME = "nenjo-chat-streams";
 const STORE_NAME = "snapshots";
@@ -29,7 +29,7 @@ export type ChatStreamSnapshot = {
   agentId?: string;
   requestId: string;
   /** The encrypted, idempotent request body used to reconnect after navigation. */
-  request?: ChatStreamRequest;
+  request?: ChatStreamSubscriptionRequest;
   responseId?: string;
   runId?: string;
   lastSequence?: number;
@@ -37,6 +37,11 @@ export type ChatStreamSnapshot = {
   activeTools?: ChatStreamToolSnapshot[];
   livePreview?: string;
   activeRunTrace?: unknown;
+  notice?: {
+    source: "transport" | "provider" | "capacity";
+    tone: "info" | "warning";
+    message: string;
+  };
   status:
     | "connecting"
     | "generating"

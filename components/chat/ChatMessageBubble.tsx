@@ -9,6 +9,7 @@ import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { visibleLiveAssistantContent } from "@/lib/chat/derivations";
 import { traceActivitySummary } from "@/lib/agentRunTrace/presentation";
 import type { ChatPhase } from "@/lib/chat/types";
+import type { ChatTurnNotice } from "@/lib/chat/types";
 import type { AgentDefinition, ChatMessage } from "@/lib/types";
 import { AssistantResponseContent } from "./AssistantResponseContent";
 import { ChatActivityTimeline } from "./ChatActivityTimeline";
@@ -74,6 +75,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   onRetry,
   compact,
   livePhase,
+  liveNotice,
 }: {
   message: ChatMessage;
   activeAgent?: AgentDefinition;
@@ -83,6 +85,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   onRetry?: (messageId: string) => void;
   compact?: boolean;
   livePhase?: ChatPhase;
+  liveNotice?: ChatTurnNotice;
 }) {
   const isUser = message.role === "user";
   const rawContent = compact
@@ -99,9 +102,10 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   const isStreamingResponse =
     isLiveResponse && livePhase === "streaming" && hasAssistantContent;
   const progressLabel =
-    livePhase === "using_tool" && message.runTrace
+    liveNotice?.message ??
+    (livePhase === "using_tool" && message.runTrace
       ? traceActivitySummary(message.runTrace).status
-      : undefined;
+      : undefined);
 
   return (
     <div
@@ -171,6 +175,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
               <ChatProgressIndicator
                 phase={livePhase}
                 label={progressLabel}
+                tone={liveNotice?.tone === "warning" ? "warning" : "default"}
                 agentName={activeAgent?.name}
               />
             ) : null}

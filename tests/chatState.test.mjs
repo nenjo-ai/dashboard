@@ -20,11 +20,47 @@ test("prompt submission owns one response before the first stream event", () => 
   });
 
   assert.equal(state.phase, "connecting");
+  assert.equal(state.connectionStatus, "connecting");
   assert.equal(state.requestId, "prompt-1");
   assert.equal(state.responseId, "response-1");
   assert.equal(state.content, "");
   assert.equal(chatLifecycle(state).isActive, true);
   assert.equal(chatLifecycle(state).responseId, "response-1");
+});
+
+test("transport reconnecting keeps the run active and exposes a warning", () => {
+  const state = reduce([
+    {
+      type: "prompt_submitted",
+      requestId: "prompt-1",
+      responseId: "response-1",
+    },
+    { type: "model_invoked" },
+    { type: "connection_changed", status: "reconnecting" },
+    {
+      type: "notice_set",
+      notice: {
+        source: "transport",
+        tone: "warning",
+        message: "Agent is still running; reconnecting",
+      },
+    },
+  ]);
+
+  assert.equal(state.phase, "thinking");
+  assert.equal(state.connectionStatus, "reconnecting");
+  assert.equal(chatLifecycle(state).isActive, true);
+  assert.equal(
+    chatLifecycle(state).statusText,
+    "Agent is still running; reconnecting",
+  );
+
+  const reconnected = chatTurnReducer(state, {
+    type: "connection_changed",
+    status: "connected",
+  });
+  assert.equal(reconnected.phase, "thinking");
+  assert.equal(reconnected.notice, undefined);
 });
 
 test("generating switches from thinking to streaming once content exists", () => {

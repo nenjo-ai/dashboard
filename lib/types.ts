@@ -516,6 +516,7 @@ export interface ChatMessageOutbound {
 
 export interface ChatStreamRequest {
   id: string;
+  attempt_id: string;
   after_sequence?: number;
   message: string;
   encrypted_message: EncryptedPayload;
@@ -532,6 +533,16 @@ export interface ChatStreamRequest {
   project_id?: string;
   artifact_ids?: string[];
 }
+
+export interface ChatStreamRetryRequest {
+  attempt_id: string;
+  retry_of_run_id: string;
+  after_sequence?: number;
+}
+
+export type ChatStreamSubscriptionRequest =
+  | ChatStreamRequest
+  | ChatStreamRetryRequest;
 
 export interface ChatCommand {
   id: string;

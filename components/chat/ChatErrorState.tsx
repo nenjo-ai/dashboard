@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { cn } from "@/lib/cn";
 import type { ChatMessage } from "@/lib/types";
 
@@ -8,8 +9,9 @@ export function ChatErrorState({
   onRetry,
 }: {
   message: ChatMessage;
-  onRetry?: (messageId: string) => void;
+  onRetry?: (messageId: string) => void | Promise<void>;
 }) {
+  const [retrying, setRetrying] = useState(false);
   if (message.runStatus !== "failed" && message.runStatus !== "cancelled") {
     return null;
   }
@@ -23,17 +25,28 @@ export function ChatErrorState({
       )}
       role={message.runStatus === "failed" ? "alert" : "status"}
     >
-      <span className="font-medium capitalize">
-        {message.runStatus.replace("_", " ")}
+      <span className="font-medium">
+        {message.runStatus === "cancelled"
+          ? "Cancelled"
+          : message.retryable
+            ? "Temporary failure"
+            : "Action required"}
       </span>
       {message.errorMessage ? ` — ${message.errorMessage}` : null}
       {message.retryable && onRetry ? (
         <button
           type="button"
-          onClick={() => onRetry(message.id)}
+          disabled={retrying}
+          onClick={() => {
+            if (retrying) return;
+            setRetrying(true);
+            void Promise.resolve(onRetry(message.id)).finally(() =>
+              setRetrying(false),
+            );
+          }}
           className="ml-2 rounded border border-current px-2 py-1 font-semibold hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current dark:hover:bg-white/5"
         >
-          Retry
+          {retrying ? "Retrying…" : "Retry"}
         </button>
       ) : null}
     </div>

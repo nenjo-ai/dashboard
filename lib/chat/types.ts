@@ -16,6 +16,18 @@ export type ChatPhase =
   | "failed"
   | "cancelled";
 
+export type ChatConnectionStatus =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "disconnected";
+
+export type ChatTurnNotice = {
+  source: "transport" | "provider" | "capacity";
+  tone: "info" | "warning";
+  message: string;
+};
+
 export type ActiveToolEntry = ChatStreamToolSnapshot;
 
 export interface ChatTurnError {
@@ -30,6 +42,7 @@ export interface ChatTurnError {
  */
 export interface ChatTurnState {
   phase: ChatPhase;
+  connectionStatus: ChatConnectionStatus;
   requestId?: string;
   responseId?: string;
   content: string;
@@ -37,6 +50,7 @@ export interface ChatTurnState {
   activeTools: ActiveToolEntry[];
   runTrace?: RunTrace;
   error?: ChatTurnError;
+  notice?: ChatTurnNotice;
 }
 
 export interface ChatLifecycle {
@@ -44,6 +58,7 @@ export interface ChatLifecycle {
   isActive: boolean;
   isTyping: boolean;
   statusText?: string;
+  notice?: ChatTurnNotice;
   /** The only assistant message allowed to render transient live UI. */
   responseId?: string;
 }
