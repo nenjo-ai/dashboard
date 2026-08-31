@@ -81,6 +81,24 @@ export function subscribeToChatStream({
   });
 }
 
+/** Translate transport frames into the controller's existing incoming-event shape. */
+export function forwardChatStreamEvent(
+  event: RawChatStreamEvent,
+  onIncoming: (incoming: unknown) => void,
+): void {
+  if (
+    event.event === "message_persisted" ||
+    event.event === "delivery_receipt"
+  ) {
+    onIncoming(event.data);
+    return;
+  }
+  const normalized = normalizeSseAgentEvent(event);
+  if (normalized) {
+    onIncoming({ type: "agent_response", payload: normalized });
+  }
+}
+
 const EVENT_TYPE_MAP: Record<string, string> = {
   hook_started: "HookStarted",
   hook_completed: "HookCompleted",

@@ -3,9 +3,66 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { subscribeToDurableChatStream } from "../lib/chat/streamSubscription.ts";
+import { retryAttemptIdForRun } from "../lib/chat/retryIdentity.ts";
 import { consumeChatStreamWithRetry } from "../lib/chatStreamRetry.ts";
+import {
+  chatTurnHasActiveWork,
+  isTerminalStreamSnapshotStatus,
+  streamAttemptOwnsLiveTurn,
+} from "../lib/chat/streamOwnership.ts";
 
 const ROOT = new URL("..", import.meta.url);
+
+test("a failed run keeps the same retry attempt identity across reloads", () => {
+  const sourceRun = "79fd0e03-c8f7-4b0d-9b54-03ae9b8e91cf";
+  const sameAttemptBeforeReload = retryAttemptIdForRun(sourceRun);
+  const sameAttemptAfterReload = retryAttemptIdForRun(sourceRun);
+  const differentAttempt = retryAttemptIdForRun(
+    "40d6ac5e-f420-47b9-b20d-42b6eb442a4f",
+  );
+
+  assert.equal(sameAttemptBeforeReload, sameAttemptAfterReload);
+  assert.notEqual(sameAttemptBeforeReload, sourceRun);
+  assert.notEqual(sameAttemptBeforeReload, differentAttempt);
+  assert.match(sameAttemptBeforeReload, /^[0-9a-f-]{36}$/);
+});
+
+test("a terminal failure can retry before the old stream promise settles", () => {
+  assert.equal(
+    chatTurnHasActiveWork({
+      runStatus: "failed",
+      hasRequest: true,
+      hasResponse: true,
+      hasActiveTools: false,
+      hasLivePreview: false,
+      hasActiveTrace: true,
+    }),
+    false,
+  );
+  assert.equal(
+    chatTurnHasActiveWork({
+      runStatus: "retrying",
+      hasRequest: true,
+      hasResponse: true,
+      hasActiveTools: false,
+      hasLivePreview: false,
+      hasActiveTrace: false,
+    }),
+    true,
+  );
+});
+
+test("old stream cleanup cannot claim a replacement retry using the same card", () => {
+  assert.equal(streamAttemptOwnsLiveTurn("failed-run", "retry-run"), false);
+  assert.equal(streamAttemptOwnsLiveTurn("retry-run", "retry-run"), true);
+});
+
+test("terminal stored snapshots render without opening another subscription", () => {
+  for (const status of ["completed", "done", "failed", "error", "cancelled"]) {
+    assert.equal(isTerminalStreamSnapshotStatus(status), true, status);
+  }
+  assert.equal(isTerminalStreamSnapshotStatus("retrying"), false);
+});
 
 test("chat stream retry reuses the original request body", async () => {
   const body = { id: "79fd0e03-c8f7-4b0d-9b54-03ae9b8e91cf", message: "hello" };
@@ -59,7 +116,9 @@ test("an early SSE EOF reconnects the same attempt from the latest sequence", as
         return new Response();
       },
       retry: async () => {
-        throw new Error("retry transport should not be used for an initial run");
+        throw new Error(
+          "retry transport should not be used for an initial run",
+        );
       },
       consume: async (_response, onEvent) => {
         consumeCount += 1;
@@ -116,7 +175,10 @@ test("retry subscriptions keep one retry identity and never resend the message",
           lastSequence = 9;
           return;
         }
-        onEvent({ event: "run_completed", data: { run_id: "retry-attempt-1" } });
+        onEvent({
+          event: "run_completed",
+          data: { run_id: "retry-attempt-1" },
+        });
       },
     },
     isTerminalEvent: (event) => event.event === "run_completed",
@@ -182,7 +244,10 @@ test("only retryable HTTP statuses reconnect", async () => {
 });
 
 test("chat requests use UUIDs and route retries through the idempotent stream body", () => {
-  const source = readFileSync(new URL("lib/useChatController.ts", ROOT), "utf8");
+  const source = readFileSync(
+    new URL("lib/useChatController.ts", ROOT),
+    "utf8",
+  );
   const snapshotSource = readFileSync(
     new URL("lib/chatStreamDurability.ts", ROOT),
     "utf8",
@@ -196,10 +261,7 @@ test("chat requests use UUIDs and route retries through the idempotent stream bo
     source,
     /function generateId\(\): string \{\s*return crypto\.randomUUID\(\);\s*\}/,
   );
-  assert.match(
-    source,
-    /getAfterSequence: \(\) => lastSequenceRef\.current/,
-  );
+  assert.match(source, /getAfterSequence: \(\) => lastSequenceRef\.current/);
   assert.match(source, /request: streamBody/);
   assert.match(source, /if \(!snapshot\.request\)/);
   assert.match(source, /request: snapshot\.request/);
