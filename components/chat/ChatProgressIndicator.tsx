@@ -73,10 +73,12 @@ function CalmStatus({
   label,
   phase,
   compact = false,
+  tone = "default",
 }: {
   label: string;
   phase: ChatPhase;
   compact?: boolean;
+  tone?: "default" | "warning";
 }) {
   return (
     <span
@@ -87,7 +89,13 @@ function CalmStatus({
       aria-label={label}
     >
       {!compact ? (
-        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+        <span
+          className={
+            tone === "warning"
+              ? "text-xs font-medium text-amber-700 dark:text-amber-300"
+              : "text-xs font-medium text-gray-500 dark:text-gray-400"
+          }
+        >
           {label}
         </span>
       ) : null}
@@ -110,11 +118,13 @@ export function ChatProgressIndicator({
   compact = false,
   label: labelOverride,
   agentName,
+  tone = "default",
 }: {
   phase?: ChatPhase;
   compact?: boolean;
   label?: string;
   agentName?: string;
+  tone?: "default" | "warning";
 }) {
   if (!phase) return null;
   const defaultLabel = PHASE_LABEL[phase];
@@ -126,7 +136,7 @@ export function ChatProgressIndicator({
         ? `${agentName} is thinking`
         : defaultLabel);
   return label ? (
-    <CalmStatus label={label} phase={phase} compact={compact} />
+    <CalmStatus label={label} phase={phase} compact={compact} tone={tone} />
   ) : null;
 }
 

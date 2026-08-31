@@ -1,38 +1,84 @@
 import type { AgentLifecycleEvent } from "../agentRunTrace/types";
-import { createChatStream } from "../api";
+import { createChatStream, retryChatStream } from "../api";
 import { consumeSseStream } from "../chatStream";
-import { consumeChatStreamWithRetry } from "../chatStreamRetry";
-import type { ChatStreamRequest } from "../types";
+import type { ChatStreamSubscriptionRequest } from "../types";
 import { CHAT_STREAM_PROTOCOL_VERSION } from "./constants.ts";
+import {
+  subscribeToDurableChatStream,
+  type ChatStreamConnectionState,
+  type ChatStreamTransport,
+  type RawChatStreamEvent,
+  type SubscriptionRetryOptions,
+} from "./streamSubscription.ts";
+
+export type {
+  ChatStreamConnectionState,
+  ChatStreamTransport,
+  RawChatStreamEvent,
+} from "./streamSubscription.ts";
 
 export type NormalizedStreamEvent = {
   event_type: string;
   data: Record<string, unknown>;
 };
 
-export type RawChatStreamEvent = { event: string; data: unknown };
+const DEFAULT_CHAT_STREAM_TRANSPORT: ChatStreamTransport = {
+  create: createChatStream,
+  retry: retryChatStream,
+  consume: consumeSseStream,
+};
+
+function isTerminalStreamEvent(event: RawChatStreamEvent): boolean {
+  const normalized = normalizeSseAgentEvent(event);
+  if (!normalized) return false;
+  if (
+    normalized.event_type === "RunCompleted" ||
+    normalized.event_type === "RunFailed" ||
+    normalized.event_type === "RunCancelled" ||
+    normalized.event_type === "Done" ||
+    normalized.event_type === "Error"
+  ) {
+    return true;
+  }
+  if (normalized.event_type !== "ChatRunSnapshot") return false;
+  const status = normalized.data.status;
+  return (
+    status === "completed" || status === "failed" || status === "cancelled"
+  );
+}
 
 /** Own the fetch/SSE/retry lifecycle so the controller only handles events. */
 export function subscribeToChatStream({
   request,
   afterSequence,
+  getAfterSequence,
   signal,
   onEvent,
+  onConnectionState,
+  transport = DEFAULT_CHAT_STREAM_TRANSPORT,
+  retryOptions,
 }: {
-  request: ChatStreamRequest;
+  request: ChatStreamSubscriptionRequest;
   afterSequence?: number;
+  getAfterSequence?: () => number | undefined;
   signal: AbortSignal;
   onEvent: (event: RawChatStreamEvent) => void;
+  onConnectionState?: (state: ChatStreamConnectionState) => void;
+  /** Injectable only so reconnect and idempotency behavior can be tested. */
+  transport?: ChatStreamTransport;
+  retryOptions?: SubscriptionRetryOptions;
 }): Promise<void> {
-  return consumeChatStreamWithRetry(
-    () =>
-      createChatStream(
-        { ...request, after_sequence: afterSequence || undefined },
-        signal,
-      ),
-    (response) => consumeSseStream(response, onEvent),
+  return subscribeToDurableChatStream({
+    request,
+    afterSequence,
+    getAfterSequence,
     signal,
-  );
+    onEvent,
+    onConnectionState,
+    transport,
+    retryOptions,
+    isTerminalEvent: isTerminalStreamEvent,
+  });
 }
 
 const EVENT_TYPE_MAP: Record<string, string> = {

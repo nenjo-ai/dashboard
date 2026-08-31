@@ -1995,6 +1995,11 @@ export function ChatArea({
                 onRetry={msg.retryable ? retryMessage : undefined}
                 compact
                 livePhase={livePhaseForChatMessage(msg, lifecycle)}
+                liveNotice={
+                  livePhaseForChatMessage(msg, lifecycle)
+                    ? lifecycle.notice
+                    : undefined
+                }
               />
             </div>
           ))}
@@ -2040,6 +2045,11 @@ export function ChatArea({
                   onRetry={msg.retryable ? retryMessage : undefined}
                   compact={false}
                   livePhase={livePhaseForChatMessage(msg, lifecycle)}
+                  liveNotice={
+                    livePhaseForChatMessage(msg, lifecycle)
+                      ? lifecycle.notice
+                      : undefined
+                  }
                 />
               </motion.div>
             );

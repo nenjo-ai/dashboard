@@ -5,7 +5,9 @@ import { isTerminalChatPhase } from "./terminal.ts";
 import type {
   ActiveToolEntry,
   ChatLifecycle,
+  ChatConnectionStatus,
   ChatPhase,
+  ChatTurnNotice,
   ChatTurnError,
   ChatTurnState,
 } from "./types";
@@ -26,6 +28,9 @@ export type ChatTurnEvent =
   | { type: "preview_appended"; preview?: string }
   | { type: "preview_replaced"; preview?: string }
   | { type: "trace_replaced"; runTrace?: RunTrace }
+  | { type: "connection_changed"; status: ChatConnectionStatus }
+  | { type: "notice_set"; notice: ChatTurnNotice }
+  | { type: "notice_cleared"; source: ChatTurnNotice["source"] }
   | { type: "completed" }
   | { type: "failed"; error?: ChatTurnError }
   | { type: "cancelled" }
@@ -34,6 +39,7 @@ export type ChatTurnEvent =
 
 export const EMPTY_CHAT_TURN: ChatTurnState = {
   phase: "idle",
+  connectionStatus: "connected",
   content: "",
   activeTools: [],
 };
@@ -71,6 +77,7 @@ export function chatTurnReducer(
     case "prompt_submitted":
       return createChatTurnState({
         phase: "connecting",
+        connectionStatus: "connecting",
         requestId: event.requestId,
         responseId: event.responseId,
         runTrace: event.runTrace,
@@ -104,6 +111,21 @@ export function chatTurnReducer(
       return { ...state, activityPreview: event.preview };
     case "trace_replaced":
       return { ...state, runTrace: event.runTrace };
+    case "connection_changed":
+      return {
+        ...state,
+        connectionStatus: event.status,
+        notice:
+          event.status === "connected" && state.notice?.source === "transport"
+            ? undefined
+            : state.notice,
+      };
+    case "notice_set":
+      return { ...state, notice: event.notice };
+    case "notice_cleared":
+      return state.notice?.source === event.source
+        ? { ...state, notice: undefined }
+        : state;
     case "completed":
       return {
         ...state,
@@ -150,12 +172,14 @@ export function chatTurnReducer(
               : "thinking";
       return createChatTurnState({
         phase,
+        connectionStatus: "connected",
         requestId: snapshot.requestId,
         responseId: snapshot.responseId ?? snapshot.requestId,
         content: snapshot.content,
         activityPreview: snapshot.livePreview,
         activeTools: snapshot.activeTools ?? [],
         runTrace: snapshot.activeRunTrace as RunTrace | undefined,
+        notice: snapshot.notice,
       });
     }
     case "reset":
@@ -177,7 +201,8 @@ export function chatLifecycle(state: ChatTurnState): ChatLifecycle {
     phase: state.phase,
     isActive,
     isTyping: isActive,
-    statusText: statusText[state.phase],
+    statusText: state.notice?.message ?? statusText[state.phase],
+    ...(state.notice ? { notice: state.notice } : {}),
     ...(isActive && state.responseId ? { responseId: state.responseId } : {}),
   };
 }

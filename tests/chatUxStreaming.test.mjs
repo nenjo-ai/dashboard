@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import {
+  projectFailedChatRunMessage,
+  upsertFailedChatRunMessage,
+} from "../lib/chat/runFailure.ts";
+
 const hookSource = await readFile(
   new URL("../lib/useChatController.ts", import.meta.url),
   "utf8",
@@ -64,9 +69,50 @@ const durabilitySource = await readFile(
 
 test("chat consumes versioned frames and resumes by sequence", () => {
   assert.match(streamingSource, /event\.event === "chat_stream_frame"/);
-  assert.match(hookSource, /afterSequence: lastSequenceRef\.current/);
+  assert.match(hookSource, /getAfterSequence: \(\) => lastSequenceRef\.current/);
   assert.match(hookSource, /case "ChatRunSnapshot"/);
   assert.match(hookSource, /case "AssistantMessageFinalized"/);
+});
+
+test("an empty failed snapshot retains its retry identity without duplicating the user turn", () => {
+  const inputMessage = {
+    id: "input-1",
+    role: "user",
+    content: "try this",
+    timestamp: "2026-08-31T12:00:00.000Z",
+  };
+  const failed = projectFailedChatRunMessage({
+    runId: "run-1",
+    fallbackResponseId: "fallback-response",
+    inputMessageId: inputMessage.id,
+    content: "",
+    errorCode: "provider_timeout",
+    errorMessage: "The provider timed out.",
+    retryable: true,
+    timestamp: "2026-08-31T12:00:01.000Z",
+  });
+
+  assert.equal(failed.id, "run-1");
+  assert.equal(failed.runEnvelopeId, "run-1");
+  assert.equal(failed.replyToMessageId, inputMessage.id);
+  assert.equal(failed.runStatus, "failed");
+  assert.equal(failed.retryable, true);
+  assert.equal(failed.content, "");
+
+  const inserted = upsertFailedChatRunMessage([inputMessage], failed);
+  assert.equal(inserted.length, 2);
+  assert.equal(inserted.filter((message) => message.role === "user").length, 1);
+
+  const updated = upsertFailedChatRunMessage(inserted, {
+    ...failed,
+    errorMessage: "The provider is still unavailable.",
+  });
+  assert.equal(updated.length, 2);
+  assert.equal(updated.filter((message) => message.id === failed.id).length, 1);
+  assert.equal(
+    updated.find((message) => message.id === failed.id)?.errorMessage,
+    "The provider is still unavailable.",
+  );
 });
 
 test("live deltas are coalesced to animation frames without fake typing", () => {
@@ -115,7 +161,7 @@ test("late animation frames cannot create an orphan assistant card", () => {
 test("chat shows optimistic progress before local preparation completes", () => {
   const optimisticTrace = hookSource.indexOf("const optimisticTrace: RunTrace");
   const optimisticCard = hookSource.indexOf(
-    "upsertLiveAssistantDraft([...previous, userMsg]",
+    "upsertLiveAssistantDraft(",
     optimisticTrace,
   );
   const keyLoad = hookSource.indexOf(
@@ -130,7 +176,7 @@ test("chat shows optimistic progress before local preparation completes", () => 
   assert.match(hookSource, /setActiveRunTrace\(optimisticTrace\)/);
   assert.match(
     hookSource,
-    /upsertLiveAssistantDraft\(\[\.\.\.previous, userMsg\]/,
+    /upsertLiveAssistantDraft\([\s\S]*?: \[\.\.\.previous, userMsg\]/,
   );
 });
 
@@ -331,9 +377,12 @@ test("final assistant usage is visible in the message footer", () => {
 
 test("retry and terminal run states are visible inline", () => {
   assert.match(hookSource, /case "ProviderRetryScheduled"/);
+  assert.match(hookSource, /case "ProgressUpdate"/);
+  assert.match(hookSource, /waiting_for_model_capacity/);
   assert.match(hookSource, /case "RunFailed"/);
   assert.match(errorSource, /message\.errorMessage/);
-  assert.match(errorSource, />\s*Retry\s*</);
+  assert.match(errorSource, /retrying \? "Retrying…" : "Retry"/);
+  assert.match(errorSource, /"Action required"/);
 });
 
 test("chat progress uses calm reduced-motion indicators without legacy spinners", () => {

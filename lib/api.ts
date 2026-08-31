@@ -35,6 +35,7 @@ import type {
   ChatDomainExitRequest,
   ChatSessionDeleteRequest,
   ChatStreamRequest,
+  ChatStreamRetryRequest,
   ChatCommand,
   ConfigureChatCommandRequest,
   EncryptedPayload,
@@ -3807,6 +3808,27 @@ export async function createChatStream(
       ...body,
       project_id: projectId,
     }),
+    signal,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "Unknown error");
+    throw new ApiError(text, res.status);
+  }
+  return res;
+}
+
+export async function retryChatStream(
+  runId: string,
+  body: Pick<ChatStreamRetryRequest, "attempt_id" | "after_sequence">,
+  signal?: AbortSignal,
+): Promise<Response> {
+  const headers = await authHeaders({
+    Accept: "text/event-stream",
+  });
+  const res = await fetch(`${API_V1}/chat-streams/${runId}/retry`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
     signal,
   });
   if (!res.ok) {
