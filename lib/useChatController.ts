@@ -79,6 +79,13 @@ import {
   projectFailedChatRunMessage,
   upsertFailedChatRunMessage,
 } from "./chat/runFailure";
+import { retryAttemptIdForRun } from "./chat/retryIdentity";
+import { chatStreamConnectionEvents } from "./chat/streamConnection";
+import {
+  chatTurnHasActiveWork,
+  isTerminalStreamSnapshotStatus,
+  streamAttemptOwnsLiveTurn,
+} from "./chat/streamOwnership";
 import { normalizeToolCallArgs } from "./toolCallDisplay";
 import type { AgentLifecycleEvent, RunTrace } from "./agentRunTrace/types";
 import {
@@ -89,6 +96,7 @@ import {
 import {
   lifecycleRunId,
   lifecycleSessionId,
+  forwardChatStreamEvent,
   normalizeSseAgentEvent,
   subscribeToChatStream,
   type NormalizedStreamEvent,
@@ -219,9 +227,7 @@ function mergeLoadedMessages(
     if (seen.has(key)) continue;
     const duplicateLoadedMessage = loaded.find((loadedMessage) => {
       if (loadedMessage.role !== message.role) return false;
-      if (
-        Boolean(loadedMessage.agentUpdate) !== Boolean(message.agentUpdate)
-      ) {
+      if (Boolean(loadedMessage.agentUpdate) !== Boolean(message.agentUpdate)) {
         return false;
       }
       if (loadedMessage.content !== message.content) return false;
@@ -653,7 +659,6 @@ export function useChatController(
   const responsePersistedRef = useRef(false);
   const streamAbortRef = useRef<AbortController | null>(null);
   const activeRunIdRef = useRef<string | undefined>(undefined);
-  const retryAttemptIdsRef = useRef<Map<string, string>>(new Map());
   const lastSequenceRef = useRef(0);
   const draftContentRef = useRef("");
   const draftRafRef = useRef<number | null>(null);
@@ -1486,9 +1491,9 @@ export function useChatController(
                           persistedId: msg.id,
                           replyToMessageId:
                             msg.reply_to_message_id ?? m.replyToMessageId,
-                        content: resolvedContent,
-                        agentUpdate: agentUpdate ?? m.agentUpdate,
-                        timestamp: msg.created_at,
+                          content: resolvedContent,
+                          agentUpdate: agentUpdate ?? m.agentUpdate,
+                          timestamp: msg.created_at,
                           runEnvelopeId:
                             persistedRunEnvelopeId ?? m.runEnvelopeId,
                         }
@@ -2658,7 +2663,7 @@ export function useChatController(
       if (cancelled) return;
       if (!snapshot) return;
       applyStreamSnapshot(snapshot);
-      if (snapshot.status === "completed" || snapshot.status === "done") return;
+      if (isTerminalStreamSnapshotStatus(snapshot.status)) return;
 
       // The worker may have completed while this view was unmounted. Confirm
       // history before opening a new core-NATS subscription, whose events are
@@ -2718,47 +2723,17 @@ export function useChatController(
 
       restoreController = new AbortController();
       streamAbortRef.current = restoreController;
-      const handleStreamEvent = (event: { event: string; data: unknown }) => {
-        if (
-          event.event === "message_persisted" ||
-          event.event === "delivery_receipt"
-        ) {
-          handleIncomingRef.current(event.data);
-          return;
-        }
-        const normalized = normalizeSseAgentEvent(event);
-        if (normalized) {
-          handleIncomingRef.current({
-            type: "agent_response",
-            payload: normalized,
-          });
-        }
-      };
-
       void subscribeToChatStream({
         request: snapshot.request,
         getAfterSequence: () =>
           lastSequenceRef.current || snapshot.lastSequence,
         signal: restoreController.signal,
-        onEvent: handleStreamEvent,
+        onEvent: (event) =>
+          forwardChatStreamEvent(event, handleIncomingRef.current),
         onConnectionState: (connection) => {
-          if (connection.state === "reconnecting") {
-            dispatchLiveTurn({
-              type: "connection_changed",
-              status: "reconnecting",
-            });
-            dispatchLiveTurn({
-              type: "notice_set",
-              notice: {
-                source: "transport",
-                tone: "warning",
-                message: "Live connection interrupted. The agent is still running; reconnecting…",
-              },
-            });
-            return;
+          for (const event of chatStreamConnectionEvents(connection)) {
+            dispatchLiveTurn(event);
           }
-          dispatchLiveTurn({ type: "connection_changed", status: "connected" });
-          dispatchLiveTurn({ type: "notice_cleared", source: "transport" });
         },
       }).catch((error) => {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
@@ -2875,13 +2850,16 @@ export function useChatController(
       const retryAttempt = options?.retryAttempt;
       const msgId = retryAttempt?.inputMessageId ?? generateId();
       const attemptId = retryAttempt?.attemptId ?? generateId();
-      const hasActiveTurn =
-        !!currentRequestIdRef.current ||
-        !!responseIdRef.current ||
-        activeToolsRef.current.length > 0 ||
-        !!livePreviewRef.current?.trim() ||
-        (!!activeRunTraceRef.current &&
-          !isTerminalChatRunTrace(activeRunTraceRef.current));
+      const hasActiveTurn = chatTurnHasActiveWork({
+        runStatus: activeRunStatusRef.current,
+        hasRequest: !!currentRequestIdRef.current,
+        hasResponse: !!responseIdRef.current,
+        hasActiveTools: activeToolsRef.current.length > 0,
+        hasLivePreview: !!livePreviewRef.current?.trim(),
+        hasActiveTrace:
+          !!activeRunTraceRef.current &&
+          !isTerminalChatRunTrace(activeRunTraceRef.current),
+      });
       if (retryAttempt && hasActiveTurn) {
         toast.warning("Wait for the active response before retrying this run.");
         return;
@@ -2910,8 +2888,7 @@ export function useChatController(
       }
       let optimisticResponseId: string | undefined;
       if (!queueIntoActiveTurn) {
-        const responseId =
-          retryAttempt?.responseMessageId ?? attemptId;
+        const responseId = retryAttempt?.responseMessageId ?? attemptId;
         optimisticResponseId = responseId;
         const optimisticTrace: RunTrace = {
           id: attemptId,
@@ -2960,13 +2937,13 @@ export function useChatController(
                 )
               : [...previous, userMsg],
             {
-            id: responseId,
-            content: "",
-            runStatus: "connecting",
-            replyToMessageId: msgId,
-            runTrace: optimisticTrace,
-            runEnvelopeId: attemptId,
-            timestamp: new Date().toISOString(),
+              id: responseId,
+              content: "",
+              runStatus: "connecting",
+              replyToMessageId: msgId,
+              runTrace: optimisticTrace,
+              runEnvelopeId: attemptId,
+              timestamp: new Date().toISOString(),
             },
           ),
         );
@@ -3075,13 +3052,19 @@ export function useChatController(
             })) ?? undefined;
           if (!encryptedMessage) {
             failOptimisticMessage();
-            toast.error("Failed to encrypt this message on the current device.");
+            toast.error(
+              "Failed to encrypt this message on the current device.",
+            );
             return;
           }
         }
 
         controller = new AbortController();
         if (!queueIntoActiveTurn) {
+          // A terminal frame can render before the old SSE promise settles.
+          // Attempt-scoped cleanup below prevents this abort from touching the
+          // replacement run.
+          streamAbortRef.current?.abort();
           streamAbortRef.current = controller;
         }
 
@@ -3137,56 +3120,19 @@ export function useChatController(
           notifyChatStreamSnapshot(snapshot);
         }
 
-        const handleStreamEvent = (event: { event: string; data: unknown }) => {
-          if (event.event === "message_persisted") {
-            handleIncomingRef.current(event.data);
-            return;
-          }
-          if (event.event === "delivery_receipt") {
-            handleIncomingRef.current(event.data);
-            return;
-          }
-          const normalized = normalizeSseAgentEvent(event);
-          if (!normalized) {
-            return;
-          }
-          handleIncomingRef.current({
-            type: "agent_response",
-            payload: normalized,
-          });
-        };
-
         streamPromise = subscribeToChatStream({
           request: streamBody,
           getAfterSequence: () => lastSequenceRef.current,
           signal: controller.signal,
-          onEvent: handleStreamEvent,
+          onEvent: (event) =>
+            forwardChatStreamEvent(event, handleIncomingRef.current),
           onConnectionState: (connection) => {
-            if (connection.state === "reconnecting") {
-              dispatchLiveTurn({
-                type: "connection_changed",
-                status: "reconnecting",
-              });
-              dispatchLiveTurn({
-                type: "notice_set",
-                notice: {
-                  source: "transport",
-                  tone: "warning",
-                  message:
-                    "Live connection interrupted. The agent is still running; reconnecting…",
-                },
-              });
-              persistCurrentStreamSnapshot();
-              return;
+            for (const event of chatStreamConnectionEvents(connection)) {
+              dispatchLiveTurn(event);
             }
-            dispatchLiveTurn({
-              type: "connection_changed",
-              status: "connected",
-            });
-            dispatchLiveTurn({
-              type: "notice_cleared",
-              source: "transport",
-            });
+            if (connection.state === "reconnecting") {
+              persistCurrentStreamSnapshot();
+            }
           },
         });
       } catch (error) {
@@ -3255,10 +3201,7 @@ export function useChatController(
           const failedResponseId = optimisticResponseId;
           const ownsLiveTurn =
             !queueIntoActiveTurn &&
-            scheduledDraftBelongsToResponse(
-              optimisticResponseId ?? null,
-              responseIdRef.current,
-            );
+            streamAttemptOwnsLiveTurn(attemptId, activeRunIdRef.current);
           if (!queueIntoActiveTurn && !ownsLiveTurn) return;
           cancelDraftRender();
           if (!queueIntoActiveTurn) {
@@ -3343,20 +3286,21 @@ export function useChatController(
           }
         })
         .finally(() => {
+          const ownsLiveTurn = streamAttemptOwnsLiveTurn(
+            attemptId,
+            activeRunIdRef.current,
+          );
           if (streamAbortRef.current === controller) {
             streamAbortRef.current = null;
           }
-          if (queueIntoActiveTurn) {
+          if (queueIntoActiveTurn || !ownsLiveTurn) {
             return;
           }
           if (clearTypingUiTimeoutRef.current) {
             clearTimeout(clearTypingUiTimeoutRef.current);
           }
           clearTypingUiTimeoutRef.current = setTimeout(() => {
-            if (
-              responseIdRef.current !== null &&
-              responseIdRef.current !== optimisticResponseId
-            ) {
+            if (!streamAttemptOwnsLiveTurn(attemptId, activeRunIdRef.current)) {
               clearTypingUiTimeoutRef.current = null;
               return;
             }
@@ -3406,9 +3350,7 @@ export function useChatController(
             message.persistedId === failed.replyToMessageId),
       );
       if (!input) return;
-      const attemptId =
-        retryAttemptIdsRef.current.get(failed.runEnvelopeId) ?? generateId();
-      retryAttemptIdsRef.current.set(failed.runEnvelopeId, attemptId);
+      const attemptId = retryAttemptIdForRun(failed.runEnvelopeId);
       await sendMessage(input.content, {
         ...(input.command
           ? { commandInvocation: { command: input.command } }

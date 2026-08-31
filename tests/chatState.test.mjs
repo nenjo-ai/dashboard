@@ -7,6 +7,7 @@ import {
   createChatTurnState,
 } from "../lib/chat/state.ts";
 import { activeChatPhaseForRunStatus } from "../lib/chat/types.ts";
+import { chatStreamConnectionEvents } from "../lib/chat/streamConnection.ts";
 
 function reduce(events) {
   return events.reduce(chatTurnReducer, createChatTurnState());
@@ -61,6 +62,27 @@ test("transport reconnecting keeps the run active and exposes a warning", () => 
   });
   assert.equal(reconnected.phase, "thinking");
   assert.equal(reconnected.notice, undefined);
+});
+
+test("stream connection projection sets and clears only the transport warning", () => {
+  const reconnecting = chatStreamConnectionEvents({
+    state: "reconnecting",
+    attempt: 2,
+    delayMs: 1000,
+  });
+  assert.deepEqual(
+    reconnecting.map((event) => event.type),
+    ["connection_changed", "notice_set"],
+  );
+  assert.equal(reconnecting[1].notice.source, "transport");
+
+  assert.deepEqual(
+    chatStreamConnectionEvents({ state: "connected", reconnected: true }),
+    [
+      { type: "connection_changed", status: "connected" },
+      { type: "notice_cleared", source: "transport" },
+    ],
+  );
 });
 
 test("generating switches from thinking to streaming once content exists", () => {
