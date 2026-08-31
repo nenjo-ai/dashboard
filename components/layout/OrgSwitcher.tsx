@@ -229,20 +229,18 @@ export function OrgSwitcher() {
         )}
       </div>
 
-      {organizations.length > 1 && (
-        <button
-          type="button"
-          onClick={() => setOpen("mobile")}
-          className="theme-border theme-surface inline-flex h-9 max-w-32 min-w-0 items-center gap-1.5 rounded-full border px-2.5 text-xs text-gray-700 shadow-xs transition-colors hover:[background:var(--app-hover)] dark:text-gray-200 md:hidden"
-          aria-haspopup="dialog"
-          aria-expanded={open === "mobile"}
-          aria-label="Switch organization"
-        >
-          <Building2 className="h-3.5 w-3.5 shrink-0 text-deep-space-blue-500" />
-          <span className="truncate font-medium">{orgLabel}</span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => setOpen("mobile")}
+        className="theme-border theme-surface inline-flex h-9 max-w-32 min-w-0 items-center gap-1.5 rounded-full border px-2.5 text-xs text-gray-700 shadow-xs transition-colors hover:[background:var(--app-hover)] dark:text-gray-200 md:hidden"
+        aria-haspopup="dialog"
+        aria-expanded={open === "mobile"}
+        aria-label="Switch organization"
+      >
+        <Building2 className="h-3.5 w-3.5 shrink-0 text-deep-space-blue-500" />
+        <span className="truncate font-medium">{orgLabel}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+      </button>
 
       {mobileSheet}
     </>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { MobileHeroBar } from "./MobileHeroBar";
 import { NenjoLogoMark } from "./NenjoLogoMark";
+import { OrgSwitcher } from "./OrgSwitcher";
 
 interface MobilePageShellProps {
   title: string;
@@ -29,7 +30,12 @@ export function MobilePageShell({
   className,
 }: MobilePageShellProps) {
   return (
-    <div className={cn("theme-app-bg min-h-full overflow-x-hidden md:hidden", className)}>
+    <div
+      className={cn(
+        "theme-app-bg min-h-full overflow-x-hidden md:hidden",
+        className,
+      )}
+    >
       <MobileHeroBar
         title={title}
         leading={
@@ -45,17 +51,22 @@ export function MobilePageShell({
             <NenjoLogoMark />
           )
         }
-        trailing={actionLabel && onAction ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={onAction}
-            className="h-10 shrink-0 rounded-full px-4 text-sm backdrop-blur-xl"
-          >
-            <Plus className="h-4 w-4" />
-            {actionLabel}
-          </Button>
-        ) : undefined}
+        trailing={
+          <div className="flex min-w-0 items-center gap-2">
+            <OrgSwitcher />
+            {actionLabel && onAction ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={onAction}
+                className="h-10 shrink-0 rounded-full px-4 text-sm backdrop-blur-xl"
+              >
+                <Plus className="h-4 w-4" />
+                {actionLabel}
+              </Button>
+            ) : null}
+          </div>
+        }
       />
       <motion.div
         initial={{ opacity: 0, y: 6 }}

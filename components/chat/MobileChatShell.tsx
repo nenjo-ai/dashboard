@@ -9,6 +9,7 @@ import {
 } from "@/components/layout/MobileHeroBar";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { NenjoLogoMark } from "@/components/layout/NenjoLogoMark";
+import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import GlobalSessionList from "./GlobalSessionList";
 import { ChatArea } from "./ChatArea";
 import { MobileTouchButton } from "./MobileTouchButton";
@@ -104,35 +105,38 @@ export function MobileChatShell({
             )
           }
           trailing={
-            <MobileTouchButton
-              onPress={onCreate}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/10 bg-transparent text-gray-700 transition-colors active:scale-[0.98] dark:border-white/10 dark:bg-transparent dark:text-gray-100"
-              title="New chat"
-            >
-              <svg
-                className="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={1.9}
-                stroke="currentColor"
+            <div className="flex min-w-0 items-center gap-2">
+              <OrgSwitcher />
+              <MobileTouchButton
+                onPress={onCreate}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/10 bg-transparent text-gray-700 transition-colors active:scale-[0.98] dark:border-white/10 dark:bg-transparent dark:text-gray-100"
+                title="New chat"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M16.5 3.75h-9A2.25 2.25 0 005.25 6v12A2.25 2.25 0 007.5 20.25h9A2.25 2.25 0 0018.75 18V8.25L16.5 3.75Z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M14.25 3.75V8.25H18.75"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 11.25v4.5M9.75 13.5h4.5"
-                />
-              </svg>
-            </MobileTouchButton>
+                <svg
+                  className="h-5 w-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1.9}
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M16.5 3.75h-9A2.25 2.25 0 005.25 6v12A2.25 2.25 0 007.5 20.25h9A2.25 2.25 0 0018.75 18V8.25L16.5 3.75Z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M14.25 3.75V8.25H18.75"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 11.25v4.5M9.75 13.5h4.5"
+                  />
+                </svg>
+              </MobileTouchButton>
+            </div>
           }
         />
       </div>
