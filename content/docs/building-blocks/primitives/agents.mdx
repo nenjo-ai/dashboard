@@ -1,6 +1,6 @@
 ---
 title: Agents
-description: How an agent is built — system (soul) prompt, developer prompt, memory profile, runtime templates, modes, and heartbeat schedules.
+description: How an agent combines static instructions, memory configuration, runtime context, and an assigned capability surface.
 slug: building-blocks/primitives/agents
 order: 8
 ---
@@ -13,28 +13,27 @@ An agent's behavior comes from a layered prompt configuration plus a memory prof
 
 - **`system_prompt`** — the agent's **soul**: stable identity, voice, and core principles. This is what abilities inherit and domains build on; it should not change between runs or modes.
 - **`developer_prompt`** — tactical behavior: routing, response discipline, and tool-use guidance. This is the layer [abilities](/docs/building-blocks/primitives/abilities) replace and [domains](/docs/building-blocks/primitives/domains) append to.
-- **Memory profile** — which [memory](/docs/building-blocks/primitives/memory) scopes the agent draws from (`core_focus`, `project_focus`, `shared_focus`).
-- **Runtime templates** — mode-specific wrappers that inject the right variables for each kind of execution.
+- **Memory profile** — which [memory](/docs/building-blocks/primitives/memory) scopes the agent draws from (`core_focus`, `project_focus`, `shared_focus`). It configures retrieval; it is not prompt content.
 
-Put stable identity in the system prompt, tactical behavior in the developer prompt, and reusable framing in [context blocks](/docs/building-blocks/primitives/context-blocks). Runtime templates should supply mode-specific *input*, not define a different public voice for each mode.
+Put stable identity in the system prompt, tactical behavior in the developer prompt, and reusable static guidance in [context blocks](/docs/building-blocks/primitives/context-blocks). The runtime supplies changing execution data separately.
 
-## Runtime modes and templates
+## Runtime modes and context
 
-The identity and memory profile stay stable across modes; the mode changes the template and the injected variables.
+The identity and memory profile stay stable across modes. The worker builds a typed turn-context message for the active mode and follows it with the raw input.
 
-| Mode | Description | Template |
-|------|-------------|----------|
-| `chat` | Conversational interaction with a user | `templates.chat` |
-| `task` | Routine agent-step execution with full context | `templates.task` |
-| `gate` | Evaluation of prior output against acceptance criteria | `templates.gate` |
-| `heartbeat` | Periodic autonomous check | `templates.heartbeat` |
-| `council` | Council member or leader work | `templates.task`, adapted by the runtime |
+| Mode | Runtime input |
+|------|---------------|
+| `chat` | Turn clock/context, then the raw user message |
+| `task` | Task/routine/Git context, then the task instructions |
+| `gate` | Task/routine/gate context, then the evaluation instructions |
+| `heartbeat` | Scheduled execution context, then the configured instructions |
+| `council` | Council task context, then the member or leader instructions |
 
-Prefer short runtime templates that include a reusable runtime context block (for example `{{ pkg.nenjo_ai.packages.context.runtime.task_execution }}`) instead of duplicating task, gate, and heartbeat framing across agents.
+Chat, task, and gate templates are not agent configuration. This keeps authored instructions byte-stable while the changing tail remains explicit and replayable.
 
 ## Heartbeat schedules
 
-An agent can carry an optional **heartbeat schedule** — a recurring autonomous run for checks and maintenance loops. Heartbeat runs use `templates.heartbeat` and the heartbeat [template variables](/docs/building-blocks/primitives/template-variables) (`{{ heartbeat.instructions }}`, `{{ heartbeat.previous_output }}`, `{{ heartbeat.last_run_at }}`, `{{ heartbeat.next_run_at }}`), so each run can follow its configured instructions and reason about what happened last time and when it runs next.
+An agent can carry an optional **heartbeat schedule** — a recurring autonomous run for checks and maintenance loops. The schedule provides execution input; the worker places changing schedule state in runtime context instead of rendering it into the static prompts.
 
 ## Assigned capability surface
 

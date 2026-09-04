@@ -9,7 +9,7 @@ Nenjo is built from a small set of resources that compose together. Each one has
 
 These resources fall into three families:
 
-- **[Primitives](/docs/building-blocks/primitives)** — the units you compose. Context material (template variables, context blocks, knowledge graphs, memory) and the behavioral units that use it (abilities, domains, agents).
+- **[Primitives](/docs/building-blocks/primitives)** — the units you compose. Prompt context, context blocks, knowledge graphs, memory, and the behavioral units that use them.
 - **[Workflows](/docs/building-blocks/workflows)** — how primitives orchestrate into repeatable processes (routines and councils).
 - **[Foundations](/docs/building-blocks/foundations)** — the containers and platform resources everything runs inside (projects, packages, models and tools, scopes).
 
@@ -17,7 +17,7 @@ These resources fall into three families:
 
 The primitives stack from raw material up to the unit that assembles them, and workflows orchestrate from there:
 
-1. **Context primitives** — template variables, context blocks, knowledge graphs, and memory supply what an agent should know.
+1. **Context primitives** — runtime prompt context, context blocks, knowledge graphs, and memory supply what an agent should know.
 2. **Behavioral primitives** — abilities and domains add focused capabilities and user-activated modes.
 3. **Agents** — assemble context and capabilities into a behavioral unit with a role.
 4. **Workflows** — routines and councils orchestrate multiple agents into repeatable, inspectable processes.
@@ -36,7 +36,7 @@ Nenjo Workspace
 │   └─ Scopes .............. least-privilege permissions
 │
 ├─ Primitives
-│   ├─ Template Variables .. live execution state injected at runtime
+│   ├─ Prompt Context ...... static references plus runtime session/turn data
 │   ├─ Context Blocks ...... reusable prompt-context assets
 │   ├─ Knowledge Graphs .... source documents linked by typed relationships
 │   ├─ Memory .............. scoped, learned context

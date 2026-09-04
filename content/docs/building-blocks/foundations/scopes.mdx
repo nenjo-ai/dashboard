@@ -23,10 +23,10 @@ Each scope adds a fixed group of platform MCP tools. **Write scopes imply read a
 | `councils:read` / `councils:write` | Read or mutate councils |
 | `context_blocks:read` / `context_blocks:write` | Read or mutate reusable prompt-context assets |
 | `models:read` / `models:write` | Read or mutate model records |
-| `library:write` | `create_knowledge_pack`, `update_knowledge_pack`, `create_knowledge_doc`, `update_knowledge_doc`, `delete_knowledge_doc` |
+| `knowledge:read` / `knowledge:write` | Search, traverse, and read Library knowledge / create and update knowledge packs and documents |
 | `notify:read` / `notify:write` | Read notification sessions / send org push notifications |
 
-Library has **no read scope** — knowledge reads happen through the composite knowledge tools (`search_knowledge`, `list_knowledge_neighbors`, `read_knowledge_doc`) when a pack is available, so `library:write` only governs authoring. See [Knowledge Graphs](/docs/building-blocks/primitives/knowledge-graphs).
+`knowledge:read` exposes the composite knowledge tools (`list_knowledge_packs`, `search_knowledge`, `list_knowledge_neighbors`, and `read_knowledge_doc`) when a pack is available. `knowledge:write` adds Library authoring and, like every write scope, also implies read access. See [Knowledge Graphs](/docs/building-blocks/primitives/knowledge-graphs).
 
 ## Where scopes are assigned
 

@@ -360,7 +360,7 @@ function CommandEditor({
         }
         value={content}
         onChange={setContent}
-        placeholder="Markdown instructions for this slash command. Use template variables, context blocks, and library references from the side panel."
+        placeholder="Markdown instructions for this slash command. Use context blocks and library references from the side panel."
         promptLabel="Command content"
         readOnly={isReadOnly}
         saving={isSaving}

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAppAuth } from "@/components/auth/AppAuth";
 import { Building2, Copy, Mail, ShieldCheck, Trash2, UserRoundCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { OrganizationTimezonePanel } from "@/components/settings/OrganizationTimezonePanel";
 import {
   approveOrgContentKeyRequest,
   bootstrapCurrentOrgContentKey,
@@ -862,7 +863,7 @@ function AccessRequestsPanel({
 export function OrgSettingsSection() {
   const { user } = useAppAuth();
   const { currentUser, mutate: mutateCurrentUser } = useCurrentUser();
-  const { mutate: mutateCurrentOrg } = useCurrentOrg();
+  const { currentOrg, mutate: mutateCurrentOrg } = useCurrentOrg();
   const { mutate: mutateOrganizations } = useOrganizations();
   const {
     activeOrgId,
@@ -920,6 +921,14 @@ export function OrgSettingsSection() {
         <OrganizationMetric icon={<UserRoundCheck className="h-4 w-4" />} label="Your role" value={currentRole ?? "Unknown"} detail="Membership authority" />
         <OrganizationMetric icon={<ShieldCheck className="h-4 w-4" />} label="Effective scopes" value={currentScopes.length} detail="Explicit access grants" />
       </section>
+
+      <OrganizationTimezonePanel
+        canEdit={hasScope("org:write")}
+        timezone={currentOrg?.timezone ?? activeOrganization?.timezone ?? "UTC"}
+        onSaved={async () => {
+          await Promise.all([mutateCurrentOrg(), mutateOrganizations()]);
+        }}
+      />
 
       <MyDeviceAccessPanel
         orgId={activeOrgId}

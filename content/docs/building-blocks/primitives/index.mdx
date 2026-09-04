@@ -1,13 +1,13 @@
 ---
 title: Primitives
-description: The composable units of Nenjo — context material (template variables, context blocks, knowledge graphs, memory) and the behavioral units that use it (abilities, domains, agents).
+description: The composable units of Nenjo — prompt context, context blocks, knowledge graphs, memory, and the behavioral units that use them.
 slug: building-blocks/primitives
 order: 1
 ---
 
 Primitives are the units you compose. They come in two families:
 
-- **Context primitives** shape *what an agent knows*: [template variables](/docs/building-blocks/primitives/template-variables), [context blocks](/docs/building-blocks/primitives/context-blocks), [knowledge graphs](/docs/building-blocks/primitives/knowledge-graphs), and [memory](/docs/building-blocks/primitives/memory).
+- **Context primitives** shape *what an agent knows*: [prompt context](/docs/building-blocks/primitives/template-variables), [context blocks](/docs/building-blocks/primitives/context-blocks), [knowledge graphs](/docs/building-blocks/primitives/knowledge-graphs), and [memory](/docs/building-blocks/primitives/memory).
 - **Behavioral primitives** define *what an agent does*: [abilities](/docs/building-blocks/primitives/abilities), [domains](/docs/building-blocks/primitives/domains), and the [agents](/docs/building-blocks/primitives/agents) that assemble everything into a role.
 
 The pages in this section run from the lowest-level context material up to agents, the composite that pulls it all together.
@@ -16,13 +16,13 @@ The pages in this section run from the lowest-level context material up to agent
 
 | Family | Primitives | Job |
 |--------|-----------|-----|
-| **Context** | Template variables, context blocks, knowledge graphs, memory | Supply what an agent should know — at design time and at runtime |
+| **Context** | Prompt context, context blocks, knowledge graphs, memory | Supply what an agent should know — at design time and at runtime |
 | **Behavioral** | Abilities, domains, agents | Define what an agent can do and how it behaves |
 
 ## How they stack
 
-1. **Template variables** inject live execution state into prompts.
-2. **Context blocks** package reusable prompt guidance referenced by name.
+1. **Prompt context** separates static prompt references from runtime-owned session and turn data.
+2. **Context blocks** package reusable static prompt guidance referenced by name.
 3. **Knowledge graphs** hold explicit source material an agent searches and cites.
 4. **Memory** carries learned, scoped context across runs.
 5. **Abilities** add agent-invoked specialist behaviors.

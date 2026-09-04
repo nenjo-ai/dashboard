@@ -15,32 +15,26 @@ Memory is **learned context** that persists across runs. Where knowledge graphs 
 | `project_focus` | Context specific to one project | Task history, decisions, feedback |
 | `shared_focus` | Knowledge shared across projects | Reusable patterns, team conventions |
 
-An agent's **memory profile** selects which scopes it draws from. The identity and memory profile stay stable across runtime modes — only the injected variables change.
+An agent's **memory profile** selects which scopes it draws from. The profile is mutable retrieval and memory-writing configuration, not model-visible prompt content.
 
-## Referencing memory in prompts
+## Memory in model context
 
-Memory is available through [template variables](/docs/building-blocks/primitives/template-variables):
+The worker retrieves in-scope memories when a session context epoch begins and
+stores the resulting snapshot in the session-context message. Replayed turns
+reuse those exact bytes. A changed profile affects a new session epoch instead
+of rewriting the prefix of an existing conversation.
 
-```jinja
-{{ memories.core }}
-{{ memories.project }}
-{{ memories.shared }}
-{{ memory_profile.project_focus }}
-```
+Memory and memory-profile selectors are therefore not available inside system
+prompts, developer prompts, or context blocks.
 
 ## Artifacts
 
 **Artifacts** are saved generated outputs or workspace deliverables — distinct from memory, knowledge graphs, and package source material. Where memory is *learned* context, an artifact is a *produced* output an agent keeps so later work can see it.
 
-Artifacts are indexed into prompts through their own [template variables](/docs/building-blocks/primitives/template-variables):
-
-```jinja
-{{ artifacts }}
-{{ artifacts.project }}
-{{ artifacts.workspace }}
-```
-
-Use them when a prompt needs to see saved outputs or deliverables from previous work — for example a substantial intermediate design that may be reused. Do not treat artifacts as source-of-truth knowledge, and do not treat them as learned memory.
+Artifacts arrive as typed chat/task inputs or are inspected with artifact tools.
+They are not template variables. Use them when later work needs a saved output
+or deliverable, but do not treat artifacts as source-of-truth knowledge or as
+learned memory.
 
 ## Best practice
 

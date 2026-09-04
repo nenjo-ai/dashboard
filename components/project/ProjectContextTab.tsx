@@ -527,7 +527,7 @@ function LibraryReferenceList({
 
 export function ProjectContextTab({ project, onUpdated }: ProjectContextTabProps) {
   const [value, setValue] = useState("");
-  const [referenceTab, setReferenceTab] = useState<"variables" | "library">("variables");
+  const [referenceTab, setReferenceTab] = useState<"blocks" | "library">("blocks");
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -667,14 +667,14 @@ export function ProjectContextTab({ project, onUpdated }: ProjectContextTabProps
         <div className="theme-border flex shrink-0 border-b">
           <button
             type="button"
-            onClick={() => setReferenceTab("variables")}
+            onClick={() => setReferenceTab("blocks")}
             className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-              referenceTab === "variables"
+              referenceTab === "blocks"
                 ? "theme-text border-b-2 border-[var(--app-border-strong)]"
                 : "theme-text-muted hover:[color:var(--app-text)]"
             }`}
           >
-            Variables
+            Context Blocks
           </button>
           <button
             type="button"
@@ -690,11 +690,9 @@ export function ProjectContextTab({ project, onUpdated }: ProjectContextTabProps
         </div>
         <CardContent className="min-h-0 flex-1 overflow-y-auto p-3">
           <div className="h-full pt-2">
-            {referenceTab === "variables" ? (
+            {referenceTab === "blocks" ? (
               <TemplateVariableReference
                 onInsertVariable={insertVariable}
-                flatVarsOnly
-                excludeGroups={["Knowledge"]}
                 defaultCollapsed
                 searchable
               />

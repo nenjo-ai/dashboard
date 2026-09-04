@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { updateAgentPrompt, resetAgentToDefault, applyAllSystemUpdates, updateDomainManifest, setAgentPromptLock, fetchAgentPrompt } from "@/lib/api";
 import { useAgentDomains, useContextBlocks } from "@/lib/hooks";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
-import { TemplateVariableReference, JinjaGuide } from "./TemplateVariableReference";
+import { JinjaGuide } from "./TemplateVariableReference";
 import { LibraryReferenceList } from "./LibraryReferenceList";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
 import {
@@ -124,7 +124,7 @@ function BlockTreeNode({ node, depth, onInsert }: { node: TreeNode; depth: numbe
 }
 
 function TabbedVariablePanel({ onInsertVariable }: { onInsertVariable: (text: string) => void }) {
-  const [tab, setTab] = useState<"variables" | "blocks" | "library">("variables");
+  const [tab, setTab] = useState<"blocks" | "library">("blocks");
   const panel = useResizablePanel(320, 240, 560);
   const { contextBlocks } = useContextBlocks();
 
@@ -136,17 +136,6 @@ function TabbedVariablePanel({ onInsertVariable }: { onInsertVariable: (text: st
       <div style={{ width: panel.width }} className="theme-surface-muted flex shrink-0 flex-col overflow-hidden">
         {/* Tab bar */}
         <div className="theme-border flex shrink-0 border-b">
-          <button
-            type="button"
-            onClick={() => setTab("variables")}
-            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-              tab === "variables"
-                ? "border-b-2 border-deep-space-blue-500 text-deep-space-blue-600 dark:text-deep-space-blue-400"
-                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-            }`}
-          >
-            Vars
-          </button>
           <button
             type="button"
             onClick={() => setTab("blocks")}
@@ -173,14 +162,7 @@ function TabbedVariablePanel({ onInsertVariable }: { onInsertVariable: (text: st
 
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto p-2">
-          {tab === "variables" ? (
-            <div className="p-2">
-              <TemplateVariableReference
-                onInsertVariable={onInsertVariable}
-                flatVarsOnly
-              />
-            </div>
-          ) : tab === "blocks" ? (
+          {tab === "blocks" ? (
             <>
               <p className="mb-2 px-1 text-[10px] text-gray-500 dark:text-gray-400">
                 Click a block to insert at cursor.
@@ -242,9 +224,6 @@ const SECTIONS: Section[] = [
   { id: "system_prompt", label: "Soul", group: "Core", hint: "system prompt" },
   { id: "developer_prompt", label: "Guidance", group: "Core", hint: "developer prompt" },
   { id: "memory_profile", label: "Memory Profile", group: "Memory" },
-  { id: "chat", label: "Chat", group: "Task Templates" },
-  { id: "task", label: "Task", group: "Task Templates" },
-  { id: "gate", label: "Gate", group: "Task Templates" },
 ];
 
 const BASE_GROUPS = Array.from(new Set(SECTIONS.map((s) => s.group)));
@@ -266,8 +245,6 @@ function getMemoryProfile(cfg: PromptConfig): MemoryProfile {
 function getSectionValue(id: string, cfg: PromptConfig): string {
   if (id === "system_prompt") return cfg.system_prompt;
   if (id === "developer_prompt") return cfg.developer_prompt ?? "";
-  if (["task", "chat", "gate"].includes(id))
-    return cfg.templates?.[id] ?? "";
   return "";
 }
 
@@ -278,8 +255,6 @@ function setSectionValue(
 ): PromptConfig {
   if (id === "system_prompt") return { ...cfg, system_prompt: value };
   if (id === "developer_prompt") return { ...cfg, developer_prompt: value };
-  if (["chat", "task", "gate"].includes(id))
-    return { ...cfg, templates: { ...cfg.templates, [id]: value } };
   return cfg;
 }
 
@@ -287,11 +262,6 @@ function managedAgentPromptSections(
   role: AgentDefinition,
   promptConfig: PromptConfig,
 ): SourceManagedDetailSection[] {
-  const templates = Object.entries(promptConfig.templates ?? {})
-    .filter(([, value]) => value?.trim())
-    .map(([name, value]) => `## ${name}\n${value}`)
-    .join("\n\n");
-
   return [
     {
       title: "Agent",
@@ -316,13 +286,6 @@ function managedAgentPromptSections(
       code: {
         label: "Guidance",
         value: promptConfig.developer_prompt || "No developer prompt configured.",
-        language: "yaml",
-      },
-    },
-    {
-      title: "Task Templates",
-      code: {
-        value: templates || "No task templates configured.",
         language: "yaml",
       },
     },
@@ -506,7 +469,7 @@ export function AgentPromptEditor({
     const lines: string[] = [];
     const divider = "=".repeat(80);
 
-    lines.push(`Prompt Templates — ${role.name}`);
+    lines.push(`Static Prompts — ${role.name}`);
     lines.push(`Exported: ${new Date().toISOString()}`);
     lines.push(divider);
     lines.push("");
@@ -525,20 +488,6 @@ export function AgentPromptEditor({
 
     lines.push(divider);
     lines.push("");
-
-    const templateEntries = Object.entries(promptConfig.templates || {});
-    for (const [key, template] of templateEntries) {
-      const label = key.replace(/_/g, " ").toUpperCase();
-      lines.push(`TEMPLATE: ${label}`);
-      lines.push("-".repeat(40));
-      lines.push(template || "(empty)");
-      lines.push("");
-    }
-
-    if (templateEntries.length > 0) {
-      lines.push(divider);
-      lines.push("");
-    }
 
     const blob = new Blob([lines.join("\n")], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
@@ -836,9 +785,6 @@ export function AgentPromptEditor({
                   <div key={group}>
                     <h4 className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
                       {group}
-                      {group === "Task Templates" && (
-                        <span className="theme-surface-muted-strong theme-text-muted ml-1 inline-block rounded px-1 py-px text-[8px] font-medium normal-case tracking-normal">user msg</span>
-                      )}
                     </h4>
                     <div className="space-y-0.5">
                       {allSections.filter((s) => s.group === group).map((s) => {
@@ -1227,7 +1173,7 @@ function EditableAgentPromptEditorContent({
   const handleDownload = useCallback(() => {
     const lines: string[] = [];
     const divider = "=".repeat(80);
-    lines.push(`Prompt Templates — ${role.name}`);
+    lines.push(`Static Prompts — ${role.name}`);
     lines.push(`Exported: ${new Date().toISOString()}`);
     lines.push(divider);
     lines.push("");
@@ -1243,18 +1189,6 @@ function EditableAgentPromptEditorContent({
     }
     lines.push(divider);
     lines.push("");
-    const templateEntries = Object.entries(promptConfig.templates || {});
-    for (const [key, template] of templateEntries) {
-      const label = key.replace(/_/g, " ").toUpperCase();
-      lines.push(`TEMPLATE: ${label}`);
-      lines.push("-".repeat(40));
-      lines.push(template || "(empty)");
-      lines.push("");
-    }
-    if (templateEntries.length > 0) {
-      lines.push(divider);
-      lines.push("");
-    }
     const blob = new Blob([lines.join("\n")], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1366,9 +1300,6 @@ function EditableAgentPromptEditorContent({
               <div key={group}>
                 <h4 className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
                   {group}
-                  {group === "Task Templates" && (
-                    <span className="theme-surface-muted-strong theme-text-muted ml-1 inline-block rounded px-1 py-px text-[8px] font-medium normal-case tracking-normal">user msg</span>
-                  )}
                 </h4>
                 <div className="space-y-0.5">
                   {allSections.filter((s) => s.group === group).map((s) => {

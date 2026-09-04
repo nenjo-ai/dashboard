@@ -130,7 +130,7 @@ export function AgentDetailClient({ agentRef }: { agentRef: string }) {
     return () => { cancelled = true; };
   }, [agentRef]);
 
-  const effectivePromptConfig = promptConfig ?? { system_prompt: "", developer_prompt: "", templates: {} };
+  const effectivePromptConfig = promptConfig ?? { system_prompt: "", developer_prompt: "" };
   const handleAgentUpdated = useCallback((updatedAgent?: AgentDefinition) => {
     if (updatedAgent?.slug && updatedAgent.slug !== agentRef) {
       router.replace(`${agentDashboardHref(updatedAgent)}${window.location.search}`);

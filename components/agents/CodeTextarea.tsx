@@ -461,7 +461,7 @@ export const CodeTextarea = forwardRef(function CodeTextarea(
   const { resolved } = useTheme();
   const isDark = resolved === "dark";
 
-  // Imperative handle for inserting template variables at cursor
+  // Imperative handle for inserting static references at the cursor.
   useImperativeHandle(
     ref,
     () => ({

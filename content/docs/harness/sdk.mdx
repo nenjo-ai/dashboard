@@ -73,8 +73,8 @@ An `AgentBuilder` can add execution context before `build()`:
 | Builder method | What it changes |
 |----------------|-----------------|
 | `with_project_context` | Injects project variables and project-scoped memory |
-| `with_routine_context` | Adds routine-level template variables |
-| `with_step_context` | Adds current step template variables during routine execution |
+| `with_routine_context` | Adds routine data to runtime-owned turn context |
+| `with_step_context` | Adds current step data to runtime-owned turn context |
 | `with_work_dir` | Scopes file, shell, and git tools to a project worktree |
 | `with_tool` | Adds an extra tool for this runner |
 | `with_memory_scope` | Restores a previously resolved memory namespace |
@@ -138,6 +138,6 @@ Use `run_stream()` for routine events and final output handling. Routine steps u
 | `manifest` | Typed platform resource definitions and manifest loading |
 | `provider` | Provider builder, model factory, tool factory, agent lookup, and routine lookup |
 | `memory` | Memory traits, markdown memory, memory scopes, and memory tools |
-| `context` | Prompt rendering and project/routine/step template variables |
+| `context` | Static prompt compilation plus project/routine/step runtime context |
 | `routines` | Routine execution, gates, councils, step results, and routine events |
 | `knowledge` | Knowledge pack registration and source-material tools |

@@ -398,7 +398,7 @@ export function StepConfigPanel({
                 />
                 {metadataError && <p className="mt-1 text-[10px] text-red-500">{metadataError}</p>}
                 <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-                  Arbitrary JSON passed to the agent via {"{{ step.metadata }}"} template variable.
+                  Arbitrary JSON supplied in the routine portion of runtime turn context.
                 </p>
               </div>
             </>

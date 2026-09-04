@@ -257,7 +257,7 @@ export function AbilityPromptEditor({
                 }}
               />
               <p className="px-1 pt-1.5 text-xs text-gray-400 dark:text-gray-500">
-                Guidance is appended to the caller&apos;s prompt during the ability sub-loop. The agent inherits the caller&apos;s identity, memory, and model. Use template variables to inject dynamic context.
+                Guidance is appended to the caller&apos;s static prompt during the ability sub-loop. The worker supplies memory and turn context separately.
               </p>
             </div>
           </div>

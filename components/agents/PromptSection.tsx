@@ -74,7 +74,7 @@ export function PromptSection({
             </span>
             {monospace && (
               <span className="text-xs text-gray-400 dark:text-gray-500">
-                Supports template variables
+                Supports static context blocks and package arguments
               </span>
             )}
           </div>

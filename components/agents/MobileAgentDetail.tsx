@@ -172,14 +172,6 @@ export function MobileAgentDetail({
             description="Developer-level guidance layered onto execution."
             value={promptConfig.developer_prompt}
           />
-          {Object.entries(promptConfig.templates ?? {}).map(([key, value]) => (
-            <ReadOnlyPromptCard
-              key={key}
-              title={key.replaceAll("_", " ")}
-              description="Task-specific template"
-              value={value}
-            />
-          ))}
         </div>
       )}
 

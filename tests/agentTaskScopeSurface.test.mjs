@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("agent scope controls keep task and artifact access separate", async () => {
+test("agent scope controls expose canonical task, artifact, and knowledge scopes", async () => {
   const panel = await readFile(
     new URL("../components/agents/AgentPlatformScopesPanel.tsx", import.meta.url),
     "utf8",
@@ -13,6 +13,11 @@ test("agent scope controls keep task and artifact access separate", async () => 
     panel,
     /label: "Artifacts", scopes: \["artifacts:read", "artifacts:write"\]/,
   );
+  assert.match(
+    panel,
+    /label: "Knowledge", scopes: \["knowledge:read", "knowledge:write"\]/,
+  );
+  assert.doesNotMatch(panel, /library:(?:read|write)/);
 });
 
 test("agent scope saves keep the authoritative response and expose failures", async () => {

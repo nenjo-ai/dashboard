@@ -9,7 +9,7 @@ Agents act through models and tools. Each is configured once as a platform resou
 
 ## Models
 
-Models are LLM configuration records referenced by agents to determine which model runs a given role. They are managed under the `models:read` / `models:write` [scopes](/docs/building-blocks/foundations/scopes) and referenced in prompts via `{{ agent.model }}`.
+Models are LLM configuration records referenced by agents to determine which model runs a given role. They are managed under the `models:read` / `models:write` [scopes](/docs/building-blocks/foundations/scopes). Model assignments are operational configuration and are not exposed as prompt template variables.
 
 Assign a model per agent based on the role's needs — capability for hard reasoning work, speed and cost for high-volume routine steps.
 

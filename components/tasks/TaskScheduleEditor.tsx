@@ -16,7 +16,7 @@ import {
   putTaskSchedule,
   setTaskScheduleEnabled,
 } from "@/lib/api";
-import { useTaskSchedule } from "@/lib/hooks";
+import { useCurrentOrg, useTaskSchedule } from "@/lib/hooks";
 import { scheduledTaskControl } from "@/lib/taskLifecycle";
 import {
   describeTaskRecurrence,
@@ -82,9 +82,10 @@ function TaskScheduleEditor({
     onStateChange,
   }, ref) {
   const { schedule, isLoading, mutate } = useTaskSchedule(taskId);
+  const { currentOrg } = useCurrentOrg();
+  const organizationTimezone = currentOrg?.timezone ?? "UTC";
   const [startDate, setStartDate] = useState("");
   const [startTime, setStartTime] = useState("");
-  const [timezone, setTimezone] = useState("UTC");
   const [frequency, setFrequency] = useState<Frequency>("weekly");
   const [interval, setInterval] = useState(1);
   const [intervalUnit, setIntervalUnit] = useState<TaskScheduleIntervalUnit>("hours");
@@ -103,10 +104,7 @@ function TaskScheduleEditor({
   const [hydratedScheduleKey, setHydratedScheduleKey] = useState<string | null>(null);
   const previewRevision = useRef(0);
 
-  const timezones = useMemo(() => {
-    const intl = Intl as typeof Intl & { supportedValuesOf?: (key: "timeZone") => string[] };
-    return intl.supportedValuesOf?.("timeZone") ?? ["UTC"];
-  }, []);
+  const timezone = schedule?.definition.timezone ?? organizationTimezone;
 
   useEffect(() => {
     if (isLoading) return;
@@ -115,7 +113,6 @@ function TaskScheduleEditor({
       const local = scheduleDateTimeParts(definition.starts_at, definition.timezone);
       setStartDate(local.date);
       setStartTime(local.time);
-      setTimezone(definition.timezone);
       hydrateRecurrence(definition.recurrence, {
         setFrequency, setInterval, setIntervalUnit, setWeekdays, setDayOfMonth,
         setMonth, setAnnualDay, setCronExpression,
@@ -126,19 +123,17 @@ function TaskScheduleEditor({
       setHydratedScheduleKey(`${schedule.id}:${schedule.updated_at}`);
       return;
     }
-    const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     const nextHour = new Date(Date.now() + 60 * 60 * 1000);
     nextHour.setMinutes(0, 0, 0);
-    const local = scheduleDateTimeParts(nextHour, browserTimezone);
+    const local = scheduleDateTimeParts(nextHour, organizationTimezone);
     setStartDate(local.date);
     setStartTime(local.time);
-    setTimezone(browserTimezone);
     setWeekdays([weekdayForDate(local.date)]);
     setDayOfMonth(Number(local.date.slice(8, 10)));
     setMonth(Number(local.date.slice(5, 7)));
     setAnnualDay(Number(local.date.slice(8, 10)));
     setHydratedScheduleKey("new");
-  }, [isLoading, schedule]);
+  }, [isLoading, organizationTimezone, schedule]);
 
   const recurrence = useMemo<TaskScheduleRecurrence>(() => {
     switch (frequency) {
@@ -158,18 +153,17 @@ function TaskScheduleEditor({
   }, [endDate, endOccurrences, endType]);
 
   const definition = useMemo<TaskScheduleDefinitionInput | null>(() => {
-    if (!startDate || !startTime || !timezone.trim()) return null;
+    if (!startDate || !startTime) return null;
     if (interval < 1 || (frequency === "weekly" && weekdays.length === 0)) return null;
     if (frequency === "cron" && !cronExpression.trim()) return null;
     if (endType === "on" && !endDate) return null;
     if (endType === "after" && endOccurrences < 1) return null;
     return {
       starts_at: `${startDate}T${startTime}:00`,
-      timezone: timezone.trim(),
       recurrence,
       end,
     };
-  }, [cronExpression, end, endDate, endOccurrences, endType, frequency, interval, recurrence, startDate, startTime, timezone, weekdays.length]);
+  }, [cronExpression, end, endDate, endOccurrences, endType, frequency, interval, recurrence, startDate, startTime, weekdays.length]);
 
   useEffect(() => {
     if (mode !== "scheduled" || !definition) {
@@ -202,7 +196,6 @@ function TaskScheduleEditor({
     const local = scheduleDateTimeParts(schedule.definition.starts_at, schedule.definition.timezone);
     return {
       starts_at: `${local.date}T${local.time}:00`,
-      timezone: schedule.definition.timezone,
       recurrence: schedule.definition.recurrence,
       end: schedule.definition.end,
     };
@@ -297,7 +290,7 @@ function TaskScheduleEditor({
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="theme-text text-sm">Starts on<input className={fieldClass} onChange={(event) => setStartDate(event.target.value)} type="date" value={startDate} /></label>
             <label className="theme-text text-sm">Time<input className={fieldClass} onChange={(event) => setStartTime(event.target.value)} type="time" value={startTime} /></label>
-            <label className="theme-text text-sm">Timezone<input className={fieldClass} list={`task-timezones-${taskId}`} onChange={(event) => setTimezone(event.target.value)} value={timezone} /><datalist id={`task-timezones-${taskId}`}>{timezones.map((value) => <option key={value} value={value} />)}</datalist></label>
+            <label className="theme-text text-sm">Timezone<input className={`${fieldClass} theme-surface-muted font-mono`} readOnly value={timezone} /></label>
           </div>
 
           <div className={`grid gap-3 ${frequency === "interval" ? "sm:grid-cols-[minmax(0,1fr)_7rem_9rem]" : "sm:grid-cols-[minmax(0,1fr)_7rem]"}`}>
@@ -313,7 +306,7 @@ function TaskScheduleEditor({
           {frequency === "weekly" ? <div><p className="theme-text text-sm">On</p><div className="mt-2 flex flex-wrap gap-2">{WEEKDAYS.map((weekday) => <button aria-pressed={weekdays.includes(weekday.value)} className={`rounded-full border px-3 py-1 text-xs ${weekdays.includes(weekday.value) ? "border-deep-space-blue-500 bg-deep-space-blue-500 text-white" : "theme-border theme-text"}`} key={weekday.value} onClick={() => toggleWeekday(weekday.value)} type="button">{weekday.label}</button>)}</div></div> : null}
           {frequency === "monthly" ? <label className="theme-text block max-w-48 text-sm">Day of month<input className={fieldClass} max={31} min={1} onChange={(event) => setDayOfMonth(Number(event.target.value))} type="number" value={dayOfMonth} /></label> : null}
           {frequency === "yearly" ? <div className="grid max-w-md grid-cols-2 gap-3"><label className="theme-text text-sm">Month<select className={fieldClass} onChange={(event) => setMonth(Number(event.target.value))} value={month}>{MONTHS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}</select></label><label className="theme-text text-sm">Day<input className={fieldClass} max={31} min={1} onChange={(event) => setAnnualDay(Number(event.target.value))} type="number" value={annualDay} /></label></div> : null}
-          {frequency === "cron" ? <div className="theme-border theme-surface-muted rounded-lg border p-3"><label className="theme-text text-sm">Cron expression<input className={`${fieldClass} font-mono`} onChange={(event) => setCronExpression(event.target.value)} placeholder="0 0 9 * * MON-FRI" value={cronExpression} /></label><p className="theme-text-muted mt-2 text-xs">Advanced mode uses the selected timezone and six-field cron syntax.</p></div> : null}
+          {frequency === "cron" ? <div className="theme-border theme-surface-muted rounded-lg border p-3"><label className="theme-text text-sm">Cron expression<input className={`${fieldClass} font-mono`} onChange={(event) => setCronExpression(event.target.value)} placeholder="0 0 9 * * MON-FRI" value={cronExpression} /></label><p className="theme-text-muted mt-2 text-xs">Advanced mode uses the organization timezone and six-field cron syntax.</p></div> : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="theme-text text-sm">Ends<select className={fieldClass} onChange={(event) => setEndType(event.target.value as EndType)} value={endType}><option value="never">Never</option><option value="on">On a date</option><option value="after">After a number of runs</option></select></label>

@@ -21,4 +21,4 @@ A project holds **work state**, not source material. Durable reference content l
 
 ## Code-backed projects
 
-For code-backed projects, a repository connection can give executions an isolated workspace where agents inspect, change, test, and report on real files. Repository state is available to prompts through the Git [template variables](/docs/building-blocks/primitives/template-variables) (`{{ git.current_branch }}`, `{{ git.work_dir }}`, and so on).
+For code-backed projects, a repository connection can give executions an isolated workspace where agents inspect, change, test, and report on real files. The worker places project information in the session snapshot and current Git/worktree state in each applicable turn snapshot.

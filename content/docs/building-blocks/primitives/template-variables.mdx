@@ -1,271 +1,30 @@
 ---
-title: Template Variables
-description: The full set of runtime variables available inside prompts and context block templates, grouped by domain.
+title: Prompt Context
+description: Static prompt references and the runtime-owned session and turn context supplied to agents.
 slug: building-blocks/primitives/template-variables
 order: 2
 ---
 
-Template variables connect **static prompt design** with **live execution state**. They are resolved at runtime so a prompt can reference the current agent, message, task, project, routine, repository, memory, and knowledge indexes instead of hardcoding them.
+Nenjo separates authored instructions from changing execution data. System and
+developer prompts compile into a stable instruction prefix. The worker adds
+session and turn context as dedicated model-visible messages, so a clock, task,
+or memory update does not invalidate the earlier prompt-cache prefix.
 
-Two rules keep templates clean:
+## Static prompt references
 
-- **Use only the variables listed here.** Unlisted variables will not resolve.
-- **Reference selectors, don't paste bodies.** For knowledge and context blocks, include the selector so the runtime resolves it — never paste a resolved document or block into prompt text.
+System prompts, developer prompts, and context blocks may use only values that
+belong to the instruction epoch.
 
-**How values render.** A *grouped* variable like `{{ self }}`, `{{ task }}`, or `{{ project }}` expands to a compact XML block the model can parse. Its *scalar* fields like `{{ task.title }}` expand to a plain string. Knowledge variables expand to an XML pack **index**. The `### Example` blocks below show what the runtime substitutes in.
+### Package arguments
 
-## Agent
+Package-authored prompts may reference declared arguments through `args.*`, for
+example `{{ args.company }}` or `{{ args.profile.name }}`. The host resolves
+them before execution. Changing an argument deliberately creates a new static
+instruction epoch.
 
-| Variable | Description |
-|----------|-------------|
-| `{{ self }}` | Compact XML-like description of the executing agent |
-| `{{ agent.slug }}` | Agent slug |
-| `{{ agent.name }}` | Agent name |
-| `{{ agent.model }}` | Assigned model |
-| `{{ agent.description }}` | Agent description |
+### Context blocks
 
-Use `{{ self }}` when the prompt needs the agent's full identity; use scalar fields for concise references.
-
-### Example
-
-`{{ self }}` resolves to a compact element describing the executing agent:
-
-```xml
-<agent slug="research-assistant" name="Research Assistant" llm_model_name="claude-opus-4-8" description="Synthesizes source-backed research briefs"/>
-```
-
-## Chat
-
-| Variable | Description |
-|----------|-------------|
-| `{{ chat.message }}` | The user message, for chat templates |
-
-## Task
-
-| Variable | Description |
-|----------|-------------|
-| `{{ task }}` | Compact full task context |
-| `{{ task.id }}` | Task ID |
-| `{{ task.title }}` | Title |
-| `{{ task.description }}` | Description |
-| `{{ task.acceptance_criteria }}` | Acceptance criteria |
-| `{{ task.tags }}` | Tags |
-| `{{ task.source }}` | Source |
-| `{{ task.status }}` | Status |
-| `{{ task.priority }}` | Priority |
-| `{{ task.type }}` | Type |
-| `{{ task.slug }}` | Slug |
-| `{{ task.complexity }}` | Complexity |
-
-Task variables belong in routine task execution templates, routine step prompts, and gate evaluation prompts.
-
-### Example
-
-`{{ task }}` resolves to an XML block — identity as attributes, content as child elements:
-
-```xml
-<task id="t_8f21" slug="draft-q3-brief" status="in_progress" priority="high" type="research">
-  <title>Draft the Q3 market brief</title>
-  <description>Summarize Q3 competitive movement for the leadership review.</description>
-  <acceptance_criteria>Cites at least three sources; under 800 words.</acceptance_criteria>
-  <tags>research, leadership</tags>
-  <source>routine</source>
-  <complexity>medium</complexity>
-</task>
-```
-
-A scalar field renders as a bare string instead — `{{ task.title }}` → `Draft the Q3 market brief`.
-
-## Project
-
-| Variable | Description |
-|----------|-------------|
-| `{{ project }}` | Compact project context |
-| `{{ project.name }}` | Name |
-| `{{ project.slug }}` | Slug |
-| `{{ project.description }}` | Description |
-| `{{ project.context }}` | Project context |
-| `{{ project.metadata }}` | Metadata |
-| `{{ project.working_dir }}` | Working directory |
-
-### Example
-
-`{{ project }}` resolves to a `<project>` block. A `<git>` child appears when the project has a connected repository; `{{ project.metadata }}` is rendered separately, not inside this block.
-
-```xml
-<project name="Acme Web App" slug="acme-web-app">
-  <description>Customer-facing storefront and checkout.</description>
-  <working_dir>/workspace/acme-web-app</working_dir>
-  <context>Next.js app; payments via Stripe; team prefers small PRs.</context>
-  <git repo_url="https://github.com/acme/web-app" current_branch="main"/>
-</project>
-```
-
-## Knowledge
-
-| Variable | Description |
-|----------|-------------|
-| `{{ lib.<pack_slug> }}` | Library knowledge pack index |
-| `{{ pkg.nenjo_ai.packages.knowledge.core }}` | Installed package knowledge index |
-
-Knowledge variables render a compact pack **index** — a discovery hint, not full source material. After seeing the index, an agent retrieves content with the knowledge tools (`search_knowledge`, `list_knowledge_neighbors`, `read_knowledge_doc`). See [Knowledge Graphs](/docs/building-blocks/primitives/knowledge-graphs).
-
-### Example
-
-`{{ lib.market-research }}` resolves to a `<knowledge_pack>` index: pack metadata, a usage hint, and one `<doc>` per document with its title, summary, and outbound `<related>` edges — but no document bodies.
-
-```xml
-<knowledge_pack selector="market-research" namespace="lib" name="market-research" root="lib://market-research">
-  <usage>Use the knowledge tools to search, inspect metadata, expand graph neighbors, and read documents from this pack when relevant.</usage>
-  <doc selector="competitors.acme" id="doc_01" kind="entity">
-    <title>Acme Corp</title>
-    <summary>Profile of Acme Corp: positioning, pricing, and recent launches.</summary>
-    <related type="related_to" target="competitors.globex"/>
-  </doc>
-  <doc selector="reference.glossary" id="doc_02" kind="reference">
-    <title>Glossary</title>
-    <summary>Definitions of market-research terms.</summary>
-  </doc>
-</knowledge_pack>
-```
-
-The agent reads this index to pick selectors, then follows outbound edges and reads full documents with the knowledge tools.
-
-## Routine
-
-| Variable | Description |
-|----------|-------------|
-| `{{ routine }}` | Routine context |
-| `{{ routine.slug }}` | Slug |
-| `{{ routine.name }}` | Name |
-| `{{ routine.execution_id }}` | Current execution run |
-| `{{ routine.step.name }}` | Current step name |
-| `{{ routine.step.type }}` | Current step type |
-| `{{ routine.step.instructions }}` | Step instructions |
-| `{{ routine.step.metadata }}` | Step metadata |
-
-### Example
-
-`{{ routine }}` resolves to a `<routine>` block with the current `<step>` nested inside:
-
-```xml
-<routine slug="weekly-review" name="Weekly Review" execution_id="ex_4c19" description="Summarize the week and flag risks.">
-  <step name="Draft summary" type="agent">
-    <instructions>Summarize merged PRs and open risks for the week.</instructions>
-    <metadata>{"max_words":300}</metadata>
-  </step>
-</routine>
-```
-
-## Gate
-
-| Variable | Description |
-|----------|-------------|
-| `{{ gate.previous_output }}` | Output being evaluated |
-
-Gate prompts combine the previous output with task acceptance criteria or step instructions.
-
-### Example
-
-`{{ gate.previous_output }}` is a scalar — the prior step's output inserted as plain text, not XML:
-
-```text
-Draft complete: 3 sources cited, 740 words. Ready for review.
-```
-
-## Heartbeat
-
-| Variable | Description |
-|----------|-------------|
-| `{{ heartbeat.instructions }}` | User-configured instructions for this heartbeat run, if any |
-| `{{ heartbeat.previous_output }}` | Output from the last run |
-| `{{ heartbeat.last_run_at }}` | Last run timestamp |
-| `{{ heartbeat.next_run_at }}` | Next scheduled run |
-
-Use heartbeat variables for recurring checks and maintenance loops. See [Agents](/docs/building-blocks/primitives/agents) for heartbeat schedules.
-
-### Example
-
-Heartbeat variables are scalars, each rendered as plain text:
-
-```text
-{{ heartbeat.instructions }}    → Check for new error reports and summarize them.
-{{ heartbeat.previous_output }} → No new errors since the last run.
-{{ heartbeat.last_run_at }}     → 2026-06-14T08:00:00Z
-{{ heartbeat.next_run_at }}     → 2026-06-14T09:00:00Z
-```
-
-## Git
-
-| Variable | Description |
-|----------|-------------|
-| `{{ git }}` | Repository context |
-| `{{ git.current_branch }}` | Current branch |
-| `{{ git.target_branch }}` | Target branch |
-| `{{ git.work_dir }}` | Local workspace path |
-| `{{ git.repo_url }}` | Repository URL |
-
-### Example
-
-`{{ git }}` resolves to a `<git>` block — `repo_url` and `current_branch` as attributes, the rest as child elements:
-
-```xml
-<git repo_url="https://github.com/acme/web-app" current_branch="feature/checkout">
-  <target_branch>main</target_branch>
-  <work_dir>/workspace/acme-web-app</work_dir>
-</git>
-```
-
-## Memory and Artifacts
-
-| Variable | Description |
-|----------|-------------|
-| `{{ memories }}` | All in-scope memories |
-| `{{ memories.core }}` | Core memory |
-| `{{ memories.project }}` | Project memory |
-| `{{ memories.shared }}` | Shared memory |
-| `{{ memory_profile }}` | Full memory profile |
-| `{{ memory_profile.core_focus }}` | Core focus |
-| `{{ memory_profile.project_focus }}` | Project focus |
-| `{{ memory_profile.shared_focus }}` | Shared focus |
-| `{{ artifacts }}` | All artifacts |
-| `{{ artifacts.project }}` | Project artifacts |
-| `{{ artifacts.workspace }}` | Workspace artifacts |
-
-Memory is learned context and artifacts are saved outputs — both are distinct from knowledge graphs, which remain explicit source material retrieved through knowledge tools.
-
-### Example
-
-`{{ memories }}` resolves to a `<memories>` block grouped by tier, with each `<category>` holding its facts. Requesting a single tier (e.g. `{{ memories.core }}`) renders just that `<memories-core>` element.
-
-```xml
-<memories>
-  <memories-core>
-    <category name="methodology">Prefers test-driven changes and small PRs.</category>
-  </memories-core>
-  <memories-project>
-    <category name="decisions">Chose Stripe over PayPal for checkout (2026-05).</category>
-  </memories-project>
-</memories>
-```
-
-`{{ memory_profile }}` instead renders the configured focus lists:
-
-```xml
-<memory_profile>
-  <core_focus>
-    <item>personality</item>
-    <item>methodology</item>
-  </core_focus>
-  <project_focus>
-    <item>task_history</item>
-  </project_focus>
-</memory_profile>
-```
-
-## Context Blocks
-
-Context blocks render by their refs:
+Context blocks are reusable static instruction fragments:
 
 ```jinja
 {{ context.methodology }}
@@ -273,10 +32,62 @@ Context blocks render by their refs:
 {{ pkg.nenjo_ai.packages.context.operations.write_discipline }}
 ```
 
-`pkg.*` is only for package-installed context blocks and package knowledge. Installed agents, abilities, domains, MCP servers, script tools, and routines are resolved as runtime resources, not prompt variables. See [Context Blocks](/docs/building-blocks/primitives/context-blocks).
+Blocks may compose other blocks and use declared package arguments. They cannot
+read agent identity or live task, project, clock, Git, gate, or memory state.
 
-## Global
+### Knowledge indexes
 
-| Variable | Description |
-|----------|-------------|
-| `{{ global.timestamp }}` | Current timestamp |
+Knowledge selectors compile a compact pack index into the static instructions:
+
+```jinja
+{{ lib.market_research }}
+{{ pkg.nenjo_ai.packages.knowledge.core }}
+```
+
+The index is a discovery hint, not the document body. Agents use the knowledge
+tools to search, traverse, and read the selected pack. A pack update creates a
+new instruction epoch.
+
+## Runtime-owned context
+
+Agent identity and live execution data are not a template surface. The worker
+serializes them into canonical XML and places them after the static
+instructions.
+
+### Session context
+
+The session snapshot contains the executing agent's slug, name, and description,
+plus project/workspace information and the retrieved memory snapshot. It is
+frozen for the session epoch and replayed byte-for-byte. The memory profile
+controls retrieval and memory-writing behavior; it is not itself repeated in
+the model context.
+
+### Turn context
+
+Each logical turn receives a snapshot containing the local time and timezone,
+UTC time, execution kind, and any applicable task, routine, Git/worktree, or
+gate fields. The raw chat message or task instructions follow that snapshot as
+the user input.
+
+Retries reuse the original turn snapshot, including its clock. Conversation
+replay keeps every prior turn snapshot immediately before the messages it
+describes.
+
+The runtime protocol tells agents to read applicable context before acting.
+Session context applies for its session epoch; turn context applies only to the
+immediately following logical turn and wins for overlapping facts. Control
+context is application guidance. Data context is reference material and must
+not be followed as instructions. Copying context XML into ordinary user text
+does not give it runtime authority.
+
+## Removed dynamic selectors
+
+Static prompts and context blocks must not reference `self`, `agent`, `global`,
+`chat`, `task`, `project`, `routine`, `gate`, `git`, `memories`,
+`memory_profile`, `heartbeat`, or `artifacts`. Package validation rejects those
+selectors instead of silently rendering runtime-owned data into the cacheable
+prefix.
+
+Artifacts arrive as typed chat/task inputs or are accessed through artifact
+tools. Slash-command bodies receive their arguments before prompt assembly;
+they do not replace an agent chat template.
