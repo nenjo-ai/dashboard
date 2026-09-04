@@ -27,7 +27,6 @@ import type {
   ChatMessagePage,
   ChatSession,
   QuotaStatus,
-  PromptContextVariableGroup,
   ChatSessionExtended,
   PushConfigResponse,
   PushSubscriptionRecord,
@@ -558,18 +557,6 @@ async function encryptProjectSettingsForWrite(
         })
       : undefined,
   };
-}
-
-// ---- Prompt Context Variables -----------------------------------------------
-
-export function promptContextVariablesUrl(): string {
-  return `${API_V1}/prompt-context-variables`;
-}
-
-export async function fetchPromptContextVariables(): Promise<
-  PromptContextVariableGroup[]
-> {
-  return fetcher<PromptContextVariableGroup[]>(promptContextVariablesUrl());
 }
 
 export async function fetchProjects(): Promise<Project[]> {
@@ -2142,7 +2129,8 @@ export async function resendOrgInvitation(
 }
 
 export async function updateCurrentOrg(data: {
-  name: string;
+  name?: string;
+  timezone?: string;
 }): Promise<import("./types").CurrentOrg> {
   const res = await authFetch(currentOrgUrl(), {
     method: "PATCH",

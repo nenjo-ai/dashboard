@@ -5410,12 +5410,7 @@ function PromptPreview({
         ([, item]) => typeof item === "string" && item.trim(),
       )
     : [["template", template ?? ""]];
-  const templateEntries = prompt
-    ? Object.entries(nestedRecord(prompt, "templates") ?? {})
-        .filter(([, item]) => typeof item === "string" && item.trim())
-        .map(([key, item]) => [`templates.${key}`, item] as const)
-    : [];
-  const entries = [...promptEntries, ...templateEntries];
+  const entries = promptEntries;
   if (!entries.length) return null;
   return (
     <section className="space-y-2">

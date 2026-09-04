@@ -7,7 +7,7 @@ order: 3
 
 Context blocks are **reusable prompt-context assets** referenced by stable template names. They let you define a common prompt pattern once and reuse it everywhere instead of duplicating guidance across agents.
 
-A context block is referenced, never pasted: include its selector in a prompt or template and the runtime resolves the current content at execution time.
+A context block is referenced, never pasted: include its selector in a system or developer prompt and the runtime compiles its current content into the static instruction prefix.
 
 ## What to use them for
 
@@ -44,6 +44,8 @@ The `context.<name>` alias is name-only, so it is unambiguous only when that nam
 |---|---|
 | Guidance is static and reused across resources | Use [memory](/docs/building-blocks/primitives/memory) for learned, evolving context |
 | You want one source of truth for prompt patterns | Use [knowledge graphs](/docs/building-blocks/primitives/knowledge-graphs) for source material to search and cite |
-| The content shapes behavior | Use [template variables](/docs/building-blocks/primitives/template-variables) for live runtime state |
+| The content shapes stable behavior | Let [runtime prompt context](/docs/building-blocks/primitives/template-variables) carry live execution state |
 
-Context blocks are also the recommended home for runtime template framing — a one-line agent template that includes a reusable runtime context block keeps task, gate, and heartbeat framing consistent across agents.
+Context blocks may compose other static blocks and use declared package
+arguments. They cannot reference agent identity or live chat, task, project,
+routine, gate, Git, clock, memory, or artifact data.

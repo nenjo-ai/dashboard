@@ -21,6 +21,7 @@ export interface OrganizationSummary {
   role: string;
   scope_mode: "role_default" | "custom";
   scopes: string[];
+  timezone: string;
 }
 
 export interface CurrentOrg {
@@ -28,6 +29,7 @@ export interface CurrentOrg {
   org_name: string;
   role: string;
   scopes: string[];
+  timezone: string;
 }
 
 export interface OrgRoleScopeDefaults {
@@ -101,17 +103,6 @@ export interface OrgInvitationPreview {
   scopes: string[];
   expires_at: string;
   invited_by: string;
-}
-
-export interface PromptContextVariable {
-  name: string;
-  description: string;
-  group: string;
-}
-
-export interface PromptContextVariableGroup {
-  name: string;
-  variables: PromptContextVariable[];
 }
 
 export type ExecutionStatus =
@@ -388,10 +379,10 @@ export interface TaskScheduleDefinition {
   end: TaskScheduleEnd;
 }
 
-/** Calendar wall-clock input sent to the platform for timezone resolution. */
+/** Calendar wall-clock input resolved with the organization's timezone. */
 export interface TaskScheduleDefinitionInput {
   starts_at: string;
-  timezone: string;
+  timezone?: string;
   recurrence: TaskScheduleRecurrence;
   end: TaskScheduleEnd;
 }
@@ -2617,10 +2608,6 @@ export interface PromptConfig {
   system_prompt: string;
   /** Developer prompt — sent as a separate `developer` message to OpenAI-spec models, combined with system prompt for others. */
   developer_prompt: string;
-  /** Task-specific templates keyed by Nenjo's accepted wire names:
-   * `task`, `chat`, `gate`.
-   */
-  templates: Record<string, string>;
   /** Memory profile — guides what agents remember and retrieval priorities. */
   memory_profile?: MemoryProfile;
 }
@@ -2630,14 +2617,12 @@ export interface UpdatePromptConfigRequest {
   prompt_config: PromptConfig;
 }
 
-/** Response for preview prompt — all variants in one response for client-side caching. */
+/** Response for previewing the compiled static instruction prefix. */
 export interface PreviewPromptResponse {
   /** The rendered system prompt. */
   system_prompt: string;
   /** The rendered developer prompt (context blocks injected). */
   developer_prompt: string;
-  /** Pre-rendered user message per task type. */
-  user_messages: Record<string, string>;
   /** Pre-rendered domain addons for assigned domains. */
   domains: PreviewDomain[];
   /** Pre-rendered ability prompts for assigned abilities. */

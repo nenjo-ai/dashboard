@@ -4,11 +4,11 @@ import { useState } from "react";
 import { LibraryReferenceList } from "./LibraryReferenceList";
 import { TemplateVariableReference } from "./TemplateVariableReference";
 
-type ReferenceTab = "vars" | "context" | "library";
+type ReferenceTab = "context" | "library";
 
 export function PromptReferenceTabs({
   onInsertVariable,
-  defaultTab = "vars",
+  defaultTab = "context",
 }: {
   onInsertVariable: (text: string) => void;
   defaultTab?: ReferenceTab;
@@ -19,7 +19,6 @@ export function PromptReferenceTabs({
     <div className="flex h-full flex-col overflow-hidden">
       <div className="theme-border flex shrink-0 border-b">
         {[
-          ["vars", "Vars"],
           ["context", "Context Blocks"],
           ["library", "Library"],
         ].map(([id, label]) => (
@@ -38,9 +37,7 @@ export function PromptReferenceTabs({
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {tab === "vars" ? (
-          <TemplateVariableReference onInsertVariable={onInsertVariable} flatVarsOnly />
-        ) : tab === "context" ? (
+        {tab === "context" ? (
           <TemplateVariableReference onInsertVariable={onInsertVariable} contextBlocksOnly />
         ) : (
           <LibraryReferenceList onInsertVariable={onInsertVariable} />

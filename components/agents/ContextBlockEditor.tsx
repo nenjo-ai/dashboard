@@ -200,18 +200,18 @@ export function ContextBlockEditor({ block, onClose, onSaved }: ContextBlockEdit
             {block.read_only ? (
               <>
                 <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                  Edit the wrapper template for this context block. Use template variables to inject dynamic data.
+                  Edit this reusable static prompt fragment. Runtime data is supplied separately by the worker.
                 </p>
                 <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50 p-2.5 dark:border-teal-800 dark:bg-teal-900/20">
                   <p className="text-[10px] text-teal-700 dark:text-teal-300 leading-relaxed">
-                    Context blocks are rendered with the same template variables as your prompts. Use the reference panel on the right.
+                    Context blocks may include other static blocks and package arguments. Use the reference panel on the right.
                   </p>
                 </div>
               </>
             ) : (
               <>
                 <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                  Write static content or use template variables to build dynamic context for your agents.
+                  Write reusable static content for agent instruction prefixes.
                 </p>
                 <div className="theme-border theme-surface mt-4 rounded-lg border p-2.5">
                   <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-relaxed">

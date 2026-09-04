@@ -8,7 +8,6 @@ import {
 } from "@/lib/api";
 import { useAbilities, useApiKeyCatalog, useMcpServers, useContextBlocks } from "@/lib/hooks";
 import { CodeTextarea, type CodeTextareaHandle } from "./CodeTextarea";
-import { TemplateVariableReference } from "./TemplateVariableReference";
 import { LibraryReferenceList } from "./LibraryReferenceList";
 import { useResizablePanel, ResizeHandle } from "./useResizablePanel";
 import { Button } from "@/components/ui/Button";
@@ -462,7 +461,7 @@ function EditableDomainEditorInline({
 }
 
 // ---------------------------------------------------------------------------
-// Context blocks + template variables reference panel (matches ability editor)
+// Static context block and library reference panel (matches ability editor).
 // ---------------------------------------------------------------------------
 
 interface BlockTreeNode {
@@ -614,7 +613,7 @@ function TabbedReferencePanel({
 }: {
   onInsertVariable: (text: string) => void;
 }) {
-  const [tab, setTab] = useState<"variables" | "blocks" | "library">("variables");
+  const [tab, setTab] = useState<"blocks" | "library">("blocks");
   const panel = useResizablePanel(320, 240, 560);
   const { contextBlocks } = useContextBlocks();
 
@@ -632,17 +631,6 @@ function TabbedReferencePanel({
       >
         {/* Tab bar */}
         <div className="theme-border flex shrink-0 border-b">
-          <button
-            type="button"
-            onClick={() => setTab("variables")}
-            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-              tab === "variables"
-                ? "theme-text border-b-2 border-[var(--app-border-strong)]"
-                : "theme-text-muted hover:[color:var(--app-text)]"
-            }`}
-          >
-            Vars
-          </button>
           <button
             type="button"
             onClick={() => setTab("blocks")}
@@ -669,14 +657,7 @@ function TabbedReferencePanel({
 
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto p-2">
-          {tab === "variables" ? (
-            <div className="p-2">
-              <TemplateVariableReference
-                onInsertVariable={onInsertVariable}
-                flatVarsOnly
-              />
-            </div>
-          ) : tab === "blocks" ? (
+          {tab === "blocks" ? (
             <>
               <p className="theme-text-muted mb-2 px-1 text-[10px]">
                 Click a block to insert at cursor.

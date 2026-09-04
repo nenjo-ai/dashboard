@@ -14,7 +14,7 @@ const SCOPE_GROUPS = [
   { label: "Projects", scopes: ["projects:read", "projects:write"] },
   { label: "Tasks", scopes: ["tasks:read", "tasks:write"] },
   { label: "Artifacts", scopes: ["artifacts:read", "artifacts:write"] },
-  { label: "Library", scopes: ["library:write"] },
+  { label: "Knowledge", scopes: ["knowledge:read", "knowledge:write"] },
   { label: "Routines", scopes: ["routines:read", "routines:write"] },
   { label: "Councils", scopes: ["councils:read", "councils:write"] },
   { label: "Context Blocks", scopes: ["context_blocks:read", "context_blocks:write"] },

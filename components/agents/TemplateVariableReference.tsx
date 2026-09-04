@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useContextBlocks, useTemplateVars } from "@/lib/hooks";
+import { useContextBlocks } from "@/lib/hooks";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,13 +24,13 @@ interface VariableGroup {
 export interface TemplateVariableReferenceProps {
   /** Called when user clicks a variable to insert it at cursor. */
   onInsertVariable?: (text: string) => void;
-  /** If true, only show context blocks (for agent prompt editor). */
+  /** Retained for callers while the reference catalog is context-block-only. */
   contextBlocksOnly?: boolean;
-  /** If true, only show flat vars — no context blocks (for context block editor). */
+  /** Retained for compatibility; dynamic flat variables are no longer exposed. */
   flatVarsOnly?: boolean;
-  /** Optional flat variable group allow-list. */
+  /** Retained for compatibility with existing editor layouts. */
   includeGroups?: string[];
-  /** Optional flat variable group deny-list. */
+  /** Retained for compatibility with existing editor layouts. */
   excludeGroups?: string[];
   /** Start reference groups collapsed to keep supporting material quiet. */
   defaultCollapsed?: boolean;
@@ -44,10 +44,6 @@ export interface TemplateVariableReferenceProps {
 
 export function TemplateVariableReference({
   onInsertVariable,
-  contextBlocksOnly = false,
-  flatVarsOnly = false,
-  includeGroups,
-  excludeGroups,
   defaultCollapsed = false,
   searchable = false,
 }: TemplateVariableReferenceProps) {
@@ -55,25 +51,6 @@ export function TemplateVariableReference({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const { contextBlocks } = useContextBlocks();
-  const { varGroups, isLoading: varsLoading, isError: varsError } = useTemplateVars();
-
-  // Convert API response to component's VariableGroup format.
-  // Falls back to empty if still loading (the loading state is shown separately).
-  const flatVarGroups: VariableGroup[] = useMemo(() => {
-    if (!varGroups || varGroups.length === 0) return [];
-    const include = includeGroups ? new Set(includeGroups) : null;
-    const exclude = excludeGroups ? new Set(excludeGroups) : null;
-    return varGroups
-      .filter((g) => (include ? include.has(g.name) : true))
-      .filter((g) => (exclude ? !exclude.has(g.name) : true))
-      .map((g) => ({
-        title: g.name,
-        variables: g.variables.map((v) => ({
-          name: v.name,
-          description: v.description,
-        })),
-      }));
-  }, [varGroups, includeGroups, excludeGroups]);
 
   // Build context blocks group from DB — with dotted paths and group entries
   const contextBlockGroup: VariableGroup = useMemo(() => {
@@ -111,32 +88,7 @@ export function TemplateVariableReference({
     return { title: "Context Blocks", variables };
   }, [contextBlocks]);
 
-  const variableGroups: VariableGroup[] = useMemo(() => {
-    if (contextBlocksOnly) {
-      return [
-        contextBlockGroup,
-        {
-          title: "Special",
-          variables: [
-            { name: "memory", description: "Relevant memories — facts and summaries from past interactions" },
-          ],
-        },
-      ];
-    }
-    if (flatVarsOnly) {
-      return flatVarGroups;
-    }
-    return [
-      ...flatVarGroups,
-      contextBlockGroup,
-      {
-        title: "Special",
-        variables: [
-          { name: "memory", description: "Retrieved memories (async, not template-driven)" },
-        ],
-      },
-    ];
-  }, [contextBlocksOnly, flatVarsOnly, flatVarGroups, contextBlockGroup]);
+  const variableGroups = useMemo(() => [contextBlockGroup], [contextBlockGroup]);
 
   const visibleGroups = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -172,52 +124,15 @@ export function TemplateVariableReference({
     });
   };
 
-  // Show loading/error states when variables tab is active
-  const showVarsState = (flatVarsOnly || (!contextBlocksOnly && !flatVarsOnly)) && !contextBlocksOnly;
-  if (showVarsState && varsLoading) {
-    return (
-      <div className="h-full overflow-y-auto p-2">
-        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-          <span className="flex gap-0.5" aria-hidden="true">
-            {[0, 1, 2].map((dot) => <span key={dot} className="animate-loading-dot h-1 w-1 rounded-full bg-current" style={{ animationDelay: `${dot * 120}ms` }} />)}
-          </span>
-          Loading variables...
-        </div>
-      </div>
-    );
-  }
-
-  if (showVarsState && varsError) {
-    return (
-      <div className="h-full overflow-y-auto p-2">
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
-          <p className="text-xs text-red-600 dark:text-red-400">
-            Failed to load template variables. Check that the backend is running.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (showVarsState && flatVarGroups.length === 0 && !varsLoading) {
-    return (
-      <div className="h-full overflow-y-auto p-2">
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          No template variables available.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="h-full overflow-y-auto">
       <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-        {contextBlocksOnly ? "Context Blocks" : "Template Variables"}
+        Static Context Blocks
       </h3>
       <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
         {onInsertVariable
-          ? "Click a variable to insert at cursor."
-          : 'Use {{ variable_name }} syntax in your templates.'}{" "}
+          ? "Click a block to insert it at the cursor."
+          : "Context blocks are compiled into the static instruction prefix."}{" "}
       </p>
 
       {searchable ? (
@@ -226,7 +141,7 @@ export function TemplateVariableReference({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search references"
-          aria-label="Search template variables"
+          aria-label="Search context blocks"
           className="theme-surface theme-border theme-text mb-4 w-full rounded-lg border px-3 py-2 text-xs outline-hidden focus:border-deep-space-blue-400"
         />
       ) : null}
@@ -330,32 +245,6 @@ export function TemplateVariableReference({
         {visibleGroups.length === 0 ? <p className="theme-text-muted py-4 text-center text-xs">No references match your search.</p> : null}
       </div>
 
-      {/* Info boxes — only in the agent prompt editor (not context block editors) */}
-      {!contextBlocksOnly && !flatVarsOnly && (
-        <>
-          <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
-            <h4 className="mb-1 text-xs font-medium text-blue-700 dark:text-blue-300">
-              Developer Prompt
-            </h4>
-            <p className="text-[10px] text-blue-600 dark:text-blue-400">
-              Content in the Developer Prompt section is sent as a separate{" "}
-              <code className="font-mono">developer</code> message to OpenAI-spec
-              models. For other providers it is combined with the system prompt.
-            </p>
-          </div>
-
-          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/20">
-            <h4 className="mb-1 text-xs font-medium text-amber-700 dark:text-amber-300">
-              Context Blocks
-            </h4>
-            <p className="text-[10px] text-amber-600 dark:text-amber-400">
-              Context blocks are reusable templates rendered with the same
-              variables. Edit them in the Context tab.
-            </p>
-          </div>
-        </>
-      )}
-
     </div>
   );
 }
@@ -394,19 +283,15 @@ export function JinjaGuide() {
       {open && (
         <div className="theme-border border-t px-3 pb-3 pt-2">
           <p className="mb-2 text-[10px] leading-relaxed text-purple-600/80 dark:text-purple-400/80">
-            MiniJinja is supported for conditionals, loops, and filters.
+            MiniJinja is supported for static package arguments, context blocks, conditionals, loops, and filters.
           </p>
           <pre className="rounded bg-purple-100/60 p-2 font-mono text-[9px] leading-relaxed text-purple-800 dark:bg-purple-900/40 dark:text-purple-200">
-{`{% if project.name %}
-You are working on
-{{ project.name }}.
+{`{% if args.response_style %}
+Response style:
+{{ args.response_style }}
 {% endif %}
 
-{% if task.priority == "high" %}
-Urgent — prioritize speed.
-{% else %}
-Follow standard procedures.
-{% endif %}`}
+{{ context.methodology }}`}
           </pre>
         </div>
       )}

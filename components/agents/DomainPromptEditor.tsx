@@ -276,7 +276,7 @@ export function DomainPromptEditor({
                 }}
               />
               <p className="px-1 pt-1.5 text-xs text-gray-400 dark:text-gray-500">
-                Guidance is overlaid onto the agent&apos;s existing developer prompt when this domain is active. Use template variables for dynamic context.
+                Guidance is overlaid onto the agent&apos;s static developer prompt when this domain is active. Runtime context is supplied separately by the worker.
               </p>
             </div>
           </div>

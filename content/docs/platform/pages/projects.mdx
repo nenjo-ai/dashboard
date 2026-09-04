@@ -36,7 +36,7 @@ In a project's **Settings** tab (or the repository section of the project header
 2. Optionally set the target branch (defaults to `main`).
 3. Click **Save & Sync** (or **Connect** / **Sync**).
 
-The platform stores the URL + branch and triggers a sync on approved harness workers. Workers with the `repo` capability clone (or update) the repository into the project's workspace. Agents see the state via Git template variables and worktree tools scoped to the project.
+The platform stores the URL + branch and triggers a sync on approved harness workers. Workers with the `repo` capability clone (or update) the repository into the project's workspace. Agents see current repository state in runtime-owned turn context and through worktree tools scoped to the project.
 
 Sync status is shown with a badge (`syncing`, `synced`, or `error` with details on failure). Re-saving the URL or branch re-triggers a sync.
 

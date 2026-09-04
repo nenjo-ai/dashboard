@@ -114,7 +114,7 @@ const previewTabs = [
       "domain documents",
       "policy documents",
       "taxonomy documents",
-      "template variables",
+      "static context blocks",
     ],
   },
   {

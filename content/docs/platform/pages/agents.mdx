@@ -14,7 +14,7 @@ The **Agents** area is the build hub for everything behavioral. It's where you c
 | Agents | Core agent definitions (prompts, model assignment, heartbeat, scopes, attached abilities/domains/MCP) |
 | Domains | User-activated modes that reconfigure an agent's behavior for a session |
 | Abilities | Specialist sub-agents exposed as tools |
-| Context blocks | Reusable prompt fragments and template variables |
+| Context blocks | Reusable static prompt fragments |
 | MCP servers | External tool servers registered for use by agents |
 | Models | LLM configuration records (provider, model id, params) used for resolution |
 
@@ -35,7 +35,7 @@ Opening an agent gives you a focused editor, tab by tab:
 
 | Tab | What you set |
 |-----|--------------|
-| Prompts | The system (soul) and developer prompts, plus runtime templates |
+| Prompts | The static system (soul) and developer instruction prefix |
 | Preview | See the composed prompt with context and variables resolved |
 | Abilities | Assign specialist abilities the agent can invoke |
 | Domains | Assign the user-activated modes available to the agent |

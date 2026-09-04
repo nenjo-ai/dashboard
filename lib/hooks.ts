@@ -61,7 +61,6 @@ import {
   abilitiesUrl,
   agentAbilitiesUrl,
   contextBlocksUrl,
-  promptContextVariablesUrl,
   orgsUrl,
   orgMembersUrl,
   orgInvitationsUrl,
@@ -103,7 +102,6 @@ import type {
   AgentDomainAssignment,
   McpServer,
   Ability,
-  PromptContextVariableGroup,
   OrganizationSummary,
   CurrentOrg,
   OrgScopeCatalog,
@@ -246,20 +244,6 @@ export function useContextBlocks() {
     isError: !!error,
     error,
     mutate,
-  };
-}
-
-export function useTemplateVars() {
-  const { data, error, isLoading } = useSWR<PromptContextVariableGroup[]>(
-    promptContextVariablesUrl(),
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 60000 },
-  );
-
-  return {
-    varGroups: data,
-    isLoading,
-    isError: !!error,
   };
 }
 
