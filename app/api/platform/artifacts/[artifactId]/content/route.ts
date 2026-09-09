@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createPlatformToken } from "@/lib/server/platform-token";
 import { resolveDashboardSession } from "@/lib/server/dashboardAuth";
 import {
+  ArtifactDownloadConfigurationError,
   MAX_DASHBOARD_ARTIFACT_ENVELOPE_BYTES,
   validateArtifactDownloadUrl,
 } from "@/lib/server/artifactDownloadPolicy";
@@ -36,7 +37,10 @@ function platformBaseUrl(): string {
 }
 
 function errorResponse(message: string, status: number) {
-  return NextResponse.json({ error: { message } }, { status });
+  return NextResponse.json({ error: { message } }, {
+    status,
+    headers: { "cache-control": "private, no-store" },
+  });
 }
 
 /**
@@ -135,7 +139,11 @@ export async function GET(
   let objectUrl: URL;
   try {
     objectUrl = validateArtifactDownloadUrl(grant.download_url);
-  } catch {
+  } catch (error) {
+    if (error instanceof ArtifactDownloadConfigurationError) {
+      console.error("Artifact download proxy configuration error", error.message);
+      return errorResponse("Artifact storage is not configured for previews", 500);
+    }
     return errorResponse("Artifact download URL is invalid", 502);
   }
 

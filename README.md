@@ -22,6 +22,19 @@ may appear in platform download grants. Local Garage uses
 `http://localhost:3900`. The proxy rejects signed URLs outside this
 server-owned allowlist.
 
+Set this variable in Vercel's **Production** environment as well, then redeploy
+the dashboard so the deployment picks up the value. Use the exact origin
+(scheme, hostname, and optional port), without a bucket path or query string.
+The platform uses path-style S3 URLs, so DigitalOcean Spaces deployments use
+the origin of `NEN__S3__ENDPOINT` (Terraform output `spaces_endpoint`), for
+example `https://nyc3.digitaloceanspaces.com`, rather than the bucket's domain.
+Only include the storage endpoints used by your deployment.
+
+`Artifact storage is not configured for previews` means the allowlist is missing
+or malformed. `Artifact download URL is invalid` means the platform-issued URL
+is malformed or its origin does not match the configured allowlist. Compare
+origins only when troubleshooting; do not copy signed download URLs into logs.
+
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 ## Local authentication

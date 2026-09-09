@@ -858,6 +858,7 @@ function McpTab({
 }) {
   const { mcpServers, isLoading } = useMcpServers();
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const activeMcp = new Set(manifest?.mcp_servers ?? []);
 
   const externalServers =
@@ -866,11 +867,12 @@ function McpTab({
   const handleToggle = async (server: McpServer) => {
     if (saving) return;
     setSaving(true);
+    setError(null);
     try {
       const current = manifest?.mcp_servers ?? [];
-      const next = activeMcp.has(server.name)
-        ? current.filter((slug) => slug !== server.name)
-        : [...current, server.name];
+      const next = activeMcp.has(server.slug)
+        ? current.filter((slug) => slug !== server.slug)
+        : [...current, server.slug];
       await updateDomainAssignments(
         domainId,
         manifest,
@@ -878,8 +880,8 @@ function McpTab({
         onManifestChange,
         onSaved,
       );
-    } catch {
-      /* */
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to update MCP assignment");
     } finally {
       setSaving(false);
     }
@@ -891,13 +893,14 @@ function McpTab({
 
   return (
     <div className="space-y-1.5">
+      {error && <p role="alert" className="text-sm text-red-500 dark:text-red-400">{error}</p>}
       {externalServers.map((server) => (
         <ToggleRow
           key={server.id}
           label={server.name}
           sublabel={server.description ?? undefined}
           badge={server.transport}
-          isOn={activeMcp.has(server.name)}
+          isOn={activeMcp.has(server.slug)}
           isProcessing={saving}
           onToggle={() => handleToggle(server)}
         />
