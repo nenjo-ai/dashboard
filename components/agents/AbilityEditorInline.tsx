@@ -277,7 +277,7 @@ function ManagedAbilityDetails({ ability }: { ability: Ability }) {
 
   const attachedServers = useMemo(() => {
     const assigned = new Set(ability.mcp_servers);
-    return (mcpServers ?? []).filter((server) => assigned.has(server.name));
+    return (mcpServers ?? []).filter((server) => assigned.has(server.slug));
   }, [ability.mcp_servers, mcpServers]);
   const fallbackContent = useMemo(
     () =>
@@ -622,19 +622,25 @@ function TabbedReferencePanel({ onInsertVariable }: { onInsertVariable: (text: s
 function McpTab({ ability, onSaved }: { ability: Ability; onSaved: () => void }) {
   const { mcpServers, isLoading } = useMcpServers();
   const [toggling, setToggling] = useState<string | null>(null);
-  const assignedIds = new Set(ability.mcp_servers);
+  const [error, setError] = useState<string | null>(null);
+  const assignedSlugs = new Set(ability.mcp_servers);
 
   const handleToggle = async (server: McpServer) => {
     if (toggling) return;
-    setToggling(server.name);
+    setToggling(server.slug);
+    setError(null);
     try {
-      const newSlugs = assignedIds.has(server.name)
-        ? ability.mcp_servers.filter((slug) => slug !== server.name)
-        : [...ability.mcp_servers, server.name];
+      const newSlugs = assignedSlugs.has(server.slug)
+        ? ability.mcp_servers.filter((slug) => slug !== server.slug)
+        : [...ability.mcp_servers, server.slug];
       await updateAbility(ability.id, { mcp_servers: newSlugs });
       ability.mcp_servers = newSlugs;
       onSaved();
-    } catch { /* */ } finally { setToggling(null); }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to update MCP assignment");
+    } finally {
+      setToggling(null);
+    }
   };
 
   // Filter out the nenjo platform MCP — its tools are assigned via scopes, not direct MCP assignment
@@ -645,14 +651,15 @@ function McpTab({ ability, onSaved }: { ability: Ability; onSaved: () => void })
 
   return (
     <div className="space-y-1.5">
+      {error && <p role="alert" className="text-sm text-red-500 dark:text-red-400">{error}</p>}
       {externalServers.map((server) => (
         <ToggleRow
           key={server.id}
           label={server.name}
           sublabel={server.description ?? undefined}
           badge={server.transport}
-          isOn={assignedIds.has(server.name)}
-          isProcessing={toggling === server.name}
+          isOn={assignedSlugs.has(server.slug)}
+          isProcessing={toggling === server.slug}
           onToggle={() => handleToggle(server)}
         />
       ))}

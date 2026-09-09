@@ -1,11 +1,18 @@
 export const MAX_DASHBOARD_ARTIFACT_ENVELOPE_BYTES = 64 * 1024 * 1024;
 
+export class ArtifactDownloadConfigurationError extends Error {}
+
 function configuredOrigins(raw: string | undefined): Set<string> {
   if (!raw?.trim()) {
-    throw new Error("ARTIFACT_DOWNLOAD_ORIGINS is required");
+    throw new ArtifactDownloadConfigurationError("ARTIFACT_DOWNLOAD_ORIGINS is required");
   }
   return new Set(raw.split(",").map((entry) => {
-    const value = new URL(entry.trim());
+    let value: URL;
+    try {
+      value = new URL(entry.trim());
+    } catch {
+      throw new ArtifactDownloadConfigurationError("ARTIFACT_DOWNLOAD_ORIGINS must contain HTTP origins only");
+    }
     if (
       (value.protocol !== "https:" && value.protocol !== "http:")
       || value.username
@@ -14,7 +21,7 @@ function configuredOrigins(raw: string | undefined): Set<string> {
       || value.search
       || value.hash
     ) {
-      throw new Error("ARTIFACT_DOWNLOAD_ORIGINS must contain HTTP origins only");
+      throw new ArtifactDownloadConfigurationError("ARTIFACT_DOWNLOAD_ORIGINS must contain HTTP origins only");
     }
     return value.origin;
   }));
@@ -25,12 +32,13 @@ export function validateArtifactDownloadUrl(
   rawUrl: string,
   rawAllowedOrigins = process.env.ARTIFACT_DOWNLOAD_ORIGINS,
 ): URL {
+  const allowedOrigins = configuredOrigins(rawAllowedOrigins);
   const url = new URL(rawUrl);
   if (
     (url.protocol !== "https:" && url.protocol !== "http:")
     || url.username
     || url.password
-    || !configuredOrigins(rawAllowedOrigins).has(url.origin)
+    || !allowedOrigins.has(url.origin)
   ) {
     throw new Error("Artifact download URL is not on an allowed object-store origin");
   }

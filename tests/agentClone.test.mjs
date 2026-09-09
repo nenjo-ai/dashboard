@@ -9,8 +9,8 @@ test("agent clone update copies scopes, abilities, and MCP assignments", () => {
   };
   const update = buildCloneAgentUpdate(
     sourceAgent,
-    [{ name: "build_routine" }, { name: "review_code" }],
-    [{ name: "github" }, { name: "linear" }],
+    [{ slug: "build_routine", name: "Build Routine" }, { slug: "review_code", name: "Review Code" }],
+    [{ slug: "github", name: "GitHub Tools" }, { slug: "linear", name: "Linear" }],
   );
 
   assert.deepEqual(update, {
