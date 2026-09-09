@@ -8,6 +8,7 @@ import {
   fetchProjects,
   fetchRoutine,
   fetchExecutionTraceEvents,
+  fetchChatTraceEvents,
   fetchCouncil,
   fetchCouncils,
   fetchChatCommands,
@@ -31,6 +32,7 @@ import {
   executionsUrl,
   executionTasksUrl,
   executionTraceEventsUrl,
+  chatTraceEventsUrl,
   activityUrl,
   modelsUrl,
   modelCatalogUrl,
@@ -82,6 +84,8 @@ import type {
   ExecutionDetails,
   ExecutionTask,
   ExecutionTraceEvent,
+  ChatTraceEvent,
+  TraceEventPage,
   Model,
   ModelCatalogQuery,
   ModelCatalogProvider,
@@ -405,14 +409,37 @@ export function useExecutionTasks(executionId: string | undefined) {
 export function useExecutionTraceEvents(executionId: string | undefined) {
   const url = executionId ? executionTraceEventsUrl(executionId) : null;
 
-  const { data, error, isLoading, mutate } = useSWR<ExecutionTraceEvent[]>(
+  const { data, error, isLoading, mutate } = useSWR<
+    TraceEventPage<ExecutionTraceEvent>
+  >(
     url,
     () => fetchExecutionTraceEvents(executionId!),
     { revalidateOnFocus: false, dedupingInterval: 3000 },
   );
 
   return {
-    traceEvents: data,
+    traceEvents: data?.events,
+    traceTruncated: data?.truncated ?? false,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
+}
+
+export function useChatTraceEvents(runId: string | undefined) {
+  const url = runId ? chatTraceEventsUrl(runId) : null;
+  const { data, error, isLoading, mutate } = useSWR<
+    TraceEventPage<ChatTraceEvent>
+  >(
+    url,
+    () => fetchChatTraceEvents(runId!),
+    { revalidateOnFocus: false, dedupingInterval: 10_000 },
+  );
+
+  return {
+    traceEvents: data?.events,
+    traceTruncated: data?.truncated ?? false,
     isLoading,
     isError: !!error,
     error,

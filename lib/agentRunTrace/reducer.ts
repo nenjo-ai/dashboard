@@ -18,6 +18,11 @@ export interface ReduceRunTraceOptions {
   source?: RunTraceSource;
 }
 
+export interface RunTraceEventRecord {
+  event: AgentLifecycleEvent;
+  occurredAt?: string;
+}
+
 function timestamp(options?: ReduceRunTraceOptions): string {
   return options?.now ?? new Date().toISOString();
 }
@@ -551,6 +556,21 @@ export function reduceRunTraceEvents(
 ): RunTrace | undefined {
   return events.reduce(
     (nextState, event) => reduceRunTrace(nextState, event, options),
+    state,
+  );
+}
+
+export function reduceRunTraceEventRecords(
+  state: RunTrace | undefined,
+  records: RunTraceEventRecord[],
+  options?: ReduceRunTraceOptions,
+): RunTrace | undefined {
+  return records.reduce(
+    (nextState, record) =>
+      reduceRunTrace(nextState, record.event, {
+        ...options,
+        now: record.occurredAt ?? options?.now,
+      }),
     state,
   );
 }

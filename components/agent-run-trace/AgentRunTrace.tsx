@@ -46,6 +46,7 @@ import {
   toolBatchStatus,
   tracePhaseLabel,
   traceStatusLabel,
+  waitSequenceDuration,
 } from "@/lib/agentRunTrace/presentation";
 import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { TraceStatusIndicator } from "./TraceStatusIndicator";
@@ -357,6 +358,50 @@ function ToolTraceRow({ span }: { span: ToolSpan }) {
           <JsonCodeBlock value={detailsPayload} />
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function WaitSequenceTraceBlock({
+  waits,
+  textPreviews,
+}: {
+  waits: ToolSpan[];
+  textPreviews: string[];
+}) {
+  const duration = waitSequenceDuration(waits);
+  const lastWait = waits.at(-1);
+  const status = lastWait?.status ?? "completed";
+  const label = lastWait
+    ? toolActivityLabel({ ...lastWait, status })
+    : "Waiting";
+
+  return (
+    <div className="min-w-0">
+      {textPreviews.map((preview, index) => (
+        <PreviewMarkdown key={`${waits[0]?.id}:preview:${index}`}>
+          {preview}
+        </PreviewMarkdown>
+      ))}
+      <div
+        className="flex min-h-11 items-center gap-2 px-1.5"
+        title={`${waits.length} consecutive wait calls`}
+      >
+        <span className="shrink-0">
+          <TraceStatusIndicator status={status} />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-700 dark:text-gray-200">
+          {label}
+        </span>
+        {duration ? (
+          <span
+            aria-label={`Total wait time ${duration}`}
+            className="shrink-0 text-[11px] tabular-nums text-gray-500 dark:text-gray-400"
+          >
+            {duration}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -782,7 +827,13 @@ function ModelTraceBlock({
           )}
           <div className="space-y-1.5">
             {displayItems.map((item) =>
-              item.kind === "tool_batch" && item.tools.length > 1 ? (
+              item.kind === "wait_sequence" ? (
+                <WaitSequenceTraceBlock
+                  key={`${span.id}:wait-sequence:${item.id}`}
+                  waits={item.waits}
+                  textPreviews={item.textPreviews}
+                />
+              ) : item.kind === "tool_batch" && item.tools.length > 1 ? (
                 <ToolBatchTraceBlock
                   key={`${span.id}:tool-batch:${item.id}`}
                   tools={item.tools}
@@ -963,7 +1014,13 @@ export const AgentRunTrace = memo(function AgentRunTrace({
         {displayItems.length > 0 ? (
           <div className={cn("mt-1.5 space-y-1", compact && "mt-1")}>
             {displayItems.map((item) =>
-              item.kind === "tool_batch" && item.tools.length > 1 ? (
+              item.kind === "wait_sequence" ? (
+                <WaitSequenceTraceBlock
+                  key={`root:wait-sequence:${item.id}`}
+                  waits={item.waits}
+                  textPreviews={item.textPreviews}
+                />
+              ) : item.kind === "tool_batch" && item.tools.length > 1 ? (
                 <ToolBatchTraceBlock
                   key={`root:tool-batch:${item.id}`}
                   tools={item.tools}

@@ -638,8 +638,10 @@ test("chat finalization preserves run trace until it is attached to the final me
   );
   assert.match(
     source,
-    /lifecycleEvent\.event_type === "RunStarted"[\s\S]*?linkEnvelopeToInputMessage\(\{[\s\S]*?inputMessageId: receivedInputMessageId/,
+    /const runEnvelopeId = persistedMessageTraceRunId\(message\)/,
   );
+  assert.match(source, /page\.trace_summaries/);
+  assert.match(source, /inputTokens: summary\.input_tokens/);
   assert.match(
     source,
     /streamPromise[\s\S]*?\.then\(async \(\) => \{\s*await streamWorkQueueRef\.current\.drain\(\);[\s\S]*?fetchChatMessages/,

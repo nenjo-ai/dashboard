@@ -5,9 +5,18 @@ import { Check, ChevronDown, ChevronRight, CircleAlert } from "lucide-react";
 import { AgentRunTrace } from "@/components/agent-run-trace/AgentRunTrace";
 import { cn } from "@/lib/cn";
 import { loadEnvelopeEvents } from "@/lib/agentRunTrace/envelopeStore";
-import { reduceRunTraceEvents } from "@/lib/agentRunTrace/reducer";
+import {
+  reduceRunTraceEventRecords,
+  type RunTraceEventRecord,
+} from "@/lib/agentRunTrace/reducer";
 import { settledAssistantActivityTrace } from "@/lib/chat/derivations";
-import { traceActivitySummary } from "@/lib/agentRunTrace/presentation";
+import { lifecycleEventRecordsFromExecutionTraceEnvelopes } from "@/lib/executionTraceEvents";
+import { useChatTraceEvents } from "@/lib/hooks";
+import {
+  storedTraceActivitySummary,
+  traceActivitySummary,
+  withPersistedActivityTiming,
+} from "@/lib/agentRunTrace/presentation";
 import {
   chatDisplaySpans,
   filterHistorySpans,
@@ -19,9 +28,9 @@ import type { ChatMessage } from "@/lib/types";
 /**
  * Activity for one assistant message.
  *
- * Activity starts collapsed for both live and historical turns. Historical
- * activity is hydrated from this browser's encrypted envelope store only when
- * the user opens it.
+ * Activity starts collapsed for both live and historical turns. Its compact
+ * metrics arrive with chat history; detailed S3-backed events are fetched only
+ * when the user opens it. Pre-migration IndexedDB envelopes remain a fallback.
  */
 export function AssistantActivity({
   message,
@@ -44,6 +53,15 @@ export function AssistantActivity({
     trace?: RunTrace;
     failed: boolean;
   }>();
+  const remoteRunId =
+    activityOpen && !message.runTrace ? message.runEnvelopeId : undefined;
+  const {
+    traceEvents: remoteTraceEvents,
+    traceTruncated,
+    isLoading: remoteTraceLoading,
+    isError: remoteTraceFailed,
+    mutate: retryRemoteTrace,
+  } = useChatTraceEvents(remoteRunId);
   const matchingLoadedEnvelope =
     loadedEnvelope?.envelopeId === message.runEnvelopeId
       ? loadedEnvelope
@@ -58,10 +76,15 @@ export function AssistantActivity({
         : { ...message, isLiveDraft: isLive },
     [isLive, message],
   );
-  const activityTrace = useMemo(
-    () => settledAssistantActivityTrace(activityMessage, sourceActivityTrace),
-    [activityMessage, sourceActivityTrace],
-  );
+  const activityTrace = useMemo(() => {
+    const trace = settledAssistantActivityTrace(
+      activityMessage,
+      sourceActivityTrace,
+    );
+    return trace
+      ? withPersistedActivityTiming(trace, message.activitySummary)
+      : undefined;
+  }, [activityMessage, message.activitySummary, sourceActivityTrace]);
   const displaySpans = useMemo(
     () =>
       activityTrace
@@ -82,6 +105,9 @@ export function AssistantActivity({
         spans: displaySpans,
       });
     }
+    if (message.activitySummary) {
+      return storedTraceActivitySummary(message.activitySummary);
+    }
     const status =
       message.runStatus === "connecting"
         ? "Connecting"
@@ -97,24 +123,40 @@ export function AssistantActivity({
                   ? "Cancelled"
                   : "Completed";
     return { status, ariaLabel: `Activity, ${status}` };
-  }, [activityTrace, displaySpans, message.runStatus]);
+  }, [activityTrace, displaySpans, message.activitySummary, message.runStatus]);
   const normalizedStatus = summary.status.toLowerCase();
   const activityFailed = normalizedStatus.includes("failed");
   const activityCompleted = normalizedStatus.includes("completed");
 
   useEffect(() => {
     if (!activityOpen || message.runTrace || !message.runEnvelopeId) return;
-    if (loadedEnvelope?.envelopeId === message.runEnvelopeId) return;
+    if (remoteTraceLoading) return;
+    if (remoteTraceEvents === undefined && !remoteTraceFailed) return;
     const envelopeId = message.runEnvelopeId;
     let cancelled = false;
-    void loadEnvelopeEvents(envelopeId)
-      .then((events) => {
+    const loadEventRecords = async (): Promise<RunTraceEventRecord[]> => {
+      if (remoteTraceEvents?.length) {
+        return lifecycleEventRecordsFromExecutionTraceEnvelopes(
+          remoteTraceEvents.map((event) => ({
+            executionRunId: event.run_id,
+            taskId: null,
+            routineStep: null,
+            event: event.event,
+            createdAt: event.created_at,
+            sequence: event.sequence,
+          })),
+        );
+      }
+      return (await loadEnvelopeEvents(envelopeId)).map((event) => ({ event }));
+    };
+    void loadEventRecords()
+      .then((records) => {
         if (cancelled) return;
-        const trace = reduceRunTraceEvents(undefined, events);
+        const trace = reduceRunTraceEventRecords(undefined, records);
         setLoadedEnvelope({
           envelopeId,
           trace,
-          failed: events.length === 0 || !trace,
+          failed: records.length === 0 || !trace,
         });
       })
       .catch(() => {
@@ -127,9 +169,11 @@ export function AssistantActivity({
     };
   }, [
     activityOpen,
-    loadedEnvelope?.envelopeId,
     message.runEnvelopeId,
     message.runTrace,
+    remoteTraceEvents,
+    remoteTraceFailed,
+    remoteTraceLoading,
   ]);
 
   // Expansion happens beside a docked composer. Once the short reveal finishes,
@@ -220,16 +264,33 @@ export function AssistantActivity({
           <div className="min-h-0 overflow-hidden">
             <div className="mt-2 overflow-hidden rounded-xl border border-black/[0.06] bg-gray-50/65 px-3 py-2.5 dark:border-white/[0.08] dark:bg-white/[0.035]">
               {activityTrace ? (
-                <AgentRunTrace
-                  trace={activityTrace}
-                  mode={isLive ? "live" : "history"}
-                  density={compact ? "compact" : "regular"}
-                  embedded
-                />
+                <>
+                  {traceTruncated ? (
+                    <p className="mb-2 rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                      This activity trace is incomplete because an event exceeded
+                      the archive safety limit.
+                    </p>
+                  ) : null}
+                  <AgentRunTrace
+                    trace={activityTrace}
+                    mode={isLive ? "live" : "history"}
+                    density={compact ? "compact" : "regular"}
+                    embedded
+                  />
+                </>
               ) : activityLoadFailed ? (
-                <p className="px-1 py-2 text-xs text-gray-500 dark:text-gray-400">
-                  Activity unavailable on this device.
-                </p>
+                <div className="flex items-center gap-2 px-1 py-2 text-xs text-gray-500 dark:text-gray-400">
+                  <span>Activity couldn&apos;t be loaded.</span>
+                  {remoteRunId ? (
+                    <button
+                      type="button"
+                      className="font-semibold text-deep-space-blue-600 hover:underline dark:text-deep-space-blue-300"
+                      onClick={() => void retryRemoteTrace().catch(() => undefined)}
+                    >
+                      Retry
+                    </button>
+                  ) : null}
+                </div>
               ) : (
                 <p className="px-1 py-2 text-xs text-gray-500 dark:text-gray-400">
                   Loading activity…

@@ -459,6 +459,67 @@ test("assistant turn correlation survives persisted and live event reordering", 
   assert.equal(compacted[0].isLiveDraft, false);
 });
 
+test("a raced assistant response renders after its correlated user message", () => {
+  const compacted = compactDuplicateChatMessages([
+    {
+      id: "unrelated-assistant",
+      role: "assistant",
+      content: "An older paginated response",
+      timestamp: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "response-1",
+      persistedId: "persisted-response-1",
+      replyToMessageId: "persisted-input-1",
+      role: "assistant",
+      content: "Final response",
+      timestamp: "2026-01-01T00:00:02.000Z",
+    },
+    {
+      id: "optimistic-input-1",
+      persistedId: "persisted-input-1",
+      role: "user",
+      content: "My message",
+      timestamp: "2026-01-01T00:00:01.000Z",
+    },
+  ]);
+
+  assert.deepEqual(
+    compacted.map((message) => message.id),
+    ["unrelated-assistant", "optimistic-input-1", "response-1"],
+  );
+});
+
+test("reply ordering leaves already ordered and uncorrelated messages stable", () => {
+  const compacted = compactDuplicateChatMessages([
+    {
+      id: "input-1",
+      role: "user",
+      content: "My message",
+      timestamp: "2026-01-01T00:00:01.000Z",
+    },
+    {
+      id: "response-1",
+      replyToMessageId: "input-1",
+      role: "assistant",
+      content: "Final response",
+      timestamp: "2026-01-01T00:00:02.000Z",
+    },
+    {
+      id: "response-from-an-older-page",
+      replyToMessageId: "input-not-loaded",
+      role: "assistant",
+      content: "Older response",
+      timestamp: "2025-12-31T23:59:59.000Z",
+    },
+  ]);
+
+  assert.deepEqual(
+    compacted.map((message) => message.id),
+    ["input-1", "response-1", "response-from-an-older-page"],
+  );
+});
+
 test("local chat activity excludes transcript token and reasoning deltas", () => {
   assert.equal(
     shouldPersistChatActivityEvent({

@@ -160,6 +160,19 @@ export interface ExecutionRun {
 export interface ExecutionDetails extends ExecutionRun {
   task_counts: ExecutionStatusCounts;
   completion_percentage: number;
+  trace_summary: AgentTraceSummary;
+}
+
+export interface AgentTraceMetrics {
+  tool_call_count: number;
+  operation_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  truncated: boolean;
+}
+
+export interface AgentTraceSummary extends AgentTraceMetrics {
+  available: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +261,23 @@ export interface ExecutionTraceEvent {
   sequence: number;
 }
 
+export interface ChatTraceEvent {
+  id: string;
+  org_id: string;
+  run_id: string;
+  event_type: string;
+  event: Record<string, unknown>;
+  created_at: string;
+  sequence: number;
+}
+
+export interface TraceEventPage<T> {
+  events: T[];
+  truncated: boolean;
+  has_more: boolean;
+  next_after: number | null;
+}
+
 // ---------------------------------------------------------------------------
 // Tasks
 // ---------------------------------------------------------------------------
@@ -330,6 +360,7 @@ export interface TaskExecutionRun {
   created_at: string;
   updated_at: string;
   pending_reviews: number;
+  trace_summary: AgentTraceSummary;
 }
 
 export interface TaskSchedule {
@@ -482,6 +513,7 @@ export interface ChatMessage {
   retryable?: boolean;
   inputTokens?: number;
   outputTokens?: number;
+  activitySummary?: ChatActivitySummary;
   /** Live drafts use lightweight plaintext rendering until finalization. */
   isLiveDraft?: boolean;
   /** Durable agent-initiated update displayed inside its source conversation. */
@@ -489,6 +521,15 @@ export interface ChatMessage {
     severity: "info" | "warning" | "action";
     link?: string;
   };
+}
+
+export interface ChatActivitySummary {
+  status: string;
+  startedAt: string;
+  completedAt?: string;
+  toolCallCount: number;
+  operationCount: number;
+  truncated: boolean;
 }
 
 // Outbound: frontend → worker
@@ -887,12 +928,32 @@ export interface NotificationMetadata {
   recipient_user_id?: string | null;
   recipient_handle?: string | null;
   agent_id?: string;
+  trace_run_id?: string;
   encrypted_payload?: EncryptedPayload;
 }
 
 export interface ChatMessagePage {
   messages: PersistedChatMessage[];
+  trace_runs?: TerminalChatTraceRun[];
+  trace_summaries?: ChatTraceSummary[];
   has_more: boolean;
+}
+
+export interface ChatTraceSummary extends AgentTraceMetrics {
+  run_id: string;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+}
+
+export interface TerminalChatTraceRun {
+  run_id: string;
+  input_message_id: string;
+  status: "failed" | "cancelled";
+  error_code: string | null;
+  error_message: string | null;
+  error_retryable: boolean;
+  updated_at: string;
 }
 
 export interface QuotaUsageLimit {

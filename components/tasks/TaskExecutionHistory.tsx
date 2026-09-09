@@ -6,12 +6,39 @@ import { ChevronDown, ChevronRight, History } from "lucide-react";
 import { TaskRunActivity } from "@/components/tasks/TaskRunActivity";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { formatTraceDuration } from "@/lib/agentRunTrace/presentation";
 import { cn } from "@/lib/cn";
 import {
   executionHistoryLabel,
   formatExecutionRelativeTime,
 } from "@/lib/executionHistory";
 import type { ExecutionDetails, TaskExecutionRun } from "@/lib/types";
+
+function persistedActivityLabel(
+  execution: ExecutionDetails | TaskExecutionRun,
+): string | undefined {
+  const summary = execution.trace_summary;
+  if (!summary.available) return undefined;
+  const parts: string[] = [];
+  if (summary.tool_call_count > 0) {
+    parts.push(
+      `${summary.tool_call_count} tool call${summary.tool_call_count === 1 ? "" : "s"}`,
+    );
+  }
+  if (summary.operation_count > 0) {
+    parts.push(
+      `${summary.operation_count} ${summary.operation_count === 1 ? "operation" : "operations"}`,
+    );
+  }
+  const tokens = summary.input_tokens + summary.output_tokens;
+  if (tokens > 0) parts.push(`${tokens.toLocaleString()} tokens`);
+  const duration = formatTraceDuration(
+    execution.started_at ?? undefined,
+    execution.completed_at ?? undefined,
+  );
+  if (duration) parts.push(duration);
+  return parts.join(" · ") || undefined;
+}
 
 interface TaskExecutionHistoryProps {
   executions: Array<ExecutionDetails | TaskExecutionRun> | undefined;
@@ -78,6 +105,7 @@ export function TaskExecutionHistory({
       <div className="theme-border divide-y">
         {executions.map((execution) => {
           const expanded = expandedRunId === execution.id;
+          const activityLabel = persistedActivityLabel(execution);
           return (
             <section key={execution.id}>
               <div className="flex items-center gap-2 pr-4 transition-colors hover:[background:var(--app-hover)]">
@@ -99,6 +127,7 @@ export function TaskExecutionHistory({
                       </p>
                       <p className="theme-text-muted text-xs">
                         {formatExecutionRelativeTime(execution.created_at)}
+                        {activityLabel ? ` · ${activityLabel}` : ""}
                       </p>
                     </div>
                   </div>

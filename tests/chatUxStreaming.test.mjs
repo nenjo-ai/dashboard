@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   projectFailedChatRunMessage,
+  projectTerminalChatTraceRun,
   upsertFailedChatRunMessage,
 } from "../lib/chat/runFailure.ts";
 
@@ -112,6 +113,41 @@ test("an empty failed snapshot retains its retry identity without duplicating th
   assert.equal(
     updated.find((message) => message.id === failed.id)?.errorMessage,
     "The provider is still unavailable.",
+  );
+});
+
+test("terminal trace summaries restore failed and cancelled activity across devices", () => {
+  const failed = projectTerminalChatTraceRun({
+    run_id: "failed-run",
+    input_message_id: "input-1",
+    status: "failed",
+    error_code: "provider_timeout",
+    error_message: "The provider timed out.",
+    error_retryable: true,
+    updated_at: "2026-09-08T12:00:00.000Z",
+  });
+  assert.equal(failed.id, "failed-run");
+  assert.equal(failed.runEnvelopeId, "failed-run");
+  assert.equal(failed.replyToMessageId, "input-1");
+  assert.equal(failed.runStatus, "failed");
+  assert.equal(failed.retryable, true);
+
+  const cancelled = projectTerminalChatTraceRun({
+    run_id: "cancelled-run",
+    input_message_id: "input-2",
+    status: "cancelled",
+    error_code: null,
+    error_message: null,
+    error_retryable: false,
+    updated_at: "2026-09-08T12:01:00.000Z",
+  });
+  assert.equal(cancelled.runEnvelopeId, "cancelled-run");
+  assert.equal(cancelled.replyToMessageId, "input-2");
+  assert.equal(cancelled.runStatus, "cancelled");
+  assert.match(hookSource, /const terminalTraceRun = page\.trace_runs\?\.find/);
+  assert.match(
+    hookSource,
+    /terminalStatus: terminalTraceRun\?\.status \?\? "completed"/,
   );
 });
 
@@ -227,16 +263,23 @@ test("snapshot persistence reuses IndexedDB and orders terminal clears", () => {
   assert.match(serviceWorkerSource, /serializeStreamMutation/);
 });
 
-test("durable activity persistence does not block visible stream work", () => {
-  assert.match(
-    hookSource,
-    /shouldPersistChatActivityEvent\(lifecycleEvent\)[\s\S]*?envelopeWorkQueueRef\.current\.enqueue\(async \(\) => \{[\s\S]*?await appendEnvelopeEvent/,
-  );
+test("shared trace archiving does not block visible stream work", () => {
+  assert.doesNotMatch(hookSource, /appendEnvelopeEvent/);
+  assert.match(assistantActivitySource, /useChatTraceEvents\(remoteRunId\)/);
   assert.match(
     hookSource,
     /const lifecycleEventPromise = resolveLifecycleEventPayload/,
   );
   assert.match(hookSource, /await lifecycleEventPromise/);
+});
+
+test("historical activity can recover from a transient remote trace failure", () => {
+  assert.doesNotMatch(
+    assistantActivitySource,
+    /loadedEnvelope\?\.envelopeId === message\.runEnvelopeId\) return/,
+  );
+  assert.match(assistantActivitySource, /retryRemoteTrace\(\)\.catch/);
+  assert.match(assistantActivitySource, /traceTruncated/);
 });
 
 test("one live assistant card owns response text and activity", () => {
@@ -298,6 +341,7 @@ test("assistant activity is collapsed by default and remains user-toggleable", (
   assert.match(assistantActivitySource, /aria-expanded=\{activityOpen\}/);
   assert.match(assistantActivitySource, /aria-controls=\{activityPanelId\}/);
   assert.match(assistantActivitySource, /traceActivitySummary/);
+  assert.match(assistantActivitySource, /storedTraceActivitySummary/);
   assert.match(assistantActivitySource, /hasMeaningfulChatActivity/);
   assert.match(assistantActivitySource, /scrollIntoView/);
   assert.match(assistantActivitySource, /prefers-reduced-motion: reduce/);

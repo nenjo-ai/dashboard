@@ -3,7 +3,10 @@ import {
   mergeAsyncOperationPayload,
 } from "./agentRunTrace/adapters/chatStream.ts";
 import { EXECUTION_EVENT_TYPE, ExecutionEventKind } from "./executionEvents.ts";
-import { reduceRunTraceEvents } from "./agentRunTrace/reducer.ts";
+import {
+  reduceRunTraceEventRecords,
+  type RunTraceEventRecord,
+} from "./agentRunTrace/reducer.ts";
 import type { AgentLifecycleEvent, RunTrace } from "./agentRunTrace/types";
 import { normalizeToolCallArgs } from "./toolCallDisplay.ts";
 import type {
@@ -174,6 +177,7 @@ export function traceEnvelopeFromRealtimeEvent(
     taskId: stringField(data.task_id) ?? null,
     routineStep: recordField(eventData?.routine_step) as ExecutionTraceRoutineStep | null,
     event: payload,
+    createdAt: stringField(data.created_at) ?? new Date().toISOString(),
   };
 }
 
@@ -193,8 +197,19 @@ export function traceEnvelopeFromPersistedEvent(
 export async function lifecycleEventsFromExecutionTraceEnvelopes(
   envelopes: ExecutionTraceEnvelope[],
 ): Promise<AgentLifecycleEvent[]> {
+  const records = await lifecycleEventRecordsFromExecutionTraceEnvelopes(envelopes);
+  return records.map((record) => record.event);
+}
+
+export async function lifecycleEventRecordsFromExecutionTraceEnvelopes(
+  envelopes: ExecutionTraceEnvelope[],
+): Promise<RunTraceEventRecord[]> {
   const resolved = await Promise.all(envelopes.map(lifecycleEventFromEnvelope));
-  return resolved.filter((event): event is AgentLifecycleEvent => Boolean(event));
+  return resolved.flatMap((event, index) =>
+    event
+      ? [{ event, occurredAt: envelopes[index].createdAt }]
+      : [],
+  );
 }
 
 export async function buildExecutionTraceGroups(
@@ -220,7 +235,13 @@ export async function buildExecutionTraceGroups(
       return a.index - b.index;
     })
     .map(({ envelope }) => envelope);
-  const groups = new Map<string, { routineStep: ExecutionTraceRoutineStep | null; events: AgentLifecycleEvent[] }>();
+  const groups = new Map<
+    string,
+    {
+      routineStep: ExecutionTraceRoutineStep | null;
+      records: RunTraceEventRecord[];
+    }
+  >();
 
   for (const envelope of ordered) {
     const event = await lifecycleEventFromEnvelope(envelope);
@@ -233,15 +254,15 @@ export async function buildExecutionTraceGroups(
       envelope.executionRunId;
     const group = groups.get(key) ?? {
       routineStep: envelope.routineStep,
-      events: [],
+      records: [],
     };
-    group.events.push(event);
+    group.records.push({ event, occurredAt: envelope.createdAt });
     groups.set(key, group);
   }
 
   const traces = new Map<string, ExecutionTraceGroup>();
   for (const [key, group] of Array.from(groups.entries())) {
-    const trace = reduceRunTraceEvents(undefined, group.events, {
+    const trace = reduceRunTraceEventRecords(undefined, group.records, {
       source: "execution",
       defaultRunId: key,
       defaultSessionId: key,
