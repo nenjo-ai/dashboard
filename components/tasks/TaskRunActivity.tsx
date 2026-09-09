@@ -34,7 +34,7 @@ export function TaskRunActivity({
   onTerminal,
 }: TaskRunActivityProps) {
   const [liveEnvelopes, setLiveEnvelopes] = useState<ExecutionTraceEnvelope[]>([]);
-  const { groups, isLoading, isError, mutate } = useExecutionTraceGroups(
+  const { groups, traceTruncated, isLoading, isError, mutate } = useExecutionTraceGroups(
     executionId,
     liveEnvelopes,
   );
@@ -102,6 +102,12 @@ export function TaskRunActivity({
 
   return (
     <div className="theme-border max-h-[36rem] space-y-3 overflow-y-auto rounded-lg border p-3">
+      {traceTruncated ? (
+        <p className="rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          This activity trace is incomplete because an event exceeded the archive
+          safety limit.
+        </p>
+      ) : null}
       {Array.from(groups.entries()).map(([runId, group], index) => (
         <section className="theme-surface-muted rounded-lg p-3" key={runId}>
           {groups.size > 1 || group.routineStep ? (

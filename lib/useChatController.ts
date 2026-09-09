@@ -50,11 +50,9 @@ import {
   mergeAsyncOperationPayload,
 } from "./agentRunTrace/adapters/chatStream";
 import {
-  appendEnvelopeEvent,
   deleteEnvelopeForInputMessage,
   deleteEnvelopesForSession,
   getEnvelopeLinksForInputMessages,
-  linkEnvelopeToInputMessage,
   markEnvelopeOrphaned,
   runEnvelopeGc,
 } from "./agentRunTrace/envelopeStore";
@@ -77,6 +75,7 @@ import {
 } from "./chat/derivations";
 import {
   projectFailedChatRunMessage,
+  projectTerminalChatTraceRun,
   upsertFailedChatRunMessage,
 } from "./chat/runFailure";
 import { retryAttemptIdForRun } from "./chat/retryIdentity";
@@ -95,7 +94,6 @@ import {
 } from "./chat/constants";
 import {
   lifecycleRunId,
-  lifecycleSessionId,
   forwardChatStreamEvent,
   normalizeSseAgentEvent,
   subscribeToChatStream,
@@ -131,8 +129,10 @@ import {
 } from "./chat/types";
 import type {
   ChatMessage,
+  ChatMessagePage,
   ChatSession,
   ChatStreamSubscriptionRequest,
+  ChatTraceSummary,
   DomainSession,
   EncryptedPayload,
   PersistedChatMessage,
@@ -145,6 +145,74 @@ function persistedMessageCommand(
   return typeof command === "string" && command.trim().startsWith("/")
     ? command.trim()
     : undefined;
+}
+
+function persistedMessageTraceRunId(
+  message: Pick<PersistedChatMessage, "metadata">,
+): string | undefined {
+  const runId = message.metadata?.trace_run_id;
+  return typeof runId === "string" && runId.trim() ? runId : undefined;
+}
+
+function attachPersistedTraceSummary(
+  message: ChatMessage,
+  summary: ChatTraceSummary | undefined,
+): ChatMessage {
+  if (!summary) return message;
+  return {
+    ...message,
+    inputTokens: summary.input_tokens,
+    outputTokens: summary.output_tokens,
+    activitySummary: {
+      status: summary.status,
+      startedAt: summary.started_at,
+      completedAt: summary.completed_at ?? undefined,
+      toolCallCount: summary.tool_call_count,
+      operationCount: summary.operation_count,
+      truncated: summary.truncated,
+    },
+  };
+}
+
+async function materializeChatMessagePage(
+  page: ChatMessagePage,
+  markUserDelivered = false,
+): Promise<ChatMessage[]> {
+  const summariesByRunId = new Map(
+    (page.trace_summaries ?? []).map((summary) => [summary.run_id, summary]),
+  );
+  const persisted = await Promise.all(
+    [...page.messages].reverse().map(async (message) => {
+      const runEnvelopeId = persistedMessageTraceRunId(message);
+      return attachPersistedTraceSummary(
+        {
+          id: message.id,
+          persistedId: message.id,
+          replyToMessageId: message.reply_to_message_id ?? undefined,
+          role: message.sender,
+          content: await resolvePersistedMessageContent(message),
+          command: persistedMessageCommand(message),
+          runEnvelopeId,
+          agentUpdate: persistedAgentUpdate(message.metadata),
+          timestamp: message.created_at,
+          status:
+            markUserDelivered && message.sender === "user" ? "delivered" : undefined,
+          artifactIds: message.artifact_ids ?? [],
+        },
+        runEnvelopeId ? summariesByRunId.get(runEnvelopeId) : undefined,
+      );
+    }),
+  );
+  const terminal = (page.trace_runs ?? []).map((run) =>
+    attachPersistedTraceSummary(
+      projectTerminalChatTraceRun(run),
+      summariesByRunId.get(run.run_id),
+    ),
+  );
+  return [...persisted, ...terminal].sort(
+    (left, right) =>
+      new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime(),
+  );
 }
 
 function isClearSnapshot(
@@ -259,7 +327,9 @@ async function hydrateRunEnvelopeLinks(
   return messages.map((message) => {
     const inputMessageId = assistantActivityInputMessageId(message);
     const link = inputMessageId ? links.get(inputMessageId) : undefined;
-    return link ? { ...message, runEnvelopeId: link.envelopeId } : message;
+    return link
+      ? { ...message, runEnvelopeId: message.runEnvelopeId ?? link.envelopeId }
+      : message;
   });
 }
 
@@ -591,11 +661,6 @@ export function useChatController(
   const streamWorkQueueRef = useRef(
     createSerialChatWorkQueue((error) => {
       console.error("Failed to process ordered chat stream work", error);
-    }),
-  );
-  const envelopeWorkQueueRef = useRef(
-    createSerialChatWorkQueue((error) => {
-      console.warn("Failed to persist chat run activity", error);
     }),
   );
   const status = "connected";
@@ -1163,19 +1228,7 @@ export function useChatController(
           setHasMore(false);
         } else {
           // API returns newest-first (DESC), reverse for oldest-first display
-          const loaded: ChatMessage[] = await Promise.all(
-            page.messages.reverse().map(async (m) => ({
-              id: m.id,
-              persistedId: m.id,
-              replyToMessageId: m.reply_to_message_id ?? undefined,
-              role: m.sender,
-              content: await resolvePersistedMessageContent(m),
-              command: persistedMessageCommand(m),
-              agentUpdate: persistedAgentUpdate(m.metadata),
-              timestamp: m.created_at,
-              artifactIds: m.artifact_ids ?? [],
-            })),
-          );
+          const loaded = await materializeChatMessagePage(page);
           if (fetchId !== historyFetchIdRef.current) return;
           const loadedWithEnvelopes = await hydrateRunEnvelopeLinks(loaded);
           if (fetchId !== historyFetchIdRef.current) return;
@@ -1326,19 +1379,7 @@ export function useChatController(
         targetType,
       );
       if (page.messages.length > 0) {
-        const older: ChatMessage[] = await Promise.all(
-          page.messages.reverse().map(async (m) => ({
-            id: m.id,
-            persistedId: m.id,
-            replyToMessageId: m.reply_to_message_id ?? undefined,
-            role: m.sender,
-            content: await resolvePersistedMessageContent(m),
-            command: persistedMessageCommand(m),
-            agentUpdate: persistedAgentUpdate(m.metadata),
-            timestamp: m.created_at,
-            artifactIds: m.artifact_ids ?? [],
-          })),
-        );
+        const older = await materializeChatMessagePage(page);
         const olderWithEnvelopes = await hydrateRunEnvelopeLinks(older);
         setMessages((prev) =>
           compactDuplicateChatMessages([...olderWithEnvelopes, ...prev]),
@@ -1399,13 +1440,15 @@ export function useChatController(
             encrypted_payload: msg.encrypted_payload ?? null,
             artifact_ids: msg.artifact_ids ?? [],
           });
-          const persistedRunEnvelopeId = msg.reply_to_message_id
-            ? (
-                await getEnvelopeLinksForInputMessages([
-                  msg.reply_to_message_id,
-                ])
-              ).get(msg.reply_to_message_id)?.envelopeId
-            : undefined;
+          const persistedRunEnvelopeId =
+            persistedMessageTraceRunId({ metadata: msg.metadata ?? null }) ??
+            (msg.reply_to_message_id
+              ? (
+                  await getEnvelopeLinksForInputMessages([
+                    msg.reply_to_message_id,
+                  ])
+                ).get(msg.reply_to_message_id)?.envelopeId
+              : undefined);
           const persistedCommand = persistedMessageCommand({
             metadata: msg.metadata ?? null,
           });
@@ -1657,25 +1700,18 @@ export function useChatController(
           (lastRunTraceRef.current?.id === receivedRunId
             ? lastRunTraceRef.current
             : undefined);
-        const receivedInputMessageId =
-          streamEvent.event_type === "RunStarted" &&
-          typeof streamEvent.data.input_message_id === "string"
-            ? streamEvent.data.input_message_id
-            : (currentRequestIdRef.current ?? undefined);
         const lifecycleEventPromise = resolveLifecycleEventPayload(streamEvent);
 
         streamWorkQueueRef.current.enqueue(async () => {
           const lifecycleEvent = await lifecycleEventPromise;
           if (!lifecycleEvent) return;
           const eventRunId = lifecycleRunId(lifecycleEvent);
-          const eventSessionId = lifecycleSessionId(lifecycleEvent);
           const envelopeId = lifecycleRunIdentity(
             eventRunId,
             activeRunEnvelopeIdRef.current,
             receivedRunId,
             lastRunEnvelopeIdRef.current,
           );
-          const envelopeSessionId = eventSessionId ?? activeSessionId;
           if (lifecycleEvent.event_type === "RunStarted") {
             activeRunEnvelopeIdRef.current = lifecycleEvent.data.run_id;
             lastRunEnvelopeIdRef.current = lifecycleEvent.data.run_id;
@@ -1685,31 +1721,6 @@ export function useChatController(
           } else if (envelopeId) {
             activeRunEnvelopeIdRef.current ??= envelopeId;
             lastRunEnvelopeIdRef.current = envelopeId;
-          }
-          if (
-            envelopeId &&
-            envelopeSessionId &&
-            shouldPersistChatActivityEvent(lifecycleEvent)
-          ) {
-            envelopeWorkQueueRef.current.enqueue(async () => {
-              await appendEnvelopeEvent({
-                envelopeId,
-                runId: envelopeId,
-                sessionId: envelopeSessionId,
-                event: lifecycleEvent,
-              });
-              if (
-                lifecycleEvent.event_type === "RunStarted" &&
-                receivedInputMessageId
-              ) {
-                await linkEnvelopeToInputMessage({
-                  sessionId: envelopeSessionId,
-                  inputMessageId: receivedInputMessageId,
-                  messageCreatedAt: new Date().toISOString(),
-                  envelopeId,
-                });
-              }
-            });
           }
           const traceLifecycleEvent = withLiveChatActivityPreview(
             lifecycleEvent,
@@ -2682,21 +2693,14 @@ export function useChatController(
               message.sender === "assistant" &&
               new Date(message.created_at).getTime() >= snapshot.updatedAt,
           );
-          if (hasPersistedResponse) {
-            const loaded: ChatMessage[] = await Promise.all(
-              page.messages.reverse().map(async (message) => ({
-                id: message.id,
-                persistedId: message.id,
-                replyToMessageId: message.reply_to_message_id ?? undefined,
-                role: message.sender,
-                content: await resolvePersistedMessageContent(message),
-                command: persistedMessageCommand(message),
-                agentUpdate: persistedAgentUpdate(message.metadata),
-                timestamp: message.created_at,
-                status: message.sender === "user" ? "delivered" : undefined,
-                artifactIds: message.artifact_ids ?? [],
-              })),
-            );
+          const terminalTraceRun = page.trace_runs?.find(
+            (run) =>
+              (run.run_id === snapshot.runId ||
+                run.input_message_id === snapshot.requestId) &&
+              new Date(run.updated_at).getTime() >= snapshot.updatedAt,
+          );
+          if (hasPersistedResponse || terminalTraceRun) {
+            const loaded = await materializeChatMessagePage(page, true);
             if (cancelled) return;
             const loadedWithEnvelopes = await hydrateRunEnvelopeLinks(loaded);
             if (cancelled) return;
@@ -2704,7 +2708,9 @@ export function useChatController(
               mergeLoadedMessages(loadedWithEnvelopes, prev),
             );
             setHasMore(page.has_more);
-            clearLiveTurnIndicators({ terminalStatus: "completed" });
+            clearLiveTurnIndicators({
+              terminalStatus: terminalTraceRun?.status ?? "completed",
+            });
             return;
           }
         } catch (error) {
@@ -3161,7 +3167,6 @@ export function useChatController(
       void streamPromise
         .then(async () => {
           await streamWorkQueueRef.current.drain();
-          await envelopeWorkQueueRef.current.drain();
           const sessionId = activeSessionId;
           const resolvedAgentId = agentId;
           if (!sessionId || !resolvedAgentId) return;
@@ -3173,20 +3178,7 @@ export function useChatController(
             },
             targetType,
           );
-          const loaded: ChatMessage[] = await Promise.all(
-            page.messages.reverse().map(async (message) => ({
-              id: message.id,
-              persistedId: message.id,
-              replyToMessageId: message.reply_to_message_id ?? undefined,
-              role: message.sender,
-              content: await resolvePersistedMessageContent(message),
-              command: persistedMessageCommand(message),
-              agentUpdate: persistedAgentUpdate(message.metadata),
-              timestamp: message.created_at,
-              status: message.sender === "user" ? "delivered" : undefined,
-              artifactIds: message.artifact_ids ?? [],
-            })),
-          );
+          const loaded = await materializeChatMessagePage(page, true);
           const loadedWithEnvelopes = await hydrateRunEnvelopeLinks(loaded);
           setMessages((prev) => mergeLoadedMessages(loadedWithEnvelopes, prev));
           setHasMore(page.has_more);

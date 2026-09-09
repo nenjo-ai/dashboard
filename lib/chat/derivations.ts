@@ -417,7 +417,40 @@ export function compactDuplicateChatMessages(
       message,
     );
   }
-  return compacted;
+
+  // Persisted user and assistant events can race the optimistic state. Keep
+  // the first-seen order for unrelated messages, but never render a known
+  // reply before the user message it answers. Timestamps are not authoritative
+  // here because the browser and backend clocks may differ.
+  const userIndexById = new Map<string, number>();
+  compacted.forEach((message, index) => {
+    if (message.role !== "user") return;
+    userIndexById.set(message.id, index);
+    if (message.persistedId) userIndexById.set(message.persistedId, index);
+  });
+
+  const ordered: ChatMessage[] = [];
+  const pendingReplies = new Map<number, ChatMessage[]>();
+  compacted.forEach((message, index) => {
+    const targetIndex =
+      message.role === "assistant" && message.replyToMessageId
+        ? userIndexById.get(message.replyToMessageId)
+        : undefined;
+    if (targetIndex !== undefined && targetIndex > index) {
+      const replies = pendingReplies.get(targetIndex) ?? [];
+      replies.push(message);
+      pendingReplies.set(targetIndex, replies);
+      return;
+    }
+
+    ordered.push(message);
+    const replies = pendingReplies.get(index);
+    if (replies) {
+      ordered.push(...replies);
+      pendingReplies.delete(index);
+    }
+  });
+  return ordered;
 }
 
 /**

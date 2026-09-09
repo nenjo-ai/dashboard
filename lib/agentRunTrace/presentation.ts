@@ -5,6 +5,7 @@ import type {
   TraceSpan,
   TraceStatus,
 } from "./types";
+import type { ChatActivitySummary } from "../types";
 
 export interface TraceActivitySummary {
   status: string;
@@ -15,7 +16,13 @@ export interface TraceActivitySummary {
 
 export type TraceDisplayItem =
   | { kind: "span"; span: TraceSpan }
-  | { kind: "tool_batch"; id: string; tools: ToolSpan[] };
+  | { kind: "tool_batch"; id: string; tools: ToolSpan[] }
+  | {
+      kind: "wait_sequence";
+      id: string;
+      waits: ToolSpan[];
+      textPreviews: string[];
+    };
 
 const PHASE_LABEL: Record<RunPhase, string> = {
   idle: "Working",
@@ -107,7 +114,10 @@ export function formatTraceDuration(
   const start = new Date(startedAt).getTime();
   const end = completedAt ? new Date(completedAt).getTime() : now;
   if (!Number.isFinite(start) || !Number.isFinite(end)) return "";
-  const milliseconds = Math.max(0, end - start);
+  return formatDurationMilliseconds(Math.max(0, end - start));
+}
+
+function formatDurationMilliseconds(milliseconds: number): string {
   if (milliseconds < 1000) return "<1s";
   if (milliseconds < 10_000) {
     return `${(milliseconds / 1000).toFixed(1).replace(/\.0$/, "")}s`;
@@ -119,6 +129,12 @@ export function formatTraceDuration(
 }
 
 export function toolActivityLabel(tool: ToolSpan): string {
+  if (tool.name === "wait") {
+    if (tool.status === "running" || tool.status === "queued") return "Waiting";
+    if (tool.status === "failed") return "Wait failed";
+    if (tool.status === "cancelled") return "Wait cancelled";
+    return "Waited";
+  }
   if (tool.name === "web_search") {
     if (tool.status === "running") return "Searching the web";
     if (tool.status === "failed") return "Web search failed";
@@ -139,9 +155,67 @@ export function toolActivityLabel(tool: ToolSpan): string {
   return tool.status === "failed" ? labels.failed : labels.completed;
 }
 
+function waitDisplayCandidate(span: TraceSpan): {
+  waits: ToolSpan[];
+  textPreviews: string[];
+} | undefined {
+  if (span.kind === "tool") {
+    if (span.name !== "wait") return undefined;
+    const preview = span.textPreview?.trim();
+    return {
+      waits: [span],
+      textPreviews: preview ? [preview] : [],
+    };
+  }
+  if (span.kind !== "model") return undefined;
+
+  const children = span.children ?? [];
+  if (
+    children.length === 0 ||
+    !children.every((child) => child.kind === "tool" && child.name === "wait")
+  ) {
+    return undefined;
+  }
+
+  const waits = children as ToolSpan[];
+  const textPreviews: string[] = [];
+  const modelText = span.text?.trim();
+  if (modelText) textPreviews.push(modelText);
+  for (const wait of waits) {
+    const preview = wait.textPreview?.trim();
+    if (preview && preview !== modelText) textPreviews.push(preview);
+  }
+  return { waits, textPreviews };
+}
+
 export function groupTraceDisplayItems(spans: TraceSpan[]): TraceDisplayItem[] {
   const items: TraceDisplayItem[] = [];
-  for (const span of spans) {
+  for (let index = 0; index < spans.length; index += 1) {
+    const span = spans[index];
+    const waitCandidate = waitDisplayCandidate(span);
+    if (waitCandidate) {
+      const waits = [...waitCandidate.waits];
+      const textPreviews = [...waitCandidate.textPreviews];
+      let nextIndex = index + 1;
+      while (nextIndex < spans.length) {
+        const nextWait = waitDisplayCandidate(spans[nextIndex]);
+        if (!nextWait) break;
+        waits.push(...nextWait.waits);
+        textPreviews.push(...nextWait.textPreviews);
+        nextIndex += 1;
+      }
+      if (waits.length > 1) {
+        items.push({
+          kind: "wait_sequence",
+          id: waits[0].id,
+          waits,
+          textPreviews,
+        });
+        index = nextIndex - 1;
+        continue;
+      }
+    }
+
     if (span.kind !== "tool") {
       items.push({ kind: "span", span });
       continue;
@@ -155,6 +229,24 @@ export function groupTraceDisplayItems(spans: TraceSpan[]): TraceDisplayItem[] {
     }
   }
   return items;
+}
+
+export function waitSequenceDuration(
+  waits: ToolSpan[],
+  now = Date.now(),
+): string {
+  let totalMilliseconds = 0;
+  let hasValidDuration = false;
+  for (const wait of waits) {
+    const start = new Date(wait.startedAt).getTime();
+    const end = wait.completedAt
+      ? new Date(wait.completedAt).getTime()
+      : now;
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+    hasValidDuration = true;
+    totalMilliseconds += Math.max(0, end - start);
+  }
+  return hasValidDuration ? formatDurationMilliseconds(totalMilliseconds) : "";
 }
 
 export function toolBatchLabel(tools: ToolSpan[]): string {
@@ -207,6 +299,57 @@ export function traceActivitySummary(trace: RunTrace): TraceActivitySummary {
   }
   const detail = detailParts.join(" · ") || undefined;
   const duration = formatTraceDuration(trace.startedAt, trace.completedAt);
+  const ariaLabel = ["Activity", status, detail, duration]
+    .filter(Boolean)
+    .join(", ");
+  return { status, detail, duration: duration || undefined, ariaLabel };
+}
+
+/** Keep persisted run-level timing authoritative when archived details load. */
+export function withPersistedActivityTiming(
+  trace: RunTrace,
+  summary?: Pick<ChatActivitySummary, "startedAt" | "completedAt">,
+): RunTrace {
+  if (!summary) return trace;
+  const completedAt = summary.completedAt ?? trace.completedAt;
+  if (
+    trace.startedAt === summary.startedAt &&
+    trace.completedAt === completedAt
+  ) {
+    return trace;
+  }
+  return {
+    ...trace,
+    startedAt: summary.startedAt,
+    completedAt,
+  };
+}
+
+/** Present the Postgres summary before the detailed S3 trace is requested. */
+export function storedTraceActivitySummary(
+  summary: ChatActivitySummary,
+): TraceActivitySummary {
+  const status =
+    summary.status === "running"
+      ? "Working"
+      : summary.status === "failed"
+        ? "Failed"
+        : summary.status === "cancelled"
+          ? "Cancelled"
+          : "Completed";
+  const detailParts: string[] = [];
+  if (summary.toolCallCount > 0) {
+    detailParts.push(
+      `${summary.toolCallCount} tool call${summary.toolCallCount === 1 ? "" : "s"}`,
+    );
+  }
+  if (summary.operationCount > 0) {
+    detailParts.push(
+      `${summary.operationCount} ${summary.operationCount === 1 ? "operation" : "operations"}`,
+    );
+  }
+  const detail = detailParts.join(" · ") || undefined;
+  const duration = formatTraceDuration(summary.startedAt, summary.completedAt);
   const ariaLabel = ["Activity", status, detail, duration]
     .filter(Boolean)
     .join(", ");

@@ -124,6 +124,8 @@ test("persisted execution trace rows are sorted by sequence before reducing", as
   assert.equal(trace.spans[0].kind, "tool");
   assert.equal(trace.spans[0].status, "completed");
   assert.equal(trace.spans[0].outputPreview, "Written 128 bytes");
+  assert.equal(trace.spans[0].startedAt, "2026-01-01T00:00:01.000Z");
+  assert.equal(trace.spans[0].completedAt, "2026-01-01T00:00:02.000Z");
 });
 
 test("non execution trace realtime events are ignored by the trace adapter", () => {

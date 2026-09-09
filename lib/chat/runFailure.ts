@@ -1,4 +1,4 @@
-import type { ChatMessage } from "../types";
+import type { ChatMessage, TerminalChatTraceRun } from "../types";
 
 export const DEFAULT_CHAT_RUN_FAILURE_MESSAGE =
   "The model provider could not complete the response.";
@@ -53,4 +53,34 @@ export function upsertFailedChatRunMessage(
   return messages.map((message, messageIndex) =>
     messageIndex === index ? { ...message, ...failed } : message,
   );
+}
+
+/** Restore a terminal run that has no persisted assistant response. */
+export function projectTerminalChatTraceRun(
+  run: TerminalChatTraceRun,
+): ChatMessage {
+  if (run.status === "failed") {
+    return projectFailedChatRunMessage({
+      runId: run.run_id,
+      fallbackResponseId: run.run_id,
+      inputMessageId: run.input_message_id,
+      content: "",
+      errorCode: run.error_code ?? undefined,
+      errorMessage: run.error_message ?? undefined,
+      retryable: run.error_retryable,
+      timestamp: run.updated_at,
+    });
+  }
+  return {
+    id: run.run_id,
+    role: "assistant",
+    content: "",
+    timestamp: run.updated_at,
+    replyToMessageId: run.input_message_id,
+    runEnvelopeId: run.run_id,
+    runStatus: "cancelled",
+    errorCode: run.error_code ?? undefined,
+    errorMessage: run.error_message ?? undefined,
+    isLiveDraft: false,
+  };
 }

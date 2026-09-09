@@ -63,6 +63,7 @@ import type {
   TaskSchedulePreview,
   TaskWorkflowStatus,
 } from "./types";
+import { collectTraceEventPages } from "./tracePagination";
 import { mutate as mutateSWR } from "swr";
 import { readStoredActiveOrgId } from "./activeOrg";
 import { isOrgScopedPlatformApiUrl } from "./apiScope";
@@ -1058,10 +1059,33 @@ export async function fetchExecutionEvents(
 
 export async function fetchExecutionTraceEvents(
   executionId: string,
-): Promise<import("./types").ExecutionTraceEvent[]> {
-  return fetcher<import("./types").ExecutionTraceEvent[]>(
+): Promise<import("./types").TraceEventPage<import("./types").ExecutionTraceEvent>> {
+  return fetchAllTraceEventPages<import("./types").ExecutionTraceEvent>(
     executionTraceEventsUrl(executionId),
   );
+}
+
+export function chatTraceEventsUrl(runId: string): string {
+  return `${API_V1}/chat-streams/${runId}/trace-events`;
+}
+
+export async function fetchChatTraceEvents(
+  runId: string,
+): Promise<import("./types").TraceEventPage<import("./types").ChatTraceEvent>> {
+  return fetchAllTraceEventPages<import("./types").ChatTraceEvent>(
+    chatTraceEventsUrl(runId),
+  );
+}
+
+async function fetchAllTraceEventPages<T>(
+  baseUrl: string,
+): Promise<import("./types").TraceEventPage<T>> {
+  return collectTraceEventPages((after, limit) => {
+    const separator = baseUrl.includes("?") ? "&" : "?";
+    return fetcher<import("./types").TraceEventPage<T>>(
+      `${baseUrl}${separator}after=${after}&limit=${limit}`,
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------
