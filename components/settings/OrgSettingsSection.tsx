@@ -774,12 +774,10 @@ function MyDeviceAccessPanel({
 function AccessRequestsPanel({
   orgId,
   requests,
-  currentUserId,
   onRefresh,
 }: {
   orgId: string;
   requests: OrgContentKeyAccessRequest[];
-  currentUserId?: string;
   onRefresh: () => Promise<unknown>;
 }) {
   const [busyRequestId, setBusyRequestId] = useState<string | null>(null);
@@ -804,54 +802,44 @@ function AccessRequestsPanel({
                   Role: {request.requester_role} · Device: {request.device_label || request.device_id}
                 </p>
               </div>
-              {request.requester_user_id === currentUserId ? (
-                <Button
-                  disabled
-                  className="disabled:opacity-100 motion-safe:animate-pulse shadow-[0_0_0_1px_rgba(217,119,6,0.35)]"
-                  style={{ backgroundColor: "#f59e0b", color: "#ffffff" }}
-                >
-                  Waiting for approval
-                </Button>
-              ) : (
-                <Button
-                  isLoading={busyRequestId === request.id}
-                  className="motion-safe:animate-pulse shadow-[0_0_0_1px_rgba(22,163,74,0.35)]"
-                  style={{ backgroundColor: "#16a34a", color: "#ffffff" }}
-                  onClick={async () => {
-                    try {
-                      setBusyRequestId(request.id);
-                      const status = await fetchCurrentOrgContentKeyStatus();
-                      let localOck = await loadStoredOrgContentKey(status.org_id, status.key_version);
-                      if (!localOck && status.has_user_recovery_access) {
-                        const recovery = await fetchCurrentOrgContentKeyRecovery();
-                        if (recovery.recovery_wrapped_ock) {
-                          localOck = await importWrappedOrgContentKeyFromRecovery({
-                            orgId: recovery.org_id,
-                            wrappedOck: recovery.recovery_wrapped_ock,
-                          });
-                        }
+              <Button
+                isLoading={busyRequestId === request.id}
+                className="motion-safe:animate-pulse shadow-[0_0_0_1px_rgba(22,163,74,0.35)]"
+                style={{ backgroundColor: "#16a34a", color: "#ffffff" }}
+                onClick={async () => {
+                  try {
+                    setBusyRequestId(request.id);
+                    const status = await fetchCurrentOrgContentKeyStatus();
+                    let localOck = await loadStoredOrgContentKey(status.org_id, status.key_version);
+                    if (!localOck && status.has_user_recovery_access) {
+                      const recovery = await fetchCurrentOrgContentKeyRecovery();
+                      if (recovery.recovery_wrapped_ock) {
+                        localOck = await importWrappedOrgContentKeyFromRecovery({
+                          orgId: recovery.org_id,
+                          wrappedOck: recovery.recovery_wrapped_ock,
+                        });
                       }
-                      if (!localOck) {
-                        throw new Error("This device does not currently hold the org content key. Restore org access on this device first.");
-                      }
-                      const wrappedOck = await wrapOrgContentKeyForWorker({
-                        orgId: status.org_id,
-                        keyVersion: status.key_version,
-                        workerPublicKey: request.enc_public_key,
-                      });
-                      await approveOrgContentKeyRequest(orgId, request.id, wrappedOck);
-                      await onRefresh();
-                      toast.success("Approved device access request.");
-                    } catch (error) {
-                      toast.error(error instanceof Error ? error.message : "Failed to approve device access request.");
-                    } finally {
-                      setBusyRequestId(null);
                     }
-                  }}
-                >
-                  Approve device
-                </Button>
-              )}
+                    if (!localOck) {
+                      throw new Error("This device does not currently hold the org content key. Restore org access on this device first.");
+                    }
+                    const wrappedOck = await wrapOrgContentKeyForWorker({
+                      orgId: status.org_id,
+                      keyVersion: status.key_version,
+                      workerPublicKey: request.enc_public_key,
+                    });
+                    await approveOrgContentKeyRequest(orgId, request.id, wrappedOck);
+                    await onRefresh();
+                    toast.success("Approved device access request.");
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : "Failed to approve device access request.");
+                  } finally {
+                    setBusyRequestId(null);
+                  }
+                }}
+              >
+                Approve device
+              </Button>
             </div>
           ))
         )}
@@ -970,7 +958,6 @@ export function OrgSettingsSection() {
           <AccessRequestsPanel
             orgId={activeOrgId}
             requests={requests ?? []}
-            currentUserId={currentUser?.user_id ?? undefined}
             onRefresh={async () => {
               await mutateRequests();
             }}
