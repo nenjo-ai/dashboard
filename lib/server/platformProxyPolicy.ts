@@ -46,7 +46,18 @@ export function buildPlatformApiUrl(
     throw new Error("Invalid platform proxy target");
   }
 
-  path.forEach(validatePlatformPathSegment);
+  path.forEach((segment, index) => {
+    // Next decodes the registry's namespace/name into a single catch-all
+    // parameter. Allow that identifier only on the registry detail route,
+    // then re-encode it below so it remains one upstream path segment.
+    if (path.length === 4 && path[0] === "mcp-servers"
+      && path[1] === "registry" && index === 2 && path[3] === "latest"
+      && /^[a-zA-Z0-9][a-zA-Z0-9.-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(segment)
+      && Buffer.byteLength(segment, "utf8") <= MAX_PLATFORM_PATH_SEGMENT_BYTES) {
+      return;
+    }
+    validatePlatformPathSegment(segment);
+  });
   const upstream = new URL(baseUrl.origin);
   upstream.pathname = `/api/v1/${path.map(encodeURIComponent).join("/")}`;
   upstream.search = rawSearch;

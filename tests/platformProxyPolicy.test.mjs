@@ -39,6 +39,17 @@ test("platform proxy rejects unsafe base URLs", () => {
   ));
 });
 
+test("registry names keep their namespace slash encoded in the upstream URL", () => {
+  assert.equal(buildPlatformApiUrl("https://platform.example.com", [
+    "mcp-servers", "registry", "io.github.example/weather-mcp", "latest",
+  ]).pathname, "/api/v1/mcp-servers/registry/io.github.example%2Fweather-mcp/latest");
+
+  for (const name of ["../admin", "example/..", "example/server/extra", "example/../admin", "example/server?admin", "example\\server"]) {
+    assert.throws(() => buildPlatformApiUrl("https://platform.example.com", ["mcp-servers", "registry", name, "latest"]));
+  }
+  assert.throws(() => buildPlatformApiUrl("https://platform.example.com", ["artifacts", "io.github.example/weather-mcp"]));
+});
+
 test("platform proxy does not forward upstream cookies redirects or transport headers", () => {
   const headers = forwardPlatformResponseHeaders(new Headers({
     "content-type": "application/json",
