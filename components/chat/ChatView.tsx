@@ -21,6 +21,7 @@ import { useSafeRouter } from "@/lib/safeRouter";
 import { useAgents } from "@/lib/hooks";
 import { useChatSessionIndicators } from "@/lib/useChatSessionIndicators";
 import { ChatConversationHeader } from "./ChatConversationHeader";
+import { normalizeLegacyNotificationUrl } from "@/lib/chat/notificationNavigation";
 
 export function ChatView() {
   const searchParams = useSearchParams();
@@ -35,7 +36,6 @@ export function ChatView() {
 
   // Active session from URL
   const sessionParam = searchParams.get("session");
-  const channelParam = searchParams.get("channel");
   const [localSelectedSessionId, setSelectedSessionId] = useState<
     string | null
   >(() => sessionParam);
@@ -66,15 +66,9 @@ export function ChatView() {
 
   // Legacy notification URLs now land in the unified conversation view.
   useEffect(() => {
-    if (channelParam !== "notifications") return;
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("channel");
-    params.delete("session");
-    router.replace(
-      params.size > 0 ? `${pathname}?${params.toString()}` : pathname,
-      { scroll: false },
-    );
-  }, [channelParam, pathname, router, searchParams]);
+    const destination = normalizeLegacyNotificationUrl(pathname, searchParams.toString());
+    if (destination) router.replace(destination, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   // Fetch the one authoritative set of conversational sessions.
   const {
@@ -84,7 +78,7 @@ export function ChatView() {
   } = useSWR<ChatSessionExtended[]>(
     isMobileViewport
       ? null
-      : allChatSessionsUrl(1000, 0, "chat"),
+      : allChatSessionsUrl(1000, 0, "all"),
     fetcher,
     { refreshInterval: 10000, revalidateOnFocus: true, dedupingInterval: 5000 },
   );
