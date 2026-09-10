@@ -40,7 +40,7 @@ export function MobileChatContainer({
     isLoading: sessionsLoading,
     mutate: mutateSessions,
   } = useSWR<ChatSessionExtended[]>(
-    allChatSessionsUrl(200, 0, "chat"),
+    allChatSessionsUrl(200, 0, "all"),
     fetcher,
     { refreshInterval: 10000, revalidateOnFocus: true, dedupingInterval: 5000 },
   );

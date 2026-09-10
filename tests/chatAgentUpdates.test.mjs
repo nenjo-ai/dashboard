@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 import { compactDuplicateChatMessages } from "../lib/chat/derivations.ts";
+import { normalizeLegacyNotificationUrl } from "../lib/chat/notificationNavigation.ts";
 
 const readSource = (path) =>
   readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -55,7 +56,9 @@ test("chat owns unread navigation and read cleanup", () => {
 });
 
 test("legacy notification URLs normalize into chat and no dedicated surface remains", async () => {
-  assert.match(viewSource, /params\.delete\("channel"\)/);
+  assert.equal(normalizeLegacyNotificationUrl("/dashboard/chat", "channel=notifications&session=source-session"), "/dashboard/chat?session=source-session");
+  assert.equal(normalizeLegacyNotificationUrl("/dashboard/chat", "channel=notifications"), "/dashboard/chat");
+  assert.equal(normalizeLegacyNotificationUrl("/dashboard/chat", "session=source-session"), null);
   assert.doesNotMatch(viewSource, /NotificationArea|MobileNotificationContainer/);
   await assert.rejects(
     access(new URL("../components/chat/NotificationArea.tsx", import.meta.url)),
