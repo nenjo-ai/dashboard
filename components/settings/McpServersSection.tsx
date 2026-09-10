@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/Label";
 import { toast } from "@/lib/toast";
 import type { McpServer } from "@/lib/types";
 import { resourceSlug } from "@/lib/resourceSlug";
+import { registryInstallPlan } from "@/lib/mcpRegistry";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -68,11 +69,15 @@ export function McpServersSection() {
 
   return (
     <div className="relative">
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex flex-wrap justify-end gap-2">
+        <Button variant="secondary" onClick={() => setShowRegistry(true)}>
+          Browse Registry
+        </Button>
         <Button onClick={() => setShowCreate(true)}>
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
+          Add Manually
         </Button>
       </div>
 
@@ -138,14 +143,17 @@ export function McpServersSection() {
       />
 
       {/* Registry Browse Modal */}
-      <McpRegistryModal
-        open={showRegistry}
-        onClose={() => setShowRegistry(false)}
-        onInstall={() => {
-          setShowRegistry(false);
-          mutate();
-        }}
-      />
+      {showRegistry && (
+        <McpRegistryModal
+          open
+          installedServers={mcpServers ?? []}
+          onClose={() => setShowRegistry(false)}
+          onInstall={() => {
+            setShowRegistry(false);
+            void mutate();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -416,7 +424,9 @@ function McpRegistryModal({
   open,
   onClose,
   onInstall,
+  installedServers,
 }: {
+  installedServers: McpServer[];
   open: boolean;
   onClose: () => void;
   onInstall: (server: McpRegistryServer) => void;
@@ -428,163 +438,117 @@ function McpRegistryModal({
   const [installingName, setInstallingName] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | undefined>();
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const searchRequest = useRef(0);
+  const detailRequest = useRef(0);
+  const installInFlight = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Detail view state
   const [detailServer, setDetailServer] = useState<McpRegistryServer | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const invalidateSearch = useCallback(() => { searchRequest.current++; }, []);
 
   const executeSearch = useCallback(async (q: string) => {
-    if (!q.trim()) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const request = ++searchRequest.current;
     setSearching(true);
+    setLoadingMore(false);
     setSearched(true);
+    setSearchError(null);
+    setResults([]);
+    setNextCursor(undefined);
     try {
       const data = await searchMcpRegistry(q.trim());
-      setResults(data.servers || []);
+      if (request !== searchRequest.current) return;
+      setResults(Array.from(new Map(data.servers.map((server) => [server.name, server])).values()));
       setNextCursor(data.nextCursor);
     } catch {
-      setResults([]);
-      setNextCursor(undefined);
+      if (request === searchRequest.current) setSearchError("Could not load the MCP registry. Please try again.");
     } finally {
-      setSearching(false);
+      if (request === searchRequest.current) setSearching(false);
     }
   }, []);
 
-  // Live search when query is 3+ characters
   useEffect(() => {
-    if (debounceRef.current !== null) clearTimeout(debounceRef.current);
-    if (query.trim().length >= 3) {
-      debounceRef.current = setTimeout(() => executeSearch(query), 300);
-    } else {
-      debounceRef.current = null;
-    }
+    debounceRef.current = setTimeout(() => void executeSearch(query), 300);
     return () => {
-      if (debounceRef.current !== null) clearTimeout(debounceRef.current);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      invalidateSearch();
     };
-  }, [query, executeSearch]);
+  }, [query, executeSearch, invalidateSearch]);
+
+  useEffect(() => () => { detailRequest.current++; }, []);
 
   const handleLoadMore = useCallback(async () => {
-    if (!nextCursor || !query.trim()) return;
+    if (!nextCursor || loadingMore || searching) return;
+    const request = ++searchRequest.current;
     setLoadingMore(true);
+    setSearchError(null);
     try {
       const data = await searchMcpRegistry(query.trim(), 20, nextCursor);
-      setResults((prev) => [...prev, ...(data.servers || [])]);
-      setNextCursor(data.nextCursor);
+      if (request !== searchRequest.current) return;
+      setResults((prev) => Array.from(new Map([...prev, ...data.servers].map((server) => [server.name, server])).values()));
+      setNextCursor(data.nextCursor === nextCursor ? undefined : data.nextCursor);
     } catch {
-      // silently fail
+      if (request === searchRequest.current) setSearchError("Could not load more servers. Please try again.");
     } finally {
-      setLoadingMore(false);
+      if (request === searchRequest.current) setLoadingMore(false);
     }
-  }, [query, nextCursor]);
+  }, [query, nextCursor, loadingMore, searching]);
 
   const handleViewDetail = useCallback(async (server: McpRegistryServer) => {
+    const request = ++detailRequest.current;
     setLoadingDetail(true);
+    setDetailError(null);
     setDetailServer(server);
     try {
       const full = await getMcpRegistryServer(server.name);
-      setDetailServer(full);
+      if (request === detailRequest.current) setDetailServer(full);
     } catch {
-      // Keep the search-level data if detail fetch fails
+      if (request === detailRequest.current) setDetailError("Could not load the current server details. Return to results and try again.");
     } finally {
-      setLoadingDetail(false);
+      if (request === detailRequest.current) setLoadingDetail(false);
     }
   }, []);
 
-  const handleInstall = useCallback(
-    async (server: McpRegistryServer) => {
-      setInstallingName(server.name);
-      try {
-        // Prefer streamable-http over sse (worker uses JSON-RPC POST)
-        const remote = server.remotes?.find((r) => r.type === "streamable-http")
-          ?? server.remotes?.find((r) => r.type === "sse")
-          ?? server.remotes?.[0];
-        const pkg = server.packages?.[0];
-        const hasHttp = remote?.type === "streamable-http" || remote?.type === "sse";
-
-        let transport: "stdio" | "http";
-        let command: string | undefined;
-        let args: string[] | undefined;
-        let url: string | undefined;
-
-        if (hasHttp && remote?.url) {
-          transport = "http";
-          url = remote.url;
-        } else if (pkg) {
-          transport = "stdio";
-          if (pkg.registryType === "npm") {
-            command = pkg.runtimeHint || "npx";
-            args = ["-y", pkg.identifier || server.name];
-          } else if (pkg.registryType === "pypi") {
-            command = pkg.runtimeHint || "uvx";
-            args = [pkg.identifier || server.name];
-          } else if (pkg.registryType === "oci") {
-            command = pkg.runtimeHint || "docker";
-            args = ["run", "-i", "--rm", pkg.identifier || server.name];
-          } else {
-            command = "npx";
-            args = ["-y", pkg.identifier || server.name];
-          }
-        } else {
-          transport = "stdio";
-          command = "npx";
-          args = ["-y", server.name];
-        }
-
-        // Build env_schema from registry auth requirements
-        const envSchema: Array<{ key: string; label: string; required: boolean }> = [];
-        server.packages?.forEach((pkg) => {
-          pkg.environmentVariables?.forEach((ev) => {
-            if (ev.name) envSchema.push({ key: ev.name, label: ev.description || ev.name, required: ev.isRequired ?? false });
-          });
-          pkg.runtimeArguments?.forEach((arg) => {
-            if (arg.variables) {
-              Object.entries(arg.variables).forEach(([key, v]) => {
-                if (v.isSecret || v.isRequired) envSchema.push({ key, label: arg.description || key, required: v.isRequired ?? false });
-              });
-            }
-          });
-        });
-        server.remotes?.forEach((remote) => {
-          remote.headers?.forEach((h) => {
-            if (h.isSecret || h.isRequired) envSchema.push({ key: h.name || "authorization", label: h.description || h.name || "Auth header", required: h.isRequired ?? false });
-          });
-        });
-        // For HTTP remotes with no declared auth, add a generic token field
-        if (envSchema.length === 0 && hasHttp) {
-          envSchema.push({ key: "token", label: "API token or access key", required: false });
-        }
-
-        await createMcpServer({
-          slug: resourceSlug(server.name),
-          name: server.title || server.name,
-          description: server.description || undefined,
-          transport,
-          command,
-          args,
-          url,
-          env_schema: envSchema.length > 0 ? envSchema : undefined,
-        });
-
-        toast.success(`"${server.title || server.name}" installed.`);
-        onInstall(server);
-      } catch {
-        toast.error("Failed to install MCP server.");
-      } finally {
-        setInstallingName(null);
-      }
-    },
-    [onInstall],
-  );
+  const handleInstall = useCallback(async (server: McpRegistryServer) => {
+    if (installInFlight.current || loadingDetail || detailError) return;
+    const plan = registryInstallPlan(server);
+    if (!plan.request) { toast.error(plan.error); return; }
+    if (installedServers.some((installed) => installed.slug === plan.request.slug)) {
+      toast.error("This server is already in your workspace.");
+      return;
+    }
+    installInFlight.current = true;
+    setInstallingName(server.name);
+    try {
+      await createMcpServer(plan.request);
+      toast.success(`"${server.title || server.name}" added to your workspace.`);
+      onInstall(server);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to install MCP server.");
+    } finally {
+      installInFlight.current = false;
+      setInstallingName(null);
+    }
+  }, [onInstall, installedServers, loadingDetail, detailError]);
 
   return (
-    <Modal open={open} onClose={onClose} title={detailServer ? detailServer.title || detailServer.name : "Browse MCP Registry"} className="max-w-2xl">
+    <Modal open={open} onClose={() => { if (!installInFlight.current) onClose(); }} title={detailServer ? detailServer.title || detailServer.name : "Browse MCP Registry"} className="max-w-2xl">
       <div className="space-y-4">
         {detailServer ? (
           <McpRegistryDetailView
             server={detailServer}
             loading={loadingDetail}
             installing={installingName === detailServer.name}
-            onBack={() => setDetailServer(null)}
+            installed={installedServers.some((server) => server.slug === resourceSlug(detailServer.name))}
+            error={detailError}
+            onBack={() => {
+              detailRequest.current++;
+              setDetailServer(null);
+              setDetailError(null);
+            }}
             onInstall={() => handleInstall(detailServer)}
           />
         ) : (
@@ -593,7 +557,15 @@ function McpRegistryModal({
             <div className="flex gap-2">
               <Input
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  invalidateSearch();
+                  setSearchError(null);
+                  setNextCursor(undefined);
+                  setResults([]);
+                  setSearching(true);
+                  setQuery(e.target.value);
+                }}
+                aria-label="Search MCP registry"
                 onKeyDown={(e) => e.key === "Enter" && executeSearch(query)}
                 placeholder="Search MCP servers (e.g. github, slack, linear...)"
                 className="flex-1"
@@ -601,7 +573,7 @@ function McpRegistryModal({
               />
               <Button
                 onClick={() => executeSearch(query)}
-                disabled={searching || !query.trim()}
+                disabled={searching}
                 isLoading={searching}
               >
                 {!searching && (
@@ -613,6 +585,7 @@ function McpRegistryModal({
               </Button>
             </div>
 
+            {searchError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{searchError}</p>}
             {/* Results */}
             <div className="max-h-[400px] overflow-y-auto">
               {searching ? (
@@ -627,9 +600,9 @@ function McpRegistryModal({
                     </div>
                   ))}
                 </div>
-              ) : results.length === 0 && searched ? (
+              ) : results.length === 0 && searched && !searchError ? (
                 <div className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                  No servers found. Try a different search term or add one manually.
+                  {nextCursor ? "No current servers on this page. Load more to continue browsing." : "No servers found. Try a different search term or add one manually."}
                 </div>
               ) : results.length === 0 ? (
                 <div className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -637,13 +610,12 @@ function McpRegistryModal({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {results.map((server, idx) => {
-                    const remote = server.remotes?.[0];
-                    const transportLabel = remote?.type === "streamable-http" || remote?.type === "sse" ? "http" : "stdio";
+                  {results.map((server) => {
+                    const transportLabel = registryInstallPlan(server).request?.transport ?? "Custom setup";
 
                     return (
                       <button
-                        key={`${server.name}-${idx}`}
+                        key={server.name}
                         onClick={() => handleViewDetail(server)}
                         className="theme-border theme-surface-muted flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors hover:[border-color:var(--app-border-strong)] hover:[background:var(--app-hover)]"
                       >
@@ -682,20 +654,20 @@ function McpRegistryModal({
                       </button>
                     );
                   })}
-                  {nextCursor && (
-                    <Button
-                      variant="secondary"
-                      className="mt-2 w-full"
-                      onClick={handleLoadMore}
-                      disabled={loadingMore}
-                      isLoading={loadingMore}
-                    >
-                      {loadingMore ? "Loading..." : "Load more"}
-                    </Button>
-                  )}
                 </div>
               )}
             </div>
+            {nextCursor && (
+              <Button
+                variant="secondary"
+                className="mt-2 w-full"
+                onClick={handleLoadMore}
+                disabled={loadingMore || searching}
+                isLoading={loadingMore}
+              >
+                {loadingMore ? "Loading..." : "Load more"}
+              </Button>
+            )}
           </>
         )}
       </div>
@@ -711,46 +683,26 @@ function McpRegistryDetailView({
   server,
   loading,
   installing,
+  installed,
+  error,
   onBack,
   onInstall,
 }: {
   server: McpRegistryServer;
   loading: boolean;
   installing: boolean;
+  installed: boolean;
+  error: string | null;
   onBack: () => void;
   onInstall: () => void;
 }) {
-  // Sanitize server name for env var pattern
-  const sanitizedName = server.name.replace(/[^a-zA-Z0-9]/g, "_").toUpperCase();
-
-  // Collect all auth requirements from packages + remotes
-  const authRequirements: Array<{ label: string; description?: string; isSecret?: boolean; envVar?: string }> = [];
-
-  server.packages?.forEach((pkg) => {
-    pkg.environmentVariables?.forEach((ev) => {
-      if (ev.name) authRequirements.push({ label: ev.name, description: ev.description, isSecret: ev.isSecret, envVar: `NENJO_MCP_${sanitizedName}_${ev.name.toUpperCase()}` });
-    });
-    pkg.runtimeArguments?.forEach((arg) => {
-      if (arg.variables) {
-        Object.entries(arg.variables).forEach(([key, v]) => {
-          if (v.isSecret) authRequirements.push({ label: key, description: arg.description, isSecret: true, envVar: `NENJO_MCP_${sanitizedName}_${key.toUpperCase()}` });
-        });
-      }
-    });
-  });
-
-  server.remotes?.forEach((remote) => {
-    remote.headers?.forEach((h) => {
-      const fieldName = h.name || "authorization";
-      authRequirements.push({ label: fieldName, description: h.description, isSecret: h.isSecret, envVar: `NENJO_MCP_${sanitizedName}_${fieldName.toUpperCase()}` });
-    });
-  });
-
-  // If there are HTTP remotes but no explicit auth requirements, hint that auth is likely needed
-  const hasHttpRemote = server.remotes?.some(
-    (r) => r.type === "streamable-http" || r.type === "sse",
-  );
-  const authUndeclared = authRequirements.length === 0 && hasHttpRemote;
+  const plan = registryInstallPlan(server);
+  const sanitizedName = (server.title || server.name).replace(/[^a-zA-Z0-9]/g, "_").toUpperCase();
+  const authRequirements = (plan.request?.env_schema ?? []).map((field) => ({
+    label: field.key,
+    description: `${field.label}${field.required ? " (required)" : " (optional)"}`,
+    envVar: `NENJO_MCP_${sanitizedName}_${field.key.toUpperCase()}`,
+  }));
 
   const transports: Array<{ label: string; detail: string }> = [];
   server.remotes?.forEach((r) => {
@@ -767,6 +719,7 @@ function McpRegistryDetailView({
       {/* Back button */}
       <button
         onClick={onBack}
+        disabled={installing}
         className="inline-flex items-center gap-1 text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -848,54 +801,41 @@ function McpRegistryDetailView({
           )}
 
           {/* Auth requirements */}
-          {(authRequirements.length > 0 || authUndeclared) && (
+          {authRequirements.length > 0 && (
             <div>
               <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                 Credentials
               </h4>
-              {authUndeclared ? (
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  This server may require authentication. Set credentials via the worker&apos;s{" "}
-                  <code className="theme-surface-muted rounded-sm px-1 py-0.5 text-[11px]">
-                    ~/.nenjo/credentials.toml
-                  </code>{" "}
-                  or environment variables.
-                </p>
-              ) : (
-                <div className="mt-2 space-y-2">
-                  {authRequirements.map((req, i) => (
-                    <div key={i} className="theme-border theme-surface-muted rounded-md border px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-gray-700 dark:text-gray-200">{req.label}</span>
-                        {req.isSecret && (
-                          <span className="rounded-sm bg-amber-50 px-1 py-0.5 text-[9px] font-medium text-amber-600 dark:bg-amber-900/30 dark:text-amber-300">
-                            secret
-                          </span>
-                        )}
-                      </div>
-                      {req.description && (
-                        <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{req.description}</p>
-                      )}
-                      {req.envVar && (
-                        <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-                          Set via: <code className="theme-surface-muted rounded-sm px-1 py-0.5">{req.envVar}</code>
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Configure these values on your worker before using the server, through environment variables or <code>~/.nenjo/credentials.toml</code>.
+                For header fields, supply the complete header value, including any authentication prefix.
+              </p>
+              <div className="mt-2 space-y-2">
+                {authRequirements.map((req) => (
+                  <div key={req.label} className="theme-border theme-surface-muted rounded-md border px-3 py-2">
+                    <span className="font-mono text-xs text-gray-700 dark:text-gray-200">{req.label}</span>
+                    <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{req.description}</p>
+                    <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                      Set via: <code className="theme-surface-muted rounded-sm px-1 py-0.5">{req.envVar}</code>
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Install this server in your current workspace, then assign it to agents, abilities, or domains.
+          </p>
+          {(error || plan.error) && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error || plan.error}</p>}
           {/* Install button */}
           <div className="flex justify-end gap-3 pt-2">
             <Button
               onClick={onInstall}
-              disabled={installing}
+              disabled={installing || installed || !!error || !plan.request}
               isLoading={installing}
             >
-              {installing ? "Installing..." : "Install Server"}
+              {installed ? "Already in workspace" : installing ? "Installing..." : "Install to Workspace"}
             </Button>
           </div>
         </div>

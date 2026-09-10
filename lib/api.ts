@@ -4492,6 +4492,7 @@ export async function deleteChatCommand(commandId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export interface McpRegistryKeyValueInput {
+  type?: "named" | "positional";
   name?: string;
   description?: string;
   isRequired?: boolean;
@@ -4535,6 +4536,21 @@ export interface McpRegistrySearchResult {
   nextCursor?: string;
 }
 
+interface McpRegistryEntry {
+  server?: McpRegistryServer;
+  _meta?: {
+    "io.modelcontextprotocol.registry/official"?: {
+      status?: string;
+      isLatest?: boolean;
+    };
+  };
+}
+
+function isAvailableRegistryEntry(entry: McpRegistryEntry): boolean {
+  const metadata = entry._meta?.["io.modelcontextprotocol.registry/official"];
+  return (!metadata?.status || metadata.status === "active") && metadata?.isLatest !== false;
+}
+
 export async function searchMcpRegistry(
   query: string,
   limit = 20,
@@ -4545,13 +4561,12 @@ export async function searchMcpRegistry(
 
   const raw = await fetcher<{
     metadata?: { nextCursor?: string };
-    servers?: Array<{
-      server?: McpRegistryServer;
-    }>;
+    servers?: McpRegistryEntry[];
   }>(url);
 
   // Flatten the nested server objects from the registry API
   const servers: McpRegistryServer[] = (raw.servers || [])
+    .filter(isAvailableRegistryEntry)
     .map((entry) => entry.server)
     .filter((s): s is McpRegistryServer => !!s);
 
@@ -4565,8 +4580,8 @@ export async function getMcpRegistryServer(
   serverName: string,
 ): Promise<McpRegistryServer> {
   const url = `${API_V1}/mcp-servers/registry/${encodeURIComponent(serverName)}/latest`;
-  const raw = await fetcher<{ server?: McpRegistryServer }>(url);
-  if (!raw.server) throw new Error("Server not found");
+  const raw = await fetcher<McpRegistryEntry>(url);
+  if (!raw.server || !isAvailableRegistryEntry(raw)) throw new Error("This registry server is no longer available.");
   return raw.server;
 }
 
