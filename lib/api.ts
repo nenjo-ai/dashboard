@@ -4556,7 +4556,7 @@ export async function searchMcpRegistry(
   limit = 20,
   cursor?: string,
 ): Promise<McpRegistrySearchResult> {
-  let url = `${API_V1}/mcp-servers/registry/search?q=${encodeURIComponent(query)}&limit=${limit}`;
+  let url = `/api/mcp-registry?q=${encodeURIComponent(query)}&limit=${limit}`;
   if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
 
   const raw = await fetcher<{
@@ -4579,7 +4579,7 @@ export async function searchMcpRegistry(
 export async function getMcpRegistryServer(
   serverName: string,
 ): Promise<McpRegistryServer> {
-  const url = `${API_V1}/mcp-servers/registry/${encodeURIComponent(serverName)}/latest`;
+  const url = `/api/mcp-registry?name=${encodeURIComponent(serverName)}`;
   const raw = await fetcher<McpRegistryEntry>(url);
   if (!raw.server || !isAvailableRegistryEntry(raw)) throw new Error("This registry server is no longer available.");
   return raw.server;

@@ -11,16 +11,17 @@ async function fixture(page: Page, options: { searchFails?: boolean; detailFails
   const workspace = [installed];
   const creates: Array<{ body: Record<string, unknown>; org: string | undefined }> = [];
   await page.addInitScript(() => localStorage.setItem("nenjo.active-org-id", "registry-test-workspace"));
-  await page.route("**/api/platform/mcp-servers**", async (route) => {
+  await page.route(/\/api\/(?:mcp-registry|platform\/mcp-servers)(?:[/?]|$)/, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.pathname.endsWith("/registry/search")) {
+    if (url.pathname === "/api/mcp-registry" && !url.searchParams.has("name")) {
       if (options.searchFails) return route.fulfill({ status: 503, json: { message: "Registry unavailable" } });
       return route.fulfill({ json: { servers: [{ server: registryServer }], metadata: {} } });
     }
-    if (url.pathname.endsWith("/latest")) {
+    if (url.pathname === "/api/mcp-registry" && url.searchParams.has("name")) {
       if (options.detailFails) return route.fulfill({ status: 503, json: { message: "Registry unavailable" } });
-      expect(decodeURIComponent(url.pathname)).toContain(registryServer.name);
+      expect(url.searchParams.get("name")).toBe(registryServer.name);
+      expect(request.headers()["x-nenjo-org-id"]).toBeUndefined();
       return route.fulfill({ json: { server: registryServer } });
     }
     if (request.method() === "POST") {
@@ -80,7 +81,7 @@ test("search failures do not look like empty results", async ({ page }) => {
 
 test("filtered registry pages retain pagination and omit inactive versions", async ({ page }) => {
   await fixture(page);
-  await page.route("**/api/platform/mcp-servers/registry/search?**", (route) => {
+  await page.route("**/api/mcp-registry?q=**", (route) => {
     const cursor = new URL(route.request().url()).searchParams.get("cursor");
     return route.fulfill({ json: cursor ? {
       servers: [{ server: registryServer }], metadata: {},
@@ -102,7 +103,7 @@ test("an older search response cannot replace the current query", async ({ page 
   await fixture(page);
   let releaseSlow!: () => void;
   const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve; });
-  await page.route("**/api/platform/mcp-servers/registry/search?**", async (route) => {
+  await page.route("**/api/mcp-registry?q=**", async (route) => {
     const query = new URL(route.request().url()).searchParams.get("q");
     if (query === "slow") await slowGate;
     return route.fulfill({ json: { servers: [{ server: { ...registryServer, title: query === "slow" ? "Stale Result" : "Current Result" } }], metadata: {} } });
