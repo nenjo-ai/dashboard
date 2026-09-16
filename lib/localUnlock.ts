@@ -252,3 +252,46 @@ export async function unlockWithAnyLocalPasskey(accountId: string): Promise<void
     return true;
   });
 }
+
+/// Ceremony for the account-recovery restore flow: obtains fresh WebAuthn PRF
+/// output for the recovery salt using the enrolled passkey. Only the public
+/// PRF input travels in the request; PRF output never leaves this module's
+/// caller (the recovery crypto layer).
+export async function requestPrfOutputForRestore(params: {
+  prfSalt: Uint8Array;
+  credentialId: string | null;
+}): Promise<Uint8Array> {
+  if (!canUsePasskeyPrf()) {
+    throw new Error("Passkey recovery requires a secure browser context with WebAuthn support.");
+  }
+
+  const allowCredentials = params.credentialId
+    ? [
+        {
+          type: "public-key" as const,
+          id: bytesToArrayBuffer(base64UrlToBytes(params.credentialId)),
+        },
+      ]
+    : undefined;
+
+  const credential = (await navigator.credentials.get({
+    publicKey: {
+      challenge: randomChallenge(),
+      rpId: window.location.hostname,
+      userVerification: "required",
+      ...(allowCredentials ? { allowCredentials } : {}),
+      extensions: {
+        prf: {
+          eval: {
+            first: bytesToArrayBuffer(params.prfSalt),
+          },
+        },
+      } as AuthenticationExtensionsClientInputs,
+    },
+  }).catch(() => null)) as PublicKeyCredentialWithPrf | null;
+
+  if (!credential) {
+    throw new Error("Passkey restore was cancelled.");
+  }
+  return requirePrfOutput(credential);
+}
