@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { useAppAuth } from "@/components/auth/AppAuth";
 import useSWR from "swr";
-import { RoleIdenticon } from "@/components/ui/RoleIdenticon";
 import { MODEL_PROVIDERS } from "@/lib/types";
 import { resourceSlug } from "@/lib/resourceSlug";
 import type {
@@ -30,6 +29,7 @@ import {
   createOrganization,
   createModel,
   createApiKey,
+  createOnboardingPairing,
   deleteDeviceEnrollment,
   fetchBootstrapStatus,
   fetchCurrentOrgContentKeyStatus,
@@ -45,7 +45,6 @@ import {
   installOfficialNenjoPackages,
   updateCurrentOrg,
   updateAgent,
-  createChatSession,
   putRecoveryBundle,
   putWorkerApprovalKey,
   registerDeviceEnrollment,
@@ -54,7 +53,17 @@ import {
   workerEnrollmentUrl,
 } from "@/lib/api";
 import { useWorkerStatus } from "@/lib/hooks";
+import {
+  buildRuntimeApprovalMaterial,
+  savePairingAttempt,
+} from "@/lib/workerPairing";
+import {
+  NENJI_GREETING_DELAY_MS,
+  primeNenjiWelcome,
+  seedSkippedWelcome,
+} from "@/lib/nenjiWelcome";
 import { findNenjiAgent } from "@/lib/nenjiAgent";
+import { NenjiPrimingCard } from "@/components/onboarding/NenjiPrimingCard";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -89,7 +98,6 @@ import {
   resetLocalEncryptedWorkspaceForRestore,
   restoreFromRecoveryBundle,
   storeRecoveryBundle,
-  wrapAccountContentKeyForWorker,
   wrapOrgContentKeyForWorker,
 } from "@/lib/cryptoContent";
 import { useSafeRouter } from "@/lib/safeRouter";
@@ -127,12 +135,6 @@ const PROVIDER_ENV_VARS: Record<ModelProvider, string> = {
 
 const SESSION_KEY = "nenjo_onboarding_raw_key";
 const RECOVERY_DRAFT_SESSION_KEY = "nenjo_onboarding_recovery_draft";
-const NENJI_GREETING_DELAY_MS = 6000;
-const LOCAL_CHAT_SEED_KEY = "nenjo:local_chat_seed";
-const DEFAULT_SKIP_MESSAGE =
-  "This is an automated message since the worker is not connected. Nenji will be able to help you once you connect the worker. Until then, feel free to browse around. Check out how Nenji is structured under Agents, or open the routine editor page.";
-const DEFAULT_CONNECTED_GREETING =
-  "Welcome to Nenjo. Nenji is online and ready to help you shape agents, routines, and context. What kind of workflow do you want to build first?";
 const NENJI_SEED_COLOR = "#b8841a";
 const DEFAULT_NENJI_IDENTITY = {
   roleId: "nenji",
@@ -919,6 +921,25 @@ function StepApiKey({
       setHasCopied(false);
       setRevealed(false);
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(key));
+
+      // Create the one-time pairing attempt for automatic approval (BOO-50).
+      // Bound to this user, workspace, browser session, and the new worker
+      // key with a 10-minute expiry. The platform mints the pairing token at
+      // enrollment registration — nothing secret is copied or embedded in the
+      // startup command. Gated behind a feature flag; best-effort in all
+      // cases — without it the runtime falls back to manual verification-code
+      // approval.
+      if (process.env.NEXT_PUBLIC_HARNESS_PAIRING_ENABLED !== "false") {
+        try {
+          const pairing = await createOnboardingPairing(key.id);
+          savePairingAttempt({
+            api_key_id: pairing.api_key_id,
+            expires_at: pairing.expires_at,
+          });
+        } catch {
+          // Pairing stays unavailable; manual code approval still works.
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create API key");
     } finally {
@@ -1146,61 +1167,15 @@ function StepConnect({
     setApprovalBusy(true);
     setApprovalError(null);
     try {
-        const [ack, signingPublicKey, orgContentStatus] = await Promise.all([
-          loadStoredAccountContentKey(),
-          loadAccountSigningPublicKey(),
-          fetchCurrentOrgContentKeyStatus(),
-        ]);
-        if (!ack) {
-          throw new Error(
-            "This browser is missing the local account content key needed to approve the runtime.",
-          );
-        }
-        if (!signingPublicKey) {
-          throw new Error(
-            "This browser is missing the account signing key needed to approve the runtime.",
-          );
-        }
-        const orgId = orgContentStatus.org_id || accountOrgId;
-        if (!orgId) {
-          throw new Error("Could not resolve the workspace id for runtime approval.");
-        }
-        const localOck = await loadStoredOrgContentKey(
-          orgContentStatus.org_id,
-          orgContentStatus.key_version,
+        const material = await buildRuntimeApprovalMaterial(
+          pendingEnrollment,
+          accountOrgId,
         );
-        if (!localOck) {
-          throw new Error(
-            "This browser does not have the workspace content key needed to approve the runtime. Re-secure the workspace or restore from recovery.",
-          );
-        }
-
-        const remoteApprovalKey = await fetchWorkerApprovalKey().catch(() => ({
-          public_key: null as string | null,
-        }));
-        if (remoteApprovalKey.public_key !== signingPublicKey) {
-          await putWorkerApprovalKey(signingPublicKey);
-        }
-
-        const certificate = await buildWorkerCertificate({
-          accountId: orgId,
-          apiKeyId: pendingEnrollment.api_key_id,
-          encPublicKey: pendingEnrollment.request.enc_public_key,
-          signPublicKey: pendingEnrollment.request.sign_public_key,
-        });
-        const wrappedAck = await wrapAccountContentKeyForWorker({
-          workerPublicKey: pendingEnrollment.request.enc_public_key,
-        });
-        const wrappedOck = await wrapOrgContentKeyForWorker({
-          orgId,
-          keyVersion: orgContentStatus.key_version,
-          workerPublicKey: pendingEnrollment.request.enc_public_key,
-        });
         await approveWorkerEnrollment(pendingEnrollment.api_key_id, {
           verification_code: verificationCode,
-          certificate,
-          wrapped_ack: wrappedAck,
-          wrapped_ock: wrappedOck,
+          certificate: material.certificate,
+          wrapped_ack: material.wrappedAck,
+          wrapped_ock: material.wrappedOck,
         });
         setApprovalCode("");
         setApprovalError(null);
@@ -1234,43 +1209,28 @@ function StepConnect({
 
     (async () => {
       try {
-        const agents = await fetchAgents();
-        const nenjiAgent = findNenjiAgent(agents);
-
-        if (!nenjiAgent) {
-          router.push("/dashboard/chat");
-          return;
-        }
-
-        setNenjiIdentity({
-          roleId: nenjiAgent.id,
-          color: nenjiAgent.color ?? NENJI_SEED_COLOR,
-        });
-
-        const session = await createChatSession({
-          agent_id: nenjiAgent.id,
-          title: "Welcome",
-        });
-
-        setGreeting("thinking");
-
         const displayName =
           user?.firstName ??
           user?.username ??
           user?.primaryEmailAddress?.emailAddress ??
           "there";
-        sessionStorage.setItem(
-          LOCAL_CHAT_SEED_KEY,
-          JSON.stringify({
-            session_id: session.id,
-            timestamp: session.created_at,
-            message: `Welcome to Nenjo, ${displayName}. ${DEFAULT_CONNECTED_GREETING.slice("Welcome to Nenjo. ".length)}`,
-          }),
-        );
+        const primed = await primeNenjiWelcome(displayName);
+
+        if (!primed) {
+          router.push("/dashboard/chat");
+          return;
+        }
+
+        setNenjiIdentity({
+          roleId: primed.roleId,
+          color: primed.color ?? NENJI_SEED_COLOR,
+        });
+
+        setGreeting("thinking");
 
         navigationTimerRef.current = setTimeout(() => {
           setGreeting("done");
-          router.push(`/dashboard/chat?session=${session.id}`);
+          router.push(`/dashboard/chat?session=${primed.sessionId}`);
         }, NENJI_GREETING_DELAY_MS);
       } catch {
         router.push("/dashboard/chat");
@@ -1298,34 +1258,8 @@ function StepConnect({
 
   const handleSkip = useCallback(async () => {
     sessionStorage.removeItem(SESSION_KEY);
-
-    try {
-      const agents = await fetchAgents();
-      const nenjiAgent = findNenjiAgent(agents);
-
-      if (!nenjiAgent) {
-        router.push("/dashboard/chat");
-        return;
-      }
-
-      const session = await createChatSession({
-        agent_id: nenjiAgent.id,
-        title: "Welcome",
-      });
-
-      sessionStorage.setItem(
-        LOCAL_CHAT_SEED_KEY,
-        JSON.stringify({
-          session_id: session.id,
-          timestamp: session.created_at,
-          message: DEFAULT_SKIP_MESSAGE,
-        }),
-      );
-
-      router.push(`/dashboard/chat?session=${session.id}`);
-    } catch {
-      router.push("/dashboard/chat");
-    }
+    const target = await seedSkippedWelcome();
+    router.push(target);
   }, [router]);
 
   return (
@@ -1362,7 +1296,11 @@ function StepConnect({
         <ConnectionCommand
           number={3}
           title="Start the worker"
-          description={rawWorkerKey ? "The copied command includes the worker key you just created; the key stays hidden on screen." : "Paste a worker key where shown, then start the runtime."}
+          description={
+            rawWorkerKey
+              ? "The copied command includes your worker key. The runtime prints a one-time link; opening it connects this workspace automatically."
+              : "Paste a worker key where shown, then start the runtime."
+          }
           command={visibleWorkerCommand}
           copyLabel={rawWorkerKey ? "Copy with key" : "Copy command"}
           copied={copiedCommand === "worker"}
@@ -1395,56 +1333,34 @@ function StepConnect({
 
       <div className="theme-border theme-surface-muted overflow-hidden rounded-2xl border">
         {isConnected ? (
-          <div className="relative p-5">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_55%)] dark:bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_55%)]" />
-            <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <div className="absolute inset-0 rounded-full bg-deep-space-blue-400/20 blur-xl" />
-                  <RoleIdenticon
-                    roleId={nenjiIdentity.roleId}
-                    color={nenjiIdentity.color}
-                    size={72}
-                    animate={sendGreeting && greeting !== "idle" && greeting !== "done"}
-                    className="relative ring-4 ring-white/80 dark:ring-gray-900/70"
-                    name="Nenji"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-deep-space-blue-200 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-deep-space-blue-700 dark:border-deep-space-blue-500/40 dark:bg-gray-900/60 dark:text-deep-space-blue-300">
-                    <span className={`h-2 w-2 rounded-full ${sendGreeting && greeting !== "done" ? "animate-pulse bg-deep-space-blue-500" : "bg-green-500"}`} />
-                    {sendGreeting ? "Nenji" : "Worker online"}
-                  </div>
-                  <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                    {sendGreeting
-                      ? greeting === "done"
-                        ? "Nenji is ready."
-                        : "Priming Nenji"
-                      : "Worker connected!"}
-                  </p>
-                  <p className="max-w-md text-sm text-gray-600 dark:text-gray-300">
-                    {sendGreeting
-                      ? greeting === "done"
-                        ? "Opening chat."
-                        : "Preparing your first Nenji chat."
-                      : "Jumping straight to chat."}
-                  </p>
-                </div>
-              </div>
-              <div className="grid gap-2 text-xs text-gray-500 dark:text-gray-400 sm:min-w-56">
-                <div className="rounded-xl border border-white/70 bg-white/70 px-3 py-2 dark:border-gray-700/80 dark:bg-gray-900/60">
-                  Worker link: stable
-                </div>
-                <div className="rounded-xl border border-white/70 bg-white/70 px-3 py-2 dark:border-gray-700/80 dark:bg-gray-900/60">
-                  {sendGreeting
-                    ? greeting === "done"
-                      ? "Redirecting to Nenji chat"
-                      : `Priming for at least ${Math.round(NENJI_GREETING_DELAY_MS / 1000)} seconds`
-                    : "Redirecting to chat"}
-                </div>
-              </div>
-            </div>
-          </div>
+          <NenjiPrimingCard
+            roleId={nenjiIdentity.roleId}
+            color={nenjiIdentity.color}
+            animate={sendGreeting && greeting !== "idle" && greeting !== "done"}
+            pillLabel={sendGreeting ? "Nenji" : "Worker online"}
+            headline={
+              sendGreeting
+                ? greeting === "done"
+                  ? "Nenji is ready."
+                  : "Priming Nenji"
+                : "Worker connected!"
+            }
+            subline={
+              sendGreeting
+                ? greeting === "done"
+                  ? "Opening chat."
+                  : "Preparing your first Nenji chat."
+                : "Jumping straight to chat."
+            }
+            chips={[
+              "Worker link: stable",
+              sendGreeting
+                ? greeting === "done"
+                  ? "Redirecting to Nenji chat"
+                  : `Priming for at least ${Math.round(NENJI_GREETING_DELAY_MS / 1000)} seconds`
+                : "Redirecting to chat",
+            ]}
+          />
         ) : (
           <div className="flex items-start gap-3 p-4">
             <div className="relative flex h-8 w-8 items-center justify-center">

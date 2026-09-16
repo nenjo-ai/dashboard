@@ -2332,6 +2332,14 @@ export function workerEnrollmentApproveUrl(apiKeyId: string): string {
   return `${API_V1}/workers/enrollment/${apiKeyId}/approve`;
 }
 
+export function onboardingPairingUrl(): string {
+  return `${API_V1}/workers/onboarding-pairing`;
+}
+
+export function workerEnrollmentPairApproveUrl(apiKeyId: string): string {
+  return `${API_V1}/workers/enrollment/${apiKeyId}/pair-approve`;
+}
+
 export async function fetchWorkerStatus(): Promise<
   import("./types").WorkerStatus
 > {
@@ -2567,6 +2575,29 @@ export async function approveWorkerEnrollment(
 
 export async function deleteWorkerEnrollment(apiKeyId: string): Promise<void> {
   await authFetch(workerEnrollmentDetailUrl(apiKeyId), { method: "DELETE" });
+}
+
+export async function createOnboardingPairing(
+  apiKeyId: string,
+): Promise<import("./types").CreatedOnboardingPairing> {
+  const res = await authFetch(onboardingPairingUrl(), {
+    method: "POST",
+    body: JSON.stringify({ api_key_id: apiKeyId }),
+  });
+  return res.json() as Promise<import("./types").CreatedOnboardingPairing>;
+}
+
+export async function pairApproveWorkerEnrollment(
+  apiKeyId: string,
+  body: import("./types").PairApproveWorkerEnrollmentRequest,
+): Promise<import("./types").WorkerEnrollmentStatusResponse> {
+  const res = await authFetch(workerEnrollmentPairApproveUrl(apiKeyId), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<
+    import("./types").WorkerEnrollmentStatusResponse
+  >;
 }
 
 export async function listWorkerAccountKeyTargets(): Promise<
