@@ -859,6 +859,19 @@ export interface ApproveWorkerEnrollmentRequest {
   wrapped_ock?: WrappedOrgContentKey | null;
 }
 
+export interface CreatedOnboardingPairing {
+  pairing_id: string;
+  api_key_id: string;
+  expires_at: string;
+}
+
+export interface PairApproveWorkerEnrollmentRequest {
+  pairing_token: string;
+  certificate: WorkerCertificate;
+  wrapped_ack?: WrappedAccountContentKey | null;
+  wrapped_ock?: WrappedOrgContentKey | null;
+}
+
 export interface WorkerAccountKeyTarget {
   api_key_id: string;
   enc_public_key: string;
