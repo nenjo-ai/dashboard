@@ -16,7 +16,12 @@ import {
   touchVaultSessionActivity,
   unlockWithPassword,
 } from "@/lib/cryptoContent";
-import { unlockWithAnyLocalPasskey } from "@/lib/localUnlock";
+import { unlockWithAnyLocalPasskey, requestPrfOutputForRestore } from "@/lib/localUnlock";
+import {
+  listRestorableMethods,
+  restoreWithPasskeyRecoveryMethod,
+  RECOVERY_METHOD_TYPE_PASSKEY,
+} from "@/lib/recoveryMethods";
 import { retryEncryptedPushNotifications } from "@/lib/pushNotificationRetry";
 import { useSafeRouter } from "@/lib/safeRouter";
 
@@ -31,6 +36,10 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
   const [busy, setBusy] = useState<"password" | "passkey" | null>(null);
   const [autoPasskeyTried, setAutoPasskeyTried] = useState(false);
   const [hasVault, setHasVault] = useState(false);
+  const [recoveryMethods, setRecoveryMethods] = useState<
+    import("@/lib/api").RecoveryMethodMetadata[]
+  >([]);
+  const [restoreNeeded, setRestoreNeeded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const accountId = user?.id ?? null;
 
@@ -46,6 +55,11 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
       const vaultConfigured = await hasLocalSecretVault();
       setHasVault(vaultConfigured);
       if (!vaultConfigured) {
+        // Seamless recovery: the browser lost its local crypto material. Ask
+        // the backend for enrolled recovery methods and surface the device
+        // unlock prompt instead of silently proceeding without keys.
+        setRestoreNeeded(true);
+        setRecoveryMethods(await listRestorableMethods());
         setLocked(false);
         return;
       }
@@ -156,6 +170,38 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
     router.push("/dashboard/onboarding?restore=1");
   }, [router]);
 
+  const handlePasskeyRecoveryRestore = useCallback(async () => {
+    if (!accountId) return;
+    setError(null);
+    setBusy("passkey");
+    try {
+      const method = recoveryMethods.find(
+        (candidate) => candidate.method_type === RECOVERY_METHOD_TYPE_PASSKEY,
+      );
+      if (!method) {
+        throw new Error("No passkey recovery method is enrolled for this account.");
+      }
+      await restoreWithPasskeyRecoveryMethod({
+        method,
+        factor: ({ prfSalt, credentialId }) =>
+          requestPrfOutputForRestore({ prfSalt, credentialId }),
+      });
+      setRestoreNeeded(false);
+      setRecoveryMethods([]);
+      await checkVault();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to restore this device.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }, [accountId, checkVault, recoveryMethods]);
+
+  const passkeyRecoveryAvailable = recoveryMethods.some(
+    (method) => method.method_type === RECOVERY_METHOD_TYPE_PASSKEY,
+  );
+
   useEffect(() => {
     if (checking || !locked || !passkeyAvailable || autoPasskeyTried || busy !== null || !accountId) {
       return;
@@ -175,7 +221,7 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
     );
   }
 
-  if (!locked) return <>{children}</>;
+  if (!locked && !(restoreNeeded && recoveryMethods.length > 0)) return <>{children}</>;
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
@@ -184,11 +230,13 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
           <div className="flex items-center gap-2">
             <LockKeyhole className="h-5 w-5 text-deep-space-blue-500" />
             <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Unlock workspace
+              {restoreNeeded ? "Restore this device" : "Unlock workspace"}
             </h1>
           </div>
           <p className="mt-2 text-sm leading-6 text-gray-500 dark:text-gray-400">
-            This browser has a local encrypted vault. Unlock it with this device or your passphrase.
+            {restoreNeeded
+              ? "This browser no longer has its local encryption keys. Restore your workspace with your device unlock method."
+              : "This browser has a local encrypted vault. Unlock it with this device or your passphrase."}
           </p>
         </div>
 
@@ -199,17 +247,30 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
         ) : null}
 
         <div className="space-y-3">
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full"
-            disabled={busy !== null || !passkeyAvailable}
-            isLoading={busy === "passkey"}
-            onClick={() => void handlePasskeyUnlock()}
-          >
-            <KeyRound className="h-4 w-4" />
-            {passkeyAvailable ? "Unlock With This Device" : "Device Unlock Unavailable"}
-          </Button>
+          {restoreNeeded ? (
+            <Button
+              type="button"
+              className="w-full"
+              disabled={busy !== null || !passkeyRecoveryAvailable}
+              isLoading={busy === "passkey"}
+              onClick={() => void handlePasskeyRecoveryRestore()}
+            >
+              <KeyRound className="h-4 w-4" />
+              Restore With Device Unlock
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              disabled={busy !== null || !passkeyAvailable}
+              isLoading={busy === "passkey"}
+              onClick={() => void handlePasskeyUnlock()}
+            >
+              <KeyRound className="h-4 w-4" />
+              {passkeyAvailable ? "Unlock With This Device" : "Device Unlock Unavailable"}
+            </Button>
+          )}
 
           {passwordAvailable ? (
             <div className="space-y-2">
@@ -239,7 +300,7 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
             onClick={handleRestoreDevice}
           >
             <ShieldCheck className="h-4 w-4" />
-            Restore or approve this device
+            Restore with recovery phrase or another device
           </Button>
         </div>
       </div>

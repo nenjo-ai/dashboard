@@ -2324,6 +2324,46 @@ export function passkeyRegistrationUrl(): string {
   return `${API_V1}/content-encryption/unlock-credentials/passkey/registration`;
 }
 
+export function recoveryMethodsUrl(): string {
+  return `${API_V1}/content-encryption/recovery-methods`;
+}
+
+export function recoveryMethodUrl(id: string): string {
+  return `${API_V1}/content-encryption/recovery-methods/${id}`;
+}
+
+export function recoveryAnchorUrl(): string {
+  return `${API_V1}/content-encryption/recovery-methods/anchor`;
+}
+
+export function recoveryEnrollStartUrl(): string {
+  return `${API_V1}/content-encryption/recovery-methods/enroll/start`;
+}
+
+export function recoveryEnrollFinishUrl(): string {
+  return `${API_V1}/content-encryption/recovery-methods/enroll/finish`;
+}
+
+export function recoveryEnrollStagedUrl(attemptId: string): string {
+  return `${API_V1}/content-encryption/recovery-methods/enroll/staged/${attemptId}`;
+}
+
+export function recoveryEnrollActivateUrl(): string {
+  return `${API_V1}/content-encryption/recovery-methods/enroll/activate`;
+}
+
+export function recoveryRestoreStartUrl(): string {
+  return `${API_V1}/content-encryption/recovery-methods/restore/start`;
+}
+
+export function recoveryRestoreEnvelopeUrl(): string {
+  return `${API_V1}/content-encryption/recovery-methods/restore/envelope`;
+}
+
+export function recoveryRestoreCompleteUrl(): string {
+  return `${API_V1}/content-encryption/recovery-methods/restore/complete`;
+}
+
 export function workerEnrollmentDetailUrl(apiKeyId: string): string {
   return `${API_V1}/workers/enrollment/${apiKeyId}`;
 }
@@ -2530,6 +2570,143 @@ export async function registerPasskeyUnlockCredential(
     body: JSON.stringify(body),
   });
   return res.json() as Promise<import("./types").UnlockCredential>;
+}
+
+// --- Account recovery methods (BOO-26) --------------------------------------
+
+export interface RecoveryMethodMetadata {
+  id: string;
+  method_type: string;
+  state: string;
+  revision: number;
+  key_epoch: number;
+  crypto_header: Record<string, unknown>;
+  factor_reference: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  activated_at?: string | null;
+}
+
+export interface StartedRecoveryAttempt {
+  attempt_id: string;
+  challenge: string;
+  purpose: string;
+  key_epoch: number;
+  expires_at: string;
+}
+
+export interface RecoveryEnvelope {
+  method_id: string;
+  method_type: string;
+  state: string;
+  revision: number;
+  key_epoch: number;
+  crypto_header: Record<string, unknown>;
+  ciphertext: string;
+}
+
+export async function listRecoveryMethods(): Promise<RecoveryMethodMetadata[]> {
+  return fetcher<RecoveryMethodMetadata[]>(recoveryMethodsUrl());
+}
+
+export async function fetchRecoveryAnchor(): Promise<{
+  established: boolean;
+  sign_public_key?: Record<string, unknown>;
+  key_epoch?: number;
+}> {
+  return fetcher(recoveryAnchorUrl());
+}
+
+export async function establishRecoveryAnchor(body: {
+  sign_public_key: Record<string, unknown>;
+  rotate?: boolean;
+}): Promise<void> {
+  await authFetch(recoveryAnchorUrl(), {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+async function recoveryPost<T>(url: string, body: unknown): Promise<T> {
+  const res = await authFetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<T>;
+}
+
+export async function startRecoveryAttempt(body: {
+  purpose: "enroll" | "restore";
+  method_id?: string;
+  key_epoch: number;
+}): Promise<StartedRecoveryAttempt> {
+  return recoveryPost<StartedRecoveryAttempt>(
+    body.purpose === "enroll" ? recoveryEnrollStartUrl() : recoveryRestoreStartUrl(),
+    body,
+  );
+}
+
+export async function stageRecoveryMethod(body: {
+  attempt_id: string;
+  challenge: string;
+  method_type: string;
+  key_epoch: number;
+  crypto_header: Record<string, unknown>;
+  ciphertext: string;
+  factor_reference: string;
+  opaque_registration_id?: string;
+  enrolled_by_device_id?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<RecoveryMethodMetadata> {
+  return recoveryPost<RecoveryMethodMetadata>(recoveryEnrollFinishUrl(), body);
+}
+
+export async function fetchStagedRecoveryEnvelope(body: {
+  attempt_id: string;
+  challenge: string;
+}): Promise<RecoveryEnvelope> {
+  return recoveryPost<RecoveryEnvelope>(
+    recoveryEnrollStagedUrl(body.attempt_id),
+    body,
+  );
+}
+
+export async function activateRecoveryMethod(body: {
+  method_id: string;
+  expected_revision: number;
+  replace_method_id?: string;
+}): Promise<RecoveryMethodMetadata> {
+  return recoveryPost<RecoveryMethodMetadata>(recoveryEnrollActivateUrl(), body);
+}
+
+export async function fetchRecoveryEnvelope(body: {
+  attempt_id: string;
+  challenge: string;
+}): Promise<RecoveryEnvelope> {
+  return recoveryPost<RecoveryEnvelope>(recoveryRestoreEnvelopeUrl(), body);
+}
+
+export async function completeRecoveryRestore(body: {
+  attempt_id: string;
+  challenge: string;
+  method_id: string;
+  method_revision: number;
+  key_epoch: number;
+  device_id: string;
+  device_label?: string | null;
+  enc_public_key: string;
+  sign_public_key: string;
+  wrapped_ack: import("./types").WrappedAccountContentKey;
+  completion_signature: string;
+}): Promise<{ status: string; device_id: string }> {
+  return recoveryPost<{ status: string; device_id: string }>(
+    recoveryRestoreCompleteUrl(),
+    body,
+  );
+}
+
+export async function revokeRecoveryMethod(id: string): Promise<void> {
+  await authFetch(recoveryMethodUrl(id), { method: "DELETE" });
 }
 
 export async function createWorkerEnrollment(
