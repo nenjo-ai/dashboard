@@ -38,6 +38,7 @@ const ApiKeysSection = dynamic(() => import("@/components/settings/ApiKeysSectio
 const ContentEncryptionSection = dynamic(() => import("@/components/settings/ContentEncryptionSection").then((module) => module.ContentEncryptionSection), { loading: settingsPanelLoading });
 const OrgSettingsSection = dynamic(() => import("@/components/settings/OrgSettingsSection").then((module) => module.OrgSettingsSection), { loading: settingsPanelLoading });
 const UnlockMethodsSection = dynamic(() => import("@/components/settings/UnlockMethodsSection").then((module) => module.UnlockMethodsSection), { loading: settingsPanelLoading });
+const AccountRecoverySection = dynamic(() => import("@/components/settings/AccountRecoverySection").then((module) => module.AccountRecoverySection), { loading: settingsPanelLoading });
 
 const TAB_CONTEXT: Record<SettingsTab, { eyebrow: string; title: string; description: string }> = {
   general: { eyebrow: "Personal workspace", title: "General preferences", description: "Manage your account identity, appearance, and notifications for this browser." },
@@ -396,7 +397,12 @@ function SettingsContent() {
 
         {activeTab === "devices" && (
           <div className="space-y-6">
-            <ContentEncryptionSection mode="devices" afterSummary={<UnlockMethodsSection />} />
+            <ContentEncryptionSection mode="devices" afterSummary={
+                <>
+                  <UnlockMethodsSection />
+                  <AccountRecoverySection />
+                </>
+              } />
           </div>
         )}
 

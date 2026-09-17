@@ -63,10 +63,7 @@ function convertOptions(value: unknown): unknown {
   if (typeof value === "object" && value !== null) {
     const out: JsonWithBuffers = {};
     for (const [key, item] of Object.entries(value as JsonWithBuffers)) {
-      if (
-        (key === "challenge" || key === "id" || key === "icon") &&
-        typeof item === "string"
-      ) {
+      if (key === "challenge" && typeof item === "string") {
         out[key] = toBufferSource(base64UrlToBytes(item));
       } else if (key === "user" && typeof item === "object" && item !== null) {
         const user = { ...(item as JsonWithBuffers) };
@@ -74,6 +71,16 @@ function convertOptions(value: unknown): unknown {
           user.id = toBufferSource(base64UrlToBytes(user.id as string));
         }
         out[key] = user;
+      } else if (key === "eval" && typeof item === "object" && item !== null) {
+        // WebAuthn PRF evaluation inputs are ArrayBuffer or ArrayBufferView.
+        const evalInputs = { ...(item as JsonWithBuffers) };
+        for (const evalKey of ["first", "second"] as const) {
+          const evalValue = evalInputs[evalKey];
+          if (typeof evalValue === "string") {
+            evalInputs[evalKey] = toBufferSource(base64UrlToBytes(evalValue));
+          }
+        }
+        out[key] = evalInputs;
       } else if (key === "excludeCredentials" && Array.isArray(item)) {
         out[key] = item.map((credential) => {
           const entry = { ...(credential as JsonWithBuffers) };
