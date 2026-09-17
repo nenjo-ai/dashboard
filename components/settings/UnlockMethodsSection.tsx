@@ -62,16 +62,17 @@ export function UnlockMethodsSection() {
     toast.success("Unlock method updated.");
   };
 
-  const handleRevoke = async (credential: UnlockCredential) => {
+  const handleRevoke = async (credential: UnlockCredential, canRemoveSafely: boolean) => {
     const isLocal = localPasskeyIds.has(credential.credential_id);
     if (
       isLocal &&
-      !canRemoveLocalPasskeyUnlock({
-        localPasskeyCount: localPasskeyIds.size,
-        hasPassword,
-      })
+      !canRemoveSafely &&
+      !window.confirm(
+        hasAccountRecovery
+          ? "Remove this device unlock? Your account recovery method stays active."
+          : "This is your only local unlock method and no account recovery is active. After removing it, you will need your recovery phrase or another trusted device to regain access on this browser. Remove anyway?",
+      )
     ) {
-      toast.error("Add a passphrase or another device unlock before removing this unlock method.");
       return;
     }
 
@@ -230,20 +231,19 @@ export function UnlockMethodsSection() {
                         {methodLabel(credential)}
                       </p>
                       <p className="theme-text-muted mt-1 text-xs">
-                        {isLocal ? "Available on this browser" : "Registered, but no local unlock record on this browser"}
+                        {isLocal
+                          ? hasAccountRecovery
+                            ? "Available on this browser · recovery active"
+                            : "Available on this browser · no account recovery"
+                          : "Registered, but no local unlock record on this browser"}
                       </p>
                     </div>
                     <Button
                       type="button"
                       variant="danger"
                       size="sm"
-                      disabled={revokingId === credential.id || !canRemoveDeviceUnlock}
-                      title={
-                        canRemoveDeviceUnlock
-                          ? undefined
-                          : "Add a passphrase or another device unlock before removing this unlock method."
-                      }
-                      onClick={() => void handleRevoke(credential)}
+                      disabled={revokingId === credential.id}
+                      onClick={() => void handleRevoke(credential, canRemoveDeviceUnlock)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                       {revokingId === credential.id ? "Removing..." : "Remove"}
