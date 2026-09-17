@@ -392,11 +392,20 @@ async function commitRestoredVault(params: {
     completion_signature: completionSignature,
   });
 
+  // Notify listeners (e.g. the vault unlock gate) that local crypto state is
+  // restored so stale "restore needed" UI re-checks and dismisses.
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(EVENT_VAULT_RESTORED));
+  }
+
   return {
     accountContentKey: params.payload.account_content_key,
     publicKey: params.payload.account_signing_public_key,
   };
 }
+
+/** Fired on window after a successful vault restore from a recovery method. */
+export const EVENT_VAULT_RESTORED = "nenjo:vault-restored";
 
 export { RECOVERY_METHOD_TYPE_PASSKEY } from "./recoveryEnvelope";
 export { decodeAndValidateRecoveryPayload } from "./recoveryEnvelope";
