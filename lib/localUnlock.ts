@@ -86,42 +86,6 @@ function credentialTransports(response: AuthenticatorAttestationResponse): strin
   return Array.from(transports);
 }
 
-async function requestPrfOutputForNewCredential(
-  credential: PublicKeyCredentialWithPrf,
-  salt: Uint8Array,
-): Promise<Uint8Array> {
-  const registrationPrf = credential.getClientExtensionResults().prf;
-  if (registrationPrf?.enabled === false) {
-    throw new Error("This passkey does not support WebAuthn PRF.");
-  }
-
-  const assertion = (await navigator.credentials.get({
-    publicKey: {
-      challenge: randomChallenge(),
-      rpId: window.location.hostname,
-      userVerification: "required",
-      allowCredentials: [
-        {
-          type: "public-key",
-          id: credential.rawId,
-        },
-      ],
-      extensions: {
-        prf: {
-          eval: {
-            first: bytesToArrayBuffer(salt),
-          },
-        },
-      } as AuthenticationExtensionsClientInputs,
-    },
-  })) as PublicKeyCredentialWithPrf | null;
-
-  if (!assertion) {
-    throw new Error("Device unlock setup was cancelled.");
-  }
-  return requirePrfOutput(assertion);
-}
-
 export function canUsePasskeyPrf(): boolean {
   return (
     typeof window !== "undefined" &&
