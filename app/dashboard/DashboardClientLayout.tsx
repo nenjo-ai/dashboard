@@ -14,6 +14,7 @@ import { fetchBootstrapStatus, fetchCurrentUser } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { bindLocalSecretVaultSession, loadStoredAccountContentKey } from "@/lib/cryptoContent";
 import { shouldEnterFreshOnboarding } from "@/lib/dashboardEntry";
+import { clearFreshOnboardingInProgress } from "@/lib/onboardingProgress.mjs";
 import { MobileMenuProvider } from "@/lib/MobileMenuContext";
 import { OrgProvider } from "@/lib/org-context";
 import { shouldRetryDashboardRequest } from "@/lib/apiRetryPolicy";
@@ -69,6 +70,14 @@ function AuthenticatedDashboardLayout({
       ? window.matchMedia("(max-width: 767px)").matches
       : false,
   );
+
+  // Once the user is on a real dashboard route, any fresh-onboarding session
+  // is over: clear the entry-gate suppression flag.
+  useEffect(() => {
+    if (!isChromeless) {
+      clearFreshOnboardingInProgress();
+    }
+  }, [isChromeless]);
 
   // Sync with localStorage after mount to avoid hydration mismatch
   useEffect(() => {

@@ -30,6 +30,9 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
   const { isLoaded, user } = useAppAuth();
   const router = useSafeRouter();
   const [checking, setChecking] = useState(true);
+  // True once the first vault check completed: background re-checks must
+  // never unmount children (a remount resets onboarding state mid-flow).
+  const [everReady, setEverReady] = useState(false);
   const [locked, setLocked] = useState(false);
   const [passwordAvailable, setPasswordAvailable] = useState(false);
   const [passkeyAvailable, setPasskeyAvailable] = useState(false);
@@ -84,6 +87,7 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
       setLocked(true);
     } finally {
       setChecking(false);
+      setEverReady(true);
     }
   }, [accountId, isLoaded]);
 
@@ -220,7 +224,8 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
     void handlePasskeyUnlock(true);
   }, [accountId, autoPasskeyTried, busy, checking, handlePasskeyUnlock, locked, passkeyAvailable]);
 
-  if (checking) {
+  // Initial check: nothing to preserve yet, show a plain spinner.
+  if (checking && !everReady) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="flex items-center gap-3 text-gray-400">
@@ -231,11 +236,12 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
     );
   }
 
-  if (!locked && !(restoreNeeded && recoveryMethods.length > 0)) return <>{children}</>;
+  const showRestoreOverlay = restoreNeeded && recoveryMethods.length > 0;
+  const showLockedOverlay = locked;
+  const showRecheckOverlay = checking && everReady;
 
-  return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-md rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
+  const gateModal = (
+    <div className="w-full max-w-md rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
         <div className="mb-5">
           <div className="flex items-center gap-2">
             <LockKeyhole className="h-5 w-5 text-deep-space-blue-500" />
@@ -314,6 +320,33 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
           </Button>
         </div>
       </div>
+  );
+
+  if (showLockedOverlay) {
+    // Locked vault keeps the dedicated full-page unlock screen.
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">{gateModal}</div>
+    );
+  }
+
+  // After the initial check children stay mounted: background re-checks and
+  // the restore prompt overlay the page instead of replacing it — unmounting
+  // resets in-flight flows such as fresh onboarding.
+  return (
+    <div className="relative min-h-screen">
+      {children}
+      {showRestoreOverlay ? (
+        <div className="absolute inset-0 z-50 overflow-y-auto bg-gray-100/95 p-4 dark:bg-gray-950/95 flex items-start justify-center">
+          <div className="w-full max-w-md pt-[10vh]">{gateModal}</div>
+        </div>
+      ) : null}
+      {showRecheckOverlay ? (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[60] flex justify-center pt-3">
+          <span className="rounded-full border border-black/10 bg-white/90 px-3 py-1 text-xs text-gray-500 shadow-sm dark:border-white/10 dark:bg-gray-900/90 dark:text-gray-400">
+            Checking local vault…
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

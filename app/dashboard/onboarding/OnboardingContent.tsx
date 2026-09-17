@@ -3,6 +3,14 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
+  clearFreshOnboardingInProgress,
+  isFreshOnboardingInProgress,
+  loadFreshOnboardingProgress,
+  markFreshOnboardingInProgress,
+  saveFreshOnboardingProgress,
+  shouldSkipEntryGateRedirectForFreshOnboarding,
+} from "@/lib/onboardingProgress.mjs";
+import {
   Check,
   CircleCheck,
   Copy,
@@ -1917,8 +1925,13 @@ export default function OnboardingContent() {
       | undefined;
   };
 
-  const [currentStep, setCurrentStep] = useState<OnboardingStep>(1);
-  const [onboardingMode, setOnboardingMode] = useState<"fresh" | "restore">("fresh");
+  const restoredProgress = useRef(loadFreshOnboardingProgress());
+  const [currentStep, setCurrentStep] = useState<OnboardingStep>(
+    restoredProgress.current?.step ?? 1,
+  );
+  const [onboardingMode, setOnboardingMode] = useState<"fresh" | "restore">(
+    restoredProgress.current?.mode ?? "fresh",
+  );
   const [gateStatus, setGateStatus] = useState<"checking" | "ready" | "error">("checking");
   const [gateError, setGateError] = useState<string | null>(null);
   const [, setCreatedAgent] = useState<Model | null>(null);
@@ -1988,7 +2001,7 @@ export default function OnboardingContent() {
             hasLocalAccountContentKey: Boolean(localAckState.key),
             lockedVault: localAckState.lockedVault,
             forceRestore,
-          })
+          }) && !shouldSkipEntryGateRedirectForFreshOnboarding()
         ) {
           resolvedEntryGateKey.current = entryGateKey;
           redirected.current = true;
@@ -2040,6 +2053,23 @@ export default function OnboardingContent() {
       className="py-12"
     />
   );
+
+  // Fresh onboarding in progress: suppress the entry-gate dashboard redirect
+  // across background remounts, and persist position so a remount resumes
+  // instead of restarting.
+  useEffect(() => {
+    if (gateStatus !== "ready") return;
+    if (onboardingMode === "fresh" && currentStep >= 2) {
+      markFreshOnboardingInProgress();
+      saveFreshOnboardingProgress({ mode: onboardingMode, step: currentStep });
+    }
+  }, [currentStep, gateStatus, onboardingMode]);
+
+  useEffect(() => {
+    if (onboardingMode !== "fresh") {
+      clearFreshOnboardingInProgress();
+    }
+  }, [onboardingMode]);
 
   const gateFailure = (
     <div className="mx-auto w-full max-w-sm space-y-4 py-6">
