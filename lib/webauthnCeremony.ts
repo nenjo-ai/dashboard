@@ -153,6 +153,8 @@ function attestationResponseJson(credential: PublicKeyCredential): JsonWithBuffe
     response: {
       attestationObject: arrayBufferToBase64Url(response.attestationObject),
       clientDataJSON: arrayBufferToBase64Url(response.clientDataJSON),
+      // Public transport metadata; part of the allowlisted ceremony fields.
+      transports: response.getTransports?.() ?? [],
     },
   };
 }

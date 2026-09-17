@@ -1,10 +1,13 @@
 "use client";
 
 import {
-  fetchPasskeyRegistrationOptions,
+  finishPasskeyRecoveryRegistration,
   registerPasskeyUnlockCredential,
   revokeUnlockCredential,
+  startPasskeyRecoveryRegistration,
 } from "./api";
+import { createPasskeyWithCeremony } from "./webauthnCeremony";
+import { enrollRecoveryForUnlockCredential } from "./recoveryMethods";
 import {
   listLocalPasskeyUnlockMethods,
   setupPasskeyUnlock,
@@ -130,73 +133,66 @@ export function canUsePasskeyPrf(): boolean {
   );
 }
 
-export async function registerPasskeyUnlock(accountId: string, label?: string | null): Promise<void> {
+export async function registerPasskeyUnlock(
+  accountId: string,
+  label?: string | null,
+): Promise<{ recoveryEnrolled: boolean }> {
   if (!canUsePasskeyPrf()) {
     throw new Error("Device unlock requires a secure browser context with WebAuthn support.");
   }
 
-  const options = await fetchPasskeyRegistrationOptions();
+  // Server-verified registration ceremony: the platform issues the challenge
+  // and verifies the attestation against its configured RP/origin allowlist.
+  // PRF extension inputs are client-side only.
+  const options = await startPasskeyRecoveryRegistration();
   const salt = crypto.getRandomValues(new Uint8Array(32));
-  const credential = (await navigator.credentials.create({
+  const { responseJson, credentialId } = await createPasskeyWithCeremony({
     publicKey: {
-      challenge: randomChallenge(),
-      rp: {
-        name: "Nenjo",
-        id: window.location.hostname,
-      },
-      user: {
-        id: bytesToArrayBuffer(new TextEncoder().encode(options.user_id)),
-        name: options.user_name,
-        displayName: options.user_display_name,
-      },
-      pubKeyCredParams: [
-        { type: "public-key", alg: -7 },
-        { type: "public-key", alg: -257 },
-      ],
-      authenticatorSelection: {
-        residentKey: "required",
-        requireResidentKey: true,
-        userVerification: "required",
-      },
-      excludeCredentials: options.existing_credential_ids.map((id) => ({
-        type: "public-key",
-        id: bytesToArrayBuffer(base64UrlToBytes(id)),
-      })),
+      ...options.publicKey,
       extensions: {
-        prf: {
-          eval: {
-            first: bytesToArrayBuffer(salt),
-          },
-        },
-      } as AuthenticationExtensionsClientInputs,
+        ...((options.publicKey.extensions as Record<string, unknown> | undefined) ?? {}),
+        prf: { eval: { first: bytesToBase64Url(salt) } },
+      },
     },
-  })) as PublicKeyCredentialWithPrf | null;
+  });
 
-  if (!credential) {
-    throw new Error("Device unlock setup was cancelled.");
-  }
-  const prfOutput = prfOutputFromCredential(credential) ??
-    (await requestPrfOutputForNewCredential(credential, salt));
-  const response = credential.response as AuthenticatorAttestationResponse;
-  const credentialId = arrayBufferToBase64Url(credential.rawId);
+  const prfOutput = await requestPrfOutputForNewCredentialId(credentialId, salt);
 
-  await commitPasskeyUnlockRegistration({
-    registerRemote: () =>
-      registerPasskeyUnlockCredential({
+  const registered = await commitPasskeyUnlockRegistration({
+    registerRemote: async () => {
+      const attestationResponse = responseJson.response as {
+        attestationObject: string;
+        clientDataJSON: string;
+        transports?: string[];
+      };
+      const legacy = await registerPasskeyUnlockCredential({
         credential_id: credentialId,
         credential_type: "public-key",
-        transports: credentialTransports(response),
         public_key: {
           raw_id: credentialId,
-          attestation_object: arrayBufferToBase64Url(response.attestationObject),
-          client_data_json: arrayBufferToBase64Url(response.clientDataJSON),
+          attestation_object: attestationResponse.attestationObject,
+          client_data_json: attestationResponse.clientDataJSON,
         },
+        transports: attestationResponse.transports ?? [],
         label: label?.trim() || null,
         client_response: {
-          id: credential.id,
-          type: credential.type,
+          id: credentialId,
+          type: "public-key",
         },
-      }),
+      });
+      // Promote the same credential to server-verified so it can bind as a
+      // recovery factor. Best-effort: local unlock works without it.
+      try {
+        await finishPasskeyRecoveryRegistration({
+          ceremony_id: options.ceremony_id,
+          response: responseJson,
+          label: label?.trim() || null,
+        });
+      } catch (error) {
+        console.warn("Device unlock credential could not be promoted to server-verified:", error);
+      }
+      return legacy;
+    },
     setupLocal: () =>
       setupPasskeyUnlock({
         accountId,
@@ -207,6 +203,56 @@ export async function registerPasskeyUnlock(accountId: string, label?: string | 
       }),
     revokeRemote: (registered) => revokeUnlockCredential(registered.id),
   });
+
+  // Recovery rides along: the unlock passkey becomes the durable recovery
+  // factor automatically. Never fail the unlock setup because of it.
+  let recoveryEnrolled = true;
+  try {
+    await enrollRecoveryForUnlockCredential({
+      credentialRowId: registered.id,
+      credentialId,
+      prfOutput,
+      prfInput: salt,
+      label: label?.trim() || null,
+    });
+  } catch (error) {
+    recoveryEnrolled = false;
+    console.warn("Automatic account recovery enrollment failed:", error);
+  }
+
+  return { recoveryEnrolled };
+}
+
+/// Follow-up assertion against the just-created credential to obtain PRF
+/// output when registration did not return it directly. Browser-local only.
+async function requestPrfOutputForNewCredentialId(
+  credentialId: string,
+  salt: Uint8Array,
+): Promise<Uint8Array> {
+  const assertion = (await navigator.credentials.get({
+    publicKey: {
+      challenge: randomChallenge(),
+      rpId: window.location.hostname,
+      userVerification: "required",
+      allowCredentials: [
+        {
+          type: "public-key",
+          id: bytesToArrayBuffer(base64UrlToBytes(credentialId)),
+        },
+      ],
+      extensions: {
+        prf: {
+          eval: {
+            first: bytesToArrayBuffer(salt),
+          },
+        },
+      } as AuthenticationExtensionsClientInputs,
+    },
+  }).catch(() => null)) as PublicKeyCredentialWithPrf | null;
+  if (!assertion) {
+    throw new Error("Device unlock setup was cancelled.");
+  }
+  return requirePrfOutput(assertion);
 }
 
 export async function unlockWithAnyLocalPasskey(accountId: string): Promise<void> {

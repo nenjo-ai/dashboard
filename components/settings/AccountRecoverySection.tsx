@@ -1,15 +1,15 @@
 "use client";
 
-// Account recovery settings (BOO-26 package 6).
+// Account recovery settings (BOO-26).
 //
-// Displays account recovery methods independently from local unlock records:
-// local unlock never implies a durable backup. Enrollment runs the full
-// staged ceremony (server-verified registration, follow-up PRF assertion,
-// staged envelope with readback verification, CAS activation) and only
-// reports success after the server round trip completes.
+// Recovery is not a separate opt-in: enrolling a passkey device unlock
+// automatically enrolls the same credential as the durable recovery factor.
+// This section shows recovery status independently from local unlock and
+// offers a one-tap migration for browsers that set up device unlock before
+// automatic recovery existed.
 
 import { useCallback, useMemo, useState } from "react";
-import { KeyRound, ShieldCheck, Trash2 } from "lucide-react";
+import { ShieldCheck, Trash2 } from "lucide-react";
 import useSWR from "swr";
 import {
   listRecoveryMethods,
@@ -17,8 +17,8 @@ import {
   revokeRecoveryMethod,
 } from "@/lib/api";
 import type { RecoveryMethodMetadata } from "@/lib/api";
-import { enrollPasskeyRecoveryMethod } from "@/lib/recoveryMethods";
-import { canUsePasskeyPrf } from "@/lib/localUnlock";
+import { enableRecoveryFromExistingUnlock } from "@/lib/recoveryMethods";
+import { listLocalPasskeyUnlockMethods } from "@/lib/cryptoContent";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/lib/toast";
 
@@ -43,44 +43,35 @@ export function AccountRecoverySection() {
   );
   const [enrolling, setEnrolling] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [localPasskeyCount, setLocalPasskeyCount] = useState(0);
 
   const methods = useMemo(() => data ?? [], [data]);
   const activeMethods = methods.filter(
     (method) => method.state === "active" || method.state === "stale",
   );
-  const passkeySupported = canUsePasskeyPrf();
 
   const refresh = useCallback(async () => {
+    const localPasskeys = await listLocalPasskeyUnlockMethods(null).catch(() => []);
+    setLocalPasskeyCount(localPasskeys.length);
     await mutate();
   }, [mutate]);
 
-  const handleEnroll = useCallback(async () => {
+  const handleMigrate = useCallback(async () => {
     setEnrolling(true);
     try {
-      // Best-effort cleanup of pending enrollments that were never activated;
-      // failed or abandoned setup must leave existing methods usable.
-      for (const method of methods.filter((candidate) => candidate.state === "pending")) {
-        try {
-          await revokeRecoveryMethod(method.id);
-        } catch {
-          // non-fatal
-        }
-      }
-      await enrollPasskeyRecoveryMethod({ label: "Account recovery passkey" });
+      await enableRecoveryFromExistingUnlock({ label: "Account recovery passkey" });
       await refresh();
       toast.success(
         "Account recovery enabled. This passkey can restore your workspace after browser data loss.",
       );
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to enable account recovery.",
+        error instanceof Error ? error.message : "Failed to enable account recovery.",
       );
     } finally {
       setEnrolling(false);
     }
-  }, [methods, refresh]);
+  }, [refresh]);
 
   const handleRevoke = useCallback(
     async (method: RecoveryMethodMetadata) => {
@@ -106,14 +97,16 @@ export function AccountRecoverySection() {
     [activeMethods.length, refresh],
   );
 
+  const canMigrate = activeMethods.length === 0 && localPasskeyCount > 0;
+
   return (
     <section className="theme-border theme-surface overflow-hidden rounded-2xl border p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] md:p-6">
       <div className="mb-5">
         <h2 className="theme-text text-base font-semibold">Account Recovery</h2>
         <p className="theme-text-muted mt-1 text-sm leading-6">
-          Durable backups that survive clearing this browser&apos;s site data.
-          Local device unlock alone does not survive it — recovery must be
-          enabled separately.
+          Recovery is enabled automatically with your device unlock passkey and
+          survives clearing this browser&apos;s site data. Local device unlock
+          alone does not.
         </p>
       </div>
 
@@ -123,9 +116,9 @@ export function AccountRecoverySection() {
             <div className="theme-surface-muted h-20 motion-safe:animate-pulse" />
           ) : methods.length === 0 ? (
             <div className="px-4 py-5 text-sm text-gray-500 dark:text-gray-400">
-              No recovery methods enrolled. If this browser&apos;s data is
-              cleared, you will need your recovery phrase or another trusted
-              device.
+              {canMigrate
+                ? "Your device unlock passkey was set up before automatic recovery existed. Enable recovery to use it after browser data loss."
+                : "No recovery methods yet. Configure a device unlock passkey and recovery is enabled with it."}
             </div>
           ) : (
             <div className="divide-y divide-black/5 dark:divide-white/8">
@@ -170,33 +163,30 @@ export function AccountRecoverySection() {
           )}
         </div>
 
-        <div className="theme-border rounded-2xl border px-4 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-gray-500" />
-                <p className="theme-text text-sm font-medium">Passkey recovery</p>
+        {canMigrate ? (
+          <div className="theme-border rounded-2xl border px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-gray-500" />
+                  <p className="theme-text text-sm font-medium">Enable recovery</p>
+                </div>
+                <p className="theme-text-muted mt-1 text-xs">
+                  Verifies your existing device unlock passkey with the server
+                  and enables it as your durable recovery factor.
+                </p>
               </div>
-              <p className="theme-text-muted mt-1 text-xs">
-                {passkeySupported
-                  ? "Enables future browser enrollment with this passkey after sign-in, using WebAuthn PRF."
-                  : "This browser does not support passkey PRF. Try a supported browser or authenticator."}
-              </p>
+              <Button
+                type="button"
+                size="sm"
+                isLoading={enrolling}
+                onClick={() => void handleMigrate()}
+              >
+                Enable Recovery
+              </Button>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              disabled={enrolling || !passkeySupported}
-              isLoading={enrolling}
-              onClick={() => void handleEnroll()}
-            >
-              <KeyRound className="h-4 w-4" />
-              {activeMethods.some((method) => method.method_type === "passkey_prf")
-                ? "Add Another Passkey"
-                : "Enable Passkey Recovery"}
-            </Button>
           </div>
-        </div>
+        ) : null}
       </div>
     </section>
   );
