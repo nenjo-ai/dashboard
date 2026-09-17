@@ -97,7 +97,12 @@ export function AccountRecoverySection() {
     [activeMethods.length, refresh],
   );
 
-  const canMigrate = activeMethods.length === 0 && localPasskeyCount > 0;
+  // Offer (re-)enrollment whenever this browser holds a device unlock
+  // passkey: methods enrolled by older builds without server-verified
+  // ceremonies cannot be restored from and need the migration path. The new
+  // method is staged alongside any existing one; the stale one can then be
+  // removed.
+  const canMigrate = localPasskeyCount > 0;
 
   return (
     <section className="theme-border theme-surface overflow-hidden rounded-2xl border p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] md:p-6">
@@ -116,8 +121,8 @@ export function AccountRecoverySection() {
             <div className="theme-surface-muted h-20 motion-safe:animate-pulse" />
           ) : methods.length === 0 ? (
             <div className="px-4 py-5 text-sm text-gray-500 dark:text-gray-400">
-              {canMigrate
-                ? "Your device unlock passkey was set up before automatic recovery existed. Enable recovery to use it after browser data loss."
+              {localPasskeyCount > 0
+                ? "Enable recovery to verify this browser's device unlock passkey with the server and use it after browser data loss."
                 : "No recovery methods yet. Configure a device unlock passkey and recovery is enabled with it."}
             </div>
           ) : (

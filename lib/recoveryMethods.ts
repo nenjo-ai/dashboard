@@ -238,7 +238,12 @@ export async function listRestorableMethods(): Promise<RecoveryMethodMetadata[]>
     return [];
   }
   return methods.filter(
-    (method) => method.state === "active" || method.state === "stale",
+    (method) =>
+      (method.state === "active" || method.state === "stale") &&
+      // Methods enrolled before server-verified ceremonies lack the PRF
+      // input metadata the restore flow requires; they must be re-enrolled
+      // (Enable Recovery) instead of silently failing mid-restore.
+      typeof method.metadata?.prf_input === "string",
   );
 }
 
