@@ -1414,10 +1414,13 @@ function StepConnect({
 
 function StepRestoreDevice({
   userId,
+  localAccountId,
   onRestored,
   onStartFresh,
 }: {
   userId: string;
+  /** Clerk id the rest of the app binds the local vault session with. */
+  localAccountId: string;
   onRestored: () => void;
   onStartFresh: (orgId: string) => void;
 }) {
@@ -1442,8 +1445,10 @@ function StepRestoreDevice({
     setError(null);
     setRestoringWithPasskey(true);
     try {
+      // Bind the restored vault to the same account id the gate and layout
+      // use (Clerk id); the internal UUID is display/API identity only.
       await restoreWithPasskeyRecoveryMethod(recoveryMethod, {
-        accountId: userId,
+        accountId: localAccountId || userId,
       });
       onRestored();
     } catch (err) {
@@ -1453,7 +1458,7 @@ function StepRestoreDevice({
     } finally {
       setRestoringWithPasskey(false);
     }
-  }, [onRestored, recoveryMethod]);
+  }, [localAccountId, onRestored, recoveryMethod, userId]);
 
   const normalizeEnrollmentError = useCallback((err: unknown) => {
     const message =
@@ -2059,6 +2064,7 @@ export default function OnboardingContent() {
         {onboardingMode === "restore" ? (
           <StepRestoreDevice
             userId={accountUserId ?? user.id}
+            localAccountId={signedInUserId ?? ""}
             onRestored={() => router.replace("/dashboard")}
             onStartFresh={(orgId) => {
               setSelectedOrgId(orgId);
