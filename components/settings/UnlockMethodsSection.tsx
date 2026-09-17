@@ -5,10 +5,13 @@ import { useAppAuth } from "@/components/auth/AppAuth";
 import useSWR from "swr";
 import { KeyRound, LockKeyhole, Trash2 } from "lucide-react";
 import {
+  listRecoveryMethods,
   listUnlockCredentials,
+  recoveryMethodsUrl,
   revokeUnlockCredential,
   unlockCredentialsUrl,
 } from "@/lib/api";
+import { useSWRConfig } from "swr";
 import type { UnlockCredential } from "@/lib/types";
 import {
   hasPasswordUnlockMethod,
@@ -34,6 +37,8 @@ export function UnlockMethodsSection() {
   const { user } = useAppAuth();
   const accountId = user?.id ?? null;
   const { data, mutate, isLoading } = useSWR(unlockCredentialsUrl(), () => listUnlockCredentials());
+  const { data: recoveryMethods } = useSWR(recoveryMethodsUrl(), () => listRecoveryMethods());
+  const swrConfig = useSWRConfig();
   const [hasPassword, setHasPassword] = useState(false);
   const [localPasskeyIds, setLocalPasskeyIds] = useState<Set<string>>(new Set());
   const [revokingId, setRevokingId] = useState<string | null>(null);
@@ -75,6 +80,8 @@ export function UnlockMethodsSection() {
       await revokeUnlockCredential(credential.id);
       await removeLocalPasskeyUnlock(credential.credential_id);
       await Promise.all([refreshLocal(), mutate()]);
+      // Revoking the credential transactionally revokes its recovery method.
+      await swrConfig.mutate(recoveryMethodsUrl());
       toast.success("Device unlock removed.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to remove device unlock.");
@@ -84,7 +91,12 @@ export function UnlockMethodsSection() {
   };
 
   const handleRemovePassword = async () => {
-    if (!canRemovePasswordUnlock({ localPasskeyCount: localPasskeyIds.size })) {
+    if (
+      !canRemovePasswordUnlock({
+        localPasskeyCount: localPasskeyIds.size,
+        hasAccountRecovery,
+      })
+    ) {
       toast.error("Add device unlock before removing your passphrase unlock.");
       return;
     }
@@ -102,6 +114,11 @@ export function UnlockMethodsSection() {
   };
 
   const credentials = data ?? [];
+  // An active (or stale-but-restorable) recovery method substitutes for a
+  // second unlock method when removing the last one.
+  const hasAccountRecovery = (recoveryMethods ?? []).some(
+    (method) => method.state === "active" || method.state === "stale",
+  );
   const canAddUnlockMethod = shouldShowUnlockMethodSetup({
     localPasskeyCount: localPasskeyIds.size,
     hasPassword,
@@ -112,6 +129,7 @@ export function UnlockMethodsSection() {
   });
   const canRemovePassword = canRemovePasswordUnlock({
     localPasskeyCount: localPasskeyIds.size,
+    hasAccountRecovery,
   });
 
   return (
@@ -203,6 +221,7 @@ export function UnlockMethodsSection() {
                   canRemoveLocalPasskeyUnlock({
                     localPasskeyCount: localPasskeyIds.size,
                     hasPassword,
+                    hasAccountRecovery,
                   });
                 return (
                   <div key={credential.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
