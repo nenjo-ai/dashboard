@@ -49,8 +49,12 @@ export function UnlockMethodSetup({
     }
     setBusy("passkey");
     try {
-      await registerPasskeyUnlock(accountId, "Device unlock");
-      setCompleted("Device unlock is ready on this browser.");
+      const { recoveryEnrolled } = await registerPasskeyUnlock(accountId, "Device unlock");
+      setCompleted(
+        recoveryEnrolled
+          ? "Device unlock is ready, and account recovery was enabled with it."
+          : "Device unlock is ready on this browser. Account recovery could not be enabled automatically — enable it from Settings.",
+      );
       onComplete?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to set up device unlock.");

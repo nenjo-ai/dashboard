@@ -80,32 +80,115 @@ async function buildAccountRecoveryPayload(): Promise<AccountRecoveryPayload> {
     created_at: new Date().toISOString(),
   };
 }
-
 // ---------------------------------------------------------------------------
-// Enrollment (staged: start -> stage -> readback/decrypt -> activate)
+// Enrollment (staged: start -> stage -> readback -> activate)
 // ---------------------------------------------------------------------------
 
-export async function enrollPasskeyRecoveryMethod(params: {
+/// Establishes the account signing anchor exactly once. The anchor public key
+/// is the account signing key already held by this (authorized, unlocked)
+/// browser.
+async function ensureRecoveryAnchor(): Promise<void> {
+  const anchor = await fetchRecoveryAnchor();
+  if (anchor.established) return;
+  const signing = await exportAccountSigningKeyMaterial();
+  await establishRecoveryAnchor({
+    sign_public_key: {
+      algorithm: "ed25519",
+      public_key: signing.publicKey,
+    },
+  });
+}
+
+/// Stages, readback-verifies, and activates a recovery envelope bound to an
+/// already-registered unlock credential. The PRF output for the given
+/// `prfInput` must have been obtained in-browser; it never leaves this module.
+async function enrollRecoveryForCredential(params: {
+  credentialRowId: string;
+  prfOutput: Uint8Array;
+  prfInput: Uint8Array;
+  credentialId?: string;
   label?: string | null;
 }): Promise<RecoveryMethodMetadata> {
   assertSecureCryptoContext();
-  const payload = await buildAccountRecoveryPayload();
+  await ensureRecoveryAnchor();
 
-  // Pin the account signing anchor once. The anchor public key is the account
-  // signing key already held by this (authorized, unlocked) browser.
-  const anchor = await fetchRecoveryAnchor();
-  if (!anchor.established) {
-    await establishRecoveryAnchor({
-      sign_public_key: {
-        algorithm: "ed25519",
-        public_key: payload.account_signing_public_key,
-      },
-    });
-  }
+  const started = await startRecoveryAttempt({ purpose: "enroll", key_epoch: 1 });
+  const binding = {
+    methodType: RECOVERY_METHOD_TYPE_PASSKEY,
+    factorReference: params.credentialRowId,
+    keyEpoch: 1,
+  };
+  const sealed = await sealRecoveryEnvelope({
+    payload: await buildAccountRecoveryPayload(),
+    wrapSecret: params.prfOutput,
+    binding,
+  });
 
-  // 1. Server-verified registration ceremony. The platform verifies the
-  // attestation against its configured RP/origin allowlist; unverified
-  // metadata can never become a recovery factor.
+  const staged = await stageRecoveryMethod({
+    attempt_id: started.attempt_id,
+    challenge: started.challenge,
+    method_type: RECOVERY_METHOD_TYPE_PASSKEY,
+    key_epoch: 1,
+    crypto_header: sealed.cryptoHeader,
+    ciphertext: JSON.stringify(sealed.blob),
+    factor_reference: params.credentialRowId,
+    metadata: {
+      prf_input: bytesToBase64Url(params.prfInput),
+      ...(params.credentialId ? { prf_credential_id: params.credentialId } : {}),
+      ...(params.label ? { label: params.label } : {}),
+    },
+  });
+
+  // Round-trip check: fetch the exact staged ciphertext and decrypt it again
+  // through the intended factor path before activation.
+  const envelope = await fetchStagedRecoveryEnvelope({
+    attempt_id: started.attempt_id,
+    challenge: started.challenge,
+  });
+  await openRecoveryEnvelope({
+    blob: parseEnvelopeCiphertext(envelope.ciphertext),
+    wrapSecret: params.prfOutput,
+    binding,
+  });
+
+  return activateRecoveryMethod({
+    method_id: staged.id,
+    expected_revision: staged.revision,
+  });
+}
+
+/// Automatic recovery enrollment at device-unlock setup time (BOO-26 UX):
+/// the passkey the user just configured for vault unlock becomes the recovery
+/// factor. Runs after the unlock registration committed; a failure here must
+/// never fail the unlock setup itself — callers surface it as a warning.
+export async function enrollRecoveryForUnlockCredential(params: {
+  credentialRowId: string;
+  credentialId: string;
+  prfOutput: Uint8Array;
+  prfInput: Uint8Array;
+  label?: string | null;
+}): Promise<RecoveryMethodMetadata> {
+  return enrollRecoveryForCredential({
+    credentialRowId: params.credentialRowId,
+    prfOutput: params.prfOutput,
+    prfInput: params.prfInput,
+    credentialId: params.credentialId,
+    label: params.label,
+  });
+}
+
+/// Migration path for browsers that configured device unlock before recovery
+/// existed (legacy client-submitted credential metadata): run the
+/// server-verified registration ceremony to promote the credential, obtain a
+/// fresh PRF secret through a server-verified assertion, then enroll.
+export async function enableRecoveryFromExistingUnlock(params: {
+  label?: string | null;
+}): Promise<RecoveryMethodMetadata> {
+  assertSecureCryptoContext();
+
+  // 1. Server-verified registration (no exclusion of legacy credentials: the
+  // authenticator re-uses or replaces its credential for this RP/user; local
+  // unlock is unaffected because it authenticates from the local record).
   const registration = await startPasskeyRecoveryRegistration();
   const created = await createPasskeyWithCeremony(registration);
   const verified = await finishPasskeyRecoveryRegistration({
@@ -114,9 +197,8 @@ export async function enrollPasskeyRecoveryMethod(params: {
     label: params.label,
   });
 
-  // 2. Follow-up assertion to obtain PRF output: registration alone does not
-  // guarantee PRF results. The PRF input is random, public, and persisted
-  // with the method metadata; the output never leaves the browser.
+  // 2. Server-verified assertion to obtain the PRF secret for a fresh,
+  // recovery-only PRF input.
   const prfInput = crypto.getRandomValues(new Uint8Array(32));
   const assertion = await startPasskeyRecoveryAssertion({
     credential_id: verified.credential_id,
@@ -134,47 +216,13 @@ export async function enrollPasskeyRecoveryMethod(params: {
     throw new Error("This passkey did not return WebAuthn PRF output.");
   }
 
-  // 3. Staged enrollment: seal the payload, upload, read back, decrypt
-  // through the factor path, then activate with CAS on the revision.
-  const started = await startRecoveryAttempt({ purpose: "enroll", key_epoch: 1 });
-  const binding = {
-    methodType: RECOVERY_METHOD_TYPE_PASSKEY,
-    factorReference: verified.credential_row_id,
-    keyEpoch: 1,
-  };
-  const sealed = await sealRecoveryEnvelope({
-    payload,
-    wrapSecret: prfOutput,
-    binding,
-  });
-
-  const staged = await stageRecoveryMethod({
-    attempt_id: started.attempt_id,
-    challenge: started.challenge,
-    method_type: RECOVERY_METHOD_TYPE_PASSKEY,
-    key_epoch: 1,
-    crypto_header: sealed.cryptoHeader,
-    ciphertext: JSON.stringify(sealed.blob),
-    factor_reference: verified.credential_row_id,
-    metadata: {
-      // Public PRF input for future ceremonies; the HKDF salt stays in the
-      // envelope blob. These are distinct values per the recovery plan.
-      prf_input: bytesToBase64Url(prfInput),
-      prf_credential_id: verified.credential_id,
-      ...(params.label ? { label: params.label } : {}),
-    },
-  });
-
-  const envelope = await fetchStagedRecoveryEnvelope({
-    attempt_id: started.attempt_id,
-    challenge: started.challenge,
-  });
-  const blob = parseEnvelopeCiphertext(envelope.ciphertext);
-  await openRecoveryEnvelope({ blob, wrapSecret: prfOutput, binding });
-
-  return activateRecoveryMethod({
-    method_id: staged.id,
-    expected_revision: staged.revision,
+  // 3. Staged enrollment bound to the now-verified credential row.
+  return enrollRecoveryForCredential({
+    credentialRowId: verified.credential_row_id,
+    prfOutput,
+    prfInput,
+    credentialId: verified.credential_id,
+    label: params.label,
   });
 }
 
