@@ -195,7 +195,7 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
       if (!method) {
         throw new Error("No passkey recovery method is enrolled for this account.");
       }
-      await restoreWithPasskeyRecoveryMethod(method);
+      await restoreWithPasskeyRecoveryMethod(method, { accountId });
       setRestoreNeeded(false);
       setRecoveryMethods([]);
       await checkVault();

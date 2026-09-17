@@ -38,6 +38,6 @@ test("recovery harness passes with a PRF-capable virtual authenticator", async (
   await expect(status).toHaveAttribute("data-status", "passed", {
     timeout: 60_000,
   });
-  await expect(status).toHaveAttribute("data-passed", "7");
+  await expect(status).toHaveAttribute("data-passed", "8");
   await expect(page.locator("[data-test-status='failed']")).toHaveCount(0);
 });

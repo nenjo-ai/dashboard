@@ -56,6 +56,7 @@ import {
   persistAccountSigningKeyMaterial,
   resetLocalEncryptedWorkspaceForRestore,
   setStoredAccountContentKey,
+  setupPasskeyUnlock,
 } from "./cryptoContent";
 
 // ---------------------------------------------------------------------------
@@ -252,6 +253,7 @@ export async function listRestorableMethods(): Promise<RecoveryMethodMetadata[]>
 /// on failure no local records are altered.
 export async function restoreWithPasskeyRecoveryMethod(
   method: RecoveryMethodMetadata,
+  options: { accountId: string },
 ): Promise<{ accountContentKey: string; publicKey: string }> {
   assertSecureCryptoContext();
 
@@ -311,6 +313,15 @@ export async function restoreWithPasskeyRecoveryMethod(
     methodId: envelope.method_id,
     methodRevision: envelope.revision,
     keyEpoch: envelope.key_epoch,
+    accountId: options.accountId,
+    credentialId:
+      typeof method.metadata?.prf_credential_id === "string"
+        ? method.metadata.prf_credential_id
+        : null,
+    prfInput: base64UrlToBytes(
+      method.metadata?.prf_input as string,
+    ),
+    prfOutput,
   });
 }
 
@@ -356,6 +367,10 @@ async function commitRestoredVault(params: {
   methodId: string;
   methodRevision: number;
   keyEpoch: number;
+  accountId: string;
+  credentialId: string | null;
+  prfInput: Uint8Array;
+  prfOutput: Uint8Array;
 }): Promise<{ accountContentKey: string; publicKey: string }> {
   // Stage the fresh local vault (fresh device identity is generated because
   // none exists after site-data loss).
@@ -365,6 +380,18 @@ async function commitRestoredVault(params: {
     privateKeyPkcs8: params.payload.account_signing_private_key_pkcs8,
     publicKey: params.payload.account_signing_public_key,
   });
+  // Recreate the local vault unlock with the same passkey so the restored
+  // browser state matches pre-loss state: without this the vault config
+  // stays disabled and unlock/restore gating loops forever.
+  if (params.credentialId) {
+    await setupPasskeyUnlock({
+      accountId: params.accountId,
+      credentialId: params.credentialId,
+      label: "Device unlock",
+      salt: params.prfInput,
+      prfOutput: params.prfOutput,
+    });
+  }
 
   const device = await buildTrustedDevicePayload({ requireSigningKey: false });
   const completionSignature = await signRecoveryCompletion({

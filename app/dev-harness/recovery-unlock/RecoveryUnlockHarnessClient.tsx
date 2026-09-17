@@ -21,6 +21,15 @@ import {
   sealRecoveryEnvelope,
   type AccountRecoveryPayload,
 } from "@/lib/recoveryEnvelope";
+import { bytesToBase64Url } from "@/lib/webauthnCeremony";
+import {
+  hasLocalSecretVault,
+  listLocalPasskeyUnlockMethods,
+  loadStoredAccountContentKey,
+  resetLocalEncryptedWorkspaceForRestore,
+  unlockWithPasskeyPrf,
+} from "@/lib/cryptoContent";
+import { restoreWithPasskeyRecoveryMethod } from "@/lib/recoveryMethods";
 import {
   buildRestoreCompletionStatement,
   signRestoreCompletionStatement,
@@ -288,6 +297,208 @@ export function RecoveryUnlockHarnessClient() {
               decodeAndValidateRecoveryPayload({ ...payload, extra_field: true }),
             "Expected strict-schema rejection of unexpected fields.",
           );
+        },
+      },
+      {
+        name: "Full restore recreates the local vault unlock (wiped storage)",
+        run: async () => {
+          const accountId = "harness-recovery-account";
+          const knownAck = bytesToBase64(crypto.getRandomValues(new Uint8Array(32)));
+
+          // Real passkey ceremony for the PRF secret.
+          const salt = crypto.getRandomValues(new Uint8Array(32));
+          const creation = await createPasskeyWithCeremony({
+            publicKey: {
+              challenge: bytesToBase64(crypto.getRandomValues(new Uint8Array(32))),
+              rp: { name: "Nenjo Recovery Harness", id: window.location.hostname },
+              user: {
+                id: bytesToBase64(crypto.getRandomValues(new Uint8Array(16))),
+                name: "recovery-harness@example.com",
+                displayName: "Recovery Harness",
+              },
+              pubKeyCredParams: [
+                { type: "public-key", alg: -7 },
+                { type: "public-key", alg: -257 },
+              ],
+              authenticatorSelection: {
+                residentKey: "required",
+                requireResidentKey: true,
+                userVerification: "required",
+              },
+              extensions: { prf: { eval: { first: bytesToBase64(salt) } } },
+            },
+          });
+          const assertion = await assertWithCeremony({
+            options: {
+              publicKey: {
+                challenge: bytesToBase64(crypto.getRandomValues(new Uint8Array(32))),
+                rpId: window.location.hostname,
+                userVerification: "required",
+                allowCredentials: [
+                  { type: "public-key", id: creation.credentialId },
+                ],
+                extensions: { prf: { eval: { first: bytesToBase64(salt) } } },
+              },
+            },
+            prfSalt: salt,
+          });
+          const prfOutput = assertion.prfOutput;
+          assert(prfOutput, "PRF output required for the restore flow test.");
+
+          // Real Ed25519 account signing key for the payload.
+          const keyPair = await crypto.subtle.generateKey("Ed25519", true, [
+            "sign",
+            "verify",
+          ]);
+          if (!("privateKey" in keyPair) || !("publicKey" in keyPair)) {
+            throw new Error("Browser did not return an Ed25519 key pair.");
+          }
+          const privateKeyPkcs8 = bytesToBase64(
+            new Uint8Array(await crypto.subtle.exportKey("pkcs8", keyPair.privateKey)),
+          );
+          const publicKeyRaw = bytesToBase64(
+            new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey)),
+          );
+          const payload: AccountRecoveryPayload = {
+            version: 1,
+            account_content_key: knownAck,
+            account_signing_private_key_pkcs8: privateKeyPkcs8,
+            account_signing_public_key: publicKeyRaw,
+            created_at: new Date().toISOString(),
+          };
+
+          // Server-side method record as the dashboard would see it.
+          const binding = {
+            methodType: "passkey_prf",
+            factorReference: "00000000-0000-4000-8000-000000000001",
+            keyEpoch: 1,
+          };
+          const { blob, cryptoHeader } = await sealRecoveryEnvelope({
+            payload,
+            wrapSecret: prfOutput,
+            binding,
+          });
+          const method = {
+            id: "00000000-0000-4000-8000-000000000002",
+            method_type: "passkey_prf",
+            state: "active",
+            revision: 2,
+            key_epoch: 1,
+            crypto_header: cryptoHeader,
+            factor_reference: binding.factorReference,
+            metadata: {
+              prf_input: bytesToBase64Url(salt),
+              prf_credential_id: creation.credentialId,
+            },
+            created_at: new Date().toISOString(),
+            activated_at: new Date().toISOString(),
+          };
+
+          // Wipe local state first: restore must rebuild everything.
+          await resetLocalEncryptedWorkspaceForRestore();
+          assert(
+            !(await hasLocalSecretVault()),
+            "Vault should be wiped before the restore flow runs.",
+          );
+
+          // Stub the recovery endpoints; everything else uses real fetch.
+          const envelopeResponse = {
+            method_id: method.id,
+            method_type: method.method_type,
+            state: method.state,
+            revision: method.revision,
+            key_epoch: method.key_epoch,
+            crypto_header: cryptoHeader,
+            ciphertext: JSON.stringify(blob),
+          };
+          const originalFetch = window.fetch.bind(window);
+          window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+            const responseBody = (() => {
+              if (url.includes("/recovery-methods/anchor")) {
+                return { established: true, key_epoch: 1 };
+              }
+              if (url.includes("/restore/start")) {
+                return {
+                  attempt_id: "00000000-0000-4000-8000-000000000003",
+                  challenge: bytesToBase64(crypto.getRandomValues(new Uint8Array(32))),
+                  purpose: "restore",
+                  key_epoch: 1,
+                  expires_at: new Date(Date.now() + 300000).toISOString(),
+                };
+              }
+              if (url.includes("/restore/envelope")) {
+                return envelopeResponse;
+              }
+              if (url.includes("/passkey/assertion-options")) {
+                let credentialId: string | undefined;
+                try {
+                  const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+                  credentialId = body?.credential_id;
+                } catch {
+                  // ignore malformed stub input
+                }
+                return {
+                  ceremony_id: "00000000-0000-4000-8000-000000000005",
+                  publicKey: {
+                    challenge: bytesToBase64(crypto.getRandomValues(new Uint8Array(32))),
+                    rpId: window.location.hostname,
+                    userVerification: "required",
+                    ...(credentialId
+                      ? {
+                          allowCredentials: [
+                            { type: "public-key", id: credentialId },
+                          ],
+                        }
+                      : {}),
+                  },
+                };
+              }
+              if (url.includes("/passkey/assert")) {
+                return {
+                  credential_id: "stub-credential",
+                  credential_row_id: "00000000-0000-4000-8000-000000000001",
+                };
+              }
+              if (url.includes("/restore/complete")) {
+                return { status: "completed", device_id: "00000000-0000-4000-8000-000000000004" };
+              }
+              return undefined;
+            })();
+            if (responseBody === undefined) {
+              return originalFetch(input, init);
+            }
+            return new Response(JSON.stringify(responseBody), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            });
+          };
+          try {
+            await restoreWithPasskeyRecoveryMethod(method, { accountId });
+          } finally {
+            window.fetch = originalFetch;
+          }
+
+          // The restored browser state must be complete: keys, vault config,
+          // and a working local unlock record.
+          assert(
+            await hasLocalSecretVault(),
+            "Restore must recreate the local vault (vault config enabled), otherwise unlock/restore gating loops.",
+          );
+          assert(
+            (await loadStoredAccountContentKey()) === knownAck,
+            "Restored account content key does not match the envelope payload.",
+          );
+          const localMethods = await listLocalPasskeyUnlockMethods(accountId);
+          assert(
+            localMethods.some((entry) => entry.credential_id === creation.credentialId),
+            "Restore must recreate the local passkey unlock record for the same credential.",
+          );
+          await unlockWithPasskeyPrf({
+            credentialId: creation.credentialId,
+            prfOutput,
+            accountId,
+          });
         },
       },
     ],
