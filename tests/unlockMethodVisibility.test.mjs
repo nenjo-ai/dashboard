@@ -51,7 +51,7 @@ test("only offers setup controls for missing unlock methods", () => {
   );
 });
 
-test("does not allow removing the last local unlock method", () => {
+test("does not allow removing the last local unlock method without recovery", () => {
   assert.equal(canRemovePasswordUnlock({ localPasskeyCount: 0 }), false);
   assert.equal(canRemovePasswordUnlock({ localPasskeyCount: 1 }), true);
 
@@ -66,5 +66,29 @@ test("does not allow removing the last local unlock method", () => {
   assert.equal(
     canRemoveLocalPasskeyUnlock({ localPasskeyCount: 2, hasPassword: false }),
     true,
+  );
+});
+
+test("active account recovery allows removing the last local unlock method", () => {
+  assert.equal(
+    canRemoveLocalPasskeyUnlock({
+      localPasskeyCount: 1,
+      hasPassword: false,
+      hasAccountRecovery: true,
+    }),
+    true,
+  );
+  assert.equal(
+    canRemovePasswordUnlock({ localPasskeyCount: 0, hasAccountRecovery: true }),
+    true,
+  );
+  // Disabled/revoked recovery does not unlock removal.
+  assert.equal(
+    canRemoveLocalPasskeyUnlock({
+      localPasskeyCount: 1,
+      hasPassword: false,
+      hasAccountRecovery: false,
+    }),
+    false,
   );
 });
