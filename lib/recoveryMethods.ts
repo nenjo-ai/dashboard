@@ -35,9 +35,21 @@ import {
   createPasskeyWithCeremony,
 } from "./webauthnCeremony";
 import {
-  base64ToBytes,
+  buildRestoreCompletionStatement,
+  sha256Hex,
+  signRestoreCompletionStatement,
+} from "./recoveryStatement";
+import {
+  assertSecureCryptoContextSafe as assertSecureCryptoContext,
+  decodeAndValidateRecoveryPayload,
+  openRecoveryEnvelope,
+  parseEnvelopeCiphertext,
+  RECOVERY_METHOD_TYPE_PASSKEY,
+  sealRecoveryEnvelope,
+  type AccountRecoveryPayload,
+} from "./recoveryEnvelope";
+import {
   buildTrustedDevicePayload,
-  bytesToBase64,
   exportAccountSigningKeyMaterial,
   hasStoredAccountContentKey,
   loadStoredAccountContentKey,
@@ -45,243 +57,6 @@ import {
   resetLocalEncryptedWorkspaceForRestore,
   setStoredAccountContentKey,
 } from "./cryptoContent";
-
-const RECOVERY_HKDF_INFO = "nenjo:account-recovery:v1";
-export const RECOVERY_METHOD_TYPE_PASSKEY = "passkey_prf";
-
-export type AccountRecoveryPayload = {
-  version: 1;
-  account_content_key: string;
-  account_signing_private_key_pkcs8: string;
-  account_signing_public_key: string;
-  created_at: string;
-};
-
-export type RecoveryEnvelopeBlob = {
-  v: 1;
-  alg: "a256gcm";
-  kdf: "hkdf-sha256";
-  hkdf_salt: string;
-  nonce: string;
-  ciphertext: string;
-};
-
-export type RecoveryCryptoHeader = {
-  alg: "a256gcm";
-  kdf: "hkdf-sha256";
-  info: string;
-  aad: string;
-  aad_fields: string[];
-  nonce_bits: number;
-  tag_bits: number;
-};
-
-function asBufferSource(bytes: Uint8Array): BufferSource {
-  return bytes as unknown as BufferSource;
-}
-
-function utf8(value: string): Uint8Array {
-  return new TextEncoder().encode(value);
-}
-
-function assertSecureCryptoContext(): void {
-  if (
-    typeof window === "undefined" ||
-    !window.isSecureContext ||
-    typeof crypto?.subtle === "undefined"
-  ) {
-    throw new Error("Account recovery requires a secure browser context.");
-  }
-}
-
-/// HKDF-SHA256 wrapping key. The input secret is the factor ceremony output
-/// (WebAuthn PRF result, or the OPAQUE export key for passwords) — never an
-/// assertion signature, credential ID, or session key.
-async function deriveRecoveryWrapKey(
-  secret: Uint8Array,
-  hkdfSalt: Uint8Array,
-): Promise<CryptoKey> {
-  const baseKey = await crypto.subtle.importKey(
-    "raw",
-    asBufferSource(secret),
-    "HKDF",
-    false,
-    ["deriveKey"],
-  );
-  return crypto.subtle.deriveKey(
-    {
-      name: "HKDF",
-      hash: "SHA-256",
-      salt: asBufferSource(hkdfSalt),
-      info: asBufferSource(utf8(RECOVERY_HKDF_INFO)),
-    },
-    baseKey,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt", "decrypt"],
-  );
-}
-
-/// Authenticated associated data binding the envelope to its factor and
-/// account key epoch. Uses the stable credential binding (factor reference)
-/// rather than server-assigned identifiers, so the same AAD is reproducible
-/// before and after the server assigns a method id / bumps the revision.
-function recoveryAad(binding: {
-  methodType: string;
-  factorReference: string;
-  keyEpoch: number;
-}): Uint8Array {
-  return utf8(
-    [
-      "nenjo-account-recovery-envelope:v1",
-      "account-recovery",
-      binding.methodType,
-      binding.factorReference,
-      String(binding.keyEpoch),
-    ].join("|"),
-  );
-}
-
-async function sealRecoveryEnvelope(params: {
-  payload: AccountRecoveryPayload;
-  wrapSecret: Uint8Array;
-  binding: { methodType: string; factorReference: string; keyEpoch: number };
-}): Promise<{ blob: RecoveryEnvelopeBlob; cryptoHeader: Record<string, unknown> }> {
-  const hkdfSalt = crypto.getRandomValues(new Uint8Array(32));
-  const nonce = crypto.getRandomValues(new Uint8Array(12));
-  const wrapKey = await deriveRecoveryWrapKey(params.wrapSecret, hkdfSalt);
-  const plaintext = utf8(JSON.stringify(params.payload));
-  const ciphertext = await crypto.subtle.encrypt(
-    {
-      name: "AES-GCM",
-      iv: asBufferSource(nonce),
-      additionalData: asBufferSource(recoveryAad(params.binding)),
-      tagLength: 128,
-    },
-    wrapKey,
-    asBufferSource(plaintext),
-  );
-  const cryptoHeader: RecoveryCryptoHeader = {
-    alg: "a256gcm",
-    kdf: "hkdf-sha256",
-    info: RECOVERY_HKDF_INFO,
-    aad: "nenjo-account-recovery-envelope:v1",
-    aad_fields: ["method_type", "factor_reference", "key_epoch"],
-    nonce_bits: 96,
-    tag_bits: 128,
-  };
-  return {
-    blob: {
-      v: 1,
-      alg: "a256gcm",
-      kdf: "hkdf-sha256",
-      hkdf_salt: bytesToBase64(hkdfSalt),
-      nonce: bytesToBase64(nonce),
-      ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
-    },
-    cryptoHeader: cryptoHeader as unknown as Record<string, unknown>,
-  };
-}
-
-async function openRecoveryEnvelope(params: {
-  blob: RecoveryEnvelopeBlob;
-  wrapSecret: Uint8Array;
-  binding: { methodType: string; factorReference: string; keyEpoch: number };
-}): Promise<AccountRecoveryPayload> {
-  if (
-    params.blob.v !== 1 ||
-    params.blob.alg !== "a256gcm" ||
-    params.blob.kdf !== "hkdf-sha256"
-  ) {
-    throw new Error("Unsupported recovery envelope format.");
-  }
-  const wrapKey = await deriveRecoveryWrapKey(
-    params.wrapSecret,
-    base64ToBytes(params.blob.hkdf_salt),
-  );
-  let plaintext: ArrayBuffer;
-  try {
-    plaintext = await crypto.subtle.decrypt(
-      {
-        name: "AES-GCM",
-        iv: asBufferSource(base64ToBytes(params.blob.nonce)),
-        additionalData: asBufferSource(recoveryAad(params.binding)),
-        tagLength: 128,
-      },
-      wrapKey,
-      asBufferSource(base64ToBytes(params.blob.ciphertext)),
-    );
-  } catch {
-    throw new Error(
-      "Recovery envelope failed authentication. The wrong factor was used or the record was tampered with.",
-    );
-  }
-  return decodeAndValidateRecoveryPayload(
-    JSON.parse(new TextDecoder().decode(plaintext)),
-  );
-}
-
-export function decodeAndValidateRecoveryPayload(
-  value: unknown,
-): AccountRecoveryPayload {
-  if (typeof value !== "object" || value === null) {
-    throw new Error("Invalid recovery payload.");
-  }
-  const record = value as Record<string, unknown>;
-  if (record.version !== 1) {
-    throw new Error("Unsupported recovery payload version.");
-  }
-  for (const field of [
-    "account_content_key",
-    "account_signing_private_key_pkcs8",
-    "account_signing_public_key",
-    "created_at",
-  ] as const) {
-    if (typeof record[field] !== "string" || (record[field] as string).length === 0) {
-      throw new Error(`Recovery payload is missing ${field}.`);
-    }
-  }
-  // Strict schema: unexpected fields mean a future format we must not parse.
-  const allowed = new Set([
-    "version",
-    "account_content_key",
-    "account_signing_private_key_pkcs8",
-    "account_signing_public_key",
-    "created_at",
-  ]);
-  for (const key of Object.keys(record)) {
-    if (!allowed.has(key)) {
-      throw new Error(`Unexpected field in recovery payload: ${key}`);
-    }
-  }
-  return {
-    version: 1,
-    account_content_key: record.account_content_key as string,
-    account_signing_private_key_pkcs8: record.account_signing_private_key_pkcs8 as string,
-    account_signing_public_key: record.account_signing_public_key as string,
-    created_at: record.created_at as string,
-  };
-}
-
-function parseEnvelopeCiphertext(raw: string): RecoveryEnvelopeBlob {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error("Recovery envelope is not valid JSON.");
-  }
-  const record = parsed as Record<string, unknown>;
-  if (
-    record.v !== 1 ||
-    record.alg !== "a256gcm" ||
-    typeof record.hkdf_salt !== "string" ||
-    typeof record.nonce !== "string" ||
-    typeof record.ciphertext !== "string"
-  ) {
-    throw new Error("Recovery envelope has an invalid structure.");
-  }
-  return parsed as RecoveryEnvelopeBlob;
-}
 
 // ---------------------------------------------------------------------------
 // Read-only payload export (no key generation during recovery operations)
@@ -490,16 +265,6 @@ export async function restoreWithPasskeyRecoveryMethod(
 // Signed fresh-device completion and local commit
 // ---------------------------------------------------------------------------
 
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    asBufferSource(utf8(value)),
-  );
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 async function signRecoveryCompletion(params: {
   attemptId: string;
   methodId: string;
@@ -513,33 +278,20 @@ async function signRecoveryCompletion(params: {
   // Must mirror the platform's serde field order for wrapped_ack exactly:
   // key_version, algorithm, ephemeral_public_key, nonce, ciphertext, created_at.
   const wrappedAckJson = JSON.stringify(params.wrappedAck);
-  const wrappedAckSha256 = await sha256Hex(wrappedAckJson);
-  // Exact field order of the platform's canonical_restore_statement.
-  const canonical = [
-    "nenjo-account-recovery-restore:v1",
-    `attempt_id=${params.attemptId}`,
-    `method_id=${params.methodId}`,
-    `method_revision=${params.methodRevision}`,
-    `key_epoch=${params.keyEpoch}`,
-    `device_id=${params.deviceId}`,
-    `sign_public_key=${params.deviceSignPublicKey}`,
-    `wrapped_ack_json=${wrappedAckJson}`,
-    `wrapped_ack_sha256=${wrappedAckSha256}`,
-  ].join("\n");
-
-  const privateKey = await crypto.subtle.importKey(
-    "pkcs8",
-    asBufferSource(base64ToBytes(params.accountSigningPrivateKeyPkcs8)),
-    "Ed25519",
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign(
-    "Ed25519",
-    privateKey,
-    asBufferSource(utf8(canonical)),
-  );
-  return bytesToBase64(new Uint8Array(signature));
+  const statement = buildRestoreCompletionStatement({
+    attemptId: params.attemptId,
+    methodId: params.methodId,
+    methodRevision: params.methodRevision,
+    keyEpoch: params.keyEpoch,
+    deviceId: params.deviceId,
+    deviceSignPublicKey: params.deviceSignPublicKey,
+    wrappedAckJson,
+    wrappedAckSha256: await sha256Hex(wrappedAckJson),
+  });
+  return signRestoreCompletionStatement({
+    accountSigningPrivateKeyPkcs8: params.accountSigningPrivateKeyPkcs8,
+    statement,
+  });
 }
 
 /// Persists the decrypted payload as a fresh device: new local vault, restored
@@ -592,3 +344,6 @@ async function commitRestoredVault(params: {
     publicKey: params.payload.account_signing_public_key,
   };
 }
+
+export { RECOVERY_METHOD_TYPE_PASSKEY } from "./recoveryEnvelope";
+export { decodeAndValidateRecoveryPayload } from "./recoveryEnvelope";
