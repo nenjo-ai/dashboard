@@ -114,6 +114,10 @@ import {
   recoveryPhraseFileContents,
 } from "@/lib/recoveryPhraseFile";
 import { normalizeRuntimeVerificationCode } from "@/lib/runtimeApproval";
+import {
+  listRestorableMethods,
+  restoreWithPasskeyRecoveryMethod,
+} from "@/lib/recoveryMethods";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1428,6 +1432,26 @@ function StepRestoreDevice({
   const [error, setError] = useState<string | null>(null);
   const [deviceEnrollmentId, setDeviceEnrollmentId] = useState<string | null>(null);
   const [deviceVerificationCode, setDeviceVerificationCode] = useState<string | null>(null);
+  const [recoveryMethod, setRecoveryMethod] = useState<
+    import("@/lib/api").RecoveryMethodMetadata | null
+  >(null);
+  const [restoringWithPasskey, setRestoringWithPasskey] = useState(false);
+
+  const handlePasskeyRestore = useCallback(async () => {
+    if (!recoveryMethod) return;
+    setError(null);
+    setRestoringWithPasskey(true);
+    try {
+      await restoreWithPasskeyRecoveryMethod(recoveryMethod);
+      onRestored();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to restore with your device unlock.",
+      );
+    } finally {
+      setRestoringWithPasskey(false);
+    }
+  }, [onRestored, recoveryMethod]);
 
   const normalizeEnrollmentError = useCallback((err: unknown) => {
     const message =
@@ -1448,12 +1472,16 @@ function StepRestoreDevice({
     let cancelled = false;
 
     const loadBundle = async () => {
-      const [local, remote] = await Promise.all([
+      const [local, remote, restorable] = await Promise.all([
         loadStoredRecoveryBundle(),
         fetchRecoveryBundle().catch(() => ({ recovery_bundle: null })),
+        listRestorableMethods(),
       ]);
       if (cancelled) return;
       setHasBundle(Boolean(local ?? remote.recovery_bundle));
+      setRecoveryMethod(
+        restorable.find((method) => method.method_type === "passkey_prf") ?? null,
+      );
     };
 
     const refreshTrustedDevices = async () => {
@@ -1626,6 +1654,32 @@ function StepRestoreDevice({
           This Nenjo workspace already exists. Approve this browser from a trusted device or restore it with the recovery details saved for <span className="theme-text font-medium">{userId}</span>.
         </p>
       </div>
+
+      {recoveryMethod ? (
+        <div
+          className="rounded-2xl border border-deep-space-blue-200 bg-deep-space-blue-50/60 p-5 dark:border-deep-space-blue-800 dark:bg-deep-space-blue-900/20"
+          data-testid="passkey-recovery-option"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="theme-text text-sm font-medium">Restore with your device unlock</p>
+              <p className="theme-text-muted mt-1 text-xs">
+                This browser lost its local keys, but your saved device unlock can restore
+                them without your recovery phrase or another device.
+              </p>
+            </div>
+            <Button
+              type="button"
+              isLoading={restoringWithPasskey}
+              disabled={restoringWithPasskey || restoring}
+              onClick={() => void handlePasskeyRestore()}
+            >
+              <KeyRound className="h-4 w-4" />
+              Restore With Device Unlock
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {loading ? (
         <LoadingStatus label="Checking for your recovery bundle" />
