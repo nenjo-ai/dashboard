@@ -11,7 +11,9 @@
     "test:e2e:artifacts": "playwright test e2e/artifact-viewer.spec.ts",
     "start": "next start",
     "lint": "eslint .",
-    "license:check": "npx license-checker-rseidelsohn --production --excludePrivatePackages --onlyAllow \"MIT;MIT*;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;Zlib;0BSD;Unlicense;CC0-1.0;CC-BY-4.0;Unicode-3.0;Unicode-DFS-2016;LGPL-3.0-or-later;(MPL-2.0 OR Apache-2.0);(MIT OR GPL-3.0-or-later);(MIT AND Zlib);MIT AND ISC\""
+    "license:check": "npx license-checker-rseidelsohn --production --excludePrivatePackages --onlyAllow \"MIT;MIT*;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;Zlib;0BSD;Unlicense;CC0-1.0;CC-BY-4.0;Unicode-3.0;Unicode-DFS-2016;LGPL-3.0-or-later;(MPL-2.0 OR Apache-2.0);(MIT OR GPL-3.0-or-later);(MIT AND Zlib);MIT AND ISC\"",
+    "test:components": "vitest run tests/rtl",
+    "test:components:watch": "vitest tests/rtl"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.39.3",
@@ -51,17 +53,24 @@
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4.2.1",
     "@tailwindcss/typography": "^0.5.19",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/d3": "^7.4.3",
     "@types/node": "^20.10.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.184.1",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.1.6",
     "fumadocs-mdx": "^14.2.10",
+    "jsdom": "^29.1.1",
     "postcss": "^8.5.14",
     "tailwindcss": "^4.2.1",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "dompurify": "^3.4.3",
