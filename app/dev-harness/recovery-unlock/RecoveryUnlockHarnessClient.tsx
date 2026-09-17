@@ -23,6 +23,7 @@ import {
 } from "@/lib/recoveryEnvelope";
 import { bytesToBase64Url } from "@/lib/webauthnCeremony";
 import {
+  bindLocalSecretVaultSession,
   hasLocalSecretVault,
   listLocalPasskeyUnlockMethods,
   loadStoredAccountContentKey,
@@ -499,6 +500,15 @@ export function RecoveryUnlockHarnessClient() {
             prfOutput,
             accountId,
           });
+
+          // Redirect contract: when the dashboard layout binds the vault
+          // session with the SAME account id that performed the restore, it
+          // must succeed — otherwise the layout re-routes to onboarding and
+          // the user never reaches the dashboard.
+          assert(
+            bindLocalSecretVaultSession(accountId),
+            "Restored vault must bind to the restoring account id; a mismatch sends the dashboard layout back to onboarding.",
+          );
         },
       },
     ],
