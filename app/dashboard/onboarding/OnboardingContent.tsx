@@ -1442,7 +1442,9 @@ function StepRestoreDevice({
     setError(null);
     setRestoringWithPasskey(true);
     try {
-      await restoreWithPasskeyRecoveryMethod(recoveryMethod);
+      await restoreWithPasskeyRecoveryMethod(recoveryMethod, {
+        accountId: userId,
+      });
       onRestored();
     } catch (err) {
       setError(
