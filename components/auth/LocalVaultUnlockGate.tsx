@@ -20,6 +20,7 @@ import { unlockWithAnyLocalPasskey } from "@/lib/localUnlock";
 import {
   listRestorableMethods,
   restoreWithPasskeyRecoveryMethod,
+  EVENT_VAULT_RESTORED,
   RECOVERY_METHOD_TYPE_PASSKEY,
 } from "@/lib/recoveryMethods";
 import { retryEncryptedPushNotifications } from "@/lib/pushNotificationRetry";
@@ -93,6 +94,19 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     void checkVault();
+  }, [checkVault]);
+
+  // A restore completed elsewhere (e.g. onboarding): re-check the vault so
+  // the restore prompt dismisses immediately.
+  useEffect(() => {
+    const handleVaultRestored = () => {
+      setRestoreNeeded(false);
+      setRecoveryMethods([]);
+      void checkVault();
+    };
+    window.addEventListener(EVENT_VAULT_RESTORED, handleVaultRestored);
+    return () =>
+      window.removeEventListener(EVENT_VAULT_RESTORED, handleVaultRestored);
   }, [checkVault]);
 
   useEffect(() => {
