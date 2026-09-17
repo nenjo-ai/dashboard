@@ -1,0 +1,17 @@
+{
+  "comment": "Shared dashboard/platform test vector for the BOO-26 restore completion statement.",
+  "attempt_id": "1b2a0c3d-1111-4222-8333-a444b555c666",
+  "method_id": "2c3b1d4e-2222-4333-9444-b555c666d777",
+  "method_revision": 2,
+  "key_epoch": 1,
+  "device_id": "3d4c2e5f-3333-5444-a555-c666d777e888",
+  "device_sign_public_key": "hlyY5w9syc+bI2BuOb13VJSQiCfJmLdobNz0un/iy5w=",
+  "wrapped_ack_json": "{\"key_version\":1,\"algorithm\":\"x25519-hkdf-sha256-aes-256-gcm\",\"ephemeral_public_key\":\"ZGVidWctZXBoZXJtYWxfa2V5LWJhc2U2NC12YWx1ZQ\",\"nonce\":\"ZGVidWctbm9uY2UtMTItYnl0ZXM\",\"ciphertext\":\"ZGVidWctY2lwaGVydGV4dC1maXh0dXJl\",\"created_at\":\"2026-09-12T00:00:00.000Z\"}",
+  "wrapped_ack_sha256": "a9e35ee802209fb5d4ca357b07b20da31b77b945aff7788b91e8b2a800671068",
+  "expected_statement": "nenjo-account-recovery-restore:v1\nattempt_id=1b2a0c3d-1111-4222-8333-a444b555c666\nmethod_id=2c3b1d4e-2222-4333-9444-b555c666d777\nmethod_revision=2\nkey_epoch=1\ndevice_id=3d4c2e5f-3333-5444-a555-c666d777e888\nsign_public_key=hlyY5w9syc+bI2BuOb13VJSQiCfJmLdobNz0un/iy5w=\nwrapped_ack_json={\"key_version\":1,\"algorithm\":\"x25519-hkdf-sha256-aes-256-gcm\",\"ephemeral_public_key\":\"ZGVidWctZXBoZXJtYWxfa2V5LWJhc2U2NC12YWx1ZQ\",\"nonce\":\"ZGVidWctbm9uY2UtMTItYnl0ZXM\",\"ciphertext\":\"ZGVidWctY2lwaGVydGV4dC1maXh0dXJl\",\"created_at\":\"2026-09-12T00:00:00.000Z\"}\nwrapped_ack_sha256=a9e35ee802209fb5d4ca357b07b20da31b77b945aff7788b91e8b2a800671068",
+  "signature_base64": "24XOWhX25EUrLSPQjWhZCWKi7vFTi5a6FrWl4WeeV3b4/qUYgiwlKFHs8GNv613Yd0wGfs0gzdkiVfBWfAxcBA==",
+  "test_only": {
+    "account_signing_private_key_pkcs8_base64": "MC4CAQAwBQYDK2VwBCIEIG5lbmpvLWJvbzI2LXRlc3QtdmVjdG9yLXNlZWQtMDAw",
+    "account_signing_public_key_base64": "hlyY5w9syc+bI2BuOb13VJSQiCfJmLdobNz0un/iy5w="
+  }
+}
