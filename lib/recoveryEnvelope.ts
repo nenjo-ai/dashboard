@@ -3,7 +3,7 @@
 // Node. Consumed by lib/recoveryMethods.ts.
 
 const RECOVERY_HKDF_INFO = "nenjo:account-recovery:v1";
-export const RECOVERY_AAD_PREFIX = "nenjo-account-recovery-envelope:v1";
+const RECOVERY_AAD_PREFIX = "nenjo-account-recovery-envelope:v1";
 export const RECOVERY_METHOD_TYPE_PASSKEY = "passkey_prf";
 
 export type AccountRecoveryPayload = {
@@ -23,7 +23,7 @@ export type RecoveryEnvelopeBlob = {
   ciphertext: string;
 };
 
-export type RecoveryCryptoHeader = {
+type RecoveryCryptoHeader = {
   alg: "a256gcm";
   kdf: "hkdf-sha256";
   info: string;

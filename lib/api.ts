@@ -2555,13 +2555,6 @@ export async function revokeUnlockCredential(id: string): Promise<void> {
   await authFetch(unlockCredentialUrl(id), { method: "DELETE" });
 }
 
-export async function fetchPasskeyRegistrationOptions(): Promise<
-  import("./types").PasskeyOptions
-> {
-  const res = await authFetch(passkeyRegistrationOptionsUrl(), { method: "POST" });
-  return res.json() as Promise<import("./types").PasskeyOptions>;
-}
-
 export async function registerPasskeyUnlockCredential(
   body: import("./types").RegisterPasskeyRequest,
 ): Promise<import("./types").UnlockCredential> {
