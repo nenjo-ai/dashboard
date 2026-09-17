@@ -16,7 +16,7 @@ import {
   touchVaultSessionActivity,
   unlockWithPassword,
 } from "@/lib/cryptoContent";
-import { unlockWithAnyLocalPasskey, requestPrfOutputForRestore } from "@/lib/localUnlock";
+import { unlockWithAnyLocalPasskey } from "@/lib/localUnlock";
 import {
   listRestorableMethods,
   restoreWithPasskeyRecoveryMethod,
@@ -181,11 +181,7 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
       if (!method) {
         throw new Error("No passkey recovery method is enrolled for this account.");
       }
-      await restoreWithPasskeyRecoveryMethod({
-        method,
-        factor: ({ prfSalt, credentialId }) =>
-          requestPrfOutputForRestore({ prfSalt, credentialId }),
-      });
+      await restoreWithPasskeyRecoveryMethod(method);
       setRestoreNeeded(false);
       setRecoveryMethods([]);
       await checkVault();
