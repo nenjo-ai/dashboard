@@ -2709,6 +2709,63 @@ export async function revokeRecoveryMethod(id: string): Promise<void> {
   await authFetch(recoveryMethodUrl(id), { method: "DELETE" });
 }
 
+// --- WebAuthn recovery ceremonies (BOO-26 package 4) ------------------------
+
+export interface PasskeyCeremonyOptions {
+  ceremony_id: string;
+  publicKey: Record<string, unknown>;
+}
+
+export interface PasskeyVerified {
+  credential_id: string;
+  credential_row_id: string;
+}
+
+function passkeyRecoveryUrl(suffix: string): string {
+  return `${API_V1}/content-encryption/recovery-methods/passkey/${suffix}`;
+}
+
+async function recoveryCeremonyPost<T>(url: string, body: unknown): Promise<T> {
+  const res = await authFetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<T>;
+}
+
+export async function startPasskeyRecoveryRegistration(): Promise<PasskeyCeremonyOptions> {
+  return recoveryCeremonyPost<PasskeyCeremonyOptions>(
+    passkeyRecoveryUrl("registration-options"),
+    {},
+  );
+}
+
+export async function finishPasskeyRecoveryRegistration(body: {
+  ceremony_id: string;
+  response: Record<string, unknown>;
+  label?: string | null;
+}): Promise<PasskeyVerified> {
+  return recoveryCeremonyPost<PasskeyVerified>(passkeyRecoveryUrl("register"), body);
+}
+
+export async function startPasskeyRecoveryAssertion(body: {
+  attempt_id?: string;
+  method_id?: string;
+  credential_id?: string;
+}): Promise<PasskeyCeremonyOptions> {
+  return recoveryCeremonyPost<PasskeyCeremonyOptions>(
+    passkeyRecoveryUrl("assertion-options"),
+    body,
+  );
+}
+
+export async function finishPasskeyRecoveryAssertion(body: {
+  ceremony_id: string;
+  response: Record<string, unknown>;
+}): Promise<PasskeyVerified> {
+  return recoveryCeremonyPost<PasskeyVerified>(passkeyRecoveryUrl("assert"), body);
+}
+
 export async function createWorkerEnrollment(
   body: import("./types").WorkerEnrollmentRequest,
 ): Promise<import("./types").WorkerEnrollmentStatusResponse> {

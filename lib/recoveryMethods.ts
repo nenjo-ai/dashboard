@@ -18,12 +18,22 @@ import {
   fetchRecoveryEnvelope,
   fetchStagedRecoveryEnvelope,
   fetchRecoveryAnchor,
+  finishPasskeyRecoveryAssertion,
+  finishPasskeyRecoveryRegistration,
   listRecoveryMethods,
   stageRecoveryMethod,
+  startPasskeyRecoveryAssertion,
+  startPasskeyRecoveryRegistration,
   startRecoveryAttempt,
   type RecoveryEnvelope,
   type RecoveryMethodMetadata,
 } from "./api";
+import {
+  assertWithCeremony,
+  base64UrlToBytes,
+  bytesToBase64Url,
+  createPasskeyWithCeremony,
+} from "./webauthnCeremony";
 import {
   base64ToBytes,
   buildTrustedDevicePayload,
@@ -301,8 +311,6 @@ async function buildAccountRecoveryPayload(): Promise<AccountRecoveryPayload> {
 // ---------------------------------------------------------------------------
 
 export async function enrollPasskeyRecoveryMethod(params: {
-  credentialId: string;
-  prfOutput: Uint8Array;
   label?: string | null;
 }): Promise<RecoveryMethodMetadata> {
   assertSecureCryptoContext();
@@ -320,15 +328,48 @@ export async function enrollPasskeyRecoveryMethod(params: {
     });
   }
 
+  // 1. Server-verified registration ceremony. The platform verifies the
+  // attestation against its configured RP/origin allowlist; unverified
+  // metadata can never become a recovery factor.
+  const registration = await startPasskeyRecoveryRegistration();
+  const created = await createPasskeyWithCeremony(registration);
+  const verified = await finishPasskeyRecoveryRegistration({
+    ceremony_id: registration.ceremony_id,
+    response: created.responseJson,
+    label: params.label,
+  });
+
+  // 2. Follow-up assertion to obtain PRF output: registration alone does not
+  // guarantee PRF results. The PRF input is random, public, and persisted
+  // with the method metadata; the output never leaves the browser.
+  const prfInput = crypto.getRandomValues(new Uint8Array(32));
+  const assertion = await startPasskeyRecoveryAssertion({
+    credential_id: verified.credential_id,
+  });
+  const assertionResult = await assertWithCeremony({
+    options: { publicKey: assertion.publicKey },
+    prfSalt: prfInput,
+  });
+  await finishPasskeyRecoveryAssertion({
+    ceremony_id: assertion.ceremony_id,
+    response: assertionResult.responseJson,
+  });
+  const prfOutput = assertionResult.prfOutput;
+  if (!prfOutput) {
+    throw new Error("This passkey did not return WebAuthn PRF output.");
+  }
+
+  // 3. Staged enrollment: seal the payload, upload, read back, decrypt
+  // through the factor path, then activate with CAS on the revision.
   const started = await startRecoveryAttempt({ purpose: "enroll", key_epoch: 1 });
   const binding = {
     methodType: RECOVERY_METHOD_TYPE_PASSKEY,
-    factorReference: params.credentialId,
+    factorReference: verified.credential_row_id,
     keyEpoch: 1,
   };
   const sealed = await sealRecoveryEnvelope({
     payload,
-    wrapSecret: params.prfOutput,
+    wrapSecret: prfOutput,
     binding,
   });
 
@@ -339,22 +380,22 @@ export async function enrollPasskeyRecoveryMethod(params: {
     key_epoch: 1,
     crypto_header: sealed.cryptoHeader,
     ciphertext: JSON.stringify(sealed.blob),
-    factor_reference: params.credentialId,
+    factor_reference: verified.credential_row_id,
     metadata: {
-      // Public PRF input; required to reproduce PRF output at restore time.
-      prf_salt: sealed.blob.hkdf_salt,
+      // Public PRF input for future ceremonies; the HKDF salt stays in the
+      // envelope blob. These are distinct values per the recovery plan.
+      prf_input: bytesToBase64Url(prfInput),
+      prf_credential_id: verified.credential_id,
       ...(params.label ? { label: params.label } : {}),
     },
   });
 
-  // Round-trip check: fetch the exact staged ciphertext and decrypt it again
-  // through the intended factor path before activation.
   const envelope = await fetchStagedRecoveryEnvelope({
     attempt_id: started.attempt_id,
     challenge: started.challenge,
   });
   const blob = parseEnvelopeCiphertext(envelope.ciphertext);
-  await openRecoveryEnvelope({ blob, wrapSecret: params.prfOutput, binding });
+  await openRecoveryEnvelope({ blob, wrapSecret: prfOutput, binding });
 
   return activateRecoveryMethod({
     method_id: staged.id,
@@ -365,11 +406,6 @@ export async function enrollPasskeyRecoveryMethod(params: {
 // ---------------------------------------------------------------------------
 // Restore: seamless device-unlock modal flow
 // ---------------------------------------------------------------------------
-
-export type PasskeyFactorCeremony = (params: {
-  prfSalt: Uint8Array;
-  credentialId: string | null;
-}) => Promise<Uint8Array>;
 
 export async function listRestorableMethods(): Promise<RecoveryMethodMetadata[]> {
   let methods: RecoveryMethodMetadata[];
@@ -386,42 +422,56 @@ export async function listRestorableMethods(): Promise<RecoveryMethodMetadata[]>
 /// Restores browser crypto state from a server-held recovery envelope using
 /// the passkey PRF factor. Validates everything in memory before persisting;
 /// on failure no local records are altered.
-export async function restoreWithPasskeyRecoveryMethod(params: {
-  method: RecoveryMethodMetadata;
-  factor: PasskeyFactorCeremony;
-}): Promise<{ accountContentKey: string; publicKey: string }> {
+export async function restoreWithPasskeyRecoveryMethod(
+  method: RecoveryMethodMetadata,
+): Promise<{ accountContentKey: string; publicKey: string }> {
   assertSecureCryptoContext();
 
   const started = await startRecoveryAttempt({
     purpose: "restore",
-    method_id: params.method.id,
-    key_epoch: params.method.key_epoch,
+    method_id: method.id,
+    key_epoch: method.key_epoch,
   });
 
-  // The PRF input/salt is public and stored with the method metadata.
-  const prfSaltRaw = params.method.metadata?.prf_salt;
-  if (typeof prfSaltRaw !== "string") {
-    throw new Error("Recovery method is missing its PRF salt.");
+  // Server-verified assertion bound to this restore attempt; the platform
+  // marks the attempt factor-verified only after a successful ceremony. The
+  // PRF output is evaluated locally and never serialized into the response.
+  const prfInputRaw = method.metadata?.prf_input;
+  if (typeof prfInputRaw !== "string") {
+    throw new Error("Recovery method is missing its PRF input.");
   }
-  const wrapSecret = await params.factor({
-    prfSalt: base64ToBytes(prfSaltRaw),
-    credentialId: params.method.factor_reference,
+  const assertion = await startPasskeyRecoveryAssertion({
+    attempt_id: started.attempt_id,
+    method_id: method.id,
+    credential_id: method.metadata?.prf_credential_id as string | undefined,
   });
+  const assertionResult = await assertWithCeremony({
+    options: { publicKey: assertion.publicKey },
+    prfSalt: base64UrlToBytes(prfInputRaw),
+  });
+  await finishPasskeyRecoveryAssertion({
+    ceremony_id: assertion.ceremony_id,
+    response: assertionResult.responseJson,
+  });
+  const prfOutput = assertionResult.prfOutput;
+  if (!prfOutput) {
+    throw new Error("This passkey did not return WebAuthn PRF output.");
+  }
 
   const envelope: RecoveryEnvelope = await fetchRecoveryEnvelope({
     attempt_id: started.attempt_id,
     challenge: started.challenge,
   });
-  if (envelope.key_epoch !== params.method.key_epoch) {
+  if (envelope.key_epoch !== method.key_epoch) {
     throw new Error("Recovery envelope epoch does not match the restore attempt.");
   }
   const blob = parseEnvelopeCiphertext(envelope.ciphertext);
   const payload = await openRecoveryEnvelope({
     blob,
-    wrapSecret,
+    wrapSecret: prfOutput,
     binding: {
       methodType: envelope.method_type,
-      factorReference: params.method.factor_reference,
+      factorReference: method.factor_reference,
       keyEpoch: envelope.key_epoch,
     },
   });
