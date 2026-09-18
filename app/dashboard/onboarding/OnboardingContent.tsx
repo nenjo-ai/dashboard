@@ -125,6 +125,7 @@ import { normalizeRuntimeVerificationCode } from "@/lib/runtimeApproval";
 import {
   listRestorableMethods,
   restoreWithPasskeyRecoveryMethod,
+  restoreWithPasswordRecoveryMethod,
 } from "@/lib/recoveryMethods";
 
 // ---------------------------------------------------------------------------
@@ -1446,7 +1447,12 @@ function StepRestoreDevice({
   const [recoveryMethod, setRecoveryMethod] = useState<
     import("@/lib/api").RecoveryMethodMetadata | null
   >(null);
+  const [passwordRecoveryMethod, setPasswordRecoveryMethod] = useState<
+    import("@/lib/api").RecoveryMethodMetadata | null
+  >(null);
   const [restoringWithPasskey, setRestoringWithPasskey] = useState(false);
+  const [restoringWithPassword, setRestoringWithPassword] = useState(false);
+  const [restorePassword, setRestorePassword] = useState("");
 
   const handlePasskeyRestore = useCallback(async () => {
     if (!recoveryMethod) return;
@@ -1467,6 +1473,26 @@ function StepRestoreDevice({
       setRestoringWithPasskey(false);
     }
   }, [localAccountId, onRestored, recoveryMethod, userId]);
+
+  const handlePasswordRestore = useCallback(async () => {
+    if (!passwordRecoveryMethod) return;
+    setError(null);
+    setRestoringWithPassword(true);
+    try {
+      await restoreWithPasswordRecoveryMethod(passwordRecoveryMethod, {
+        accountId: localAccountId || userId,
+        password: restorePassword,
+      });
+      setRestorePassword("");
+      onRestored();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to restore with your password.",
+      );
+    } finally {
+      setRestoringWithPassword(false);
+    }
+  }, [localAccountId, onRestored, passwordRecoveryMethod, restorePassword, userId]);
 
   const normalizeEnrollmentError = useCallback((err: unknown) => {
     const message =
@@ -1496,6 +1522,9 @@ function StepRestoreDevice({
       setHasBundle(Boolean(local ?? remote.recovery_bundle));
       setRecoveryMethod(
         restorable.find((method) => method.method_type === "passkey_prf") ?? null,
+      );
+      setPasswordRecoveryMethod(
+        restorable.find((method) => method.method_type === "password_opaque") ?? null,
       );
     };
 
@@ -1691,6 +1720,38 @@ function StepRestoreDevice({
             >
               <KeyRound className="h-4 w-4" />
               Restore With Device Unlock
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {passwordRecoveryMethod ? (
+        <div
+          className="rounded-2xl border border-deep-space-blue-200 bg-deep-space-blue-50/60 p-5 dark:border-deep-space-blue-800 dark:bg-deep-space-blue-900/20"
+          data-testid="password-recovery-option"
+        >
+          <div className="space-y-3">
+            <div>
+              <p className="theme-text text-sm font-medium">Restore with your workspace password</p>
+              <p className="theme-text-muted mt-1 text-xs">
+                Verify your password with the server to restore this browser&apos;s keys. The
+                password never leaves this browser unencrypted.
+              </p>
+            </div>
+            <Input
+              type="password"
+              value={restorePassword}
+              onChange={(event) => setRestorePassword(event.target.value)}
+              placeholder="Workspace password"
+            />
+            <Button
+              type="button"
+              isLoading={restoringWithPassword}
+              disabled={restoringWithPassword || restoring || restorePassword.length === 0}
+              onClick={() => void handlePasswordRestore()}
+            >
+              <KeyRound className="h-4 w-4" />
+              Restore With Password
             </Button>
           </div>
         </div>
