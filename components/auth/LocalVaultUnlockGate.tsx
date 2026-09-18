@@ -66,6 +66,10 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
         // unlock prompt instead of silently proceeding without keys.
         setRestoreNeeded(true);
         setRecoveryMethods(await listRestorableMethods());
+        // The local unlock records are gone with the vault; stale availability
+        // flags would render a second password input bound to the same state.
+        setPasswordAvailable(false);
+        setPasskeyAvailable(false);
         setLocked(false);
         return;
       }
@@ -309,6 +313,7 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="Workspace password"
+                    autoComplete="current-password"
                   />
                   <Button
                     type="button"
