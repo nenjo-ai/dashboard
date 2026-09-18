@@ -21,6 +21,7 @@ import {
   finishPasskeyRecoveryAssertion,
   finishPasskeyRecoveryRegistration,
   listRecoveryMethods,
+  passwordRecoveryPost,
   stageRecoveryMethod,
   startPasskeyRecoveryAssertion,
   startPasskeyRecoveryRegistration,
@@ -45,6 +46,7 @@ import {
   openRecoveryEnvelope,
   parseEnvelopeCiphertext,
   RECOVERY_METHOD_TYPE_PASSKEY,
+  RECOVERY_METHOD_TYPE_PASSWORD,
   sealRecoveryEnvelope,
   type AccountRecoveryPayload,
 } from "./recoveryEnvelope";
@@ -57,7 +59,14 @@ import {
   resetLocalEncryptedWorkspaceForRestore,
   setStoredAccountContentKey,
   setupPasskeyUnlock,
+  setupPasswordUnlock,
 } from "./cryptoContent";
+import {
+  exportKeyToBytes,
+  loginRecoveryPassword,
+  registerRecoveryPassword,
+  validateRecoveryPassword,
+} from "./opaquePassword";
 
 // ---------------------------------------------------------------------------
 // Read-only payload export (no key generation during recovery operations)
@@ -238,14 +247,18 @@ export async function listRestorableMethods(): Promise<RecoveryMethodMetadata[]>
   } catch {
     return [];
   }
-  return methods.filter(
-    (method) =>
-      (method.state === "active" || method.state === "stale") &&
-      // Methods enrolled before server-verified ceremonies lack the PRF
-      // input metadata the restore flow requires; they must be re-enrolled
-      // (Enable Recovery) instead of silently failing mid-restore.
-      typeof method.metadata?.prf_input === "string",
-  );
+  return methods.filter((method) => {
+    if (method.state !== "active" && method.state !== "stale") {
+      return false;
+    }
+    if (method.method_type === RECOVERY_METHOD_TYPE_PASSWORD) {
+      return true;
+    }
+    // Passkey methods enrolled before server-verified ceremonies lack the
+    // PRF input metadata the restore flow requires; they must be re-enrolled
+    // (Enable Recovery) instead of silently failing mid-restore.
+    return typeof method.metadata?.prf_input === "string";
+  });
 }
 
 /// Restores browser crypto state from a server-held recovery envelope using
@@ -326,6 +339,138 @@ export async function restoreWithPasskeyRecoveryMethod(
 }
 
 // ---------------------------------------------------------------------------
+// Password factor (OPAQUE / RFC 9807)
+// ---------------------------------------------------------------------------
+
+/// Enrolls the workspace-password recovery factor: runs the two-round-trip
+/// OPAQUE registration, then stages/readback-verifies/activates a recovery
+/// envelope sealed to the client-only OPAQUE export key. The password and
+/// export key never leave this module; the platform stores only the OPAQUE
+/// registration record and the sealed envelope.
+export async function enrollRecoveryForPassword(params: {
+  password: string;
+  label?: string | null;
+}): Promise<RecoveryMethodMetadata> {
+  assertSecureCryptoContext();
+  const policy = validateRecoveryPassword(params.password);
+  if (!policy.ok) {
+    throw new Error(policy.reason);
+  }
+  await ensureRecoveryAnchor();
+
+  const registration = await registerRecoveryPassword({
+    password: params.password,
+    post: passwordRecoveryPost,
+  });
+  const started = await startRecoveryAttempt({ purpose: "enroll", key_epoch: 1 });
+  const binding = {
+    methodType: RECOVERY_METHOD_TYPE_PASSWORD,
+    factorReference: registration.registrationId,
+    keyEpoch: 1,
+  };
+  const sealed = await sealRecoveryEnvelope({
+    payload: await buildAccountRecoveryPayload(),
+    wrapSecret: exportKeyToBytes(registration.exportKey),
+    binding,
+  });
+
+  const staged = await stageRecoveryMethod({
+    attempt_id: started.attempt_id,
+    challenge: started.challenge,
+    method_type: RECOVERY_METHOD_TYPE_PASSWORD,
+    key_epoch: 1,
+    crypto_header: {
+      registration_id: registration.registrationId,
+      ksf_profile: registration.ksfProfile,
+      server_key_version: 1,
+    },
+    ciphertext: JSON.stringify(sealed.blob),
+    factor_reference: registration.registrationId,
+    opaque_registration_id: registration.registrationId,
+    metadata: {
+      ...(params.label ? { label: params.label } : {}),
+    },
+  });
+
+  // Round-trip check through the staged ciphertext before activation.
+  const envelope = await fetchStagedRecoveryEnvelope({
+    attempt_id: started.attempt_id,
+    challenge: started.challenge,
+  });
+  await openRecoveryEnvelope({
+    blob: parseEnvelopeCiphertext(envelope.ciphertext),
+    wrapSecret: exportKeyToBytes(registration.exportKey),
+    binding,
+  });
+
+  return activateRecoveryMethod({
+    method_id: staged.id,
+    expected_revision: staged.revision,
+  });
+}
+
+/// Restores browser crypto state from a server-held recovery envelope using
+/// the workspace-password (OPAQUE) factor. The login is bound to the restore
+/// attempt so the platform releases the envelope only after a successful
+/// password proof. Validates everything in memory before persisting.
+export async function restoreWithPasswordRecoveryMethod(
+  method: RecoveryMethodMetadata,
+  options: { accountId: string; password: string },
+): Promise<{ accountContentKey: string; publicKey: string }> {
+  assertSecureCryptoContext();
+  const policy = validateRecoveryPassword(options.password);
+  if (!policy.ok) {
+    throw new Error(policy.reason);
+  }
+
+  const started = await startRecoveryAttempt({
+    purpose: "restore",
+    method_id: method.id,
+    key_epoch: method.key_epoch,
+  });
+  const login = await loginRecoveryPassword({
+    password: options.password,
+    binding: { attempt_id: started.attempt_id, method_id: method.id },
+    post: passwordRecoveryPost,
+  });
+  if (!login.verified) {
+    throw new Error("Password verification failed.");
+  }
+
+  const envelope: RecoveryEnvelope = await fetchRecoveryEnvelope({
+    attempt_id: started.attempt_id,
+    challenge: started.challenge,
+  });
+  if (envelope.key_epoch !== method.key_epoch) {
+    throw new Error("Recovery envelope epoch does not match the restore attempt.");
+  }
+  const blob = parseEnvelopeCiphertext(envelope.ciphertext);
+  const payload = await openRecoveryEnvelope({
+    blob,
+    wrapSecret: exportKeyToBytes(login.exportKey),
+    binding: {
+      methodType: envelope.method_type,
+      factorReference: method.factor_reference,
+      keyEpoch: envelope.key_epoch,
+    },
+  });
+
+  return commitRestoredVault({
+    payload,
+    attemptId: started.attempt_id,
+    challenge: started.challenge,
+    methodId: envelope.method_id,
+    methodRevision: envelope.revision,
+    keyEpoch: envelope.key_epoch,
+    accountId: options.accountId,
+    credentialId: null,
+    prfInput: new Uint8Array(),
+    prfOutput: new Uint8Array(),
+    password: options.password,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Signed fresh-device completion and local commit
 // ---------------------------------------------------------------------------
 
@@ -371,6 +516,10 @@ async function commitRestoredVault(params: {
   credentialId: string | null;
   prfInput: Uint8Array;
   prfOutput: Uint8Array;
+  /// When restoring via the password factor, re-establishes the local vault
+  /// unlock from the same password (PBKDF2 local-unlock migration) so the
+  /// restored browser keeps password unlock working without a passkey.
+  password?: string;
 }): Promise<{ accountContentKey: string; publicKey: string }> {
   // Stage the fresh local vault (fresh device identity is generated because
   // none exists after site-data loss).
@@ -391,6 +540,10 @@ async function commitRestoredVault(params: {
       salt: params.prfInput,
       prfOutput: params.prfOutput,
     });
+  } else if (params.password) {
+    // PBKDF2 local-unlock migration: rebuild the local vault unlock from the
+    // recovery password so the restored browser is unlockable locally.
+    await setupPasswordUnlock(params.password, params.accountId);
   }
 
   const device = await buildTrustedDevicePayload({ requireSigningKey: false });
@@ -434,5 +587,5 @@ async function commitRestoredVault(params: {
 /** Fired on window after a successful vault restore from a recovery method. */
 export const EVENT_VAULT_RESTORED = "nenjo:vault-restored";
 
-export { RECOVERY_METHOD_TYPE_PASSKEY } from "./recoveryEnvelope";
+export { RECOVERY_METHOD_TYPE_PASSKEY, RECOVERY_METHOD_TYPE_PASSWORD } from "./recoveryEnvelope";
 export { decodeAndValidateRecoveryPayload } from "./recoveryEnvelope";

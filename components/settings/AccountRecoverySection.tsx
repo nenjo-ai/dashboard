@@ -17,9 +17,13 @@ import {
   revokeRecoveryMethod,
 } from "@/lib/api";
 import type { RecoveryMethodMetadata } from "@/lib/api";
-import { enableRecoveryFromExistingUnlock } from "@/lib/recoveryMethods";
+import {
+  enrollRecoveryForPassword,
+  enableRecoveryFromExistingUnlock,
+} from "@/lib/recoveryMethods";
 import { listLocalPasskeyUnlockMethods } from "@/lib/cryptoContent";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { toast } from "@/lib/toast";
 
 function methodStateLabel(state: string): { label: string; ready: boolean } {
@@ -44,6 +48,9 @@ export function AccountRecoverySection() {
   const [enrolling, setEnrolling] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [localPasskeyCount, setLocalPasskeyCount] = useState(0);
+  const [passwordEnrollOpen, setPasswordEnrollOpen] = useState(false);
+  const [enrollPassword, setEnrollPassword] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
 
   const methods = useMemo(() => data ?? [], [data]);
   const activeMethods = methods.filter(
@@ -97,12 +104,37 @@ export function AccountRecoverySection() {
     [activeMethods.length, refresh],
   );
 
+  const handlePasswordEnroll = useCallback(async () => {
+    setPasswordBusy(true);
+    try {
+      await enrollRecoveryForPassword({
+        password: enrollPassword,
+        label: "Workspace password recovery",
+      });
+      setEnrollPassword("");
+      setPasswordEnrollOpen(false);
+      await refresh();
+      toast.success(
+        "Password recovery enabled. Your workspace password can now restore this browser after data loss.",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to enable password recovery.",
+      );
+    } finally {
+      setPasswordBusy(false);
+    }
+  }, [enrollPassword, refresh]);
+
   // Offer (re-)enrollment whenever this browser holds a device unlock
   // passkey: methods enrolled by older builds without server-verified
   // ceremonies cannot be restored from and need the migration path. The new
   // method is staged alongside any existing one; the stale one can then be
   // removed.
   const canMigrate = localPasskeyCount > 0;
+  const hasPasswordMethod = methods.some(
+    (method) => method.method_type === "password_opaque" && method.state !== "revoked",
+  );
 
   return (
     <section className="theme-border theme-surface overflow-hidden rounded-2xl border p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] md:p-6">
@@ -190,6 +222,74 @@ export function AccountRecoverySection() {
                 Enable Recovery
               </Button>
             </div>
+          </div>
+        ) : null}
+
+        {!hasPasswordMethod ? (
+          <div className="theme-border rounded-2xl border px-4 py-4">
+            {passwordEnrollOpen ? (
+              <div className="space-y-3">
+                <div>
+                  <p className="theme-text text-sm font-medium">Enable password recovery</p>
+                  <p className="theme-text-muted mt-1 text-xs">
+                    Verify your workspace password with OPAQUE: the server stores only an
+                    opaque registration record, the password itself never leaves this
+                    browser. Use at least 16 characters.
+                  </p>
+                </div>
+                <Input
+                  type="password"
+                  value={enrollPassword}
+                  onChange={(event) => setEnrollPassword(event.target.value)}
+                  placeholder="Workspace password"
+                  autoComplete="new-password"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    isLoading={passwordBusy}
+                    disabled={passwordBusy || enrollPassword.trim().length === 0}
+                    onClick={() => void handlePasswordEnroll()}
+                  >
+                    Enable Password Recovery
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={passwordBusy}
+                    onClick={() => {
+                      setPasswordEnrollOpen(false);
+                      setEnrollPassword("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-gray-500" />
+                    <p className="theme-text text-sm font-medium">Password recovery</p>
+                  </div>
+                  <p className="theme-text-muted mt-1 text-xs">
+                    Enroll your workspace password as an additional durable recovery
+                    factor, verified with OPAQUE.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setPasswordEnrollOpen(true)}
+                >
+                  Enable
+                </Button>
+              </div>
+            )}
           </div>
         ) : null}
       </div>

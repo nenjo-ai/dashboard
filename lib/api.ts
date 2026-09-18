@@ -2759,6 +2759,25 @@ export async function finishPasskeyRecoveryAssertion(body: {
   return recoveryCeremonyPost<PasskeyVerified>(passkeyRecoveryUrl("assert"), body);
 }
 
+// --- OPAQUE password recovery ceremonies (BOO-26 package 5) -----------------
+
+function passwordRecoveryUrl(path: string): string {
+  return `${API_V1}/content-encryption/recovery-methods${path}`;
+}
+
+/// Posts to the OPAQUE password ceremony routes. `path` may carry a query
+/// string (e.g. `?encoding=base64` for the wire-format message fields).
+export async function passwordRecoveryPost<T>(
+  path: string,
+  body: unknown,
+): Promise<T> {
+  const res = await authFetch(passwordRecoveryUrl(path), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<T>;
+}
+
 export async function createWorkerEnrollment(
   body: import("./types").WorkerEnrollmentRequest,
 ): Promise<import("./types").WorkerEnrollmentStatusResponse> {

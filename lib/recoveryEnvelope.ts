@@ -5,6 +5,7 @@
 const RECOVERY_HKDF_INFO = "nenjo:account-recovery:v1";
 const RECOVERY_AAD_PREFIX = "nenjo-account-recovery-envelope:v1";
 export const RECOVERY_METHOD_TYPE_PASSKEY = "passkey_prf";
+export const RECOVERY_METHOD_TYPE_PASSWORD = "password_opaque";
 
 export type AccountRecoveryPayload = {
   version: 1;

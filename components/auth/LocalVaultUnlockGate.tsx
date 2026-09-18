@@ -20,8 +20,10 @@ import { unlockWithAnyLocalPasskey } from "@/lib/localUnlock";
 import {
   listRestorableMethods,
   restoreWithPasskeyRecoveryMethod,
+  restoreWithPasswordRecoveryMethod,
   EVENT_VAULT_RESTORED,
   RECOVERY_METHOD_TYPE_PASSKEY,
+  RECOVERY_METHOD_TYPE_PASSWORD,
 } from "@/lib/recoveryMethods";
 import { retryEncryptedPushNotifications } from "@/lib/pushNotificationRetry";
 import { useSafeRouter } from "@/lib/safeRouter";
@@ -215,6 +217,31 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
   const passkeyRecoveryAvailable = recoveryMethods.some(
     (method) => method.method_type === RECOVERY_METHOD_TYPE_PASSKEY,
   );
+  const passwordRecoveryMethod = recoveryMethods.find(
+    (method) => method.method_type === RECOVERY_METHOD_TYPE_PASSWORD,
+  );
+
+  const handlePasswordRecoveryRestore = useCallback(async () => {
+    if (!accountId || !passwordRecoveryMethod) return;
+    setError(null);
+    setBusy("password");
+    try {
+      await restoreWithPasswordRecoveryMethod(passwordRecoveryMethod, {
+        accountId,
+        password,
+      });
+      setPassword("");
+      setRestoreNeeded(false);
+      setRecoveryMethods([]);
+      await checkVault();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to restore this device.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }, [accountId, checkVault, password, passwordRecoveryMethod]);
 
   useEffect(() => {
     if (checking || !locked || !passkeyAvailable || autoPasskeyTried || busy !== null || !accountId) {
@@ -264,16 +291,37 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
 
         <div className="space-y-3">
           {restoreNeeded ? (
-            <Button
-              type="button"
-              className="w-full"
-              disabled={busy !== null || !passkeyRecoveryAvailable}
-              isLoading={busy === "passkey"}
-              onClick={() => void handlePasskeyRecoveryRestore()}
-            >
-              <KeyRound className="h-4 w-4" />
-              Restore With Device Unlock
-            </Button>
+            <>
+              <Button
+                type="button"
+                className="w-full"
+                disabled={busy !== null || !passkeyRecoveryAvailable}
+                isLoading={busy === "passkey"}
+                onClick={() => void handlePasskeyRecoveryRestore()}
+              >
+                <KeyRound className="h-4 w-4" />
+                Restore With Device Unlock
+              </Button>
+              {passwordRecoveryMethod ? (
+                <div className="space-y-2">
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="Workspace password"
+                  />
+                  <Button
+                    type="button"
+                    className="w-full"
+                    disabled={busy !== null || password.length === 0}
+                    isLoading={busy === "password"}
+                    onClick={() => void handlePasswordRecoveryRestore()}
+                  >
+                    Restore With Password
+                  </Button>
+                </div>
+              ) : null}
+            </>
           ) : (
             <Button
               type="button"
