@@ -20,6 +20,7 @@ import type { RecoveryMethodMetadata } from "@/lib/api";
 import {
   enrollRecoveryForPassword,
   enableRecoveryFromExistingUnlock,
+  refreshStaleRecoveryMethod,
 } from "@/lib/recoveryMethods";
 import { listLocalPasskeyUnlockMethods } from "@/lib/cryptoContent";
 import { Button } from "@/components/ui/Button";
@@ -51,6 +52,9 @@ export function AccountRecoverySection() {
   const [passwordEnrollOpen, setPasswordEnrollOpen] = useState(false);
   const [enrollPassword, setEnrollPassword] = useState("");
   const [passwordBusy, setPasswordBusy] = useState(false);
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [refreshPasswordOpen, setRefreshPasswordOpen] = useState<string | null>(null);
+  const [refreshPassword, setRefreshPassword] = useState("");
 
   const methods = useMemo(() => data ?? [], [data]);
   const activeMethods = methods.filter(
@@ -102,6 +106,39 @@ export function AccountRecoverySection() {
       }
     },
     [activeMethods.length, refresh],
+  );
+
+  const handleRefresh = useCallback(
+    async (method: RecoveryMethodMetadata) => {
+      setRefreshingId(method.id);
+      try {
+        if (method.method_type === "password_opaque") {
+          if (refreshPasswordOpen !== method.id) {
+            setRefreshPasswordOpen(method.id);
+            setRefreshingId(null);
+            return;
+          }
+          await refreshStaleRecoveryMethod(method, { password: refreshPassword });
+          setRefreshPassword("");
+          setRefreshPasswordOpen(null);
+        } else {
+          await refreshStaleRecoveryMethod(method, {});
+        }
+        await refresh();
+        toast.success(
+          "Recovery method re-verified. It is active for the current account key epoch.",
+        );
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Failed to re-verify this recovery method.",
+        );
+      } finally {
+        setRefreshingId(null);
+      }
+    },
+    [refresh, refreshPassword, refreshPasswordOpen],
   );
 
   const handlePasswordEnroll = useCallback(async () => {
@@ -177,28 +214,87 @@ export function AccountRecoverySection() {
                       <p className="theme-text-muted mt-1 text-xs">
                         {status.label}
                         {method.state === "stale"
-                          ? " — sign in with this factor again to refresh it"
+                          ? " — re-verify this factor to restore it for the current account key epoch"
                           : ""}
                       </p>
                     </div>
-                    {method.state !== "revoked" ? (
-                      <Button
-                        type="button"
-                        variant="danger"
-                        size="sm"
-                        disabled={revokingId === method.id}
-                        onClick={() => void handleRevoke(method)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        {revokingId === method.id ? "Removing..." : "Remove"}
-                      </Button>
-                    ) : null}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {method.state === "stale" ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={refreshingId === method.id}
+                          isLoading={refreshingId === method.id}
+                          onClick={() => void handleRefresh(method)}
+                        >
+                          Refresh
+                        </Button>
+                      ) : null}
+                      {method.state !== "revoked" ? (
+                        <Button
+                          type="button"
+                          variant="danger"
+                          size="sm"
+                          disabled={revokingId === method.id}
+                          onClick={() => void handleRevoke(method)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          {revokingId === method.id ? "Removing..." : "Remove"}
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
                 );
               })}
             </div>
           )}
         </div>
+
+        {refreshPasswordOpen ? (
+          <div className="theme-border rounded-2xl border px-4 py-4">
+            <div className="space-y-3">
+              <p className="theme-text text-sm font-medium">
+                Re-verify password recovery
+              </p>
+              <p className="theme-text-muted text-xs">
+                Confirm your workspace password to re-verify this recovery
+                factor for the current account key epoch.
+              </p>
+              <Input
+                type="password"
+                value={refreshPassword}
+                onChange={(event) => setRefreshPassword(event.target.value)}
+                placeholder="Workspace password"
+                autoComplete="current-password"
+              />
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  isLoading={passwordBusy || refreshingId !== null}
+                  disabled={refreshPassword.trim().length === 0}
+                  onClick={() => {
+                    const method = methods.find((m) => m.id === refreshPasswordOpen);
+                    if (method) void handleRefresh(method);
+                  }}
+                >
+                  Verify
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setRefreshPasswordOpen(null);
+                    setRefreshPassword("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {canMigrate ? (
           <div className="theme-border rounded-2xl border px-4 py-4">

@@ -2613,11 +2613,12 @@ export async function fetchRecoveryAnchor(): Promise<{
 export async function establishRecoveryAnchor(body: {
   sign_public_key: Record<string, unknown>;
   rotate?: boolean;
-}): Promise<void> {
-  await authFetch(recoveryAnchorUrl(), {
+}): Promise<{ established: boolean; key_epoch?: number }> {
+  const res = await authFetch(recoveryAnchorUrl(), {
     method: "PUT",
     body: JSON.stringify(body),
   });
+  return res.json() as Promise<{ established: boolean; key_epoch?: number }>;
 }
 
 async function recoveryPost<T>(url: string, body: unknown): Promise<T> {
