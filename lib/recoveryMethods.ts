@@ -97,16 +97,22 @@ async function buildAccountRecoveryPayload(): Promise<AccountRecoveryPayload> {
 /// Establishes the account signing anchor exactly once. The anchor public key
 /// is the account signing key already held by this (authorized, unlocked)
 /// browser.
-async function ensureRecoveryAnchor(): Promise<void> {
+/// Ensures the signing anchor exists and returns the current account key
+/// epoch. Enrollment must seal envelopes to the epoch the restore flow will
+/// bind attempts to, so this is the single source of the epoch for enroll.
+async function ensureRecoveryAnchor(): Promise<number> {
   const anchor = await fetchRecoveryAnchor();
-  if (anchor.established) return;
+  if (anchor.established && typeof anchor.key_epoch === "number") {
+    return anchor.key_epoch;
+  }
   const signing = await exportAccountSigningKeyMaterial();
-  await establishRecoveryAnchor({
+  const established = await establishRecoveryAnchor({
     sign_public_key: {
       algorithm: "ed25519",
       public_key: signing.publicKey,
     },
   });
+  return typeof established?.key_epoch === "number" ? established.key_epoch : 1;
 }
 
 /// Stages, readback-verifies, and activates a recovery envelope bound to an
@@ -118,15 +124,18 @@ async function enrollRecoveryForCredential(params: {
   prfInput: Uint8Array;
   credentialId?: string;
   label?: string | null;
+  /// Revokes this method in the same transaction during activation
+  /// (stale-method refresh).
+  replaceMethodId?: string;
 }): Promise<RecoveryMethodMetadata> {
   assertSecureCryptoContext();
-  await ensureRecoveryAnchor();
+  const keyEpoch = await ensureRecoveryAnchor();
 
-  const started = await startRecoveryAttempt({ purpose: "enroll", key_epoch: 1 });
+  const started = await startRecoveryAttempt({ purpose: "enroll", key_epoch: keyEpoch });
   const binding = {
     methodType: RECOVERY_METHOD_TYPE_PASSKEY,
     factorReference: params.credentialRowId,
-    keyEpoch: 1,
+    keyEpoch,
   };
   const sealed = await sealRecoveryEnvelope({
     payload: await buildAccountRecoveryPayload(),
@@ -138,7 +147,7 @@ async function enrollRecoveryForCredential(params: {
     attempt_id: started.attempt_id,
     challenge: started.challenge,
     method_type: RECOVERY_METHOD_TYPE_PASSKEY,
-    key_epoch: 1,
+    key_epoch: keyEpoch,
     crypto_header: sealed.cryptoHeader,
     ciphertext: JSON.stringify(sealed.blob),
     factor_reference: params.credentialRowId,
@@ -164,6 +173,7 @@ async function enrollRecoveryForCredential(params: {
   return activateRecoveryMethod({
     method_id: staged.id,
     expected_revision: staged.revision,
+    ...(params.replaceMethodId ? { replace_method_id: params.replaceMethodId } : {}),
   });
 }
 
@@ -362,11 +372,25 @@ export async function enrollRecoveryForPassword(params: {
     password: params.password,
     post: passwordRecoveryPost,
   });
-  const started = await startRecoveryAttempt({ purpose: "enroll", key_epoch: 1 });
+  return enrollRecoveryForPasswordWithRegistration({ registration, label: params.label });
+}
+
+/// Stages/readback-verifies/activates a password recovery envelope from an
+/// already-completed OPAQUE registration. Split out so stale-method refresh
+/// can reuse an existing registration.
+async function enrollRecoveryForPasswordWithRegistration(params: {
+  registration: import("./opaquePassword").PasswordRegistrationResult;
+  label?: string | null;
+  replaceMethodId?: string;
+}): Promise<RecoveryMethodMetadata> {
+  assertSecureCryptoContext();
+  const { registration } = params;
+  const keyEpoch = await ensureRecoveryAnchor();
+  const started = await startRecoveryAttempt({ purpose: "enroll", key_epoch: keyEpoch });
   const binding = {
     methodType: RECOVERY_METHOD_TYPE_PASSWORD,
     factorReference: registration.registrationId,
-    keyEpoch: 1,
+    keyEpoch,
   };
   const sealed = await sealRecoveryEnvelope({
     payload: await buildAccountRecoveryPayload(),
@@ -378,7 +402,7 @@ export async function enrollRecoveryForPassword(params: {
     attempt_id: started.attempt_id,
     challenge: started.challenge,
     method_type: RECOVERY_METHOD_TYPE_PASSWORD,
-    key_epoch: 1,
+    key_epoch: keyEpoch,
     crypto_header: {
       registration_id: registration.registrationId,
       ksf_profile: registration.ksfProfile,
@@ -406,6 +430,7 @@ export async function enrollRecoveryForPassword(params: {
   return activateRecoveryMethod({
     method_id: staged.id,
     expected_revision: staged.revision,
+    ...(params.replaceMethodId ? { replace_method_id: params.replaceMethodId } : {}),
   });
 }
 
@@ -547,6 +572,9 @@ async function commitRestoredVault(params: {
   }
 
   const device = await buildTrustedDevicePayload({ requireSigningKey: false });
+  // SAFETY: wrapped_ack is a JSON-encodable record by construction
+  // (buildTrustedDevicePayload); the signer schema types it loosely as
+  // Record<string, unknown>, so the cast only widens a known-good shape.
   const completionSignature = await signRecoveryCompletion({
     attemptId: params.attemptId,
     methodId: params.methodId,
@@ -589,3 +617,90 @@ export const EVENT_VAULT_RESTORED = "nenjo:vault-restored";
 
 export { RECOVERY_METHOD_TYPE_PASSKEY, RECOVERY_METHOD_TYPE_PASSWORD } from "./recoveryEnvelope";
 export { decodeAndValidateRecoveryPayload } from "./recoveryEnvelope";
+
+// ---------------------------------------------------------------------------
+// Stale-method refresh (BOO-26 package 6)
+// ---------------------------------------------------------------------------
+
+/// Re-verifies a stale recovery method under the current account key epoch.
+///
+/// A method becomes stale when the signing anchor rotates: its envelope is
+/// bound to the previous epoch and the restore flow rejects it with 409.
+/// Refresh runs the factor ceremony again (passkey assertion with a fresh
+/// PRF evaluation, or OPAQUE password re-registration), then stages a
+/// replacement envelope under the current epoch and activates it with
+/// `replace_method_id` so the stale method is revoked atomically.
+export async function refreshStaleRecoveryMethod(
+  method: RecoveryMethodMetadata,
+  options: { password?: string },
+): Promise<RecoveryMethodMetadata> {
+  assertSecureCryptoContext();
+
+  if (method.method_type === RECOVERY_METHOD_TYPE_PASSWORD) {
+    if (!options.password) {
+      throw new Error("Password is required to re-verify password recovery.");
+    }
+    // Re-register the same password: the OPAQUE export key is stable for a
+    // (password, user identifier) pair, so the fresh envelope seals to the
+    // same wrap secret under the current epoch; replace_method_id retires
+    // the stale method.
+    const registration = await registerRecoveryPassword({
+      password: options.password,
+      post: passwordRecoveryPost,
+    });
+    return enrollRecoveryForPasswordWithRegistration({
+      registration,
+      label:
+        typeof method.metadata?.label === "string"
+          ? method.metadata.label
+          : "Workspace password recovery",
+      replaceMethodId: method.id,
+    });
+  }
+
+  if (method.method_type === RECOVERY_METHOD_TYPE_PASSKEY) {
+    // Server-verified assertion against the method's credential proves the
+    // factor is still present and yields a fresh PRF secret.
+    const prfInputRaw = method.metadata?.prf_input;
+    if (typeof prfInputRaw !== "string") {
+      throw new Error(
+        "Recovery method is missing its PRF input; enroll again instead.",
+      );
+    }
+    const credentialId =
+      typeof method.metadata?.prf_credential_id === "string"
+        ? method.metadata.prf_credential_id
+        : undefined;
+    const prfInput = crypto.getRandomValues(new Uint8Array(32));
+    const assertion = await startPasskeyRecoveryAssertion({
+      credential_id: credentialId,
+    });
+    const assertionResult = await assertWithCeremony({
+      options: { publicKey: assertion.publicKey },
+      prfSalt: prfInput,
+    });
+    await finishPasskeyRecoveryAssertion({
+      ceremony_id: assertion.ceremony_id,
+      response: assertionResult.responseJson,
+    });
+    const prfOutput = assertionResult.prfOutput;
+    if (!prfOutput) {
+      throw new Error("This passkey did not return WebAuthn PRF output.");
+    }
+    return enrollRecoveryForCredential({
+      credentialRowId: method.factor_reference,
+      prfOutput,
+      prfInput,
+      credentialId,
+      label:
+        typeof method.metadata?.label === "string"
+          ? method.metadata.label
+          : "Account recovery passkey",
+      replaceMethodId: method.id,
+    });
+  }
+
+  throw new Error(
+    `Refresh is not supported for recovery method type ${method.method_type}.`,
+  );
+}
