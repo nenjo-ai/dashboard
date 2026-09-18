@@ -19,7 +19,7 @@ const MIN_UNLOCK_PASSPHRASE_LENGTH = 16;
 export const OPAQUE_KSF_PROFILE = "argon2id-m64-t3-p4-v1";
 
 /// 64 MiB / 3 passes / 4 lanes — matches the platform's frozen profile.
-const KSF_CONFIG = {
+export const KSF_CONFIG = {
   keyStretching: {
     "argon2id-custom": { memory: 65536, iterations: 3, parallelism: 4 },
   },

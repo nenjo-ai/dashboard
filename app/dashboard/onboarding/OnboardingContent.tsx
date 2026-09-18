@@ -1743,6 +1743,7 @@ function StepRestoreDevice({
               value={restorePassword}
               onChange={(event) => setRestorePassword(event.target.value)}
               placeholder="Workspace password"
+              autoComplete="current-password"
             />
             <Button
               type="button"
@@ -1986,12 +1987,15 @@ export default function OnboardingContent() {
       | undefined;
   };
 
-  const restoredProgress = useRef(loadFreshOnboardingProgress());
+  // Read once outside render: the ref rule forbids accessing ref.current
+  // during render, and the progress snapshot is only needed for initial
+  // state. The ref itself is no longer needed.
+  const initialProgress = loadFreshOnboardingProgress();
   const [currentStep, setCurrentStep] = useState<OnboardingStep>(
-    restoredProgress.current?.step ?? 1,
+    initialProgress?.step ?? 1,
   );
   const [onboardingMode, setOnboardingMode] = useState<"fresh" | "restore">(
-    restoredProgress.current?.mode ?? "fresh",
+    initialProgress?.mode ?? "fresh",
   );
   const [gateStatus, setGateStatus] = useState<"checking" | "ready" | "error">("checking");
   const [gateError, setGateError] = useState<string | null>(null);

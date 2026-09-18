@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  KSF_CONFIG,
   MAX_RECOVERY_PASSWORD_LENGTH,
   OPAQUE_KSF_PROFILE,
   exportKeyToBytes,
@@ -51,4 +52,15 @@ test("export key rejects unexpected lengths", () => {
 
 test("KSF profile name matches the platform's frozen profile", () => {
   assert.equal(OPAQUE_KSF_PROFILE, "argon2id-m64-t3-p4-v1");
+});
+
+test("KSF config matches the frozen argon2id-m64-t3-p4-v1 parameters", () => {
+  // Drift between the advertised profile name and the actual Argon2
+  // parameters would silently break interop with the platform's frozen
+  // profile (argon2id, 64 MiB, 3 passes, 4 lanes).
+  const custom = KSF_CONFIG.keyStretching["argon2id-custom"];
+  assert.ok(custom, "KSF_CONFIG must use the argon2id-custom profile");
+  assert.equal(custom.memory, 65536); // 64 MiB
+  assert.equal(custom.iterations, 3);
+  assert.equal(custom.parallelism, 4);
 });
