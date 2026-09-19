@@ -689,20 +689,6 @@ export interface WorkerApprovalKeyResponse {
   public_key?: string | null;
 }
 
-export interface RecoveryBundlePayload {
-  version: number;
-  kdf: string;
-  iterations: number;
-  salt: string;
-  nonce: string;
-  ciphertext: string;
-  created_at: string;
-}
-
-export interface RecoveryBundleResponse {
-  recovery_bundle?: RecoveryBundlePayload | null;
-}
-
 export interface TrustedDevicePayload {
   device_id: string;
   device_label?: string | null;

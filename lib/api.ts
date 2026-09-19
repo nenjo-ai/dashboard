@@ -2272,10 +2272,6 @@ export function workerApprovalKeyUrl(): string {
   return `${API_V1}/workers/approval-key`;
 }
 
-export function recoveryBundleUrl(): string {
-  return `${API_V1}/content-encryption/recovery-bundle`;
-}
-
 export function trustedDevicesUrl(): string {
   return `${API_V1}/content-encryption/devices`;
 }
@@ -2411,26 +2407,6 @@ export async function putWorkerApprovalKey(
 
 export async function deleteWorkerApprovalKey(): Promise<void> {
   await authFetch(workerApprovalKeyUrl(), { method: "DELETE" });
-}
-
-export async function fetchRecoveryBundle(): Promise<
-  import("./types").RecoveryBundleResponse
-> {
-  return fetcher<import("./types").RecoveryBundleResponse>(recoveryBundleUrl());
-}
-
-export async function putRecoveryBundle(
-  bundle: import("./types").RecoveryBundlePayload,
-): Promise<import("./types").RecoveryBundleResponse> {
-  const res = await authFetch(recoveryBundleUrl(), {
-    method: "PUT",
-    body: JSON.stringify(bundle),
-  });
-  return res.json() as Promise<import("./types").RecoveryBundleResponse>;
-}
-
-export async function deleteRecoveryBundle(): Promise<void> {
-  await authFetch(recoveryBundleUrl(), { method: "DELETE" });
 }
 
 export async function listTrustedDevices(): Promise<

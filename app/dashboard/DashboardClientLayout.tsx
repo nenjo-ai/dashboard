@@ -149,7 +149,6 @@ function AuthenticatedDashboardLayout({
             hasSignedInAccount: Boolean(accountId),
             hasOrg,
             isOnboarded: Boolean(me.onboarded),
-            hasRecoveryBundle: bootstrap.has_recovery_bundle,
             trustedDeviceCount: bootstrap.trusted_device_count,
           })
         ) {
@@ -159,13 +158,11 @@ function AuthenticatedDashboardLayout({
 
         const hasExistingWorkspace =
           Boolean(me.onboarded) ||
-          Boolean(bootstrap?.has_recovery_bundle) ||
           (bootstrap?.trusted_device_count ?? 0) > 0;
         if (
           shouldBootstrapSecureWorkspace({
             hasSignedInAccount: Boolean(accountId),
             hasOrg,
-            hasRecoveryBundle: Boolean(bootstrap?.has_recovery_bundle),
             isOnboarded: Boolean(me.onboarded),
             requiresSecureWorkspace: Boolean(
               bootstrap?.requires_secure_workspace,

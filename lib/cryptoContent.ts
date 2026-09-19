@@ -2,13 +2,11 @@
 
 import type {
   EncryptedPayload,
-  RecoveryBundlePayload,
   TrustedDevicePayload,
   WorkerCertificate,
   WrappedAccountContentKey,
   WrappedOrgContentKey,
 } from "./types";
-import { RECOVERY_WORDS } from "./recoveryWords";
 import {
   MIN_UNLOCK_PASSPHRASE_LENGTH,
   recordMatchesAccount,
@@ -29,7 +27,6 @@ const WRAP_KEY_ENTRY = "device-wrap-key";
 const ENCRYPTED_ACK_ENTRY = "encrypted-ack";
 const ENCRYPTED_ACCOUNT_SIGNING_KEY_ENTRY = "encrypted-account-signing-key";
 const ENCRYPTED_DEVICE_IDENTITY_ENTRY = "encrypted-device-identity";
-const ENCRYPTED_RECOVERY_BUNDLE_ENTRY = "encrypted-recovery-bundle";
 const VAULT_CONFIG_ENTRY = "unlock-vault-config";
 const PASSWORD_UNLOCK_ENTRY = "unlock-method:password";
 const PASSKEY_UNLOCK_PREFIX = "unlock-method:passkey:";
@@ -40,7 +37,6 @@ const SIGNING_ALGORITHM = "Ed25519";
 const PAYLOAD_ALGORITHM = "aes-256-gcm";
 const WRAP_ALGORITHM = "x25519-hkdf-sha256-aes-256-gcm";
 const HKDF_INFO = new TextEncoder().encode("nenjo-worker-ack-wrap-v1");
-const RECOVERY_PBKDF2_ITERATIONS = 600_000;
 const UNLOCK_PBKDF2_ITERATIONS = 650_000;
 const VAULT_SESSION_DURATION_MS = 30 * 60 * 1000;
 
@@ -145,15 +141,6 @@ export function base64ToBytes(value: string): Uint8Array {
     out[i] = binary.charCodeAt(i);
   }
   return out;
-}
-
-function normalizeRecoveryPhrase(phrase: string): string {
-  return phrase
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .join(" ");
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -1393,37 +1380,6 @@ export async function warmAccountSigningKeyPair(): Promise<boolean> {
   return (await loadStoredAccountSigningKeyPair()) !== null;
 }
 
-export function generateRecoveryPhrase(wordCount = 12): string {
-  const words: string[] = [];
-  for (let i = 0; i < wordCount; i += 1) {
-    const index = crypto.getRandomValues(new Uint8Array(1))[0] ?? 0;
-    words.push(RECOVERY_WORDS[index % RECOVERY_WORDS.length] ?? "anchor");
-  }
-  return words.join(" ");
-}
-
-async function deriveRecoveryKey(phrase: string, salt: Uint8Array): Promise<CryptoKey> {
-  const baseKey = await crypto.subtle.importKey(
-    "raw",
-    asBufferSource(new TextEncoder().encode(normalizeRecoveryPhrase(phrase))),
-    "PBKDF2",
-    false,
-    ["deriveKey"],
-  );
-  return crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      hash: "SHA-256",
-      salt: asBufferSource(salt),
-      iterations: RECOVERY_PBKDF2_ITERATIONS,
-    },
-    baseKey,
-    { name: AES_ALGORITHM, length: 256 },
-    false,
-    ["encrypt", "decrypt"],
-  );
-}
-
 export async function exportAccountSigningKeyMaterial(): Promise<{
   privateKeyPkcs8: string;
   publicKey: string;
@@ -1434,59 +1390,6 @@ export async function exportAccountSigningKeyMaterial(): Promise<{
     privateKeyPkcs8: bytesToBase64(new Uint8Array(privateKeyPkcs8)),
     publicKey,
   };
-}
-
-export async function buildRecoveryBundle(recoveryPhrase: string): Promise<RecoveryBundlePayload> {
-  const ack = await ensureAccountContentKey();
-  const signingKey = await exportAccountSigningKeyMaterial();
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const nonce = crypto.getRandomValues(new Uint8Array(12));
-  const wrapKey = await deriveRecoveryKey(recoveryPhrase, salt);
-  const payload = new TextEncoder().encode(
-    JSON.stringify({
-      version: 1,
-      account_content_key: ack,
-      account_signing_private_key_pkcs8: signingKey.privateKeyPkcs8,
-      account_signing_public_key: signingKey.publicKey,
-      created_at: new Date().toISOString(),
-    }),
-  );
-  const ciphertext = await crypto.subtle.encrypt(
-    {
-      name: AES_ALGORITHM,
-      iv: nonce,
-    },
-    wrapKey,
-    payload,
-  );
-
-  return {
-    version: 1,
-    kdf: "pbkdf2-sha256",
-    iterations: RECOVERY_PBKDF2_ITERATIONS,
-    salt: bytesToBase64(salt),
-    nonce: bytesToBase64(nonce),
-    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
-    created_at: new Date().toISOString(),
-  };
-}
-
-export async function storeRecoveryBundle(bundle: RecoveryBundlePayload): Promise<void> {
-  if (typeof window === "undefined") return;
-  const db = await openDb();
-  await idbPut(db, ENCRYPTED_RECOVERY_BUNDLE_ENTRY, bundle);
-}
-
-export async function loadStoredRecoveryBundle(): Promise<RecoveryBundlePayload | null> {
-  if (typeof window === "undefined") return null;
-  const db = await openDb();
-  return (await idbGet<RecoveryBundlePayload>(db, ENCRYPTED_RECOVERY_BUNDLE_ENTRY)) ?? null;
-}
-
-export async function clearStoredRecoveryBundle(): Promise<void> {
-  if (typeof window === "undefined") return;
-  const db = await openDb();
-  await idbDelete(db, ENCRYPTED_RECOVERY_BUNDLE_ENTRY);
 }
 
 export async function persistAccountSigningKeyMaterial(params: {
@@ -1508,47 +1411,6 @@ export async function persistAccountSigningKeyMaterial(params: {
     ["verify"],
   );
   await persistAccountSigningKeyPair({ privateKey, publicKey });
-}
-
-export async function restoreFromRecoveryBundle(params: {
-  recoveryPhrase: string;
-  bundle: RecoveryBundlePayload;
-  resetLocalVault?: boolean;
-}): Promise<{ accountContentKey: string; publicKey: string }> {
-  const { recoveryPhrase, bundle } = params;
-  const wrapKey = await deriveRecoveryKey(recoveryPhrase, base64ToBytes(bundle.salt));
-  const plaintext = await crypto.subtle.decrypt(
-    {
-      name: AES_ALGORITHM,
-      iv: asBufferSource(base64ToBytes(bundle.nonce)),
-    },
-    wrapKey,
-    asBufferSource(base64ToBytes(bundle.ciphertext)),
-  );
-  const parsed = JSON.parse(new TextDecoder().decode(plaintext)) as {
-    version: number;
-    account_content_key: string;
-    account_signing_private_key_pkcs8: string;
-    account_signing_public_key: string;
-  };
-  if (!parsed.account_content_key || !parsed.account_signing_private_key_pkcs8) {
-    throw new Error("Recovery bundle is missing required key material.");
-  }
-
-  if (params.resetLocalVault) {
-    await resetLocalEncryptedWorkspaceForRestore();
-  }
-  await setStoredAccountContentKey(parsed.account_content_key);
-  await persistAccountSigningKeyMaterial({
-    privateKeyPkcs8: parsed.account_signing_private_key_pkcs8,
-    publicKey: parsed.account_signing_public_key,
-  });
-  await storeRecoveryBundle(bundle);
-
-  return {
-    accountContentKey: parsed.account_content_key,
-    publicKey: parsed.account_signing_public_key,
-  };
 }
 
 export const __cryptoContentTest = {
