@@ -49,6 +49,16 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
   const [error, setError] = useState<string | null>(null);
   const accountId = user?.id ?? null;
 
+  // The vault still expires while the tab is hidden, but the unlock prompt
+  // must not surface over an inactive tab: rendering waits for visibility.
+  const [tabVisible, setTabVisible] = useState(true);
+  useEffect(() => {
+    const update = () => setTabVisible(document.visibilityState === "visible");
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+
   const checkVault = useCallback(async () => {
     if (!isLoaded) return;
     setChecking(true);
@@ -132,6 +142,9 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
 
     const handleVisibility = () => {
       if (document.visibilityState !== "visible") return;
+      // Expiry is paused while the tab is hidden; re-check as soon as the
+      // user returns so an expired session locks on return, not in the
+      // background (which would pop the unlock prompt over an inactive tab).
       if (enforceVaultIdleExpiry()) {
         handleVaultExpired();
       }
@@ -248,12 +261,29 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
   }, [accountId, checkVault, password, passwordRecoveryMethod]);
 
   useEffect(() => {
-    if (checking || !locked || !passkeyAvailable || autoPasskeyTried || busy !== null || !accountId) {
+    if (
+      checking ||
+      !tabVisible ||
+      !locked ||
+      !passkeyAvailable ||
+      autoPasskeyTried ||
+      busy !== null ||
+      !accountId
+    ) {
       return;
     }
     setAutoPasskeyTried(true);
     void handlePasskeyUnlock(true);
-  }, [accountId, autoPasskeyTried, busy, checking, handlePasskeyUnlock, locked, passkeyAvailable]);
+  }, [
+    accountId,
+    autoPasskeyTried,
+    busy,
+    checking,
+    handlePasskeyUnlock,
+    locked,
+    passkeyAvailable,
+    tabVisible,
+  ]);
 
   // Initial check: nothing to preserve yet, show a plain spinner.
   if (checking && !everReady) {
@@ -267,8 +297,8 @@ export function LocalVaultUnlockGate({ children }: { children: React.ReactNode }
     );
   }
 
-  const showRestoreOverlay = restoreNeeded && recoveryMethods.length > 0;
-  const showLockedOverlay = locked;
+  const showRestoreOverlay = restoreNeeded && recoveryMethods.length > 0 && tabVisible;
+  const showLockedOverlay = locked && tabVisible;
   const showRecheckOverlay = checking && everReady;
 
   const gateModal = (
