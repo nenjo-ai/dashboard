@@ -3,13 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
+  buildRecoveryBundle,
+  clearStoredRecoveryBundle,
+  generateRecoveryPhrase,
   hasLocalSecretVault,
   hasPasswordUnlockMethod,
   listLocalPasskeyUnlockMethods,
   loadStoredAccountContentKey,
   loadStoredOrgContentKey,
+  loadStoredRecoveryBundle,
   lockLocalSecretVault,
   resetLocalEncryptedWorkspaceForRestore,
+  restoreFromRecoveryBundle,
   setStoredAccountContentKey,
   setStoredOrgContentKey,
   setupPasskeyUnlock,
@@ -96,6 +101,7 @@ async function readSecretKeys(): Promise<string[]> {
 
 async function cleanSlate(): Promise<void> {
   await resetLocalEncryptedWorkspaceForRestore();
+  await clearStoredRecoveryBundle();
   lockLocalSecretVault();
 }
 
@@ -211,13 +217,15 @@ export function VaultUnlockHarnessClient() {
         },
       },
       {
-        name: "Restore reset clears stale vault state while preserving device wrap key",
+        name: "Recovery restore resets stale vault state while preserving recovery bundle",
         run: async () => {
           await cleanSlate();
           const accountContentKey = randomBase64();
           const orgContentKey = randomBase64();
+          const recoveryPhrase = generateRecoveryPhrase();
 
           await setStoredAccountContentKey(accountContentKey);
+          const bundle = await buildRecoveryBundle(recoveryPhrase);
           await setupPasswordUnlock(PASSPHRASE, ACCOUNT_A);
           await setStoredOrgContentKey("browser-harness-org", 1, orgContentKey);
 
@@ -229,27 +237,32 @@ export function VaultUnlockHarnessClient() {
             "Org content key was not stored before restore.",
           );
 
-          // Simulates what BOO-26 restore completion does before reseeding:
-          // clear stale local vault state but keep the device wrap key.
-          await resetLocalEncryptedWorkspaceForRestore();
+          lockLocalSecretVault();
+          await restoreFromRecoveryBundle({
+            recoveryPhrase,
+            bundle,
+            resetLocalVault: true,
+          });
 
-          assert(!(await hasLocalSecretVault()), "Restore reset left stale local vault config enabled.");
+          assert(!(await hasLocalSecretVault()), "Recovery restore left stale local vault config enabled.");
           assert(
-            (await loadStoredAccountContentKey()) === null,
-            "Restore reset did not clear the stale account content key.",
+            (await loadStoredAccountContentKey()) === accountContentKey,
+            "Recovery restore did not restore the account content key.",
           );
           assert(
             (await loadStoredOrgContentKey("browser-harness-org", 1)) === null,
-            "Restore reset did not clear stale org content keys.",
+            "Recovery restore did not clear stale org content keys.",
           );
+          assert(await loadStoredRecoveryBundle(), "Recovery restore did not preserve the recovery bundle.");
 
           const afterKeys = await readSecretKeys();
-          assert(!afterKeys.includes("unlock-vault-config"), "Vault config survived restore reset.");
-          assert(!afterKeys.includes("unlock-method:password"), "Password unlock survived restore reset.");
+          assert(!afterKeys.includes("unlock-vault-config"), "Vault config survived recovery reset.");
+          assert(!afterKeys.includes("unlock-method:password"), "Password unlock survived recovery reset.");
           assert(
             !afterKeys.includes("encrypted-ock:browser-harness-org:1"),
-            "Org content key survived restore reset.",
+            "Org content key survived recovery reset.",
           );
+          assert(afterKeys.includes("encrypted-recovery-bundle"), "Recovery bundle was not stored after restore.");
           assert(afterKeys.includes("device-wrap-key"), "Device wrap key was unexpectedly removed.");
         },
       },

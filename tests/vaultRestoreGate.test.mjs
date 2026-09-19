@@ -22,12 +22,17 @@ test("only a genuinely fresh workspace enters onboarding automatically", () => {
     hasSignedInAccount: true,
     hasOrg: true,
     isOnboarded: false,
+    hasRecoveryBundle: false,
     trustedDeviceCount: 0,
   };
 
   assert.equal(shouldEnterFreshOnboarding(freshWorkspace), true);
   assert.equal(
     shouldEnterFreshOnboarding({ ...freshWorkspace, isOnboarded: true }),
+    false,
+  );
+  assert.equal(
+    shouldEnterFreshOnboarding({ ...freshWorkspace, hasRecoveryBundle: true }),
     false,
   );
   assert.equal(
@@ -105,11 +110,19 @@ test("fresh accounts bootstrap encryption before entering the dashboard", () => 
   const state = {
     hasSignedInAccount: true,
     hasOrg: true,
+    hasRecoveryBundle: false,
     isOnboarded: false,
     requiresSecureWorkspace: true,
   };
 
   assert.equal(shouldBootstrapSecureWorkspace(state), true);
+  assert.equal(
+    shouldBootstrapSecureWorkspace({
+      ...state,
+      hasRecoveryBundle: true,
+    }),
+    false,
+  );
   assert.equal(
     shouldBootstrapSecureWorkspace({
       ...state,
@@ -123,9 +136,15 @@ test("durable encrypted workspaces restore instead of generating replacement key
   const state = {
     hasSignedInAccount: true,
     hasOrg: true,
+    hasRecoveryBundle: false,
     isOnboarded: false,
     requiresSecureWorkspace: true,
   };
+
+  assert.equal(
+    shouldBootstrapSecureWorkspace({ ...state, hasRecoveryBundle: true }),
+    false,
+  );
   assert.equal(
     shouldBootstrapSecureWorkspace({ ...state, isOnboarded: true }),
     false,
@@ -137,7 +156,8 @@ test("partial trusted-device setup still requires secure workspace bootstrap", (
     shouldBootstrapSecureWorkspace({
       hasSignedInAccount: true,
       hasOrg: true,
-        isOnboarded: false,
+      hasRecoveryBundle: false,
+      isOnboarded: false,
       requiresSecureWorkspace: true,
       trustedDeviceCount: 2,
     }),

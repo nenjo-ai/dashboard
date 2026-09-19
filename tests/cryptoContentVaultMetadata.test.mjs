@@ -118,6 +118,7 @@ test("restore reset deletes local vault material but keeps recovery and device w
 
   const keptKeys = [
     "device-wrap-key",
+    "encrypted-recovery-bundle",
     "unrelated",
     "unlock-method:passkey",
     123,
