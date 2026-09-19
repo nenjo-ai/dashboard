@@ -3,20 +3,25 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   buildCurrentOrgContentKeyBootstrap,
+  buildRecoveryBundle,
   buildTrustedDevicePayload,
   ensureAccountContentKey,
   ensureAccountSigningKeyPair,
+  generateRecoveryPhrase,
   loadStoredOrgContentKey,
+  storeRecoveryBundle,
 } from "@/lib/cryptoContent";
 import {
   bootstrapCurrentOrgContentKey,
   fetchCurrentOrgContentKeyStatus,
+  putRecoveryBundle,
   putWorkerApprovalKey,
   upsertTrustedDevice,
 } from "@/lib/api";
-import { enrollRecoveryForPassword } from "@/lib/recoveryMethods";
+import type { RecoveryBundlePayload } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
+
+const RECOVERY_DRAFT_SESSION_KEY = "nenjo_bootstrap_recovery_draft";
 
 export function SecureWorkspaceSetup({
   userLabel,
@@ -27,12 +32,22 @@ export function SecureWorkspaceSetup({
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [passwordEnrollOpen, setPasswordEnrollOpen] = useState(false);
-  const [enrollPassword, setEnrollPassword] = useState("");
-  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [recoveryPhrase, setRecoveryPhrase] = useState("");
+  const [recoveryBundle, setRecoveryBundle] = useState<RecoveryBundlePayload | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [confirmWordA, setConfirmWordA] = useState("");
+  const [confirmWordB, setConfirmWordB] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const initializeWorkspace = useCallback(async () => {
+  const phraseWords = recoveryPhrase.split(" ").filter(Boolean);
+  const promptIndexes = [2, 7] as const;
+  const expectedWordA = phraseWords[promptIndexes[0]] ?? "";
+  const expectedWordB = phraseWords[promptIndexes[1]] ?? "";
+  const confirmed =
+    confirmWordA.trim().toLowerCase() === expectedWordA &&
+    confirmWordB.trim().toLowerCase() === expectedWordB;
+
+  const initializeWorkspace = useCallback(async (regeneratePhrase = false) => {
     setError(null);
     setLoading(true);
     try {
@@ -46,6 +61,34 @@ export function SecureWorkspaceSetup({
             : "browser",
       });
       await upsertTrustedDevice(trustedDevice);
+
+      let nextPhrase = "";
+      let nextBundle: RecoveryBundlePayload | null = null;
+      const storedDraft = !regeneratePhrase
+        ? sessionStorage.getItem(RECOVERY_DRAFT_SESSION_KEY)
+        : null;
+
+      if (storedDraft) {
+        const parsed = JSON.parse(storedDraft) as {
+          phrase: string;
+          bundle: RecoveryBundlePayload;
+        };
+        nextPhrase = parsed.phrase;
+        nextBundle = parsed.bundle;
+      } else {
+        nextPhrase = generateRecoveryPhrase();
+        nextBundle = await buildRecoveryBundle(nextPhrase);
+        sessionStorage.setItem(
+          RECOVERY_DRAFT_SESSION_KEY,
+          JSON.stringify({ phrase: nextPhrase, bundle: nextBundle }),
+        );
+      }
+
+      setRecoveryPhrase(nextPhrase);
+      setRecoveryBundle(nextBundle);
+      setConfirmWordA("");
+      setConfirmWordB("");
+      setCopied(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to secure this workspace.");
     } finally {
@@ -57,26 +100,22 @@ export function SecureWorkspaceSetup({
     void initializeWorkspace();
   }, [initializeWorkspace]);
 
-  const handlePasswordEnroll = useCallback(async () => {
-    setPasswordBusy(true);
+  const handleCopy = useCallback(async () => {
     try {
-      await enrollRecoveryForPassword({
-        password: enrollPassword,
-        label: "Workspace password recovery",
-      });
-      setEnrollPassword("");
-      setPasswordEnrollOpen(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to enable password recovery.");
-    } finally {
-      setPasswordBusy(false);
+      await navigator.clipboard.writeText(recoveryPhrase);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Could not copy the recovery phrase to your clipboard.");
     }
-  }, [enrollPassword]);
+  }, [recoveryPhrase]);
 
   const handleContinue = useCallback(async () => {
-    if (loading) return;
+    if (!recoveryBundle || !confirmed) return;
     setSubmitting(true);
     try {
+      await storeRecoveryBundle(recoveryBundle);
+      await putRecoveryBundle(recoveryBundle);
       const orgContentKeyStatus = await fetchCurrentOrgContentKeyStatus();
       await loadStoredOrgContentKey(
         orgContentKeyStatus.org_id,
@@ -87,20 +126,21 @@ export function SecureWorkspaceSetup({
         keyVersion: orgContentKeyStatus.key_version,
       });
       await bootstrapCurrentOrgContentKey(bootstrap);
+      sessionStorage.removeItem(RECOVERY_DRAFT_SESSION_KEY);
       onContinue();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to secure the workspace.");
+      setError(err instanceof Error ? err.message : "Failed to store the recovery bundle.");
     } finally {
       setSubmitting(false);
     }
-  }, [loading, onContinue]);
+  }, [confirmed, onContinue, recoveryBundle]);
 
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Secure Your Workspace</h2>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          This device is generating your local content key, approval signing key, and registering account recovery factors for <span className="font-medium text-gray-700 dark:text-gray-200">{userLabel}</span>.
+          This device is generating your local content key, approval signing key, and an encrypted recovery bundle for account <span className="font-medium text-gray-700 dark:text-gray-200">{userLabel}</span>.
         </p>
       </div>
 
@@ -108,7 +148,7 @@ export function SecureWorkspaceSetup({
         <div className="flex flex-col items-center gap-3 py-8">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-deep-space-blue-500 border-t-transparent" />
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Generating local encryption material...
+            Generating local encryption material and recovery bundle...
           </p>
         </div>
       ) : null}
@@ -119,55 +159,74 @@ export function SecureWorkspaceSetup({
         </div>
       ) : null}
 
-      {!loading ? (
+      {!loading && recoveryPhrase ? (
         <>
-          <div className="rounded-lg border border-deep-space-blue-200 bg-deep-space-blue-50 p-3 text-sm text-deep-space-blue-700 dark:border-deep-space-blue-800 dark:bg-deep-space-blue-900/20 dark:text-deep-space-blue-400">
-            Account recovery is enabled with your device unlock passkey or workspace
-            password (verified with OPAQUE). If this browser loses its data, you can
-            restore from either factor — no recovery file to store.
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              Save this recovery phrase now. It protects the encrypted recovery bundle created for your account.
+            </p>
           </div>
 
-          {passwordEnrollOpen ? (
-            <div className="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                Enable password recovery
-              </p>
-              <Input
-                type="password"
-                value={enrollPassword}
-                onChange={(event) => setEnrollPassword(event.target.value)}
-                placeholder="Workspace password (min 16 characters)"
-                autoComplete="new-password"
-              />
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  isLoading={passwordBusy}
-                  disabled={passwordBusy || enrollPassword.trim().length === 0}
-                  onClick={() => void handlePasswordEnroll()}
-                >
-                  Enable Password Recovery
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={passwordBusy}
-                  onClick={() => {
-                    setPasswordEnrollOpen(false);
-                    setEnrollPassword("");
-                  }}
-                >
-                  Cancel
-                </Button>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {phraseWords.map((word, index) => (
+              <div
+                key={`${word}-${index}`}
+                className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+              >
+                <span className="mr-2 text-xs text-gray-400 dark:text-gray-500">{index + 1}.</span>
+                {word}
               </div>
-            </div>
-          ) : null}
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleCopy()}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                copied
+                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                  : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+              }`}
+            >
+              {copied ? "Copied!" : "Copy recovery phrase"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void initializeWorkspace(true)}
+              className="rounded-md bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+            >
+              Regenerate phrase
+            </button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">
+                Word {promptIndexes[0] + 1}
+              </span>
+              <input
+                value={confirmWordA}
+                onChange={(event) => setConfirmWordA(event.target.value)}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">
+                Word {promptIndexes[1] + 1}
+              </span>
+              <input
+                value={confirmWordB}
+                onChange={(event) => setConfirmWordB(event.target.value)}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              />
+            </label>
+          </div>
 
           <Button
             onClick={() => void handleContinue()}
             isLoading={submitting}
+            disabled={!confirmed}
             className="w-full"
           >
             Continue

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   clearFreshOnboardingInProgress,
+  isFreshOnboardingInProgress,
   loadFreshOnboardingProgress,
   markFreshOnboardingInProgress,
   saveFreshOnboardingProgress,
@@ -11,7 +12,9 @@ import {
 } from "@/lib/onboardingProgress.mjs";
 import {
   Check,
+  CircleCheck,
   Copy,
+  Download,
   Eye,
   EyeOff,
   KeyRound,
@@ -24,6 +27,8 @@ import type {
   ModelProvider,
   Model,
   CreateApiKeyResponse,
+  AgentDefinition,
+  RecoveryBundlePayload,
   WorkerEnrollmentStatusResponse,
 } from "@/lib/types";
 import {
@@ -37,6 +42,9 @@ import {
   fetchBootstrapStatus,
   fetchCurrentOrgContentKeyStatus,
   fetchDeviceEnrollment,
+  fetchCurrentOrgContentKeyRecovery,
+  fetchRecoveryBundle,
+  fetchWorkerApprovalKey,
   fetchAgents,
   fetcher,
   fetchCurrentUser,
@@ -45,6 +53,7 @@ import {
   installOfficialNenjoPackages,
   updateCurrentOrg,
   updateAgent,
+  putRecoveryBundle,
   putWorkerApprovalKey,
   registerDeviceEnrollment,
   setActiveOrgIdGetter,
@@ -80,15 +89,24 @@ import {
 } from "./OnboardingShell";
 import {
   buildCurrentOrgContentKeyBootstrap,
+  buildRecoveryBundle,
   buildDeviceEnrollmentPayload,
   buildTrustedDevicePayload,
+  buildWorkerCertificate,
   ensureAccountContentKey,
   ensureAccountSigningKeyPair,
   ensureDeviceEncryptionIdentity,
+  generateRecoveryPhrase,
   importWrappedAccountContentKeyForDevice,
+  importWrappedOrgContentKeyFromRecovery,
+  loadAccountSigningPublicKey,
   loadStoredAccountContentKey,
   loadStoredOrgContentKey,
+  loadStoredRecoveryBundle,
   resetLocalEncryptedWorkspaceForRestore,
+  restoreFromRecoveryBundle,
+  storeRecoveryBundle,
+  wrapOrgContentKeyForWorker,
 } from "@/lib/cryptoContent";
 import { useSafeRouter } from "@/lib/safeRouter";
 import {
@@ -97,6 +115,12 @@ import {
   shouldRunOnboardingEntryGate,
   shouldUseExistingWorkspaceRestoreMode,
 } from "@/lib/vaultRestoreGate.mjs";
+import {
+  RECOVERY_PHRASE_FILENAME,
+  RECOVERY_PHRASE_MIME_TYPE,
+  isRecoveryDownloadComplete,
+  recoveryPhraseFileContents,
+} from "@/lib/recoveryPhraseFile";
 import { normalizeRuntimeVerificationCode } from "@/lib/runtimeApproval";
 import {
   listRestorableMethods,
@@ -123,6 +147,7 @@ const PROVIDER_ENV_VARS: Record<ModelProvider, string> = {
 };
 
 const SESSION_KEY = "nenjo_onboarding_raw_key";
+const RECOVERY_DRAFT_SESSION_KEY = "nenjo_onboarding_recovery_draft";
 const NENJI_SEED_COLOR = "#b8841a";
 const DEFAULT_NENJI_IDENTITY = {
   roleId: "nenji",
@@ -199,12 +224,22 @@ function StepSecureWorkspace({
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [recoveryPhrase, setRecoveryPhrase] = useState("");
+  const [recoveryBundle, setRecoveryBundle] = useState<RecoveryBundlePayload | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
+  const [backupAcknowledged, setBackupAcknowledged] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [recoveryCommitted, setRecoveryCommitted] = useState(false);
   const [installingPackages, setInstallingPackages] = useState(false);
   const [packageSetupComplete, setPackageSetupComplete] = useState(false);
   const [installProgress, setInstallProgress] =
     useState<PackageInstallProgress | null>(null);
+
+  const recoveryDownloadComplete = isRecoveryDownloadComplete({
+    hasRecoveryBundle: Boolean(recoveryBundle),
+    recoveryFileDownloaded: downloaded,
+    backupAcknowledged,
+  });
 
   const initializeWorkspace = useCallback(async () => {
     setError(null);
@@ -221,6 +256,30 @@ function StepSecureWorkspace({
       });
       await upsertTrustedDevice(trustedDevice);
 
+      let nextPhrase = "";
+      let nextBundle: RecoveryBundlePayload | null = null;
+      const storedDraft = sessionStorage.getItem(RECOVERY_DRAFT_SESSION_KEY);
+
+      if (storedDraft) {
+        const parsed = JSON.parse(storedDraft) as {
+          phrase: string;
+          bundle: RecoveryBundlePayload;
+        };
+        nextPhrase = parsed.phrase;
+        nextBundle = parsed.bundle;
+      } else {
+        nextPhrase = generateRecoveryPhrase();
+        nextBundle = await buildRecoveryBundle(nextPhrase);
+        sessionStorage.setItem(
+          RECOVERY_DRAFT_SESSION_KEY,
+          JSON.stringify({ phrase: nextPhrase, bundle: nextBundle }),
+        );
+      }
+
+      setRecoveryPhrase(nextPhrase);
+      setRecoveryBundle(nextBundle);
+      setDownloaded(false);
+      setBackupAcknowledged(false);
       setRecoveryCommitted(false);
       setInstallingPackages(false);
       setInstallProgress(null);
@@ -235,6 +294,26 @@ function StepSecureWorkspace({
   useEffect(() => {
     void initializeWorkspace();
   }, [initializeWorkspace]);
+
+  const handleDownload = useCallback(() => {
+    try {
+      const file = new Blob([recoveryPhraseFileContents(recoveryPhrase)], {
+        type: RECOVERY_PHRASE_MIME_TYPE,
+      });
+      const objectUrl = URL.createObjectURL(file);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = RECOVERY_PHRASE_FILENAME;
+      anchor.hidden = true;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      setDownloaded(true);
+    } catch {
+      setError("Could not download the recovery file.");
+    }
+  }, [recoveryPhrase]);
 
   const installRequiredPackages = useCallback(async () => {
     setError(null);
@@ -262,9 +341,11 @@ function StepSecureWorkspace({
   }, [onContinue]);
 
   const handleContinue = useCallback(async () => {
-    if (!loading) return;
+    if (!recoveryBundle || !recoveryDownloadComplete) return;
     setSubmitting(true);
     try {
+      await storeRecoveryBundle(recoveryBundle);
+      await putRecoveryBundle(recoveryBundle);
       const deviceIdentity = await ensureDeviceEncryptionIdentity();
       const trustedDevices = await listTrustedDevices();
       const currentDeviceTrusted = trustedDevices.some(
@@ -290,16 +371,22 @@ function StepSecureWorkspace({
       if (!confirmedOrgKey) {
         throw new Error("This browser does not have local access to shared workspace content yet.");
       }
+      sessionStorage.removeItem(RECOVERY_DRAFT_SESSION_KEY);
+      setRecoveryPhrase("");
+      setRecoveryBundle(null);
+      setDownloaded(false);
+      setBackupAcknowledged(false);
       setRecoveryCommitted(true);
       await installRequiredPackages();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to secure the workspace.");
+      setError(err instanceof Error ? err.message : "Failed to store the recovery bundle.");
     } finally {
       setSubmitting(false);
     }
   }, [
     installRequiredPackages,
-    loading,
+    recoveryBundle,
+    recoveryDownloadComplete,
   ]);
 
   return (
@@ -312,20 +399,20 @@ function StepSecureWorkspace({
           Secure your workspace
         </h1>
         <p className="theme-text-muted mt-2 max-w-2xl text-sm leading-6">
-          This device is creating local encryption keys and registering recovery factors for your workspace.
+          This device is creating local encryption keys and a recovery file for your workspace.
         </p>
       </div>
 
       <div className="theme-border theme-surface-muted grid gap-2 rounded-2xl border p-3 sm:grid-cols-2">
         <SecurityStage
-          complete={!loading}
+          complete={!loading && Boolean(recoveryBundle)}
           current={loading}
           label="Secure this device"
         />
         <SecurityStage
-          complete={recoveryCommitted}
-          current={!loading && !recoveryCommitted}
-          label="Register recovery factors"
+          complete={downloaded || recoveryCommitted}
+          current={!loading && Boolean(recoveryBundle) && !downloaded && !recoveryCommitted}
+          label="Save recovery file"
         />
         <SecurityStage
           complete={packageSetupComplete}
@@ -342,7 +429,7 @@ function StepSecureWorkspace({
       {loading ? (
         <LoadingStatus
           label="Securing this workspace"
-          description="Preparing local encryption material."
+          description="Preparing local encryption material and your recovery file."
         />
       ) : null}
 
@@ -379,28 +466,56 @@ function StepSecureWorkspace({
         <UnlockMethodSetup onComplete={onFinished} allowSkip />
       ) : null}
 
-      {!loading && !recoveryCommitted && !installingPackages ? (
+      {!loading && recoveryPhrase && !recoveryCommitted && !installingPackages ? (
         <>
           <div className="theme-border theme-surface-muted rounded-2xl border p-4 sm:p-5">
             <div className="flex items-start gap-4">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-deep-space-blue-500/10 text-deep-space-blue-700 dark:text-deep-space-blue-300">
-                <KeyRound className="h-5 w-5" aria-hidden="true" />
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                <Download className="h-5 w-5" aria-hidden="true" />
               </span>
               <div className="min-w-0 flex-1">
-                <h2 className="theme-text text-sm font-semibold">Secure this workspace</h2>
+                <h2 className="theme-text text-sm font-semibold">Save your recovery file</h2>
                 <p className="theme-text-muted mt-1 text-sm leading-6">
-                  This browser becomes the first trusted device. Next, choose an unlock
-                  method — a device unlock passkey or workspace password automatically
-                  enrolls as your durable account recovery factor (BOO-26), so you can
-                  restore this browser after data loss without a recovery file.
+                  Keep this file somewhere private and separate from this device. Nenjo will not display its recovery contents on this screen.
                 </p>
               </div>
             </div>
+
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleDownload}
+              className="mt-4 w-full sm:w-auto"
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              {downloaded ? "Download recovery file again" : "Download recovery file"}
+            </Button>
+
+            {downloaded ? (
+              <p className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                <CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                Recovery file downloaded
+              </p>
+            ) : null}
           </div>
+
+          <label className="theme-border theme-surface-muted flex items-start gap-3 rounded-xl border p-3.5 text-sm">
+            <input
+              type="checkbox"
+              checked={backupAcknowledged}
+              disabled={!downloaded}
+              onChange={(event) => setBackupAcknowledged(event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-deep-space-blue-600 focus:ring-deep-space-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900"
+            />
+            <span className="theme-text-muted leading-5">
+              I downloaded the recovery file and stored it somewhere private.
+            </span>
+          </label>
 
           <Button
             onClick={() => void handleContinue()}
             isLoading={submitting}
+            disabled={!recoveryDownloadComplete}
             className="w-full sm:w-auto sm:min-w-40"
           >
             Secure workspace
@@ -1318,10 +1433,13 @@ function StepRestoreDevice({
   onRestored: () => void;
   onStartFresh: (orgId: string) => void;
 }) {
+  const [recoveryPhrase, setRecoveryPhrase] = useState("");
   const [loading, setLoading] = useState(true);
+  const [restoring, setRestoring] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [creatingOrg, setCreatingOrg] = useState(false);
   const [newOrgName, setNewOrgName] = useState("");
+  const [hasBundle, setHasBundle] = useState(false);
   const [trustedDeviceCount, setTrustedDeviceCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deviceEnrollmentId, setDeviceEnrollmentId] = useState<string | null>(null);
@@ -1395,8 +1513,13 @@ function StepRestoreDevice({
     let cancelled = false;
 
     const loadBundle = async () => {
-      const restorable = await listRestorableMethods();
+      const [local, remote, restorable] = await Promise.all([
+        loadStoredRecoveryBundle(),
+        fetchRecoveryBundle().catch(() => ({ recovery_bundle: null })),
+        listRestorableMethods(),
+      ]);
       if (cancelled) return;
+      setHasBundle(Boolean(local ?? remote.recovery_bundle));
       setRecoveryMethod(
         restorable.find((method) => method.method_type === "passkey_prf") ?? null,
       );
@@ -1494,6 +1617,49 @@ function StepRestoreDevice({
     return () => clearInterval(interval);
   }, [deviceEnrollmentId, onRestored]);
 
+  const handleRestore = useCallback(async () => {
+    setError(null);
+    setRestoring(true);
+    try {
+      const remote = await fetchRecoveryBundle();
+      const bundle = remote.recovery_bundle;
+      if (!bundle) {
+        throw new Error("No recovery bundle is stored for this account yet.");
+      }
+
+      const restored = await restoreFromRecoveryBundle({
+        recoveryPhrase,
+        bundle,
+        resetLocalVault: true,
+      });
+      await putWorkerApprovalKey(restored.publicKey);
+      const trustedDevice = await buildTrustedDevicePayload({
+        deviceLabel:
+          typeof navigator !== "undefined"
+            ? navigator.userAgent.slice(0, 80)
+            : "browser",
+      });
+      await upsertTrustedDevice(trustedDevice);
+      const orgRecovery = await fetchCurrentOrgContentKeyRecovery().catch(() => null);
+      if (orgRecovery?.recovery_wrapped_ock) {
+        await importWrappedOrgContentKeyFromRecovery({
+          orgId: orgRecovery.org_id,
+          wrappedOck: orgRecovery.recovery_wrapped_ock,
+        });
+        const bootstrap = await buildCurrentOrgContentKeyBootstrap({
+          orgId: orgRecovery.org_id,
+          keyVersion: orgRecovery.key_version,
+        });
+        await bootstrapCurrentOrgContentKey(bootstrap);
+      }
+      onRestored();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to restore this device.");
+    } finally {
+      setRestoring(false);
+    }
+  }, [onRestored, recoveryPhrase]);
+
   const handleCreateNewOrg = useCallback(async () => {
     const trimmed = newOrgName.trim();
     if (!trimmed) {
@@ -1549,7 +1715,7 @@ function StepRestoreDevice({
             <Button
               type="button"
               isLoading={restoringWithPasskey}
-              disabled={restoringWithPasskey}
+              disabled={restoringWithPasskey || restoring}
               onClick={() => void handlePasskeyRestore()}
             >
               <KeyRound className="h-4 w-4" />
@@ -1582,7 +1748,7 @@ function StepRestoreDevice({
             <Button
               type="button"
               isLoading={restoringWithPassword}
-              disabled={restoringWithPassword || restorePassword.length === 0}
+              disabled={restoringWithPassword || restoring || restorePassword.length === 0}
               onClick={() => void handlePasswordRestore()}
             >
               <KeyRound className="h-4 w-4" />
@@ -1707,6 +1873,49 @@ function StepRestoreDevice({
                 </div>
               </div>
             )}
+
+            <div className="rounded-2xl border border-black/10 bg-white/70 p-5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-gray-500 dark:text-gray-400">
+                    Option 2
+                  </p>
+                  <h3 className="mt-2 text-base font-semibold text-gray-900 dark:text-gray-100">
+                    Restore with your recovery file
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                    Open your saved recovery file and paste its recovery phrase here to restore this browser without waiting for another device.
+                  </p>
+                </div>
+
+                {hasBundle ? (
+                  <>
+                    <div>
+                      <Label htmlFor="recovery-phrase" required>Recovery phrase from file</Label>
+                      <Input
+                        id="recovery-phrase"
+                        value={recoveryPhrase}
+                        onChange={(event) => setRecoveryPhrase(event.target.value)}
+                        placeholder="Enter your saved recovery phrase"
+                      />
+                    </div>
+
+                    <Button
+                      onClick={() => void handleRestore()}
+                      isLoading={restoring}
+                      disabled={!recoveryPhrase.trim()}
+                      className="w-full"
+                    >
+                      Restore This Device
+                    </Button>
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-flag-red-200 bg-flag-red-50 p-4 text-sm text-flag-red-700 dark:border-flag-red-800 dark:bg-flag-red-900/20 dark:text-flag-red-400">
+                    No recovery information is available for this workspace yet, so file-based restore is not available on this device.
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="rounded-2xl border border-black/10 bg-white/70 p-5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
               <div className="space-y-4">
@@ -1844,6 +2053,7 @@ export default function OnboardingContent() {
         const hasOrg = Boolean(me.org_id);
         const hasExistingWorkspace =
           Boolean(me.onboarded) ||
+          Boolean(bootstrap?.has_recovery_bundle) ||
           (bootstrap?.trusted_device_count ?? 0) > 0;
 
         const hasSignedInAccount = Boolean(me.user_id || me.clerk_id);
