@@ -75,6 +75,11 @@ type ChatProjectOption = {
   name: string;
 };
 
+/**
+Distance from the bottom inside which the view counts as "snapped" to the
+latest message: auto-scroll stays enabled and the jump-to-latest hint hides. */
+const SNAP_TO_BOTTOM_THRESHOLD_PX = 160;
+
 type ChatCommandOption = {
   id?: string;
   name?: string;
@@ -922,6 +927,10 @@ export function ChatArea({
   const audioChunksRef = useRef<Blob[]>([]);
   const voiceInputTimerRef = useRef<number | null>(null);
   const pendingSessionScrollRef = useRef(false);
+  // While true, streaming updates keep the view pinned to the newest message.
+  // Scrolling away from the snap zone releases the pin so the user can read
+  // history; scrolling back into it re-arms auto-scroll.
+  const stickToBottomRef = useRef(true);
   const [voiceInputState, setVoiceInputState] =
     useState<VoiceInputState>("idle");
   const [voiceInputAvailable, setVoiceInputAvailable] = useState(false);
@@ -935,6 +944,7 @@ export function ChatArea({
 
   useEffect(() => {
     pendingSessionScrollRef.current = true;
+    stickToBottomRef.current = true;
     setShowScrollToLatest(false);
   }, [sessionId]);
 
@@ -1237,6 +1247,7 @@ export function ChatArea({
       skipAutoScrollRef.current = false;
       return;
     }
+    if (!stickToBottomRef.current) return;
     if (scrollRef.current) {
       const el = scrollRef.current;
       const behavior: ScrollBehavior =
@@ -1282,7 +1293,8 @@ export function ChatArea({
     const el = scrollRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    setShowScrollToLatest(distanceFromBottom > 160);
+    stickToBottomRef.current = distanceFromBottom <= SNAP_TO_BOTTOM_THRESHOLD_PX;
+    setShowScrollToLatest(distanceFromBottom > SNAP_TO_BOTTOM_THRESHOLD_PX);
     if (!hasMore || isLoadingMore) return;
     if (el.scrollTop < 80) {
       const prevHeight = el.scrollHeight;
@@ -1300,6 +1312,7 @@ export function ChatArea({
 
   const scrollToLatest = useCallback(() => {
     if (!scrollRef.current) return;
+    stickToBottomRef.current = true;
     scrollRef.current.scrollTo({
       top: scrollRef.current.scrollHeight,
       behavior: reduceMotion ? "auto" : "smooth",
@@ -1645,6 +1658,7 @@ export function ChatArea({
       setInput("");
       resetInputHeight();
       requestAnimationFrame(() => {
+        stickToBottomRef.current = true;
         if (scrollRef.current) {
           scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
@@ -1699,6 +1713,7 @@ export function ChatArea({
     resetInputHeight();
     // On mobile, force scroll to bottom after send to prevent layout shift
     requestAnimationFrame(() => {
+      stickToBottomRef.current = true;
       if (scrollRef.current) {
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       }
