@@ -1250,10 +1250,11 @@ export function ChatArea({
     if (!stickToBottomRef.current) return;
     if (scrollRef.current) {
       const el = scrollRef.current;
-      const behavior: ScrollBehavior =
-        reduceMotion || !hasActiveTurn ? "auto" : "smooth";
+      // Instant, not smooth: streaming re-fires this effect constantly, and
+      // overlapping smooth glides tug the viewport against the user's wheel
+      // while they scroll up to read. Smooth glides stay on explicit jumps.
       requestAnimationFrame(() => {
-        el.scrollTo({ top: el.scrollHeight, behavior });
+        el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
       });
       setShowScrollToLatest(false);
     }
@@ -1262,8 +1263,6 @@ export function ChatArea({
     isTyping,
     visibleRunTrace,
     hasActiveRunTrace,
-    hasActiveTurn,
-    reduceMotion,
   ]);
 
   useEffect(() => {
