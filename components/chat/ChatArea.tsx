@@ -116,10 +116,16 @@ const CHAT_COMMANDS: ChatCommandOption[] = [
     source: "builtin",
   },
 ];
-const VOICE_INPUT_MAX_BYTES = 320 * 1024;
-const VOICE_INPUT_MAX_DURATION_MS = 60_000;
+const VOICE_INPUT_MAX_BYTES = 25 * 1024 * 1024;
+const VOICE_INPUT_MAX_DURATION_MS = 300_000;
 const VOICE_INPUT_POLL_INTERVAL_MS = 800;
-const VOICE_INPUT_POLL_TIMEOUT_MS = 45_000;
+const VOICE_INPUT_POLL_TIMEOUT_MS = 180_000;
+// How long to keep the microphone stream alive after a recording ends.
+// iOS Safari re-prompts for mic permission on every fresh capture request in
+// contexts that do not persist grants (home-screen web apps, Chrome/Firefox
+// on iOS); reusing the stream avoids a prompt per recording while making sure
+// the mic is fully released shortly after use.
+const VOICE_INPUT_STREAM_IDLE_MS = 120_000;
 
 type VoiceInputState = "idle" | "requesting" | "recording" | "processing";
 
@@ -129,24 +135,6 @@ function voiceInputSupported(): boolean {
     typeof navigator.mediaDevices?.getUserMedia === "function" &&
     typeof MediaRecorder !== "undefined"
   );
-}
-
-async function queryMicrophonePermission(): Promise<PermissionState | null> {
-  if (
-    typeof navigator === "undefined" ||
-    typeof navigator.permissions?.query !== "function"
-  ) {
-    return null;
-  }
-
-  try {
-    const status = await navigator.permissions.query({
-      name: "microphone" as PermissionName,
-    });
-    return status.state;
-  } catch {
-    return null;
-  }
 }
 
 function voiceInputStartErrorMessage(error: unknown): string {
@@ -171,16 +159,23 @@ function voiceInputStartErrorMessage(error: unknown): string {
   return "Microphone access is required to record audio.";
 }
 
-async function requestMicrophoneStream(): Promise<MediaStream> {
+async function acquireMicrophoneStream(
+  cached: MediaStream | null,
+): Promise<MediaStream> {
   if (!voiceInputSupported()) {
     throw new Error("Audio recording is unavailable in this browser.");
   }
 
-  const permission = await queryMicrophonePermission();
-  if (permission === "denied") {
-    throw new DOMException("Microphone permission denied", "NotAllowedError");
+  // Reuse a still-live stream so iOS Safari does not start a brand-new capture
+  // request on every recording press.
+  if (cached?.getAudioTracks().some((track) => track.readyState === "live")) {
+    return cached;
   }
 
+  // NOTE: no awaits before getUserMedia — iOS Safari requires the capture call
+  // to happen within the user gesture that started recording; an async
+  // permission query in between makes WebKit treat the request as
+  // non-user-initiated and re-prompt.
   return navigator.mediaDevices.getUserMedia({
     audio: {
       echoCancellation: true,
@@ -926,6 +921,7 @@ export function ChatArea({
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const voiceInputTimerRef = useRef<number | null>(null);
+  const streamIdleTimerRef = useRef<number | null>(null);
   const pendingSessionScrollRef = useRef(false);
   // While true, streaming updates keep the view pinned to the newest message.
   // Scrolling away from the snap zone releases the pin so the user can read
@@ -972,9 +968,25 @@ export function ChatArea({
     mediaStreamRef.current = null;
   }, []);
 
+  const clearStreamIdleTimer = useCallback(() => {
+    if (streamIdleTimerRef.current !== null) {
+      window.clearTimeout(streamIdleTimerRef.current);
+      streamIdleTimerRef.current = null;
+    }
+  }, []);
+
+  const armStreamIdleRelease = useCallback(() => {
+    clearStreamIdleTimer();
+    streamIdleTimerRef.current = window.setTimeout(() => {
+      streamIdleTimerRef.current = null;
+      stopVoiceInputTracks();
+    }, VOICE_INPUT_STREAM_IDLE_MS);
+  }, [clearStreamIdleTimer, stopVoiceInputTracks]);
+
   useEffect(() => {
     return () => {
       clearVoiceInputTimer();
+      clearStreamIdleTimer();
       const recorder = mediaRecorderRef.current;
       if (recorder) {
         recorder.ondataavailable = null;
@@ -985,7 +997,11 @@ export function ChatArea({
       }
       stopVoiceInputTracks();
     };
-  }, [clearVoiceInputTimer, stopVoiceInputTracks]);
+  }, [
+    clearVoiceInputTimer,
+    clearStreamIdleTimer,
+    stopVoiceInputTracks,
+  ]);
 
   const pollVoiceInputJob = useCallback(
     async (initialJob: VoiceInputJob): Promise<VoiceInputJob> => {
@@ -1029,7 +1045,7 @@ export function ChatArea({
       }
 
       if (audio.size > VOICE_INPUT_MAX_BYTES) {
-        toast.error("Recording is too long. Try a shorter prompt.");
+        toast.error("Recording is too large. Try a shorter prompt.");
         setVoiceInputState("idle");
         return;
       }
@@ -1113,7 +1129,7 @@ export function ChatArea({
 
     setVoiceInputState("requesting");
     try {
-      const stream = await requestMicrophoneStream();
+      const stream = await acquireMicrophoneStream(mediaStreamRef.current);
       setVoiceInputAvailable(true);
       const mimeType = selectVoiceInputMimeType();
       const recorder = new MediaRecorder(
@@ -1126,6 +1142,7 @@ export function ChatArea({
       audioChunksRef.current = [];
       mediaStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
+      clearStreamIdleTimer();
 
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -1138,7 +1155,7 @@ export function ChatArea({
         const chunks = audioChunksRef.current;
         audioChunksRef.current = [];
         mediaRecorderRef.current = null;
-        stopVoiceInputTracks();
+        armStreamIdleRelease();
 
         const audio = new Blob(chunks, {
           type: recorder.mimeType || mimeType || "audio/webm",
@@ -1158,7 +1175,7 @@ export function ChatArea({
       setVoiceInputState("recording");
       voiceInputTimerRef.current = window.setTimeout(() => {
         if (mediaRecorderRef.current?.state === "recording") {
-          toast.info("Recording stopped at 60 seconds.");
+          toast.info("Recording stopped at 5 minutes.");
           mediaRecorderRef.current.stop();
         }
       }, VOICE_INPUT_MAX_DURATION_MS);
@@ -1171,6 +1188,8 @@ export function ChatArea({
       toast.error(voiceInputStartErrorMessage(error));
     }
   }, [
+    armStreamIdleRelease,
+    clearStreamIdleTimer,
     clearVoiceInputTimer,
     handleVoiceInputBlob,
     stopVoiceInputTracks,
