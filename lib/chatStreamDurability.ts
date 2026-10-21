@@ -34,6 +34,8 @@ export type ChatStreamSnapshot = {
   runId?: string;
   lastSequence?: number;
   content: string;
+  /** Accumulated live thinking tokens, restored on reconnect. */
+  reasoning?: string;
   activeTools?: ChatStreamToolSnapshot[];
   livePreview?: string;
   activeRunTrace?: unknown;

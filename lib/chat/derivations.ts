@@ -18,6 +18,7 @@ export interface SerialChatWorkQueue {
 export interface LiveAssistantDraftUpdate {
   id: string;
   content: string;
+  reasoning?: string;
   runStatus: ChatRunStatus;
   replyToMessageId?: string;
   runTrace?: RunTrace;
@@ -212,6 +213,7 @@ export function upsertLiveAssistantDraft(
           : {
               ...message,
               content: update.content,
+              reasoning: update.reasoning ?? message.reasoning,
               runStatus: update.runStatus,
               isLiveDraft: true,
               replyToMessageId: update.replyToMessageId,
@@ -228,6 +230,7 @@ export function upsertLiveAssistantDraft(
       id: update.id,
       role: "assistant",
       content: update.content,
+      reasoning: update.reasoning,
       timestamp: update.timestamp,
       replyToMessageId: update.replyToMessageId,
       runStatus: update.runStatus,

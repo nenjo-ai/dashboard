@@ -202,6 +202,7 @@ export type AgentLifecycleEvent =
       data: {
         run_id?: string;
         request_id: string;
+        delta: string;
       };
     }
   | {
