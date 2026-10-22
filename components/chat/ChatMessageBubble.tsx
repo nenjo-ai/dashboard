@@ -14,6 +14,7 @@ import type { AgentDefinition, ChatMessage } from "@/lib/types";
 import { AssistantResponseContent } from "./AssistantResponseContent";
 import { ChatActivityTimeline } from "./ChatActivityTimeline";
 import { ChatErrorState } from "./ChatErrorState";
+import { ChatThinkingPanel } from "./ChatThinkingPanel";
 import {
   ChatProgressIndicator,
   MessageDeliveryStatus,
@@ -166,6 +167,13 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
                 <BellDot className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>Agent update</span>
               </div>
+            ) : null}
+            {message.role === "assistant" ? (
+              <ChatThinkingPanel
+                message={message}
+                active={isLiveResponse}
+                answerStarted={hasAssistantContent}
+              />
             ) : null}
             <AssistantResponseContent
               content={assistantContent}

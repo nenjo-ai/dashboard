@@ -22,6 +22,7 @@ export type ChatTurnEvent =
   | { type: "model_invoked" }
   | { type: "phase_changed"; phase: ChatPhase }
   | { type: "text_delta"; delta: string }
+  | { type: "reasoning_delta"; delta: string }
   | { type: "content_replaced"; content: string }
   | { type: "tool_upserted"; tool: ActiveToolEntry }
   | { type: "tools_replaced"; tools: ActiveToolEntry[] }
@@ -91,6 +92,13 @@ export function chatTurnReducer(
         ...state,
         phase: "streaming",
         content: state.content + event.delta,
+      };
+    case "reasoning_delta":
+      // Thinking never flips the phase: prose streaming owns "streaming".
+      return {
+        ...state,
+        phase: state.phase === "streaming" ? "streaming" : "thinking",
+        reasoning: (state.reasoning ?? "") + event.delta,
       };
     case "content_replaced":
       return { ...state, phase: "streaming", content: event.content };
@@ -176,6 +184,7 @@ export function chatTurnReducer(
         requestId: snapshot.requestId,
         responseId: snapshot.responseId ?? snapshot.requestId,
         content: snapshot.content,
+        reasoning: snapshot.reasoning,
         activityPreview: snapshot.livePreview,
         activeTools: snapshot.activeTools ?? [],
         runTrace: snapshot.activeRunTrace as RunTrace | undefined,

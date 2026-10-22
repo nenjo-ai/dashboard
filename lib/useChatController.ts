@@ -726,6 +726,7 @@ export function useChatController(
   const activeRunIdRef = useRef<string | undefined>(undefined);
   const lastSequenceRef = useRef(0);
   const draftContentRef = useRef("");
+  const draftReasoningRef = useRef("");
   const draftRafRef = useRef<number | null>(null);
   const activeRunStatusRef = useRef<ChatMessage["runStatus"]>("connecting");
   const cancelResponseInFlightRef = useRef(false);
@@ -818,12 +819,14 @@ export function useChatController(
         return;
       }
       const content = draftContentRef.current;
+      const reasoning = draftReasoningRef.current || undefined;
       const runStatus = activeRunStatusRef.current ?? "connecting";
       const replyToMessageId = currentRequestIdRef.current ?? undefined;
       setMessages((previous) =>
         upsertLiveAssistantDraft(previous, {
           id: scheduledResponseId,
           content,
+          reasoning,
           runStatus,
           replyToMessageId,
           runTrace: activeRunTraceRef.current,
@@ -859,6 +862,7 @@ export function useChatController(
       runId: activeRunIdRef.current,
       lastSequence: lastSequenceRef.current,
       content: draftContentRef.current,
+      reasoning: draftReasoningRef.current || undefined,
       activeTools: activeToolsRef.current,
       livePreview: livePreviewRef.current,
       activeRunTrace: activeRunTraceRef.current,
@@ -894,6 +898,7 @@ export function useChatController(
       activeRunIdRef.current = undefined;
       lastSequenceRef.current = 0;
       draftContentRef.current = "";
+      draftReasoningRef.current = "";
       activeRunStatusRef.current = undefined;
       if (!preserveRunTraceForFinalMessage) {
         activeRunTraceRef.current = undefined;
@@ -937,6 +942,7 @@ export function useChatController(
       activeRunIdRef.current = undefined;
       lastSequenceRef.current = 0;
       draftContentRef.current = "";
+      draftReasoningRef.current = "";
       activeRunStatusRef.current = status;
       activeToolsRef.current = [];
       livePreviewRef.current = undefined;
@@ -1005,6 +1011,7 @@ export function useChatController(
       activeRunIdRef.current = snapshot.runId;
       lastSequenceRef.current = snapshot.lastSequence ?? 0;
       draftContentRef.current = snapshot.content;
+      draftReasoningRef.current = snapshot.reasoning ?? "";
       suppressActiveRunTraceRef.current = false;
       activeToolsRef.current = snapshot.activeTools ?? [];
       livePreviewRef.current = snapshot.livePreview;
@@ -1940,6 +1947,23 @@ export function useChatController(
             break;
           }
 
+          case "AssistantReasoningDelta": {
+            streamWorkQueueRef.current.enqueue(async () => {
+              const lifecycleEvent = await lifecycleEventPromise;
+              if (lifecycleEvent?.event_type !== "AssistantReasoningDelta")
+                return;
+              if (typeof lifecycleEvent.data.delta !== "string") return;
+              draftReasoningRef.current += lifecycleEvent.data.delta;
+              dispatchLiveTurn({
+                type: "reasoning_delta",
+                delta: lifecycleEvent.data.delta,
+              });
+              scheduleDraftRender();
+              persistCurrentStreamSnapshot();
+            });
+            break;
+          }
+
           case "ProviderRetryScheduled": {
             const data = streamEvent.data as {
               attempt?: number;
@@ -2034,6 +2058,7 @@ export function useChatController(
                 data.encrypted_payload?.object_id ??
                 localId ??
                 generateId();
+              const reasoning = draftReasoningRef.current || undefined;
               const trace =
                 activeRunTraceRef.current ?? lastRunTraceRef.current;
               const envelopeId =
@@ -2068,6 +2093,7 @@ export function useChatController(
                   runStatus: "completed",
                   inputTokens: data.total_input_tokens,
                   outputTokens: data.total_output_tokens,
+                  reasoning,
                   isLiveDraft: false,
                 };
                 if (index < 0)

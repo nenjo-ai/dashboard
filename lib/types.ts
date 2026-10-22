@@ -514,6 +514,12 @@ export interface ChatMessage {
   inputTokens?: number;
   outputTokens?: number;
   activitySummary?: ChatActivitySummary;
+  /**
+   * Thinking tokens for this turn. Client-only: live turns accumulate from
+   * reasoning stream frames; persisted turns hydrate from the run's S3 trace
+   * archive on expand. Never sent to or stored by the platform.
+   */
+  reasoning?: string;
   /** Live drafts use lightweight plaintext rendering until finalization. */
   isLiveDraft?: boolean;
   /** Durable agent-initiated update displayed inside its source conversation. */

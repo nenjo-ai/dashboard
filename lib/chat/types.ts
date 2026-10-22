@@ -46,6 +46,8 @@ export interface ChatTurnState {
   requestId?: string;
   responseId?: string;
   content: string;
+  /** Accumulated live thinking tokens for the current turn. */
+  reasoning?: string;
   activityPreview?: string;
   activeTools: ActiveToolEntry[];
   runTrace?: RunTrace;
