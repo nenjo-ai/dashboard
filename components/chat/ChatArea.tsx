@@ -1307,12 +1307,23 @@ export function ChatArea({
   }, [isLoadingHistory, messages.length, reduceMotion]);
 
   // Scroll-to-top pagination
+  const lastScrollTopRef = useRef(0);
+  const touchActiveRef = useRef(false);
+  const touchStartScrollTopRef = useRef(0);
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    stickToBottomRef.current = distanceFromBottom <= SNAP_TO_BOTTOM_THRESHOLD_PX;
-    setShowScrollToLatest(distanceFromBottom > SNAP_TO_BOTTOM_THRESHOLD_PX);
+    // Re-arm only when the scroll is actively moving toward the bottom and no
+    // finger is down. Re-arming on any scroll event inside the snap zone
+    // yanked the viewport back down mid-gesture on touch devices.
+    const scrollingDown = el.scrollTop > lastScrollTopRef.current;
+    lastScrollTopRef.current = el.scrollTop;
+    stickToBottomRef.current =
+      distanceFromBottom <= SNAP_TO_BOTTOM_THRESHOLD_PX &&
+      scrollingDown &&
+      !touchActiveRef.current;
+    setShowScrollToLatest(!stickToBottomRef.current);
     if (!hasMore || isLoadingMore) return;
     if (el.scrollTop < 80) {
       const prevHeight = el.scrollHeight;
@@ -1337,6 +1348,31 @@ export function ChatArea({
     });
     setShowScrollToLatest(false);
   }, [reduceMotion]);
+
+  // Touch veto: the moment a finger lands on the message area, auto-scroll
+  // releases so streaming updates never fight the gesture. It re-arms only
+  // when the finger lifted without scrolling while already in the snap zone,
+  // or when a later scroll moves back down into it (see handleScroll).
+  const handleTouchStart = useCallback(() => {
+    const el = scrollRef.current;
+    touchActiveRef.current = true;
+    touchStartScrollTopRef.current = el?.scrollTop ?? 0;
+    stickToBottomRef.current = false;
+    if (el) {
+      const distanceFromBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight;
+      setShowScrollToLatest(distanceFromBottom > 0);
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    touchActiveRef.current = false;
+    const el = scrollRef.current;
+    if (!el) return;
+    const moved = el.scrollTop !== touchStartScrollTopRef.current;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = !moved && distanceFromBottom <= SNAP_TO_BOTTOM_THRESHOLD_PX;
+  }, []);
 
   // Close @mention flow entirely and clear any leftover @text from input
   const closeMentionFlow = useCallback(() => {
@@ -2180,6 +2216,9 @@ export function ChatArea({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
         className={cn(
           "flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain",
           isMobile ? "px-4 pt-1" : "px-5 py-6 lg:px-8",
